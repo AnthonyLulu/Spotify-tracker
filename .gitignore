@@ -8,3 +8,6 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+apps/app_old/
+apps/app/.vscode/
+

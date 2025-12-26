@@ -1,23 +1,10 @@
 import axios from "axios";
 
-/**
- * Ticketmaster Discovery API v2
- * On va chercher des events "music" par keyword (nom d'artiste).
- */
-const TM_BASE = "https://app.ticketmaster.com/discovery/v2";
-
-export type TMEvent = {
+type TMEvent = {
   id: string;
-  name: string;
-  url: string;
-
-  dates?: {
-    start?: {
-      dateTime?: string; // ex: "2026-02-12T19:00:00Z"
-      localDate?: string; // ex: "2026-02-12"
-    };
-  };
-
+  url?: string;
+  name?: string;
+  dates?: { start?: { dateTime?: string; localDate?: string } };
   _embedded?: {
     venues?: Array<{
       name?: string;
@@ -29,24 +16,25 @@ export type TMEvent = {
 
 export async function searchTicketmasterEvents(params: {
   keyword: string;
-  countryCode?: string; // ex "FR"
-  classificationName?: string; // ex "music"
-  size?: number; // nb de résultats
-}) {
+  countryCode?: string; // "FR"
+  size?: number;        // default 50
+}): Promise<TMEvent[]> {
   const apiKey = process.env.TICKETMASTER_API_KEY;
-  if (!apiKey) throw new Error("Missing TICKETMASTER_API_KEY in env");
+  if (!apiKey) throw new Error("❌ TICKETMASTER_API_KEY manquant dans .env");
 
-  const res = await axios.get(`${TM_BASE}/events.json`, {
+  const { keyword, countryCode = "FR", size = 50 } = params;
+
+  const url = "https://app.ticketmaster.com/discovery/v2/events.json";
+  const res = await axios.get(url, {
     params: {
       apikey: apiKey,
-      keyword: params.keyword,
-      countryCode: params.countryCode ?? process.env.TICKETMASTER_COUNTRY ?? "FR",
-      classificationName: params.classificationName ?? process.env.TICKETMASTER_CLASSIFICATION ?? "music",
-      size: params.size ?? 20
+      keyword,
+      countryCode,
+      classificationName: "music",
+      size
     }
   });
 
-  // Ticketmaster met les events ici: _embedded.events
-  const events: TMEvent[] = res.data?._embedded?.events ?? [];
-  return events;
+  const events = res.data?._embedded?.events ?? [];
+  return events as TMEvent[];
 }

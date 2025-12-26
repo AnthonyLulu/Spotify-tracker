@@ -1,15 +1,17 @@
-import mongoose from "mongoose";
+import { Schema, model, type InferSchemaType } from "mongoose";
 
-const ArtistSchema = new mongoose.Schema(
+const artistSchema = new Schema(
   {
-    spotifyId: { type: String, required: true, unique: true },
-    name: { type: String, required: true },
+    spotifyId: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true, index: true },
     genres: { type: [String], default: [] },
-    popularity: { type: Number },
+    image: { type: String },
     followers: { type: Number },
-    image: { type: String }
+    popularity: { type: Number },
+    officialUrl: { type: String }
   },
   { timestamps: true }
 );
 
-export const Artist = mongoose.model("Artist", ArtistSchema);
+export type ArtistDoc = InferSchemaType<typeof artistSchema>;
+export const Artist = model("Artist", artistSchema);

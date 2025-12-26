@@ -28,7 +28,7 @@ export default function Home() {
     }
   }
 
-  // ✅ Search via ton API (JWT obligatoire)
+  // ✅ Search via l'API (JWT obligatoire)
   async function search() {
     if (!token) {
       alert("T'es pas connecté. Clique sur Login Spotify.");

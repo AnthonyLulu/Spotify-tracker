@@ -1,0 +1,28 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: spotify-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: spotify-api
+    env_file:
+      - apps/api/.env.docker
+    ports:
+      - "3001:3001"
+    depends_on:
+      - mongo
+    volumes:
+      - ./apps/api:/app/apps/api
+      - /app/node_modules
+      - /app/apps/api/node_modules
+    command: pnpm --filter api dev
+
+volumes:
+  mongo_data:

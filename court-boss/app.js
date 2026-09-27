@@ -1153,8 +1153,9 @@ window.openTournament=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
  try{
   const d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
-  const cr=career(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior';
-  const joined=(local.entries||[]).includes(t.id);
+  const cr=career(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior',isNcaa=String(t.circuit)==='NCAA',isFed=String(t.circuit)==='Federation';
+  const joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
+  const singleRule=singlesEligibility(t),doubleRule=doublesEligibility(t);
   const serverRun=d.run||null,doublesRun=d.doubles_run||null;
   const activePartner=(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean)||doublesHubRows.find(p=>p.id===local.partnerId)||null;
   const played=local.playedTournaments?.[t.id]||(serverRun?{user_round:serverRun.user_round,user_points:serverRun.user_points,user_prize:serverRun.user_prize}:null);
@@ -1166,11 +1167,10 @@ window.openTournament=async id=>{
 
   const managedId=Number(cr.managed_player_id||boot?.career?.managed_player_id||0);
   const managedJunior=pairs.find(p=>Number(p.id)===managedId);
-  const rawElig=isJunior
-    ?(managedJunior?'Engagé officiel':'Circuit junior')
-    :(t.direct_cut==null?'Règles spéciales':cr.singles_rank<=t.direct_cut?'Tableau direct':cr.singles_rank<=t.qual_cut?'Qualifications':cr.singles_rank<=Number(t.qual_cut||0)+50?'Alternate':'Hors cut');
+  const rawElig=managedJunior?'Engagé officiel':singleRule.label;
   const elig=wc?.status==='accepted'?'Wild Card':rawElig;
-  const canAttempt=!isJunior&&(elig!=='Hors cut'||wc?.status==='accepted');
+  const canAttempt=!isJunior&&!isNcaa&&!isFed&&(singleRule.can||wc?.status==='accepted');
+  const cuts=tmCuts(t);
 
   const rankTitle=isJunior?'Junior':'ATP';
   const drawIntro=isJunior
@@ -1187,15 +1187,19 @@ window.openTournament=async id=>{
    <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button><button onclick="tourSection('draw')">${isJunior?'Engagés':'Tableau'}</button>${!isJunior?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}</div>
    <div id="tourBody">
     <div class="grid g2">
-      <div class="card"><h2>${isJunior?'Circuit Junior':'Entrée'}</h2>
-        ${isJunior?`<div class="list-item row between"><span>Classement utilisé</span><b>ITF Junior</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`}
-        ${wc&&!isJunior?`<div class="list-item row between"><span>Wild card</span><span class="badge ${wc.status==='accepted'?'good':wc.status==='declined'?'bad':''}">${esc(wc.status)}</span></div>`:''}
-        <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${!isJunior?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleEntry(${t.id});closeOverlay()">${joined?'Retirer l’inscription':rawElig==='Alternate'?'S’inscrire alternate':'S’inscrire'}</button>${rawElig==='Hors cut'&&!wc?`<button class="soft-btn" onclick="requestWildcard(${t.id})">Demander wild card</button>`:''}${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:''}</div>
+      <div class="card"><div class="row between"><h2>${isNcaa?'Accès NCAA':isFed?'Sélection':isJunior?'Circuit Junior':'Inscription simple'}</h2><span class="badge ${singleRule.cls}">${esc(elig)}</span></div>
+        <div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · projeté':''):'—'}</b></div>
+        <div class="list-item row between"><span>Cut qualifs</span><b>${cuts.qual?'#'+fmt(cuts.qual)+(cuts.projected?' · projeté':''):'—'}</b></div>
+        <div class="list-item row between"><span>Deadline simple</span><b>${t.singles_entry_deadline?df(t.singles_entry_deadline):'—'}</b></div>
+        <div class="list-item row between"><span>Deadline qualifs</span><b>${t.qualifying_entry_deadline?df(t.qualifying_entry_deadline):'—'}</b></div>
+        ${wc&&!isJunior&&!isNcaa&&!isFed?`<div class="list-item row between"><span>Wild card</span><span class="badge ${wc.status==='accepted'?'good':wc.status==='declined'?'bad':''}">${esc(wc.status)}</span></div>`:''}
+        ${t.entry_rule_note?`<div class="notice mini" style="margin-top:9px"><b>Règle :</b> ${esc(t.entry_rule_note)}</div>`:''}
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:singleRule.can?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id});closeOverlay()">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>`}</div>
         ${played?`<div class="notice" style="margin-top:10px"><b>Résultat :</b> ${esc(played.user_round)} · +${played.user_points} pts · +${euro(played.user_prize)}</div>`:''}
       </div>
-      <div class="card"><h2>Informations</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Vérifiée':'Simulation'}</b></div><div class="list-item row between"><span>Double</span><b>${t.doubles?'Oui':'Non'}</b></div></div>
+      <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${t.qualifying_draw_size||'—'}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||'—':'Non'}</b></div><div class="list-item row between"><span>Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Simulation future'}</b></div></div>
     </div>
-    ${t.doubles?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Tableau double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge">Ton rang #${fmt(cr.doubles_rank||0)}</span></div>${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:activePartner?`<button class="primary" style="width:100%;margin-top:8px" onclick="playDoublesTournament(${t.id})">Jouer le double avec ${esc(activePartner.name)}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">Choisir un partenaire</button>`}</div>`:''}
+    ${t.doubles?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Inscription double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge ${doubleRule.cls}">${esc(doubleRule.label)}</span></div><div class="list-item row between"><span>Ton rang double</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)} · ${esc(activePartner.name)}</b></div>`:''}<div class="list-item row between"><span>Deadline double</span><b>${t.doubles_entry_deadline?df(t.doubles_entry_deadline):String(t.entry_rule_code)==='ITF_M15'?'Sign-in sur site':'—'}</b></div>${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:doubleRule.can?`<button class="${dJoined?'danger-btn':'primary'}" style="width:100%;margin-top:8px" onclick="toggleDoublesEntry(${t.id});closeOverlay()">${dJoined?'Retirer le double':'Inscrire la paire'}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">${activePartner?'Voir le hub Double':'Choisir un partenaire'}</button>`}</div>`:''}
    </div>
 
    <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isJunior?'Circuit Junior':'Entrée'}</h2>${isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div></div></div></template>

@@ -1,0 +1,22 @@
+name: Import ATP 2025-12-01
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["court-boss-live"]
+    paths: [".github/workflows/import-atp-20251201.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Import full ATP snapshot
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 240 \
+            https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-atp-20251201-import \
+            -o /tmp/result.json
+          cat /tmp/result.json
+          node -e "const r=require('/tmp/result.json'); if(!r.count || r.count < 1900) throw new Error('incomplete ranking import: '+JSON.stringify(r))"

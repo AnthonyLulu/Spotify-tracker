@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: court-boss-smoke-v7
+  group: court-boss-smoke-v8
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         run: |
           for i in {1..24}; do
             if curl --fail --silent --show-error "$BASE/index.html" -o /tmp/index.html; then
-              if grep -q 'app.js?v=20260927-7' /tmp/index.html && grep -q 'tactics.js?v=20260927-7' /tmp/index.html; then
+              if grep -q 'app.js?v=20260927-8' /tmp/index.html && grep -q 'tactics.js?v=20260927-8' /tmp/index.html; then
                 echo "Render build is current"
                 exit 0
               fi
@@ -46,9 +46,9 @@ jobs:
         env:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
-          curl --fail --silent --show-error "$BASE/app.js?v=20260927-7" -o /tmp/app.js
-          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-7" -o /tmp/tactics.js
-          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-7" -o /tmp/modules.js
+          curl --fail --silent --show-error "$BASE/app.js?v=20260927-8" -o /tmp/app.js
+          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-8" -o /tmp/tactics.js
+          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-8" -o /tmp/modules.js
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js
@@ -120,6 +120,10 @@ jobs:
             await page.getByRole('button',{name:'Next Gen U21'}).click();
             await page.getByText('Jakub Mensik').first().waitFor();
             await page.getByText('Qualifié').first().waitFor();
+            await page.getByRole('button',{name:'U20'}).click();
+            await page.getByText('Joao Fonseca').first().waitFor();
+            await page.getByRole('button',{name:'U21'}).click();
+            await page.getByText('Jakub Mensik').first().waitFor();
 
             await page.getByRole('button',{name:'ITF Juniors'}).click();
             await page.getByText('Ivan Ivanov').first().waitFor();

@@ -88,6 +88,18 @@ jobs:
           if(nadal.player?.career_status!=='retired'||nadal.tournamentHistory?.length<300)throw new Error('Nadal history invalid');
           if(fed.tournamentHistory.filter(x=>x.is_grand_slam&&x.result_code==='W').length!==20)throw new Error('Federer slam count invalid');
           if(nadal.tournamentHistory.filter(x=>x.is_grand_slam&&x.result_code==='W').length!==22)throw new Error('Nadal slam count invalid');
+          const legacy=[...fed.tournamentHistory,...nadal.tournamentHistory].filter(x=>['R16','R32','R64','R128'].includes(x.result_code));
+          if(legacy.length)throw new Error('legacy round codes found: '+legacy.map(x=>x.result_code).join(','));
+          const nadalAo2005=nadal.tournamentHistory.find(x=>x.season===2005&&/Australian Open/i.test(x.tournament_name));
+          if(nadalAo2005?.result_code!=='R4')throw new Error('Nadal AO 2005 must be R4, got '+nadalAo2005?.result_code);
+          for(const [label,data] of [['Federer',fed],['Nadal',nadal]]){
+            const keys=new Set();
+            for(const h of data.tournamentHistory){
+              const k=[h.season,h.tournament_id].join('|');
+              if(keys.has(k))throw new Error(label+' duplicate tournament history '+k);
+              keys.add(k);
+            }
+          }
           EOF
 
       - name: Mobile browser smoke test

@@ -316,7 +316,7 @@ Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
 
-  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:8});
+  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:9});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -441,18 +441,20 @@ Deno.serve(async(req:Request)=>{
       return h({kind,offset,limit,count:count??0,rows,eligibility:"NCAA / ITA · joueurs universitaires réels"});
     }
 
-    let orderCol="ranking";
+    let orderCol=kind==="singles"?"game_world_rank":"ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
     if(kind==="race") orderCol="race_ranking";
     if(kind==="nextgen") orderCol="nextgen_ranking";
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
+      .select("id,name,country,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
-    if(!(kind==="singles"&&q)) query=query.not(orderCol,"is",null);
-    if(kind==="singles") query=query.eq("ranking_current",true);
-    else query=query.eq("is_real",true);
+    if(kind==="singles"){
+      query=query.not("game_world_rank","is",null).lte("game_world_rank",30000);
+    } else {
+      query=query.not(orderCol,"is",null).eq("is_real",true);
+    }
     if(kind==="doubles") query=query.not("doubles_ranking","is",null);
     if(kind==="race") query=query.not("race_source","is",null);
     if(kind==="nextgen"){
@@ -466,7 +468,7 @@ Deno.serve(async(req:Request)=>{
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
-    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),doubles_verified:!!p.doubles_source}));
+    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),doubles_verified:!!p.doubles_source,official_ranking:p.ranking_current?p.ranking:null,world_rank:p.game_world_rank}));
     return h({kind,offset,limit,count:count??0,rows,eligibility:kind==="nextgen"?"U"+nextGenU+" · ATP Next Gen Race 2026 · âge au snapshot/career date":kind==="junior"?"ITF Juniors · DOB vérifiée":null});
   }
 
@@ -542,7 +544,7 @@ Deno.serve(async(req:Request)=>{
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,careerDate,legend,historicalSeasons] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,careerDate,legend,historicalSeasons] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -554,11 +556,12 @@ Deno.serve(async(req:Request)=>{
       db.from("junior_tournament_entries").select("id,seed,result,snapshot_date,source_url,tournaments(id,name,city,country,surface,indoor,category,start_date,end_date,is_verified,source_url)").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(30),
       db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500),
       db.from("ncaa_player_registry").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(10),
+      db.from("ncaa_career").select("*").eq("player_id",id).maybeSingle(),
       db.from("career_state").select("career_date").eq("id","demo").maybeSingle(),
       db.from("historical_legend_stats").select("*").eq("player_id",id).maybeSingle(),
       db.from("historical_season_summary").select("*").eq("player_id",id).order("season",{ascending:false}).limit(80)
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||careerDate.error||legend.error||historicalSeasons.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||careerDate.error||legend.error||historicalSeasons.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
@@ -572,7 +575,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,
       matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[],juniorEntries:juniorEntries.data??[],
-      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],legend:legend.data??null,historicalSeasons:historicalSeasons.data??[]
+      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],ncaaCareer:ncaaCareer.data??null,legend:legend.data??null,historicalSeasons:historicalSeasons.data??[]
     });
   }
 
@@ -1063,6 +1066,13 @@ Deno.serve(async(req:Request)=>{
     if(rankCalc.error)return h({error:rankCalc.error.message},500);
     const newPoints=Number(rankCalc.data?.points??c.points??0),newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     const newBudget=Number(c.budget||0)+userPrize-travelCost;
+    if(userRound==="Champion"){
+      await db.from("player_titles").insert({
+        player_id:managedId,tournament_name:t.name,title_date:String(t.end_date||t.start_date),
+        level:String(t.category||t.level||t.circuit||"ATP"),surface:String(t.surface||""),
+        event_type:"singles",verified:false,source_label:"Court Boss · carrière simulée",origin:"game"
+      });
+    }
     const finState=await db.from("finances").select("prize_money,travel_cost").eq("id","demo").maybeSingle();
     await Promise.all([
       db.from("career_state").update({budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}).eq("id","demo"),
@@ -1162,6 +1172,22 @@ Deno.serve(async(req:Request)=>{
     await db.from("user_doubles_points").insert({owner_id:"demo",tournament_id:tid,partner_id:partner.id,label:t.name,earned_date:earned,expiry_date:exp.toISOString().slice(0,10),points:pts,active:true});
     const rank=await db.rpc("recalculate_user_doubles_ranking",{p_date:earned});
     if(rank.error)return h({error:rank.error.message},500);
+    if(userRound==="Champion"){
+      await Promise.all([
+        db.from("player_titles").insert({
+          player_id:anthony.id,tournament_name:t.name,title_date:earned,
+          level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
+          event_type:"doubles",partner_player_id:partner.id,partner_name:partner.name,
+          verified:false,source_label:"Court Boss · carrière simulée",origin:"game"
+        }),
+        db.from("player_titles").insert({
+          player_id:partner.id,tournament_name:t.name,title_date:earned,
+          level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
+          event_type:"doubles",partner_player_id:anthony.id,partner_name:anthony.name,
+          verified:false,source_label:"Court Boss · carrière simulée",origin:"game"
+        })
+      ]);
+    }
 
     const singlesRun=await db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle();
     const travelCost=singlesRun.data?0:(String(t.country||"")===String(c.country||"FRA")?80:260);
@@ -2424,6 +2450,7 @@ Deno.serve(async(req:Request)=>{
       playersTotal:playersTotal.count??0,
       realPlayersTotal:realPlayers.count??0,
       searchableRealPlayers:searchableReal.count??0,
+      worldRankingCapacity:30000,
       realPlayersWithAge:ageKnownReal.count??0,
       activeRealPlayers2025:active2025.count??0,
       atpRanked:atp.count??0,

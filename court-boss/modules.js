@@ -942,7 +942,6 @@ window.renderPalmaresHtml=function(d,p){
   const titles=d?.titles||[];
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
-  const indexedHistory=tournamentHistory.map((x,i)=>({...x,__i:i}));
   window.__cbPalmares={player:p,titles,tournamentHistory};
 
   const slamKey=name=>{
@@ -1098,43 +1097,23 @@ window.renderPalmaresHtml=function(d,p){
     </div>
 
     <div class="card" style="margin-top:12px">
-      <div class="row between"><div><div class="eyebrow">Historique compétitions</div><h2>Tournois joués année par année</h2></div><span class="pill">\${tournamentHistory.length} résultat(s)</span></div>
-      <div class="muted mini" style="margin-top:4px">Historique réel importé : Grand Chelem, Masters 1000, ATP Tour, ATP Finals et Jeux olympiques.</div>
-      \${historyYears.length?historyYears.map(y=>\`
-        <details class="list-item tournament-season">
-          <summary class="row between click"><b>\${y}</b><span class="badge">\${allHistoryByYear[y].length} tournoi\${allHistoryByYear[y].length>1?'s':''}</span></summary>
+      <div class="row between"><div><div class="eyebrow">Historique compétitions</div><h2>Tournois joués année par année</h2></div><span class="pill">${tournamentHistory.length} résultat(s)</span></div>
+      <div class="muted mini" style="margin-top:4px">Historique réel disponible : Grand Chelem, Masters 1000, ATP Tour, Challenger, Coupe Davis et ATP Finals. Clique sur un tournoi pour voir le dernier adversaire et le score.</div>
+      ${historyYears.length?historyYears.map((y,yi)=>`
+        <details class="list-item tournament-season" ${yi===0?'open':''}>
+          <summary class="row between click"><b>${y}</b><span class="badge">${allHistoryByYear[y].length} tournoi${allHistoryByYear[y].length>1?'s':''}</span></summary>
           <div class="tournament-history-list">
-            \${allHistoryByYear[y].map(h=>\`
-              <button class="tournament-history-item" data-tournament-history-index="\${h.__i}">
+            ${allHistoryByYear[y].map(h=>`
+              <button class="tournament-history-item" data-tournament-history-index="${h.__i}">
                 <div>
-                  <b>\${esc(tourName(h.tournament_name))}</b>
-                  <div class="muted mini">\${esc(h.category||h.level||'ATP')} · \${esc(h.surface||'—')} · \${h.tournament_date?df(h.tournament_date):''}</div>
+                  <b>${esc(tourName(h.tournament_name))}</b>
+                  <div class="muted mini">${esc(h.category||h.level||'ATP')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div>
                 </div>
-                <span class="slam-result compact \${resultClass(h.result_code)}"><span>\${esc(h.result_code||'—')}</span></span>
-              </button>\`).join('')}
-          </div>
-        </details>\`).join(''):'<div class="empty">Pas encore d’historique tournoi importé.</div>'}
-    </div>
-
-    <div class="card" style="margin-top:12px">
-      <div class="row between"><div><div class="eyebrow">Historique TM</div><h2>Résultats tournoi par saison</h2></div><span class="pill">${tournamentHistory.length} tournoi(s)</span></div>
-      <div class="muted mini" style="margin-top:4px">Tous les tournois réels disponibles : ATP, Masters, Grand Chelem, Challenger, Coupe Davis et Finals. Clique sur une ligne pour voir le dernier adversaire et le score.</div>
-      <div class="tm-season-history" style="margin-top:12px">
-        ${seasonYears.length?seasonYears.map((year,yi)=>{
-          const rows=seasonHistory[year]||[];
-          return `<details class="tm-season" ${yi===0?'open':''}>
-            <summary class="row between click"><b>${year}</b><span class="badge">${rows.length} tournoi${rows.length>1?'s':''}</span></summary>
-            <div class="tm-season-list">
-              ${rows.map(h=>`<button class="tm-history-row" data-tournament-history-index="${h.__i}">
-                <span class="tm-history-main"><b>${esc(String(h.tournament_name||'Tournoi').replace(/^Us Open$/i,'US Open'))}</b><small>${esc(h.category||h.level||'ATP')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</small></span>
-                <span class="tm-history-result ${resultClass(h.result_code)}">${esc(h.result_code||'—')}</span>
+                <span class="slam-result compact ${resultClass(h.result_code)}"><span>${esc(h.result_code||'—')}</span></span>
               </button>`).join('')}
-            </div>
-          </details>`;
-        }).join(''):'<div class="empty">Aucun historique tournoi réel disponible.</div>'}
-      </div>
+          </div>
+        </details>`).join(''):'<div class="empty">Pas encore d’historique tournoi importé.</div>'}
     </div>
-
     <div class="card" style="margin-top:12px">
       <div class="row between"><div><div class="eyebrow">Chronologie</div><h2>Palmarès année par année</h2></div><span class="pill">${yearRows.length} saison(s) titrée(s)</span></div>
       ${yearRows.length?yearRows.map(([year,rows])=>`

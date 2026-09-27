@@ -24,6 +24,7 @@ const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=n
 async function resolvePlayerFacts(player:any,gameDate:string){
   if(!player||!player.is_real)return player;
   let qid=String(player.wikidata_id||"").trim();
+  let wikiTitle="";
   if((!qid||!/^Q\d+$/.test(qid))&&player.name){
     try{
       const qs=new URLSearchParams({
@@ -37,9 +38,10 @@ async function resolvePlayerFacts(player:any,gameDate:string){
         const target=normalizeName(String(player.name)).replace(/\s+/g,"");
         const chosen=pages.find((x:any)=>{
           const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
-          return x?.pageprops?.wikibase_item&&title.includes(target);
-        });
+          return x?.pageprops?.wikibase_item&&(title.includes(target)||target.includes(title));
+        })??pages.find((x:any)=>x?.pageprops?.wikibase_item);
         const found=String(chosen?.pageprops?.wikibase_item||"");
+        wikiTitle=String(chosen?.title||"");
         if(/^Q\d+$/.test(found)){
           qid=found;player.wikidata_id=qid;
           await db.from("players").update({wikidata_id:qid}).eq("id",player.id);
@@ -48,36 +50,67 @@ async function resolvePlayerFacts(player:any,gameDate:string){
     }catch{}
   }
   if(!qid||!/^Q\d+$/.test(qid))return player;
-  if(player.birth_date&&player.photo_url)return player;
+
   try{
     const r=await fetch("https://www.wikidata.org/wiki/Special:EntityData/"+encodeURIComponent(qid)+".json",{headers:{"User-Agent":"CourtBoss/1.0"}});
     if(!r.ok)return player;
     const j:any=await r.json(),entity=j?.entities?.[qid],claims=entity?.claims||{};
+    if(!wikiTitle)wikiTitle=String(entity?.sitelinks?.enwiki?.title||"");
     const rawBirth=claims?.P569?.[0]?.mainsnak?.datavalue?.value?.time;
     const file=claims?.P18?.[0]?.mainsnak?.datavalue?.value;
+    const heightClaim=claims?.P2048?.[0]?.mainsnak?.datavalue?.value;
     const update:any={};
+
     if(!player.birth_date&&typeof rawBirth==="string"){
       const m=rawBirth.match(/^\+?(\d{4}-\d{2}-\d{2})T/);
       if(m){
         player.birth_date=m[1];
         player.age=ageAt(m[1],gameDate,player.age);
         player.birth_date_source="Wikidata "+qid;
-        update.birth_date=m[1];
-        update.age=player.age;
-        update.birth_date_source=player.birth_date_source;
+        update.birth_date=m[1];update.age=player.age;update.birth_date_source=player.birth_date_source;
       }
     }
+
+    if(!player.height_cm&&heightClaim?.amount){
+      const amount=Math.abs(Number(heightClaim.amount));
+      let cm=0;
+      if(amount>1&&amount<3)cm=Math.round(amount*100);
+      else if(amount>=100&&amount<230)cm=Math.round(amount);
+      if(cm>=140&&cm<=230){player.height_cm=cm;update.height_cm=cm;}
+    }
+
     if(!player.photo_url&&typeof file==="string"&&file){
       const photo="https://commons.wikimedia.org/wiki/Special:FilePath/"+encodeURIComponent(file)+"?width=640";
-      player.photo_url=photo;
-      player.photo_source="Wikimedia Commons";
+      player.photo_url=photo;player.photo_source="Wikimedia Commons";
       player.photo_source_url="https://www.wikidata.org/wiki/"+qid;
-      update.photo_url=photo;
-      update.photo_source=player.photo_source;
-      update.photo_source_url=player.photo_source_url;
-      update.photo_updated_at=new Date().toISOString();
-      update.photo_checked_at=new Date().toISOString();
+      update.photo_url=photo;update.photo_source=player.photo_source;update.photo_source_url=player.photo_source_url;
+      update.photo_updated_at=new Date().toISOString();update.photo_checked_at=new Date().toISOString();
     }
+
+    if(!player.backhand_verified&&wikiTitle){
+      try{
+        const wq=new URLSearchParams({action:"query",prop:"revisions",rvprop:"content",rvslots:"main",titles:wikiTitle,format:"json",formatversion:"2",origin:"*"});
+        const wr=await fetch("https://en.wikipedia.org/w/api.php?"+wq.toString(),{headers:{"User-Agent":"CourtBoss/1.0"}});
+        if(wr.ok){
+          const wj:any=await wr.json();
+          const wt=String(wj?.query?.pages?.[0]?.revisions?.[0]?.slots?.main?.content||"");
+          const pm=wt.match(/\|\s*plays\s*=\s*([^\n\r]+)/i);
+          const plays=String(pm?.[1]||"").replace(/\{\{[^}]+\}\}/g," ").replace(/\[\[|\]\]/g," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+          let bh="";
+          if(/two[- ]handed\s+backhand|double[- ]handed\s+backhand|two[- ]handed/i.test(plays))bh="2 mains";
+          else if(/one[- ]handed\s+backhand|single[- ]handed\s+backhand|one[- ]handed/i.test(plays))bh="1 main";
+          if(bh){
+            player.backhand=bh;player.backhand_verified=true;player.backhand_source="Wikipedia · "+wikiTitle;
+            update.backhand=bh;update.backhand_verified=true;update.backhand_source=player.backhand_source;
+          }
+          if((!player.handedness||player.handedness==="Inconnue")&&plays){
+            if(/left[- ]handed/i.test(plays)){player.handedness="Gaucher";update.handedness="Gaucher";}
+            else if(/right[- ]handed/i.test(plays)){player.handedness="Droitier";update.handedness="Droitier";}
+          }
+        }
+      }catch{}
+    }
+
     if(Object.keys(update).length)await db.from("players").update(update).eq("id",player.id);
   }catch{}
   return player;
@@ -281,7 +314,7 @@ Deno.serve(async(req:Request)=>{
     // Search/browse progressively enriches missing real-world facts without inventing DOBs.
     // ATP is already complete; NCAA/ITF pages hydrate a few missing profiles on every browse.
     if(q.length>=2||["NCAA","ITF","Junior"].includes(circuit)){
-      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url||!p.wikidata_id)).slice(0,q.length>=2?6:3);
+      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url||!p.wikidata_id||!p.backhand_verified)).slice(0,q.length>=2?4:2);
       if(enrich.length){
         const enriched=await Promise.all(enrich.map((p:any)=>resolvePlayerFacts({...p},gameDate)));
         const byId=new Map(enriched.map((p:any)=>[Number(p.id),p]));

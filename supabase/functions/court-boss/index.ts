@@ -1,0 +1,1582 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+const supabaseUrl=Deno.env.get("SUPABASE_URL")!;
+const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const db=createClient(supabaseUrl,serviceRole,{auth:{persistSession:false}});
+
+const cors={
+  "Access-Control-Allow-Origin":"*",
+  "Access-Control-Allow-Headers":"content-type,x-save-key",
+  "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
+  "Cache-Control":"no-store"
+};
+const h=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
+const n=(v:unknown,d:number,min=0,max=5000)=>{const value=v==null||v===""?d:Number(v);return Math.max(min,Math.min(max,Number.isFinite(value)?value:d));};
+const normalizeName=(value:string)=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+function saveId(req:Request){const k=req.headers.get("x-save-key")??"";return /^[0-9a-f-]{36}$/i.test(k)?"browser:"+k:null}
+async function getManagedPlayer(select="*"){
+  const c=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+  if(c.error)return {data:null,error:c.error};
+  if(!c.data?.managed_player_id)return {data:null,error:{message:"Managed player missing"}};
+  return await db.from("players").select(select).eq("id",c.data.managed_player_id).maybeSingle();
+}
+
+Deno.serve(async(req:Request)=>{
+  if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
+  const u=new URL(req.url), path=u.pathname;
+
+  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:6});
+
+  if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
+    const sid=saveId(req);
+    const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    const [career,academy,staff,facilities,finance,board,inbox,scouting,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save] = await Promise.all([
+      Promise.resolve(currentCareer),
+      db.from("academies").select("*").eq("id","demo").maybeSingle(),
+      db.from("staff").select("*").order("id"),
+      db.from("facilities").select("*").order("id"),
+      db.from("finances").select("*").eq("id","demo").maybeSingle(),
+      db.from("board_objectives").select("*").order("priority",{ascending:true}),
+      db.from("inbox_items").select("*").order("created_at",{ascending:false}).limit(20),
+      db.from("scouting_assignments").select("*").order("id"),
+      db.from("academy_youth").select("*").order("potential",{ascending:false}),
+      db.from("federation_state").select("*").eq("nation","FRA").maybeSingle(),
+      db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
+      db.from("match_history").select("*").eq("user_involved",true).order("match_date",{ascending:false}).limit(10),
+      db.from("players").select("id,name,country,ranking,points,doubles_ranking,itf_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,is_real").eq("ranking_current",true).lte("ranking",30).order("ranking"),
+      db.from("tournaments").select("*").gte("start_date",currentCareer.data?.career_date||"2026-09-27").order("start_date").limit(40),
+      db.from("injuries").select("*,players(id,name,country,ranking)").order("started_at",{ascending:false}).limit(30),
+      db.from("davis_squad").select("id,nation,role,players(id,name,country,ranking,points,doubles_ranking,form,fitness,morale,fatigue,style)").eq("nation","FRA").order("id"),
+      db.from("training_plan").select("*").order("day_index"),
+      db.from("medical_plan").select("*").eq("id","demo").maybeSingle(),
+      sid?db.from("game_saves").select("payload").eq("id",sid).maybeSingle():Promise.resolve({data:null,error:null})
+    ]);
+    const results=[career,academy,staff,facilities,finance,board,inbox,scouting,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save];
+    const err=results.find((x:any)=>x?.error)?.error;
+    if(err) return h({error:err.message},500);
+    return h({
+      career:career.data,academy:academy.data,staff:staff.data??[],facilities:facilities.data??[],
+      finance:finance.data,board:board.data??[],inbox:inbox.data??[],scouting:scouting.data??[],
+      youth:youth.data??[],federation:fed.data,news:news.data??[],matches:matches.data??[],
+      topPlayers:top.data??[],
+      upcoming:(events.data??[]).filter((x:any)=>String(x.start_date)>=String(career.data?.career_date||"2026-09-27")).slice(0,40),
+      injuries:injuries.data??[],
+      managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===Number(career.data?.managed_player_id)&&x.status==="Active")??null,
+      medicalPlan:medicalPlan.data??null,
+      davisSquad:davis.data??[],training:training.data??[],save:save.data?.payload??null
+    });
+  }
+
+  if(path.endsWith("/api/rankings")&&req.method==="GET"){
+    const kind=u.searchParams.get("kind")??"singles";
+    const offset=n(u.searchParams.get("offset"),0,0,1999), limit=n(u.searchParams.get("limit"),100,1,200);
+    const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    let orderCol="ranking";
+    if(kind==="doubles") orderCol="doubles_ranking";
+    if(kind==="itf") orderCol="itf_ranking";
+    if(kind==="junior") orderCol="junior_ranking";
+    let query=db.from("players")
+      .select("id,name,country,ranking,source_ranking,points,doubles_ranking,itf_ranking,junior_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
+      .not(orderCol,"is",null);
+    if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);
+    else query=query.eq("is_real",true);
+    if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
+    query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
+    const {data,error,count}=await query;
+    if(error) return h({error:error.message},500);
+    return h({kind,offset,limit,count:count??0,rows:data??[]});
+  }
+
+
+  if(path.endsWith("/api/search-players")&&req.method==="GET"){
+    const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
+    const circuit=(u.searchParams.get("circuit")??"Tous").trim();
+    const ageMax=n(u.searchParams.get("age_max"),99,12,99);
+    const potentialMin=n(u.searchParams.get("potential_min"),0,0,100);
+    const offset=n(u.searchParams.get("offset"),0,0,10000);
+    const limit=n(u.searchParams.get("limit"),60,1,120);
+
+    let query=db.from("players")
+      .select("id,name,country,is_real,ranking,points,doubles_ranking,itf_ranking,junior_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source",{count:"exact"})
+      .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
+    if(ageMax<99) query=query.lte("age",ageMax);
+
+    if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
+    if(country) query=query.eq("country",country);
+    if(circuit==="ATP") query=query.eq("ranking_current",true);
+    if(circuit==="ITF") query=query.not("itf_ranking","is",null);
+    if(circuit==="Junior") query=query.not("junior_ranking","is",null);
+    if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
+
+    if(circuit==="ATP") query=query.order("ranking",{ascending:true});
+    else if(circuit==="ITF") query=query.order("itf_ranking",{ascending:true,nullsFirst:false});
+    else if(circuit==="Junior") query=query.order("junior_ranking",{ascending:true,nullsFirst:false});
+    else query=query.order("potential",{ascending:false}).order("current_ability",{ascending:false});
+
+    query=query.range(offset,offset+limit-1);
+    const {data,error,count}=await query;
+    if(error)return h({error:error.message},500);
+    return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows:data??[]});
+  }
+
+  if(path.endsWith("/api/player")&&req.method==="GET"){
+    let id=n(u.searchParams.get("id"),0,1,99999999);
+    const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
+    const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
+    if(canonical)id=Number(canonical[1]);
+    const [p,sp,titles,hist,short,matches,careerStats,finals] = await Promise.all([
+      db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
+      db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
+      db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
+      db.from("ranking_history").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(52),
+      db.from("shortlist").select("*").eq("player_id",id).maybeSingle(),
+      db.from("tournament_draw_matches").select("*,tournament_runs(tournament_id,tournaments(name,start_date,surface,category,circuit))").or(`player_a_id.eq.${id},player_b_id.eq.${id}`).order("id",{ascending:false}).limit(40),
+      db.from("player_career_stats").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_final_results").select("*").eq("player_id",id).order("final_date",{ascending:false}).limit(200)
+    ]);
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error;
+    if(err) return h({error:err.message},500);
+    let player:any=p.data;
+    if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
+    return h({player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[]});
+  }
+
+  if(path.endsWith("/api/tournaments")&&req.method==="GET"){
+    const offset=n(u.searchParams.get("offset"),0,0,10000), limit=n(u.searchParams.get("limit"),60,1,150);
+    const circuit=(u.searchParams.get("circuit")??"").trim().slice(0,30);
+    const category=(u.searchParams.get("category")??"").trim().slice(0,40);
+    const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    const month=(u.searchParams.get("month")??"").trim();
+    const source=(u.searchParams.get("source")??"").trim();
+    const from=(u.searchParams.get("from")??"").trim();
+    let query=db.from("tournaments").select("*",{count:"exact"});
+    if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
+    if(category&&category!=="Toutes") query=query.eq("category",category);
+    if(source==="Officiel") query=query.eq("is_verified",true);
+    if(source==="Simulation") query=query.eq("is_verified",false);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(from)) query=query.gte("start_date",from);
+    if(q) query=query.ilike("name",`%${q}%`);
+    if(/^\d{4}-\d{2}$/.test(month)){
+      const [yy,mm]=month.split("-").map(Number);
+      const next=mm===12?`${yy+1}-01-01`:`${yy}-${String(mm+1).padStart(2,"0")}-01`;
+      query=query.gte("start_date",month+"-01").lt("start_date",next);
+    }
+    query=query.order("start_date",{ascending:true}).range(offset,offset+limit-1);
+    const {data,error,count}=await query;
+    if(error) return h({error:error.message},500);
+    return h({offset,limit,count:count??0,rows:data??[]});
+  }
+
+
+  if(path.endsWith("/api/tournament-detail")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const [t,wc,forfeits]=await Promise.all([
+      db.from("tournaments").select("*").eq("id",id).maybeSingle(),
+      db.from("wildcard_requests").select("*").eq("tournament_id",id).maybeSingle(),
+      db.from("tournament_forfeits").select("id,player_id,reason,players(id,name,country,ranking)").eq("tournament_id",id)
+    ]);
+    if(t.error||wc.error||forfeits.error) return h({error:(t.error||wc.error||forfeits.error)?.message},500);
+    if(!t.data) return h({error:"Tournament not found"},404);
+    const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
+    const cut=Math.max(drawSize,Number(t.data.qual_cut||t.data.direct_cut||drawSize*4));
+    const pool=await db.from("players")
+      .select("id,name,country,ranking,points,current_ability,potential,form,fitness,fatigue,style")
+      .eq("ranking_current",true)
+      .lte("ranking",Math.max(cut,drawSize*5))
+      .order("ranking",{ascending:true})
+      .limit(Math.min(220,drawSize*3));
+    if(pool.error) return h({error:pool.error.message},500);
+    const blocked=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
+    const available=(pool.data??[]).filter((p:any)=>!blocked.has(Number(p.id)));
+    const main=available.slice(0,drawSize);
+    const qualifying=available.slice(drawSize,drawSize+Math.min(32,drawSize));
+    const run=await db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle();
+    let completedDraw:any[]=[];
+    if(run.data?.id){
+      const rm=await db.from("tournament_draw_matches").select("*").eq("run_id",run.data.id).order("round_no",{ascending:true}).order("id",{ascending:true});
+      if(!rm.error)completedDraw=rm.data??[];
+    }
+    return h({tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,completed_draw:completedDraw});
+  }
+
+  if(path.endsWith("/api/shortlist")&&req.method==="POST"){
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const playerId=n(body?.player_id,0,1,99999999);
+    if(body?.active===false){
+      const d=await db.from("shortlist").delete().eq("player_id",playerId);
+      return d.error?h({error:d.error.message},500):h({ok:true,active:false});
+    }
+    const up=await db.from("shortlist").upsert({
+      player_id:playerId,
+      priority:String(body?.priority||"Normal").slice(0,30),
+      note:String(body?.note||"").slice(0,500),
+      added_at:new Date().toISOString()
+    },{onConflict:"player_id"});
+    return up.error?h({error:up.error.message},500):h({ok:true,active:true});
+  }
+
+  if(path.endsWith("/api/simulate")&&req.method==="POST"){
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const week=n(body?.week,1,1,10000);
+    const date=String(body?.date||"").slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return h({error:"Invalid date"},400);
+    const current=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
+    const previousDate=String(current.data.career_date||date);
+    const cs=body?.career_state||{};
+    const [staffRows,sponsorRows,rosterRows]=await Promise.all([
+      db.from("staff").select("weekly_cost,skill"),
+      db.from("sponsor_offers").select("weekly_value,status"),
+      db.from("academy_roster").select("id,weekly_cost,contract_end,status,players(name)").eq("status","active")
+    ]);
+    const expiredRoster=(rosterRows.data??[]).filter((x:any)=>String(x.contract_end||"9999-12-31")<date);
+    for(const x of expiredRoster){
+      await db.from("academy_roster").update({status:"expired"}).eq("id",x.id);
+      if(x.players?.name)await db.from("contracts").update({status:"expired"}).eq("subject_type","player").eq("subject_name",x.players.name);
+      await db.from("inbox_items").insert({kind:"contract",title:"Contrat joueur expiré",body:(x.players?.name||"Un joueur")+" arrive en fin de contrat.",action_route:"contracts",is_read:false});
+    }
+    const activeRoster=(rosterRows.data??[]).filter((x:any)=>String(x.contract_end||"9999-12-31")>=date);
+    const staffWeekly=(staffRows.data??[]).reduce((s:number,x:any)=>s+Number(x.weekly_cost||0),0);
+    const playerWeekly=activeRoster.reduce((s:number,x:any)=>s+Number(x.weekly_cost||0),0);
+    const sponsorWeekly=(sponsorRows.data??[]).filter((x:any)=>x.status==="accepted").reduce((s:number,x:any)=>s+Number(x.weekly_value||0),0);
+    const weeklyNet=sponsorWeekly-staffWeekly-playerWeekly;
+    const sync=await db.from("career_state").update({
+      career_date:date,
+      week,
+      form:n(cs.form,current.data.form,0,100),
+      fitness:n(cs.fitness,current.data.fitness,0,100),
+      morale:n(cs.morale,current.data.morale,0,100),
+      fatigue:n(cs.fatigue,current.data.fatigue,0,100),
+      injury_status:String(cs.injury_status||current.data.injury_status||"Fit").slice(0,80),
+      budget:Number(current.data.budget||0)+weeklyNet,
+      updated_at:new Date().toISOString()
+    }).eq("id","demo");
+    if(sync.error)return h({error:sync.error.message},500);
+
+    const trainingSessions=Array.isArray(body?.training)?body.training.slice(0,7):[];
+    const [anthony,facilityRows,progressRows]=await Promise.all([
+      getManagedPlayer("id,current_ability,potential,player_attributes(*)"),
+      db.from("facilities").select("level"),
+      db.from("user_training_progress").select("*")
+    ]);
+    let trainingResult:any={improvements:[],xp_gains:{},current_ability:Number(current.data.current_ability||56)};
+    if(anthony.data){
+      const attrs:any=Array.isArray(anthony.data.player_attributes)?anthony.data.player_attributes[0]:anthony.data.player_attributes||{};
+      const map:any={
+        "Service":["serve_power","serve_precision"],
+        "Retour":["return_game","anticipation"],
+        "Coup droit":["forehand"],
+        "Revers":["backhand"],
+        "Déplacements":["movement","speed"],
+        "Endurance":["stamina","strength"],
+        "Match play":["tactics","concentration","composure","fighting_spirit"],
+        "Double":["volley","touch","doubles"]
+      };
+      const avgStaff=(staffRows.data??[]).length?(staffRows.data??[]).reduce((s:number,x:any)=>s+Number(x.skill||10),0)/(staffRows.data??[]).length:10;
+      const avgFacility=(facilityRows.data??[]).length?(facilityRows.data??[]).reduce((s:number,x:any)=>s+Number(x.level||1),0)/(facilityRows.data??[]).length:1;
+      const mult=.72+avgStaff/38+avgFacility/12;
+      const xp:any={};
+      for(const s of trainingSessions){
+        for(const a of map[String(s)]||[])xp[a]=(xp[a]||0)+.52*mult;
+      }
+      const progressMap=new Map((progressRows.data??[]).map((x:any)=>[x.attribute,Number(x.xp||0)]));
+      const attrUpdate:any={};
+      let improved=0;
+      for(const [a,gain] of Object.entries(xp)){
+        let total=Number(progressMap.get(a)||0)+Number(gain);
+        const cur=Number(attrs[a]||10);
+        const threshold=3.2+cur*.22;
+        if(total>=threshold&&cur<20&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
+          attrUpdate[a]=cur+1;
+          total-=threshold;
+          trainingResult.improvements.push({attribute:a,from:cur,to:cur+1});
+          improved++;
+        }
+        trainingResult.xp_gains[a]=Number(gain);
+        await db.from("user_training_progress").upsert({attribute:a,xp:total,updated_at:new Date().toISOString()},{onConflict:"attribute"});
+      }
+      if(Object.keys(attrUpdate).length){
+        await db.from("player_attributes").update(attrUpdate).eq("player_id",anthony.data.id);
+      }
+      if(improved>=2&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
+        const ca=Math.min(Number(anthony.data.potential||82),Number(anthony.data.current_ability||56)+1);
+        await Promise.all([
+          db.from("players").update({current_ability:ca}).eq("id",anthony.data.id),
+          db.from("career_state").update({current_ability:ca}).eq("id","demo")
+        ]);
+        trainingResult.current_ability=ca;
+      }
+    }
+
+    const worldEvents=await db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date});
+    if(worldEvents.error)return h({error:worldEvents.error.message},500);
+    const sim=await db.rpc("simulate_world_week",{p_week:week,p_snapshot_date:date});
+    if(sim.error) return h({error:sim.error.message},500);
+    const academyDev=await db.rpc("simulate_academy_roster_week",{p_week:week,p_date:date});
+    if(academyDev.error)return h({error:academyDev.error.message},500);
+    const [injurySim,forfeitSim]=await Promise.all([
+      db.rpc("simulate_injuries_week",{p_date:date,p_week:week}),
+      db.rpc("refresh_tournament_forfeits",{p_date:date})
+    ]);
+    if(injurySim.error||forfeitSim.error)return h({error:(injurySim.error||forfeitSim.error)?.message},500);
+    const medical=await db.rpc("apply_managed_medical_week",{p_date:date});
+    if(medical.error)return h({error:medical.error.message},500);
+    const scouts=await db.from("scouting_assignments").select("id,progress,status");
+    if(!scouts.error){
+      for(const s of scouts.data??[]){
+        if(s.status==="active"){
+          const np=Math.min(100,Number(s.progress||0)+12);
+          await db.from("scouting_assignments").update({progress:np,status:np>=100?"completed":"active"}).eq("id",s.id);
+        }
+      }
+    }
+    const [userRank,userDoubleRank]=await Promise.all([
+      db.rpc("recalculate_user_ranking",{p_date:date}),
+      db.rpc("recalculate_user_doubles_ranking",{p_date:date})
+    ]);
+    if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
+    const board=await db.rpc("update_board_state");
+    return h({ok:true,world:sim.data,worldTournaments:worldEvents.data,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+  }
+
+  if(path.endsWith("/api/management")&&req.method==="GET"){
+    const [contracts,college,shortlist,sponsors,candidates,partnerships,collegeOffers,collegeState,collegeDuals,davisTies,academyMembers,academyRoster] = await Promise.all([
+      db.from("contracts").select("*").order("end_date"),
+      db.from("college_teams").select("*").order("ita_rank"),
+      db.from("shortlist").select("*,players(id,name,country,ranking,points,age,potential,current_ability,style)").order("added_at",{ascending:false}).limit(50),
+      db.from("sponsor_offers").select("*").order("id"),
+      db.from("staff_candidates").select("*").order("skill",{ascending:false}),
+      db.from("doubles_partnerships").select("*,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,ranking,doubles_ranking),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)").order("id",{ascending:false}).limit(20),
+      db.from("college_offers").select("*,team:college_teams(*)").order("scholarship_pct",{ascending:false}),
+      db.from("college_career_state").select("*,team:college_teams(*)").eq("id","demo").maybeSingle(),
+      db.from("college_duals").select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)").order("match_date",{ascending:true}).limit(20),
+      db.from("davis_ties").select("*,davis_rubbers(*)").order("tie_date",{ascending:true}).limit(10),
+      db.from("academy_members").select("*,player:players(id,name,country,ranking,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style),youth:academy_youth(id,name,country,age,current_ability,potential,style,status),progress:academy_member_progress(*)").eq("status","active").order("id"),
+      db.from("academy_roster").select("*,players(id,name,country,ranking,points,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,injury_status)").eq("status","active").order("id")
+    ]);
+    const err=contracts.error||college.error||shortlist.error||sponsors.error||candidates.error||partnerships.error||collegeOffers.error||collegeState.error||collegeDuals.error||davisTies.error||academyMembers.error||academyRoster.error;
+    if(err) return h({error:err.message},500);
+    return h({contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:collegeOffers.data??[],collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[]});
+  }
+
+
+
+
+  if(path.endsWith("/api/ranking-ledger")&&req.method==="GET"){
+    const today=(u.searchParams.get("date")??new Date().toISOString().slice(0,10)).slice(0,10);
+    const rows=await db.from("user_ranking_points").select("*").eq("owner_id","demo").order("expiry_date",{ascending:true});
+    if(rows.error)return h({error:rows.error.message},500);
+    const active=(rows.data??[]).filter((x:any)=>x.active);
+    const total=active.reduce((s:number,x:any)=>s+Number(x.points||0),0);
+    return h({date:today,total,active,expired:(rows.data??[]).filter((x:any)=>!x.active)});
+  }
+
+  if(path.endsWith("/api/play-tournament")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const tid=n(body?.tournament_id,0,1,99999999);
+    const tactics=body?.tactics||{};
+    const tacticAgg=n(tactics.aggression,58,1,100),tacticRisk=n(tactics.risk,52,1,100),tacticNet=n(tactics.net,28,1,100);
+    const returnPos=String(tactics.returnPos||"Neutre");
+    const [tour,career,oldRun,wc,forfeits,managedPlayer]=await Promise.all([
+      db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
+      db.from("career_state").select("*").eq("id","demo").maybeSingle(),
+      db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
+      db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
+      db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
+      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+    ]);
+    if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error)?.message},500);
+    if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
+    if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
+    const t:any=tour.data,c:any=career.data;
+    const direct=Number(t.direct_cut||0),qual=Number(t.qual_cut||0),rank=Number(c.singles_rank||9999);
+    const wildcardGranted=wc.data?.status==="accepted";
+    const alternateEligible=direct&&qual&&rank>qual&&rank<=qual+50;
+    if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible)return h({error:"Classement insuffisant. Demande une wild card."},409);
+    let alternateEntered=false;
+    if(alternateEligible&&!wildcardGranted){
+      const gap=Math.max(1,rank-qual);
+      const needed=Math.max(1,Math.ceil(gap/10));
+      const availableSpots=(forfeits.data??[]).length;
+      if(availableSpots<needed)return h({error:"Pas assez de forfaits pour remonter depuis la liste alternate.",alternate:true,forfeits:availableSpots},409);
+      alternateEntered=true;
+    }
+    const drawSize=Math.max(8,Math.min(128,Number(t.draw_size||32)));
+    const playersRes=await db.from("players")
+      .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+      .eq("ranking_current",true).order("ranking",{ascending:true}).limit(Math.min(200,Math.max(drawSize+40,80)));
+    if(playersRes.error)return h({error:playersRes.error.message},500);
+    const blockedIds=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
+    const managedId=Number(c.managed_player_id||managedPlayer.data.id);
+    const pool:any[]=(playersRes.data??[])
+      .filter((p:any)=>!blockedIds.has(Number(p.id))&&Number(p.id)!==managedId)
+      .map((p:any)=>({...p,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}));
+    const surface=String(t.surface||"Dur");
+    const surfKey=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
+    const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),player_attributes:managedAttrs,isUser:true};
+    const strength=(p:any)=>{
+      let base=Number(p.current_ability||50)+Number(p.form||70)*.16-Number(p.fatigue||20)*.13+Number(p.player_attributes?.[surfKey]||10)*.75+Math.max(0,18-Number(p.ranking||9999)/250);
+      if(p.isUser){
+        const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
+        const surfaceNet=surface==="Gazon"?tacticNet*.035:surface==="Dur"?tacticNet*.018:tacticNet*.006;
+        const returnBonus=returnPos==="Avancée"?1.4:returnPos==="Reculée"?.8:1.1;
+        base+=balance*.025+surfaceNet+returnBonus;
+        if(Number(c.fatigue||18)>45&&tacticAgg>75)base-=2.8;
+        if(tacticRisk>80)base-=1.8;
+      }
+      return base;
+    };
+    const play=(a:any,b:any)=>{
+      const sa=strength(a),sb=strength(b),prob=1/(1+Math.exp(-(sa-sb)/7));
+      const aw=Math.random()<prob,w=aw?a:b,l=aw?b:a;
+      const close=Math.abs(sa-sb)<8;
+      const score=close?(Math.random()<.5?"7-6 4-6 6-3":"6-4 3-6 7-5"):(Math.random()<.5?"6-3 6-4":"6-2 6-4");
+      return {winner:w,loser:l,score};
+    };
+    const matchRows:any[]=[];
+    let userAlive=true,userRound=wildcardGranted?"Wild Card":alternateEntered?"Alternate entré":"Non joué",qualifier=false,luckyLoser=false;
+    if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered){
+      qualifier=true;
+      const qOpp=pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80)).slice(0,6);
+      for(let qi=0;qi<2;qi++){
+        const opp=qOpp[qi]||pool[Math.min(pool.length-1,drawSize+qi)];
+        const res=play(user,opp);
+        matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:null,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
+        if(!res.winner.isUser){
+          userAlive=false;userRound="Q"+(qi+1);
+          if(qi===1&&Math.random()<0.18){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
+          break
+        }
+      }
+      if(userAlive)userRound="Qualifié";
+    }
+    let participants=pool.slice(0,drawSize).map(x=>({...x,isUser:false}));
+    if(userAlive){
+      const replaceIndex=(qualifier||wildcardGranted||luckyLoser||alternateEntered)?participants.length-1:Math.min(participants.length-1,Math.max(0,Math.floor((rank-1)%participants.length)));
+      participants[replaceIndex]=user;
+    }
+    const roundName=(n:number)=>n>=128?"R128":n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+    let roundNo=1;
+    while(participants.length>1){
+      const rn=roundName(participants.length),next:any[]=[];
+      for(let i=0;i<participants.length;i+=2){
+        const a=participants[i],b=participants[i+1];
+        if(!b){next.push(a);continue}
+        const res=play(a,b);
+        matchRows.push({round_no:roundNo,round_name:rn,player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
+        if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound=rn}
+        if(res.winner.isUser)userRound=rn==="F"?"Champion":rn;
+        next.push(res.winner);
+      }
+      participants=next;roundNo++;
+    }
+    const champion=participants[0];
+    const basePoints=(()=>{
+      const cat=String(t.category||t.level||"");
+      if(/Grand Chelem/i.test(cat))return 2000;if(/Masters 1000/i.test(cat))return 1000;
+      if(/ATP 500/i.test(cat))return 500;if(/ATP 250/i.test(cat))return 250;
+      const m=cat.match(/Challenger\s+(175|125|100|75|50)/i);if(m)return Number(m[1]);
+      if(/M25/i.test(cat))return 25;if(/M15/i.test(cat))return 15;return 50;
+    })();
+    const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:userRound==="R16"?.1:userRound==="R32"?.05:userRound==="Qualifié"?.03:.01;
+    const userPoints=Math.max(0,Math.round(basePoints*mult));
+    const prizePool=Number(t.prize_money||0);
+    const prizeMult=userRound==="Champion"?.18:userRound==="F"?.10:userRound==="SF"?.055:userRound==="QF"?.03:userRound==="R16"?.015:userRound==="R32"?.008:.003;
+    const userPrize=Math.max(0,Math.round(prizePool*prizeMult));
+    const runIns=await db.from("tournament_runs").insert({tournament_id:tid,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
+    if(runIns.error)return h({error:runIns.error.message},500);
+    const runId=runIns.data.id;
+    if(matchRows.length){
+      const rows=matchRows.map(x=>({...x,run_id:runId}));
+      const ins=await db.from("tournament_draw_matches").insert(rows);
+      if(ins.error)return h({error:ins.error.message},500);
+    }
+    const userMatches=matchRows.filter(x=>x.player_a_name===user.name||x.player_b_name===user.name).map((m:any)=>{
+      const won=m.winner_name===user.name;
+      const risk=Math.max(0,Math.min(100,tacticRisk));
+      const aggression=Math.max(0,Math.min(100,tacticAgg));
+      const net=Math.max(0,Math.min(100,tacticNet));
+      const stats={
+        first_serve_pct:Math.max(45,Math.min(78,65-Math.round((risk-50)*.12)+Math.round(Math.random()*8-4))),
+        winners:Math.max(8,Math.round(18+aggression*.17+risk*.08+Math.random()*8)),
+        unforced_errors:Math.max(6,Math.round(10+risk*.16+aggression*.05+Math.random()*7)),
+        net_points_won_pct:Math.max(35,Math.min(82,48+Math.round(net*.28)+Math.round(Math.random()*8-4))),
+        avg_rally:Math.max(2,Math.round(7-aggression*.035+risk*.01+Math.random()*2)),
+        break_points_won:Math.max(0,Math.round((won?3:2)+Math.random()*3)),
+        tactical_plan:{aggression:tacticAgg,risk:tacticRisk,net:tacticNet,return_position:returnPos}
+      };
+      return {...m,stats};
+    });
+    for(const m of userMatches){
+      await db.from("match_history").insert({tournament_name:t.name,match_date:t.start_date,surface:t.surface,round:m.round_name,player_a:m.player_a_name,player_b:m.player_b_name,winner:m.winner_name,score:m.score,user_involved:true,match_data:{category:t.category,circuit:t.circuit,...m.stats}});
+    }
+    const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
+    const homeCountry=String(c.country||"FRA"),dest=String(t.country||"");
+    const travelFatigue=dest===homeCountry?2:(european.includes(homeCountry)&&european.includes(dest)?4:8);
+    const matchFatigue=userMatches.length*5;
+    const totalFatigue=travelFatigue+matchFatigue;
+    const newFatigue=Math.min(100,Number(c.fatigue||18)+totalFatigue);
+    const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(totalFatigue*.45));
+    const newForm=Math.max(35,Math.min(100,Number(c.form||72)+(userRound==="Champion"?6:userRound==="F"?4:userRound==="SF"?2:userMatches.length?1:-1)));
+    const travelCost=dest===homeCountry?120:(european.includes(dest)?380:850);
+    if(userPoints>0){
+      const earnedDate=String(t.end_date||t.start_date||new Date().toISOString().slice(0,10));
+      const exp=new Date(earnedDate+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
+      await db.from("user_ranking_points").insert({owner_id:"demo",tournament_id:tid,label:t.name,earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true});
+    }
+    const rankCalc=await db.rpc("recalculate_user_ranking",{p_date:String(t.end_date||t.start_date||new Date().toISOString().slice(0,10))});
+    if(rankCalc.error)return h({error:rankCalc.error.message},500);
+    const newPoints=Number(rankCalc.data?.points??c.points??0),newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
+    const newBudget=Number(c.budget||0)+userPrize-travelCost;
+    const finState=await db.from("finances").select("prize_money,travel_cost").eq("id","demo").maybeSingle();
+    await Promise.all([
+      db.from("career_state").update({budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}).eq("id","demo"),
+      db.from("finances").update({
+        prize_money:Number(finState.data?.prize_money||0)+userPrize,
+        travel_cost:Number(finState.data?.travel_cost||0)+travelCost
+      }).eq("id","demo"),
+      db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
+    ]);
+    const board=await db.rpc("update_board_state");
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,travel_cost:travelCost,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
+  }
+
+
+  if(path.endsWith("/api/play-doubles")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const tid=n(body?.tournament_id,0,1,99999999);
+    const [tour,career,anth,oldRun,partnership]=await Promise.all([
+      db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
+      db.from("career_state").select("*").eq("id","demo").maybeSingle(),
+      getManagedPlayer("id,name,country,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)"),
+      db.from("doubles_runs").select("id").eq("tournament_id",tid).maybeSingle(),
+      db.from("doubles_partnerships").select("*,partner:players!doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity))").order("id",{ascending:false}).limit(1).maybeSingle()
+    ]);
+    const err=tour.error||career.error||anth.error||oldRun.error||partnership.error;
+    if(err)return h({error:err.message},500);
+    if(!tour.data||!career.data||!anth.data)return h({error:"Données carrière incomplètes"},404);
+    if(!tour.data.doubles)return h({error:"Ce tournoi ne propose pas le double."},409);
+    if(oldRun.data)return h({error:"Le double de ce tournoi a déjà été joué.",run_id:oldRun.data.id},409);
+    if(!partnership.data?.partner)return h({error:"Choisis d’abord un partenaire de double."},409);
+
+    const t:any=tour.data,c:any=career.data;
+    const partner:any={...partnership.data.partner,player_attributes:Array.isArray(partnership.data.partner.player_attributes)?partnership.data.partner.player_attributes[0]:partnership.data.partner.player_attributes};
+    const anthony:any={...anth.data,player_attributes:Array.isArray(anth.data.player_attributes)?anth.data.player_attributes[0]:anth.data.player_attributes,isUser:true};
+    const poolRes=await db.from("players")
+      .select("id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+      .eq("is_real",true).not("doubles_ranking","is",null).order("doubles_ranking",{ascending:true}).limit(80);
+    if(poolRes.error)return h({error:poolRes.error.message},500);
+    const pool=(poolRes.data??[])
+      .filter((p:any)=>p.id!==partner.id)
+      .map((p:any)=>({...p,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}));
+
+    const surface=String(t.surface||"Dur");
+    const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const playerStrength=(p:any)=>Number(p.current_ability||50)*.55+Number(p.form||70)*.12+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.10+Number(p.player_attributes?.doubles||10)*1.3+Number(p.player_attributes?.[key]||10)*.55;
+    const pairStrength=(a:any,b:any,chem=70)=>playerStrength(a)+playerStrength(b)+chem*.18;
+
+    const userPair={a:anthony,b:partner,name:anthony.name+" / "+partner.name,isUser:true,strength:pairStrength(anthony,partner,Number(partnership.data.chemistry||70))};
+    const pairs:any[]=[];
+    for(let i=0;i+1<Math.min(pool.length,30);i+=2){
+      const a=pool[i],b=pool[i+1];
+      pairs.push({a,b,name:a.name+" / "+b.name,isUser:false,strength:pairStrength(a,b,68+((a.id+b.id)%20))});
+    }
+    const drawSize=Math.min(16,Math.max(8,2**Math.floor(Math.log2(Math.max(8,pairs.length+1)))));
+    let participants=[userPair,...pairs].slice(0,drawSize);
+    const matches:any[]=[];
+    let userRound="R16";
+    const roundName=(n:number)=>n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+    let roundNo=1;
+    while(participants.length>1){
+      const rn=roundName(participants.length),next:any[]=[];
+      for(let i=0;i<participants.length;i+=2){
+        const A=participants[i],B=participants[i+1];
+        if(!B){next.push(A);continue}
+        const prob=1/(1+Math.exp(-(A.strength-B.strength)/8));
+        const Aw=Math.random()<prob,w=Aw?A:B;
+        const close=Math.abs(A.strength-B.strength)<8;
+        const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
+        matches.push({round_name:rn,user_pair:A.isUser?A.name:B.isUser?B.name:userPair.name,opponent_pair:A.isUser?B.name:B.isUser?A.name:A.name+" vs "+B.name,winner_pair:w.name,score});
+        if((A.isUser||B.isUser)&&!w.isUser)userRound=rn;
+        if(w.isUser)userRound=rn==="F"?"Champion":rn;
+        next.push(w);
+      }
+      participants=next;roundNo++;
+    }
+
+    const cat=String(t.category||t.level||"");
+    const base= /Grand Chelem/i.test(cat)?2000:/Masters 1000/i.test(cat)?1000:/ATP 500/i.test(cat)?500:/ATP 250/i.test(cat)?250:(cat.match(/Challenger\s+(175|125|100|75|50)/i)?.[1]?Number(cat.match(/Challenger\s+(175|125|100|75|50)/i)![1]):/M25/i.test(cat)?25:/M15/i.test(cat)?15:50);
+    const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:.08;
+    const pts=Math.max(1,Math.round(base*mult));
+    const prize=Math.max(0,Math.round(Number(t.prize_money||0)*(userRound==="Champion"?.09:userRound==="F"?.055:userRound==="SF"?.032:userRound==="QF"?.018:.007)));
+
+    const run=await db.from("doubles_runs").insert({tournament_id:tid,partnership_id:partnership.data.id,partner_id:partner.id,user_round:userRound,user_points:pts,user_prize:prize,status:"completed"}).select("id").single();
+    if(run.error)return h({error:run.error.message},500);
+    if(matches.length){
+      const rows=matches.filter((m:any)=>m.user_pair===userPair.name).map((m:any)=>({...m,run_id:run.data.id}));
+      if(rows.length){
+        const ins=await db.from("doubles_match_history").insert(rows);
+        if(ins.error)return h({error:ins.error.message},500);
+      }
+    }
+
+    const earned=String(t.end_date||t.start_date);
+    const exp=new Date(earned+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
+    await db.from("user_doubles_points").insert({owner_id:"demo",tournament_id:tid,partner_id:partner.id,label:t.name,earned_date:earned,expiry_date:exp.toISOString().slice(0,10),points:pts,active:true});
+    const rank=await db.rpc("recalculate_user_doubles_ranking",{p_date:earned});
+    if(rank.error)return h({error:rank.error.message},500);
+
+    const singlesRun=await db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle();
+    const travelCost=singlesRun.data?0:(String(t.country||"")===String(c.country||"FRA")?80:260);
+    const fatigueAdd=matches.filter((m:any)=>m.user_pair===userPair.name).length*4+(travelCost?3:0);
+    const newBudget=Number(c.budget||0)+prize-travelCost;
+    const newFatigue=Math.min(100,Number(c.fatigue||18)+fatigueAdd);
+    const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(fatigueAdd*.35));
+    await db.from("career_state").update({budget:newBudget,fatigue:newFatigue,fitness:newFitness,doubles_rank:Number(rank.data?.rank||c.doubles_rank),doubles_points:Number(rank.data?.points||c.doubles_points),updated_at:new Date().toISOString()}).eq("id","demo");
+    await db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" remportent le double à "+t.name+" !":String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" terminent "+userRound+" en double à "+t.name+"."});
+
+    const board=await db.rpc("update_board_state");
+    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,rank:rank.data?.rank,total_points:rank.data?.points,fatigue_added:fatigueAdd,travel_cost:travelCost,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
+  }
+
+  if(path.endsWith("/api/season-summary")&&req.method==="GET"){
+    const [singles,doubles,career,pts,dpts,matches]=await Promise.all([
+      db.from("tournament_runs").select("*,tournaments(*)").order("played_at",{ascending:false}).limit(100),
+      db.from("doubles_runs").select("*,tournaments(*),partner:players(id,name,country)").order("played_at",{ascending:false}).limit(100),
+      db.from("career_state").select("*").eq("id","demo").maybeSingle(),
+      db.from("user_ranking_points").select("*").eq("owner_id","demo").order("earned_date",{ascending:false}),
+      db.from("user_doubles_points").select("*").eq("owner_id","demo").order("earned_date",{ascending:false}),
+      db.from("match_history").select("*").eq("user_involved",true).order("match_date",{ascending:false}).limit(200)
+    ]);
+    const err=singles.error||doubles.error||career.error||pts.error||dpts.error||matches.error;
+    if(err)return h({error:err.message},500);
+    const s=singles.data??[],d=doubles.data??[],mh=matches.data??[];
+    return h({
+      career:career.data,
+      singles:s,
+      doubles:d,
+      singles_points:pts.data??[],
+      doubles_points:dpts.data??[],
+      stats:{
+        tournaments:s.length,
+        titles:s.filter((x:any)=>x.user_round==="Champion").length,
+        finals:s.filter((x:any)=>x.user_round==="F").length+s.filter((x:any)=>x.user_round==="Champion").length,
+        prize:s.reduce((a:number,x:any)=>a+Number(x.user_prize||0),0)+d.reduce((a:number,x:any)=>a+Number(x.user_prize||0),0),
+        matches:mh.length,
+        wins:mh.filter((x:any)=>x.winner===String(career.data?.player_name||"Joueur")).length
+      }
+    });
+  }
+
+  if(path.endsWith("/api/schedule-advice")&&req.method==="GET"){
+    const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    const anth=await getManagedPlayer("id,player_attributes(*)");
+    if(career.error||anth.error||!career.data)return h({error:(career.error||anth.error)?.message||"Career missing"},500);
+    const c:any=career.data,a:any=Array.isArray(anth.data?.player_attributes)?anth.data.player_attributes[0]:anth.data?.player_attributes||{};
+    const tours=await db.from("tournaments").select("*").gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(80);
+    if(tours.error)return h({error:tours.error.message},500);
+    const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
+    const score=(t:any)=>{
+      const cut=t.direct_cut&&c.singles_rank<=t.direct_cut?30:t.qual_cut&&c.singles_rank<=t.qual_cut?18:t.qual_cut&&c.singles_rank<=t.qual_cut+50?8:-10;
+      const surf=t.surface==="Terre"?Number(a.clay_affinity||10):t.surface==="Gazon"?Number(a.grass_affinity||10):Number(a.hard_affinity||10);
+      const travel=t.country===c.country?10:european.includes(t.country)?5:-3;
+      const fatigue=Number(c.fatigue||18)>55?-18:Number(c.fatigue||18)>35?-8:7;
+      const level=/Grand Chelem|Masters 1000/i.test(String(t.category||""))?-8:/ATP 500|ATP 250/i.test(String(t.category||""))?0:/Challenger/i.test(String(t.category||""))?10:6;
+      const sourceBonus=t.is_verified?8:-2;
+      return Math.max(0,Math.min(100,40+cut+surf+travel+fatigue+level+sourceBonus));
+    };
+    const rows=(tours.data??[]).map((t:any)=>({...t,recommendation_score:score(t)})).sort((x:any,y:any)=>y.recommendation_score-x.recommendation_score);
+    return h({career:{rank:c.singles_rank,fatigue:c.fatigue,fitness:c.fitness},recommended:rows.slice(0,12)});
+  }
+
+
+  if(path.endsWith("/api/season-history")&&req.method==="GET"){
+    const {data,error}=await db.from("season_history").select("*").order("season_year",{ascending:false}).limit(20);
+    return error?h({error:error.message},500):h({rows:data??[]});
+  }
+
+  if(path.endsWith("/api/rollover-season")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const newYear=n(body?.new_year,new Date().getFullYear()+1,2027,2100);
+    const current=await db.from("career_state").select("season_year,career_date").eq("id","demo").maybeSingle();
+    if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
+    if(newYear<=Number(current.data.season_year||2026))return h({error:"La nouvelle saison doit être supérieure à la saison actuelle."},409);
+    const roll=await db.rpc("rollover_season",{p_new_year:newYear});
+    if(roll.error)return h({error:roll.error.message},500);
+
+    const existing=await db.from("tournaments").select("id",{count:"exact",head:true}).gte("start_date",String(newYear)+"-01-01").lte("start_date",String(newYear)+"-12-31");
+    if(!existing.error && Number(existing.count||0)===0){
+      const prev=await db.from("tournaments").select("*").gte("start_date",String(newYear-1)+"-01-01").lte("start_date",String(newYear-1)+"-12-31").order("start_date");
+      if(!prev.error && (prev.data??[]).length){
+        const shifted=(prev.data??[]).map((t:any)=>{
+          const shift=(s:any)=>{
+            if(!s)return null;
+            const d=new Date(String(s)+"T12:00:00Z");
+            d.setUTCFullYear(newYear);
+            return d.toISOString().slice(0,10);
+          };
+          const x:any={...t};
+          delete x.id;
+          return {
+            ...x,
+            start_date:shift(t.start_date),
+            end_date:shift(t.end_date),
+            deadline:shift(t.deadline),
+            is_verified:false,
+            source_url:null,
+            source_note:"Court Boss simulated calendar based on previous-season pattern"
+          };
+        });
+        for(let i=0;i<shifted.length;i+=200){
+          await db.from("tournaments").insert(shifted.slice(i,i+200));
+        }
+      }
+    }
+    const [rank,doubleRank]=await Promise.all([
+      db.rpc("recalculate_user_ranking",{p_date:String(newYear)+"-01-05"}),
+      db.rpc("recalculate_user_doubles_ranking",{p_date:String(newYear)+"-01-05"})
+    ]);
+    if(rank.error||doubleRank.error)return h({error:(rank.error||doubleRank.error)?.message},500);
+    return h({ok:true,rollover:roll.data,userRanking:rank.data,userDoublesRanking:doubleRank.data});
+  }
+
+
+  if(path.endsWith("/api/live-match/start")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const opponentId=n(body?.opponent_id,0,1,99999999);
+    const surface=String(body?.surface||"Dur").slice(0,20);
+    const tactics=body?.tactics||{};
+    const opp=await db.from("players").select("id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*)").eq("id",opponentId).maybeSingle();
+    if(opp.error||!opp.data)return h({error:opp.error?.message||"Adversaire introuvable"},404);
+    const ins=await db.from("live_match_sessions").insert({
+      opponent_id:opponentId,surface,status:"active",user_sets:0,opponent_sets:0,set_no:1,momentum:50,tactics,
+      stats:{user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0}
+    }).select("*").single();
+    if(ins.error)return h({error:ins.error.message},500);
+    return h({ok:true,session:ins.data,opponent:opp.data});
+  }
+
+  if(path.endsWith("/api/live-match/state")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style)").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
+    const events=await db.from("live_match_events").select("*").eq("session_id",id).order("id",{ascending:true});
+    if(events.error)return h({error:events.error.message},500);
+    return h({session:session.data,events:events.data??[]});
+  }
+
+  if(path.endsWith("/api/live-match/advance")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions").select("*").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
+    if(session.data.status!=="active")return h({error:"Match déjà terminé"},409);
+
+    const [career,managed,opp]=await Promise.all([
+      db.from("career_state").select("*").eq("id","demo").maybeSingle(),
+      getManagedPlayer("id,current_ability,form,fitness,fatigue,player_attributes(*)"),
+      db.from("players").select("id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*)").eq("id",session.data.opponent_id).maybeSingle()
+    ]);
+    const err=career.error||managed.error||opp.error;
+    if(err||!career.data||!managed.data||!opp.data)return h({error:err?.message||"Données match incomplètes"},500);
+
+    const tactics=body?.tactics||session.data.tactics||{};
+    const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
+    const ret=String(tactics.returnPos||"Neutre");
+    const surface=String(session.data.surface||"Dur");
+    const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
+    const oa:any=Array.isArray(opp.data.player_attributes)?opp.data.player_attributes[0]:opp.data.player_attributes||{};
+
+    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
+    const oBase=Number(opp.data.current_ability||55)+Number(opp.data.form||70)*.17+Number(opp.data.fitness||90)*.08-Number(opp.data.fatigue||20)*.12+Number(oa[key]||10)*.8;
+    const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
+    const netBonus=(surface==="Gazon"?.035:surface==="Dur"?.018:.006)*net;
+    const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
+    const momentum=(Number(session.data.momentum||50)-50)*.045;
+    const uStrength=uBase+balance+netBonus+retBonus+momentum;
+    const prob=1/(1+Math.exp(-(uStrength-oBase)/7));
+    const userWon=Math.random()<prob;
+    const close=Math.abs(uStrength-oBase)<7;
+    const setScore=userWon?(close?(Math.random()<.5?"7-6":"7-5"):(Math.random()<.5?"6-3":"6-4")):(close?(Math.random()<.5?"6-7":"5-7"):(Math.random()<.5?"3-6":"4-6"));
+
+    const setStats={
+      first_serve_pct:Math.max(45,Math.min(78,64-Math.round((risk-50)*.12)+Math.round(Math.random()*8-4))),
+      winners:Math.max(6,Math.round(8+ag*.10+risk*.05+Math.random()*6)),
+      unforced_errors:Math.max(4,Math.round(5+risk*.10+ag*.03+Math.random()*5)),
+      aces:Math.max(0,Math.round(Number(ua.serve_power||10)*.25+Math.random()*3)),
+      net_points_won_pct:Math.max(30,Math.min(85,45+Math.round(net*.30)+Math.round(Math.random()*10-5))),
+      avg_rally:Math.max(2,Math.round(7-ag*.035+risk*.008+Math.random()*2))
+    };
+
+    let us=Number(session.data.user_sets||0)+(userWon?1:0);
+    let os=Number(session.data.opponent_sets||0)+(userWon?0:1);
+    const complete=us>=2||os>=2;
+    const momentumNew=Math.max(10,Math.min(90,Number(session.data.momentum||50)+(userWon?12:-12)));
+    const prev:any=session.data.stats||{};
+    const stats={
+      user_winners:Number(prev.user_winners||0)+setStats.winners,
+      user_errors:Number(prev.user_errors||0)+setStats.unforced_errors,
+      user_aces:Number(prev.user_aces||0)+setStats.aces,
+      opp_winners:Number(prev.opp_winners||0)+Math.max(5,Math.round(Number(oa.forehand||10)*.35+Math.random()*8)),
+      opp_errors:Number(prev.opp_errors||0)+Math.max(4,Math.round(Math.random()*8+5))
+    };
+
+    const summary=userWon?"Tu prends le set avec un plan de jeu efficace.":"L’adversaire prend le set, ajuste ton plan avant de continuer.";
+    const ev=await db.from("live_match_events").insert({
+      session_id:id,set_no:Number(session.data.set_no||1),set_score:setScore,user_won:userWon,summary,stats:setStats
+    }).select("*").single();
+    if(ev.error)return h({error:ev.error.message},500);
+
+    const up=await db.from("live_match_sessions").update({
+      user_sets:us,opponent_sets:os,set_no:Number(session.data.set_no||1)+1,momentum:momentumNew,tactics,stats,
+      status:complete?"completed":"active",completed_at:complete?new Date().toISOString():null
+    }).eq("id",id).select("*").single();
+    if(up.error)return h({error:up.error.message},500);
+
+    if(complete){
+      const won=us>os;
+      await db.from("career_state").update({
+        fatigue:Math.min(100,Number(career.data.fatigue||18)+12),
+        fitness:Math.max(35,Number(career.data.fitness||91)-5),
+        form:Math.max(35,Math.min(100,Number(career.data.form||72)+(won?3:-2))),
+        morale:Math.max(35,Math.min(100,Number(career.data.morale||78)+(won?2:-2))),
+        updated_at:new Date().toISOString()
+      }).eq("id","demo");
+      await db.from("match_history").insert({
+        tournament_name:"Live Coaching",match_date:String(career.data.career_date),surface,
+        round:"Exhibition",player_a:String(career.data.player_name||"Joueur"),player_b:String(opp.data.name),
+        winner:won?String(career.data.player_name||"Joueur"):String(opp.data.name),
+        score:"Sets "+us+"-"+os,user_involved:true,match_data:{live:true,stats,tactics}
+      });
+    }
+
+    return h({ok:true,session:up.data,event:ev.data,opponent:opp.data,complete});
+  }
+
+
+  if(path.endsWith("/api/live-match/game")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*))").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
+    if(session.data.status!=="active")return h({ok:true,session:session.data,completed:true});
+
+    const [career,managed]=await Promise.all([
+      db.from("career_state").select("*").eq("id","demo").maybeSingle(),
+      getManagedPlayer("id,name,current_ability,form,fitness,fatigue,player_attributes(*)")
+    ]);
+    if(career.error||managed.error||!career.data||!managed.data)return h({error:(career.error||managed.error)?.message||"Données match incomplètes"},500);
+
+    const opp:any={...session.data.opponent,player_attributes:Array.isArray(session.data.opponent?.player_attributes)?session.data.opponent.player_attributes[0]:session.data.opponent?.player_attributes||{}};
+    const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
+    const tactics=body?.tactics||session.data.tactics||{};
+    const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
+    const ret=String(tactics.returnPos||"Neutre");
+    const surface=String(session.data.surface||"Dur");
+    const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+
+    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
+    const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.17+Number(opp.fitness||90)*.08-Number(opp.fatigue||20)*.12+Number(opp.player_attributes?.[key]||10)*.8;
+    const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
+    const netBonus=(surface==="Gazon"?.035:surface==="Dur"?.018:.006)*net;
+    const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
+    const momentum=(Number(session.data.momentum||50)-50)*.05;
+    let uStrength=uBase+balance+netBonus+retBonus+momentum;
+    let oStrength=oBase;
+    if(session.data.serving_user)uStrength+=2.1;else oStrength+=2.1;
+
+    const prob=1/(1+Math.exp(-(uStrength-oStrength)/7.5));
+    const userWon=Math.random()<prob;
+
+    let ug=Number(session.data.user_games||0),og=Number(session.data.opponent_games||0);
+    let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
+    let setNo=Number(session.data.set_no||1);
+    if(userWon)ug++;else og++;
+
+    const stats:any={user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,...(session.data.stats||{})};
+    if(userWon){
+      stats.user_winners+=1+Math.floor(Math.random()*4);
+      stats.opp_errors+=Math.floor(Math.random()*3);
+      if(session.data.serving_user&&Math.random()<.17)stats.user_aces++;
+    }else{
+      stats.opp_winners+=1+Math.floor(Math.random()*4);
+      stats.user_errors+=Math.floor(Math.random()*3);
+    }
+
+    let setFinished=false,setWinner="";
+    if(((ug>=6||og>=6)&&Math.abs(ug-og)>=2)||ug===7||og===7){
+      setFinished=true;
+      setWinner=ug>og?String(career.data.player_name||"Joueur"):String(opp.name);
+      if(ug>og)us++;else os++;
+    }
+
+    const log:any[]=Array.isArray(session.data.score_log)?session.data.score_log:[];
+    log.push({set:setNo,user_games:ug,opponent_games:og,winner_game:userWon?String(career.data.player_name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner});
+
+    let status="active",completed=false;
+    if(setFinished){
+      if(us>=2||os>=2){status="completed";completed=true}
+      else{setNo++;ug=0;og=0}
+    }
+
+    const userName=String(career.data.player_name||"Joueur");
+    const momentumNew=Math.max(10,Math.min(90,Number(session.data.momentum||50)+(userWon?4:-4)+(setFinished?(setWinner===userName?8:-8):0)));
+    const update:any={
+      user_sets:us,opponent_sets:os,set_no:setNo,user_games:ug,opponent_games:og,
+      serving_user:!session.data.serving_user,momentum:momentumNew,tactics,stats,score_log:log,
+      status,updated_at:new Date().toISOString()
+    };
+    if(completed)update.completed_at=new Date().toISOString();
+
+    const up=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
+    if(up.error)return h({error:up.error.message},500);
+
+    if(completed){
+      const won=us>os;
+      const sets=log.filter((x:any)=>x.set_finished).map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ");
+      await db.from("match_history").insert({
+        tournament_name:"Live Match Center",match_date:career.data.career_date,surface,round:"Match live",
+        player_a:String(career.data.player_name||"Joueur"),player_b:opp.name,winner:won?String(career.data.player_name||"Joueur"):opp.name,score:sets,user_involved:true,
+        match_data:{live:true,stats,tactics}
+      });
+      await db.from("career_state").update({
+        fatigue:Math.min(100,Number(career.data.fatigue||18)+8),
+        fitness:Math.max(35,Number(career.data.fitness||91)-3),
+        form:Math.max(35,Math.min(100,Number(career.data.form||72)+(won?2:-1))),
+        updated_at:new Date().toISOString()
+      }).eq("id","demo");
+    }
+
+    return h({
+      ok:true,session:up.data,
+      opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},
+      game_winner:userWon?String(career.data.player_name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner,
+      completed,win_probability:Math.round(prob*100)
+    });
+  }
+
+
+  if(path.endsWith("/api/fantasy/list")&&req.method==="GET"){
+    const [t,e,r]=await Promise.all([
+      db.from("fantasy_tournaments").select("*").order("created_at",{ascending:false}),
+      db.from("fantasy_entries").select("*,players(id,name,country,ranking,current_ability,potential,style)").order("seed",{ascending:true,nullsFirst:false}),
+      db.from("fantasy_runs").select("*,champion:players(id,name,country),fantasy_matches(*)").order("created_at",{ascending:false})
+    ]);
+    const err=t.error||e.error||r.error;if(err)return h({error:err.message},500);
+    return h({tournaments:t.data??[],entries:e.data??[],runs:r.data??[]});
+  }
+
+  if(path.endsWith("/api/fantasy/create")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const name=String(body?.name||"Court Boss Invitational").trim().slice(0,80);
+    const surface=["Dur","Terre","Gazon"].includes(String(body?.surface))?String(body.surface):"Dur";
+    const draw=[8,16,32,64].includes(Number(body?.draw_size))?Number(body.draw_size):16;
+    const best=[3,5].includes(Number(body?.best_of))?Number(body.best_of):3;
+    const ins=await db.from("fantasy_tournaments").insert({name,surface,draw_size:draw,best_of:best,status:"draft"}).select("*").single();
+    return ins.error?h({error:ins.error.message},500):h({ok:true,tournament:ins.data});
+  }
+
+  if(path.endsWith("/api/fantasy/entry")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const fantasyId=n(body?.fantasy_id,0,1,99999999),playerId=n(body?.player_id,0,1,99999999);
+    const mode=String(body?.mode||"add");
+    if(mode==="remove"){
+      const d=await db.from("fantasy_entries").delete().eq("fantasy_id",fantasyId).eq("player_id",playerId);
+      return d.error?h({error:d.error.message},500):h({ok:true,removed:true});
+    }
+    const tour=await db.from("fantasy_tournaments").select("draw_size").eq("id",fantasyId).maybeSingle();
+    if(tour.error||!tour.data)return h({error:"Tournoi fantasy introuvable"},404);
+    const cnt=await db.from("fantasy_entries").select("id",{count:"exact",head:true}).eq("fantasy_id",fantasyId);
+    if(cnt.error)return h({error:cnt.error.message},500);
+    if(Number(cnt.count||0)>=Number(tour.data.draw_size))return h({error:"Tableau déjà complet"},409);
+    const up=await db.from("fantasy_entries").upsert({fantasy_id:fantasyId,player_id:playerId,seed:Number(cnt.count||0)+1},{onConflict:"fantasy_id,player_id"});
+    return up.error?h({error:up.error.message},500):h({ok:true});
+  }
+
+  if(path.endsWith("/api/fantasy/run")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const fantasyId=n(body?.fantasy_id,0,1,99999999);
+    const [tour,entries]=await Promise.all([
+      db.from("fantasy_tournaments").select("*").eq("id",fantasyId).maybeSingle(),
+      db.from("fantasy_entries").select("*,players(id,name,country,ranking,current_ability,form,fitness,fatigue,player_attributes(*))").eq("fantasy_id",fantasyId).order("seed",{ascending:true})
+    ]);
+    const err=tour.error||entries.error;if(err)return h({error:err.message},500);
+    if(!tour.data)return h({error:"Tournoi fantasy introuvable"},404);
+    const t:any=tour.data;
+    const flat=(p:any)=>({...p,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes});
+    let participants=(entries.data??[]).map((x:any)=>flat(x.players)).filter(Boolean);
+    if(participants.length<2)return h({error:"Ajoute au moins 2 joueurs"},409);
+    const desired=Math.min(Number(t.draw_size||16),participants.length);
+    const pow=2**Math.floor(Math.log2(desired));
+    participants=participants.slice(0,pow);
+    const key=t.surface==="Terre"?"clay_affinity":t.surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const strength=(p:any)=>Number(p.current_ability||50)+Number(p.form||70)*.14+Number(p.fitness||85)*.07-Number(p.fatigue||20)*.08+Number(p.player_attributes?.[key]||10)*.75;
+    const matches:any[]=[];
+    const rn=(n:number)=>n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+    while(participants.length>1){
+      const round=rn(participants.length),next:any[]=[];
+      for(let i=0;i<participants.length;i+=2){
+        const a=participants[i],b=participants[i+1];
+        const prob=1/(1+Math.exp(-(strength(a)-strength(b))/7));
+        const aw=Math.random()<prob,w=aw?a:b;
+        const close=Math.abs(strength(a)-strength(b))<7;
+        const score=close?(Math.random()<.5?"7-6 4-6 6-3":"6-4 3-6 7-5"):(aw?"6-3 6-4":"4-6 3-6");
+        matches.push({round_name:round,player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,winner_id:w.id,winner_name:w.name,score});
+        next.push(w);
+      }
+      participants=next;
+    }
+    const champ=participants[0];
+    const run=await db.from("fantasy_runs").insert({fantasy_id:fantasyId,champion_player_id:champ.id}).select("*").single();
+    if(run.error)return h({error:run.error.message},500);
+    const ins=await db.from("fantasy_matches").insert(matches.map(m=>({...m,run_id:run.data.id})));
+    if(ins.error)return h({error:ins.error.message},500);
+    await db.from("fantasy_tournaments").update({status:"completed"}).eq("id",fantasyId);
+    return h({ok:true,run:{...run.data,champion:champ,matches}});
+  }
+
+  if(path.endsWith("/api/manager-action")&&req.method==="POST"){
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const action=String(body?.action||"");
+    const id=n(body?.id,0,1,99999999);
+    const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(career.error||!career.data) return h({error:career.error?.message||"Career not found"},500);
+    let budget=Number(career.data.budget||0);
+
+    if(action==="sign_youth"){
+      const y=await db.from("academy_youth").select("*").eq("id",id).maybeSingle();
+      if(y.error||!y.data)return h({error:y.error?.message||"Prospect not found"},404);
+
+      const existingRoster=await db.from("academy_roster").select("*,players(*)").eq("source_youth_id",id).maybeSingle();
+      if(existingRoster.error)return h({error:existingRoster.error.message},500);
+      if(existingRoster.data)return h({ok:true,already:true,budget,roster:existingRoster.data});
+
+      const cost=Number(y.data.scholarship_cost||0);
+      if(budget<cost)return h({error:"Budget insuffisant"},409);
+      budget-=cost;
+
+      let playerId:number|null=null;
+      const existingPlayer=await db.from("players").select("id").eq("slug","academy-youth-"+id).maybeSingle();
+      if(existingPlayer.error)return h({error:existingPlayer.error.message},500);
+
+      if(existingPlayer.data?.id){
+        playerId=Number(existingPlayer.data.id);
+      }else{
+        const ca=Number(y.data.current_ability||45),pa=Number(y.data.potential||70);
+        const ins=await db.from("players").insert({
+          slug:"academy-youth-"+id,
+          name:y.data.name,
+          country:y.data.country||"FRA",
+          is_real:false,
+          ranking:2001+Number(id),
+          source_ranking:null,
+          points:0,
+          doubles_ranking:2500+Number(id),
+          itf_ranking:Number(y.data.age||18)>=18?900+Number(id):null,
+          junior_ranking:Number(y.data.age||18)<=18?300+Number(id):null,
+          age:Number(y.data.age||18),
+          height_cm:174+(Number(id)%18),
+          weight_kg:66+(Number(id)%16),
+          handedness:(Number(id)%5===0?"Gaucher":"Droitier"),
+          backhand:(Number(id)%7===0?"1 main":"2 mains"),
+          style:y.data.style||"À définir",
+          current_ability:ca,
+          potential:pa,
+          form:68,
+          fitness:91,
+          morale:82,
+          fatigue:10,
+          scouting_confidence:100,
+          injury_status:"Fit",
+          data_source:"Court Boss academy generated player",
+          data_snapshot:new Date().toISOString().slice(0,10),
+          ranking_current:false
+        }).select("id").single();
+        if(ins.error)return h({error:ins.error.message},500);
+        playerId=Number(ins.data.id);
+
+        const base=Math.max(5,Math.min(17,Math.round(ca/6)));
+        const attr=(salt:number)=>Math.max(4,Math.min(20,base+((Number(id)*salt)%5)-2));
+        const attrs=await db.from("player_attributes").insert({
+          player_id:playerId,
+          serve_power:attr(3),serve_precision:attr(5),forehand:attr(7),backhand:attr(11),return_game:attr(13),
+          volley:attr(17),touch:attr(19),movement:attr(23),speed:attr(29),stamina:attr(31),strength:attr(37),
+          anticipation:attr(41),concentration:attr(43),composure:attr(47),fighting_spirit:attr(53),tactics:attr(59),
+          doubles:attr(61),clay_affinity:attr(67),hard_affinity:attr(71),grass_affinity:attr(73)
+        });
+        if(attrs.error)return h({error:attrs.error.message},500);
+      }
+
+      const weeklyCost=Math.max(80,Math.round(Number(y.data.current_ability||45)*4.5));
+      const start=String(career.data.career_date||new Date().toISOString().slice(0,10));
+      const endDate=new Date(start+"T12:00:00Z");endDate.setUTCFullYear(endDate.getUTCFullYear()+2);
+
+      const roster=await db.from("academy_roster").insert({
+        player_id:playerId,
+        source_youth_id:id,
+        contract_start:start,
+        contract_end:endDate.toISOString().slice(0,10),
+        weekly_cost:weeklyCost,
+        squad_role:"Développement",
+        development_focus:"Équilibré",
+        status:"active"
+      }).select("*,players(*)").single();
+      if(roster.error)return h({error:roster.error.message},500);
+
+      const [u1,u2]=await Promise.all([
+        db.from("academy_youth").update({status:"signed"}).eq("id",id),
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
+      ]);
+      if(u1.error||u2.error)return h({error:(u1.error||u2.error)?.message},500);
+
+      await db.from("contracts").insert({
+        subject_type:"player",
+        subject_name:y.data.name,
+        role:"Prospect académie",
+        weekly_salary:weeklyCost,
+        start_date:start,
+        end_date:endDate.toISOString().slice(0,10),
+        bonuses:{progression_bonus:250,top1000_bonus:500},
+        status:"active"
+      });
+
+      await db.from("inbox_items").insert({kind:"academy",title:"Prospect signé",body:y.data.name+" rejoint officiellement l’académie avec un contrat de 2 ans.",action_route:"academy",is_read:false});
+      return h({ok:true,budget,status:"signed",player_id:playerId,roster:roster.data});
+    }
+
+    if(action==="hire_staff"){
+      const cand=await db.from("staff_candidates").select("*").eq("id",id).maybeSingle();
+      if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
+      if(cand.data.status==="hired")return h({ok:true,already:true,budget});
+      const cost=Number(cand.data.signing_cost||0);
+      if(budget<cost)return h({error:"Budget insuffisant"},409);
+      budget-=cost;
+      const [ins,up,car]=await Promise.all([
+        db.from("staff").insert({role:cand.data.role+" · "+cand.data.name,skill:cand.data.skill,weekly_cost:cand.data.weekly_cost}),
+        db.from("staff_candidates").update({status:"hired"}).eq("id",id),
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
+      ]);
+      const err=ins.error||up.error||car.error;if(err)return h({error:err.message},500);
+      await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+cand.data.role+".",action_route:"staff",is_read:false});
+      return h({ok:true,budget,status:"hired"});
+    }
+
+    if(action==="accept_sponsor"){
+      const offer=await db.from("sponsor_offers").select("*").eq("id",id).maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offer not found"},404);
+      if(offer.data.status!=="available")return h({error:"Offre indisponible"},409);
+      budget+=Number(offer.data.signing_bonus||0);
+      const [up,car]=await Promise.all([
+        db.from("sponsor_offers").update({status:"accepted"}).eq("id",id),
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
+      ]);
+      if(up.error||car.error)return h({error:(up.error||car.error)?.message},500);
+      await db.from("inbox_items").insert({kind:"commercial",title:"Sponsor signé",body:"Accord signé avec "+offer.data.brand+". Bonus : "+offer.data.signing_bonus+" €.",action_route:"finance",is_read:false});
+      return h({ok:true,budget,status:"accepted"});
+    }
+
+    if(action==="renew_contract"){
+      const con=await db.from("contracts").select("*").eq("id",id).maybeSingle();
+      if(con.error||!con.data)return h({error:con.error?.message||"Contract not found"},404);
+      const d=new Date((con.data.end_date||"2026-12-31")+"T12:00:00Z");d.setUTCFullYear(d.getUTCFullYear()+1);
+      const salary=Math.round(Number(con.data.weekly_salary||0)*1.08);
+      const up=await db.from("contracts").update({end_date:d.toISOString().slice(0,10),weekly_salary:salary,status:"active"}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      return h({ok:true,end_date:d.toISOString().slice(0,10),weekly_salary:salary});
+    }
+
+    if(action==="choose_partner"){
+      const anth=await getManagedPlayer("id");
+      const partner=await db.from("players").select("id,name,current_ability,doubles_ranking").eq("id",id).maybeSingle();
+      if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
+      await db.from("doubles_partnerships").delete().eq("player_a_id",anth.data.id);
+      const chemistry=65+((id*7)%29),compatibility=68+((id*11)%27),pair_strength=Math.min(96,Math.round((Number(partner.data.current_ability||50)+56)/2));
+      const ins=await db.from("doubles_partnerships").insert({player_a_id:anth.data.id,player_b_id:id,chemistry,compatibility,pair_strength});
+      if(ins.error)return h({error:ins.error.message},500);
+      return h({ok:true,chemistry,compatibility,pair_strength});
+    }
+
+    if(action==="davis_role"){
+      const role=String(body?.role||"Réserve").slice(0,40);
+      const up=await db.from("davis_squad").update({role}).eq("player_id",id).eq("nation","FRA");
+      if(up.error)return h({error:up.error.message},500);
+      return h({ok:true,role});
+    }
+
+
+    if(action==="commit_college"){
+      const offer=await db.from("college_offers").select("*,team:college_teams(*)").eq("id",id).maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offer not found"},404);
+      await db.from("college_offers").update({status:"declined"}).neq("id",id).eq("status","available");
+      const [o,s]=await Promise.all([
+        db.from("college_offers").update({status:"accepted"}).eq("id",id),
+        db.from("college_career_state").update({chosen_team_id:offer.data.team_id,scholarship_pct:offer.data.scholarship_pct,status:"committed",lineup_position:6,coach_trust:62}).eq("id","demo")
+      ]);
+      const err=o.error||s.error;if(err)return h({error:err.message},500);
+      await db.from("inbox_items").insert({kind:"college",title:"Engagement NCAA",body:String(career.data.player_name||"Le joueur")+" s’engage avec "+offer.data.team.name+" ("+offer.data.scholarship_pct+"% de bourse).",action_route:"university",is_read:false});
+      return h({ok:true,team:offer.data.team,status:"committed"});
+    }
+
+    if(action==="play_college_dual"){
+      const dual=await db.from("college_duals").select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)").eq("id",id).maybeSingle();
+      if(dual.error||!dual.data)return h({error:dual.error?.message||"Dual not found"},404);
+      if(dual.data.status==="completed")return h({ok:true,home_score:dual.data.home_score,away_score:dual.data.away_score,already:true});
+      const hs=3+((id*7)%5),as=3+((id*11)%5);
+      const homeScore=hs===as?4:Math.min(7,hs),awayScore=hs===as?3:Math.min(7,as);
+      const up=await db.from("college_duals").update({home_score:homeScore,away_score:awayScore,status:"completed"}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      const cs=await db.from("college_career_state").select("*").eq("id","demo").maybeSingle();
+      if(cs.data?.status==="committed"){
+        await db.from("college_career_state").update({coach_trust:Math.min(100,Number(cs.data.coach_trust||55)+3),academic_progress:Math.min(100,Number(cs.data.academic_progress||72)+1)}).eq("id","demo");
+      }
+      return h({ok:true,home_score:homeScore,away_score:awayScore});
+    }
+
+
+    if(action==="play_davis_tie"){
+      const tie=await db.from("davis_ties").select("*").eq("id",id).maybeSingle();
+      if(tie.error||!tie.data)return h({error:tie.error?.message||"Tie not found"},404);
+      if(tie.data.status==="completed"){
+        const rub=await db.from("davis_rubbers").select("*").eq("tie_id",id).order("rubber_no");
+        return h({ok:true,already:true,tie:tie.data,rubbers:rub.data??[]});
+      }
+      const fra=await db.from("davis_squad").select("role,players(id,name,ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity))").eq("nation","FRA");
+      const ita=await db.from("players").select("id,name,ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity)").eq("ranking_current",true).eq("country","ITA").order("ranking").limit(4);
+      if(fra.error||ita.error)return h({error:(fra.error||ita.error)?.message},500);
+      const flatten=(x:any)=>({...x,player_attributes:Array.isArray(x.player_attributes)?x.player_attributes[0]:x.player_attributes});
+      const fs=(fra.data??[]).map((x:any)=>({role:x.role,p:flatten(x.players)})).filter((x:any)=>x.p);
+      const it=(ita.data??[]).map(flatten);
+      const by=(r:string)=>fs.find((x:any)=>x.role===r)?.p;
+      const f1=by("Simple 1")||fs[0]?.p,f2=by("Simple 2")||fs[1]?.p||fs[0]?.p,fdA=by("Double A")||f1,fdB=by("Double B")||f2;
+      if(!f1||!f2||it.length<2)return h({error:"Sélection Davis incomplète"},409);
+      const surf=String(tie.data.surface||"Dur");
+      const key=surf.includes("Terre")?"clay_affinity":surf.includes("Gazon")?"grass_affinity":"hard_affinity";
+      const strength=(p:any)=>Number(p.current_ability||50)+Number(p.form||70)*.18+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.12+Number(p.player_attributes?.[key]||10)*.7;
+      const one=(a:any,b:any)=>{const prob=1/(1+Math.exp(-(strength(a)-strength(b))/7));const aw=Math.random()<prob;return {winner:aw?"FRA":"ITA",score:Math.abs(strength(a)-strength(b))<7?"7-6 4-6 6-3":(aw?"6-3 6-4":"4-6 3-6")}};
+      const pairStrength=(a:any,b:any)=>strength(a)*.52+strength(b)*.48;
+      const dbl=(a:any,b:any,c:any,d:any)=>{const pa=pairStrength(a,b),pb=pairStrength(c,d),prob=1/(1+Math.exp(-(pa-pb)/8));const aw=Math.random()<prob;return {winner:aw?"FRA":"ITA",score:Math.abs(pa-pb)<7?"7-6 3-6 6-4":(aw?"6-4 6-3":"4-6 3-6")}};
+      const rubs:any[]=[];
+      const push=(no:number,type:string,hn:string,an:string,res:any)=>rubs.push({tie_id:id,rubber_no:no,rubber_type:type,home_names:hn,away_names:an,winner_nation:res.winner,score:res.score});
+      push(1,"Simple",f1.name,it[1].name,one(f1,it[1]));
+      push(2,"Simple",f2.name,it[0].name,one(f2,it[0]));
+      push(3,"Double",fdA.name+" / "+fdB.name,it[0].name+" / "+it[1].name,dbl(fdA,fdB,it[0],it[1]));
+      push(4,"Simple",f1.name,it[0].name,one(f1,it[0]));
+      push(5,"Simple",f2.name,it[1].name,one(f2,it[1]));
+      const hs=rubs.filter(x=>x.winner_nation==="FRA").length,as=rubs.length-hs;
+      const ins=await db.from("davis_rubbers").insert(rubs);
+      if(ins.error)return h({error:ins.error.message},500);
+      const up=await db.from("davis_ties").update({status:"completed",home_score:hs,away_score:as}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("federation_state").update({manager_interest:Math.min(100,Number((await db.from("federation_state").select("manager_interest").eq("nation","FRA").maybeSingle()).data?.manager_interest||38)+(hs>as?8:2))}).eq("nation","FRA");
+      await db.from("inbox_items").insert({kind:"davis",title:"Résultat Coupe Davis",body:"France "+hs+"-"+as+" Italie.",action_route:"davis",is_read:false});
+      return h({ok:true,tie:{...tie.data,status:"completed",home_score:hs,away_score:as},rubbers:rubs});
+    }
+
+
+    if(action==="set_scouting_assignment"){
+      const focus=String(body?.focus||"U23 potentiel").slice(0,80);
+      const up=await db.from("scouting_assignments").update({focus,progress:0,status:"active",started_at:new Date().toISOString().slice(0,10)}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("inbox_items").insert({kind:"scouting",title:"Nouvelle mission scouting",body:"Mission lancée : "+focus+".",action_route:"scouting",is_read:false});
+      return h({ok:true,focus});
+    }
+
+
+    if(action==="request_wildcard"){
+      const [t,a]=await Promise.all([
+        db.from("tournaments").select("*").eq("id",id).maybeSingle(),
+        db.from("academies").select("reputation").eq("id","demo").maybeSingle()
+      ]);
+      if(t.error||a.error||!t.data)return h({error:(t.error||a.error)?.message||"Tournoi introuvable"},404);
+      const rank=Number(career.data.singles_rank||9999),qual=Number(t.data.qual_cut||t.data.direct_cut||rank);
+      const rep=Number(a.data?.reputation||48);
+      const proximity=Math.max(0,35-Math.max(0,rank-qual)/12);
+      const score=Math.round(rep*.65+proximity+Math.random()*22);
+      const status=score>=58?"accepted":"declined";
+      const up=await db.from("wildcard_requests").upsert({tournament_id:id,status,decision_score:score,created_at:new Date().toISOString()},{onConflict:"tournament_id"}).select("*").single();
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("inbox_items").insert({kind:"tournament",title:"Décision wild card",body:(status==="accepted"?"Wild card accordée pour ":"Wild card refusée pour ")+t.data.name+".",action_route:"calendar",is_read:false});
+      return h({ok:true,status,score});
+    }
+
+
+    if(action==="edit_career"){
+      const field=String(body?.field||"");
+      const allowed=["player_name","country","style","age","height_cm","weight_kg"];
+      if(!allowed.includes(field))return h({error:"Champ non modifiable"},400);
+      let value:any=body?.value;
+      if(["age","height_cm","weight_kg"].includes(field))value=n(value,0,1,250);
+      else value=String(value??"").trim().slice(0,80);
+      const up:any={updated_at:new Date().toISOString()};up[field]=value;
+      const cu=await db.from("career_state").update(up).eq("id","demo");
+      if(cu.error)return h({error:cu.error.message},500);
+      const pu:any={};
+      if(field==="player_name")pu.name=value;
+      if(field==="country")pu.country=value;
+      if(field==="style")pu.style=value;
+      if(field==="age")pu.age=value;
+      if(field==="height_cm")pu.height_cm=value;
+      if(field==="weight_kg")pu.weight_kg=value;
+      if(Object.keys(pu).length){
+        const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+        if(managed.error||!managed.data?.managed_player_id)return h({error:managed.error?.message||"Managed player missing"},500);
+        const p=await db.from("players").update(pu).eq("id",managed.data.managed_player_id);
+        if(p.error)return h({error:p.error.message},500);
+      }
+      return h({ok:true,field,value});
+    }
+
+
+    if(action==="upgrade_facility"){
+      const fac=await db.from("facilities").select("*").eq("id",id).maybeSingle();
+      if(fac.error||!fac.data)return h({error:fac.error?.message||"Installation introuvable"},404);
+      const level=Number(fac.data.level||1);
+      if(level>=5)return h({error:"Installation déjà au maximum"},409);
+      const cost=level*3500;
+      if(Number(career.data.budget||0)<cost)return h({error:"Budget insuffisant"},409);
+      const budget=Number(career.data.budget||0)-cost;
+      const fup=await db.from("facilities").update({level:level+1}).eq("id",id);
+      if(fup.error)return h({error:fup.error.message},500);
+      const cup=await db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo");
+      if(cup.error)return h({error:cup.error.message},500);
+      await db.from("inbox_items").insert({kind:"academy",title:"Installation améliorée",body:String(fac.data.name||"Installation")+" passe niveau "+(level+1)+".",action_route:"academy",is_read:false});
+      return h({ok:true,level:level+1,cost,budget});
+    }
+
+
+
+    if(action==="create_custom_player"){
+      const name=String(body?.name||"").trim().slice(0,60);
+      const country=String(body?.country||"FRA").trim().toUpperCase().slice(0,3);
+      const age=n(body?.age,18,15,35);
+      const handedness=["Droitier","Gaucher"].includes(String(body?.handedness))?String(body.handedness):"Droitier";
+      const backhand=["1 main","2 mains"].includes(String(body?.backhand))?String(body.backhand):"2 mains";
+      const style=String(body?.style||"All-court").slice(0,60);
+      const tier=String(body?.tier||"ITF");
+      const potential=n(body?.potential,82,55,99);
+      if(name.length<2)return h({error:"Nom trop court"},400);
+
+      const tierMap:any={
+        "Débutant":{rank:1800,points:4,ca:42},
+        "ITF":{rank:1200,points:20,ca:50},
+        "Challenger":{rank:650,points:75,ca:58},
+        "Espoir":{rank:350,points:160,ca:65}
+      };
+      const t=tierMap[tier]||tierMap["ITF"];
+      const ca=Math.min(Number(t.ca),potential);
+      const slug="custom-"+Date.now()+"-"+Math.floor(Math.random()*100000);
+
+      const ins=await db.from("players").insert({
+        slug,name,country,is_real:false,ranking:t.rank,source_ranking:null,points:t.points,
+        doubles_ranking:1800,itf_ranking:t.rank>900?Math.max(1,t.rank-300):null,junior_ranking:age<=18?Math.max(1,Math.round(t.rank/4)):null,
+        age,height_cm:n(body?.height_cm,184,155,215),weight_kg:n(body?.weight_kg,78,45,130),
+        handedness,backhand,style,current_ability:ca,potential,
+        form:70,fitness:92,morale:80,fatigue:10,scouting_confidence:100,injury_status:"Fit",
+        data_source:"User-created Court Boss player",data_snapshot:new Date().toISOString().slice(0,10),ranking_current:false
+      }).select("id,name,country,ranking,current_ability,potential").single();
+      if(ins.error)return h({error:ins.error.message},500);
+
+      const idp=Number(ins.data.id);
+      let base=Math.max(5,Math.min(18,Math.round(ca/6)));
+      const A=(salt:number,bonus=0)=>Math.max(3,Math.min(20,base+((idp*salt)%5)-2+bonus));
+      const isServer=/serveur|service/i.test(style),isCounter=/contre/i.test(style),isAll=/all-court|polyvalent/i.test(style),isClay=/terre/i.test(style),isAttack=/attaquant/i.test(style);
+      const attrs:any={
+        player_id:idp,
+        serve_power:A(3,isServer?4:isAttack?2:0),
+        serve_precision:A(5,isServer?3:0),
+        forehand:A(7,isAttack?3:isClay?2:0),
+        backhand:A(11,isCounter?2:0),
+        return_game:A(13,isCounter?4:0),
+        volley:A(17,isAll?3:isAttack?1:0),
+        touch:A(19,isAll?2:0),
+        movement:A(23,isCounter?3:isClay?2:0),
+        speed:A(29,isCounter?2:0),
+        stamina:A(31,isClay?3:0),
+        strength:A(37,isServer?3:isAttack?2:0),
+        anticipation:A(41,isCounter?3:0),
+        concentration:A(43,1),
+        composure:A(47,isAll?2:0),
+        fighting_spirit:A(53,1),
+        tactics:A(59,isAll?3:isCounter?2:0),
+        doubles:A(61,isAll?2:0),
+        clay_affinity:A(67,isClay?5:0),
+        hard_affinity:A(71,isServer||isAttack?3:1),
+        grass_affinity:A(73,isServer||isAll?4:0)
+      };
+      const ai=await db.from("player_attributes").insert(attrs);
+      if(ai.error)return h({error:ai.error.message},500);
+
+      return h({ok:true,player:ins.data,slug});
+    }
+
+    if(action==="take_over_player"){
+      const [target,previousCareer]=await Promise.all([
+        db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
+        db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle()
+      ]);
+      if(target.error||previousCareer.error||!target.data)return h({error:(target.error||previousCareer.error)?.message||"Joueur introuvable"},404);
+      const p:any=target.data;
+      const attrs:any=Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes||{};
+      const startDate=String(body?.date||"2026-09-27").slice(0,10);
+      const basePoints=Math.max(0,Number(p.points||0));
+      const baseDoubleRank=Math.max(1,Number(p.doubles_ranking||1800));
+      const baseDoublePoints=Math.max(0,Math.round(45*(1800/baseDoubleRank-1)));
+
+      await Promise.all([
+        db.from("tournament_runs").delete().gte("id",0),
+        db.from("doubles_runs").delete().gte("id",0),
+        db.from("match_history").delete().eq("user_involved",true),
+        db.from("wildcard_requests").delete().gte("id",0),
+        db.from("shortlist").delete().gte("player_id",0),
+        db.from("user_ranking_points").delete().eq("owner_id","demo"),
+        db.from("user_doubles_points").delete().eq("owner_id","demo"),
+        db.from("user_training_progress").update({xp:0,updated_at:new Date().toISOString()}).neq("attribute","")
+      ]);
+
+      await db.from("user_ranking_points").insert({
+        owner_id:"demo",label:"Points de départ - "+p.name,earned_date:startDate,
+        expiry_date:(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+364);return d.toISOString().slice(0,10)})(),
+        points:basePoints,active:true
+      });
+      await db.from("user_doubles_points").insert({
+        owner_id:"demo",label:"Points double de départ - "+p.name,earned_date:startDate,
+        expiry_date:(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+364);return d.toISOString().slice(0,10)})(),
+        points:baseDoublePoints,active:true,partner_id:null
+      });
+
+      const careerUpdate={
+        managed_player_id:p.id,
+        player_name:p.name,country:p.country,career_date:startDate,week:1,
+        singles_rank:Number(p.ranking||2000),doubles_rank:baseDoubleRank,points:basePoints,doubles_points:baseDoublePoints,
+        age:Number(p.age||19),height_cm:Number(p.height_cm||184),weight_kg:Number(p.weight_kg||78),
+        handedness:String(p.handedness||"Droitier"),backhand:String(p.backhand||"2 mains"),
+        current_ability:Number(p.current_ability||55),potential:Number(p.potential||75),
+        form:Number(p.form||70),fitness:Number(p.fitness||90),morale:Number(p.morale||75),fatigue:Number(p.fatigue||15),
+        budget:14800,style:String(p.style||"All-court"),injury_status:"Fit",updated_at:new Date().toISOString()
+      };
+      const cu=await db.from("career_state").update(careerUpdate).eq("id","demo");
+      if(cu.error)return h({error:cu.error.message},500);
+
+      const previousId=Number(previousCareer.data?.managed_player_id||0);
+      if(previousId && previousId!==Number(p.id)){
+        const prev=await db.from("players").select("id,is_real").eq("id",previousId).maybeSingle();
+        if(!prev.error&&prev.data&&!prev.data.is_real){
+          await db.from("players").update({ranking_current:false}).eq("id",previousId);
+        }
+      }
+
+      if(!p.ranking_current){
+        const activate=await db.from("players").update({ranking_current:true}).eq("id",p.id);
+        if(activate.error)return h({error:activate.error.message},500);
+      }
+
+      const currentCount=await db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000);
+      const overflow=Math.max(0,Number(currentCount.count||0)-2000);
+      if(overflow>0){
+        const tail=await db.from("players").select("id").eq("ranking_current",true).neq("id",p.id).lte("ranking",2000).order("ranking",{ascending:false}).order("id",{ascending:false}).limit(overflow);
+        if(!tail.error&&(tail.data??[]).length){
+          await db.from("players").update({ranking_current:false,ranking_source:"Displaced by managed-player career slot"}).in("id",(tail.data??[]).map((x:any)=>x.id));
+        }
+      }
+
+      await db.from("finances").update({prize_money:0,sponsor_income:0,travel_cost:0,staff_cost:0}).eq("id","demo");
+      await db.from("news_items").insert({body:"Nouvelle carrière lancée avec "+p.name+"."});
+      return h({ok:true,player:{id:p.id,name:p.name,country:p.country,ranking:p.ranking},career:careerUpdate});
+    }
+
+
+    if(action==="academy_focus"){
+      const focus=String(body?.focus||"Équilibré").slice(0,60);
+      const up=await db.from("academy_roster").update({development_focus:focus}).eq("id",id).eq("status","active");
+      if(up.error)return h({error:up.error.message},500);
+      return h({ok:true,focus});
+    }
+
+    if(action==="renew_academy_player"){
+      const row=await db.from("academy_roster").select("*,players(name)").eq("id",id).maybeSingle();
+      if(row.error||!row.data)return h({error:row.error?.message||"Joueur académie introuvable"},404);
+      const end=new Date(String(row.data.contract_end)+"T12:00:00Z");end.setUTCFullYear(end.getUTCFullYear()+1);
+      const weekly=Math.round(Number(row.data.weekly_cost||100)*1.08);
+      const up=await db.from("academy_roster").update({contract_end:end.toISOString().slice(0,10),weekly_cost:weekly}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("contracts").update({end_date:end.toISOString().slice(0,10),weekly_salary:weekly})
+        .eq("subject_type","player").eq("subject_name",row.data.players?.name||"");
+      return h({ok:true,end_date:end.toISOString().slice(0,10),weekly_cost:weekly});
+    }
+
+    if(action==="release_academy_player"){
+      const row=await db.from("academy_roster").select("*,players(name)").eq("id",id).maybeSingle();
+      if(row.error||!row.data)return h({error:row.error?.message||"Joueur académie introuvable"},404);
+      if(row.data.squad_role==="Joueur principal")return h({error:"Le joueur principal ne peut pas être libéré depuis cet écran."},409);
+      const up=await db.from("academy_roster").update({status:"released"}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("contracts").update({status:"terminated"}).eq("subject_type","player").eq("subject_name",row.data.players?.name||"");
+      await db.from("inbox_items").insert({kind:"academy",title:"Joueur libéré",body:(row.data.players?.name||"Le joueur")+" quitte l’académie.",action_route:"academy",is_read:false});
+      return h({ok:true,status:"released"});
+    }
+
+
+    if(action==="set_medical_protocol"){
+      const protocol=String(body?.protocol||"Récupération active");
+      const plans:any={
+        "Repos complet":{physio_hours:1,weekly_cost:0,notes:"Repos complet, priorité à la récupération"},
+        "Physio intensive":{physio_hours:8,weekly_cost:900,notes:"Traitement intensif avec objectif de retour accéléré"},
+        "Récupération active":{physio_hours:2,weekly_cost:250,notes:"Récupération active et suivi médical"},
+        "Maintien de forme":{physio_hours:1,weekly_cost:120,notes:"Maintien de charge, risque de rechute plus élevé"}
+      };
+      if(!plans[protocol])return h({error:"Protocole médical inconnu"},400);
+      const cfg=plans[protocol];
+      const up=await db.from("medical_plan").upsert({id:"demo",protocol,...cfg,updated_at:new Date().toISOString()},{onConflict:"id"}).select("*").single();
+      if(up.error)return h({error:up.error.message},500);
+      if(career.data.managed_player_id){
+        await db.from("injuries").update({treatment:protocol}).eq("player_id",career.data.managed_player_id).eq("status","Active");
+      }
+      await db.from("inbox_items").insert({kind:"medical",title:"Plan médical mis à jour",body:"Protocole : "+protocol+".",action_route:"medical",is_read:false});
+      return h({ok:true,plan:up.data});
+    }
+
+    if(action==="mark_inbox_read"){
+      const up=await db.from("inbox_items").update({is_read:true}).eq("id",id);
+      return up.error?h({error:up.error.message},500):h({ok:true});
+    }
+
+    return h({error:"Unknown action"},400);
+  }
+
+  if(path.endsWith("/api/world")&&req.method==="GET"){
+    const [playersTotal,atp,itf,junior,tours,realTours,ncaa,newgens,realPlayers] = await Promise.all([
+      db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
+      db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null),
+      db.from("tournaments").select("id",{count:"exact",head:true}),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_verified",true),
+      db.from("college_teams").select("id",{count:"exact",head:true}),
+      db.from("players").select("id",{count:"exact",head:true}).eq("game_generated",true),
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true)
+    ]);
+    return h({
+      players:atp.count??0,
+      playersTotal:playersTotal.count??0,
+      realPlayersTotal:realPlayers.count??0,
+      atpRanked:atp.count??0,
+      itfPlayers:itf.count??0,
+      juniorPlayers:junior.count??0,
+      ncaaTeams:ncaa.count??0,
+      gameGenerated:newgens.count??0,
+      tournaments:tours.count??0,
+      verifiedTournaments:realTours.count??0
+    });
+  }
+
+  if(path.endsWith("/api/save")&&req.method==="POST"){
+    const sid=saveId(req); if(!sid) return h({error:"Invalid save key"},400);
+    let payload:any; try{payload=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const {error}=await db.from("game_saves").upsert({id:sid,payload,updated_at:new Date().toISOString()});
+    return error?h({error:error.message},500):h({ok:true});
+  }
+
+  return h({error:"Not found"},404);
+});

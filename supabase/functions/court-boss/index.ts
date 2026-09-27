@@ -174,13 +174,16 @@ const htmlText=(v:string)=>String(v||"")
   .replace(/<[^>]+>/g," ")
   .replace(/&nbsp;|&#160;/gi," ")
   .replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'")
+  .replace(/&#x([0-9a-f]+);/gi,(_m,h)=>String.fromCodePoint(parseInt(h,16)))
+  .replace(/&#([0-9]+);/g,(_m,d)=>String.fromCodePoint(parseInt(d,10)))
   .replace(/&([a-z]+);/gi," ")
   .replace(/\s+/g," ").trim();
 const rowCells=(row:string)=>{
   const cells:any[]=[];
   for(const m of row.matchAll(/<td([^>]*)>([\s\S]*?)<\/td>/gi)){
     const attrs=String(m[1]||"");
-    const cls=(attrs.match(/class\s*=\s*["']([^"']*)["']/i)||[])[1]||"";
+    const cm=attrs.match(/class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const cls=String(cm?.[1]||cm?.[2]||cm?.[3]||"");
     cells.push({cls,text:htmlText(String(m[2]||""))});
   }
   return cells;
@@ -189,19 +192,71 @@ async function parseLiveTennisRanking(url:string){
   const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+tennis-manager data refresh)","Accept":"text/html"}});
   if(!res.ok)throw new Error("live-tennis HTTP "+res.status);
   const html=await res.text();
-  const tbody=(html.match(/<tbody[^>]*class=["'][^"']*flags[^"']*["'][^>]*>([\s\S]*?)<\/tbody>/i)||[])[1]||html;
+  const tbody=(html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i)||[])[1]||html;
   const rows=tbody.match(/<tr\b[\s\S]*?<\/tr>/gi)||[];
   const out:any[]=[];
   for(const row of rows){
     const cells=rowCells(row);
-    const rankCell=cells.find((c:any)=>/(^|\s)rank(\s|$)/i.test(c.cls))||cells[0];
-    const nameCell=cells.find((c:any)=>/t-name/i.test(c.cls));
-    const ptsCell=cells.find((c:any)=>/long-point|(^|\s)point(\s|$)/i.test(c.cls));
-    const rank=Number(String(rankCell?.text||"").replace(/[^0-9]/g,""));
-    const name=String(nameCell?.text||"").trim();
-    const points=Number(String(ptsCell?.text||"").replace(/[^0-9]/g,""));
+    const rankCell=cells.find((c:any)=>(String(c.cls).split(/\s+/).includes("rk")));
+    const nameCell=cells.find((c:any)=>(String(c.cls).split(/\s+/).includes("pn")));
+    if(!rankCell||!nameCell)continue;
+    const idx=cells.indexOf(nameCell);
+    const rank=Number(String(rankCell.text||"").replace(/[^0-9]/g,""));
+    const name=String(nameCell.text||"").trim();
+    const age=Number(String(cells[idx+1]?.text||"").replace(/[^0-9]/g,""));
+    const country=String(cells[idx+2]?.text||"").trim().toUpperCase();
+    const points=Number(String(cells[idx+3]?.text||"").replace(/[^0-9]/g,""));
     if(!rank||!name||name.length<2)continue;
-    out.push({rank,name,points:Number.isFinite(points)&&points>0?points:null});
+    out.push({
+      rank,name,name_norm:normalizeName(name),
+      age:Number.isFinite(age)&&age>0?age:null,
+      country:/^[A-Z]{3}$/.test(country)?country:null,
+      points:Number.isFinite(points)&&points>=0?points:null
+    });
+  }
+  return out;
+}
+
+async function parseLiveTennisDoublesRace(url:string){
+  const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+tennis-manager data refresh)","Accept":"text/html"}});
+  if(!res.ok)throw new Error("live-tennis race HTTP "+res.status);
+  const html=await res.text();
+  const tbody=(html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i)||[])[1]||html;
+  const rows=tbody.split(/<tr\b[^>]*>/i).slice(1);
+  const out:any[]=[];
+  let pending:any=null;
+  const isPlayer=(v:string)=>{
+    const x=String(v||"").replace(/^[✓✗]\s*/,"").trim();
+    return x.length>2 && /[A-Za-zÀ-ÿ]/.test(x) && !/^[A-Z]{3}$/.test(x) && !/^\d+$/.test(x) && !/qualification cut|advertisement/i.test(x);
+  };
+  for(const raw of rows){
+    const row=raw.split(/<tr\b/i)[0];
+    const cells=rowCells(row);
+    const rankIdx=cells.findIndex((c:any)=>String(c.cls).split(/\s+/).includes("rk"));
+    if(rankIdx>=0){
+      const rank=Number(String(cells[rankIdx]?.text||"").replace(/[^0-9]/g,""));
+      if(!rank){pending=null;continue}
+      let pIdx=-1;
+      for(let i=rankIdx+1;i<cells.length;i++){if(isPlayer(cells[i]?.text)){pIdx=i;break}}
+      if(pIdx<0){pending=null;continue}
+      const p1=String(cells[pIdx]?.text||"").replace(/^[✓✗]\s*/,"").trim();
+      const age1=Number(String(cells[pIdx+1]?.text||"").replace(/[^0-9]/g,""));
+      const country1=String(cells[pIdx+2]?.text||"").trim().toUpperCase();
+      const points=Number(String(cells[pIdx+3]?.text||"").replace(/[^0-9]/g,""));
+      pending={rank,player_one:p1,age_one:Number.isFinite(age1)&&age1>0?age1:null,country_one:country1,points:Number.isFinite(points)?points:0};
+      continue;
+    }
+    if(pending){
+      let pIdx=-1;
+      for(let i=0;i<cells.length;i++){if(isPlayer(cells[i]?.text)){pIdx=i;break}}
+      if(pIdx>=0){
+        const p2=String(cells[pIdx]?.text||"").replace(/^[✓✗]\s*/,"").trim();
+        const age2=Number(String(cells[pIdx+1]?.text||"").replace(/[^0-9]/g,""));
+        const country2=String(cells[pIdx+2]?.text||"").trim().toUpperCase();
+        out.push({...pending,player_two:p2,age_two:Number.isFinite(age2)&&age2>0?age2:null,country_two:country2});
+      }
+      pending=null;
+    }
   }
   return out;
 }
@@ -230,29 +285,35 @@ Deno.serve(async(req:Request)=>{
         ?"https://live-tennis.eu/en/official-atp-ranking.html"
         :"https://live-tennis.eu/en/official-atp-doubles-ranking.html";
       const parsed=await parseLiveTennisRanking(url);
-      let matched=0,updated=0;
-      for(const row of parsed){
-        const norm=normalizeName(row.name);
-        const found=await db.from("players")
-          .select("id,name,data_source")
-          .eq("name_norm",norm)
-          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-          .limit(1).maybeSingle();
-        if(found.error||!found.data)continue;
-        matched++;
-        const patch:any=type==="singles"
-          ?{ranking:row.rank,source_ranking:row.rank,points:row.points,ranking_current:true,ranking_snapshot_date:snapshot,ranking_source:"Live-Tennis official ATP ranking · "+snapshot}
-          :{doubles_ranking:row.rank,doubles_points:row.points,doubles_snapshot_date:snapshot,doubles_source:"Live-Tennis official ATP doubles ranking · "+snapshot};
-        const up=await db.from("players").update(patch).eq("id",found.data.id);
-        if(!up.error)updated++;
-      }
-      return {url,parsed:parsed.length,matched,updated,top:parsed.slice(0,10),last:parsed.slice(-3)};
+      const applied=await db.rpc("apply_live_rankings",{p_kind:type,p_snapshot:snapshot,p_rows:parsed});
+      if(applied.error)throw applied.error;
+      return {url,parsed:parsed.length,applied:applied.data,top:parsed.slice(0,10),last:parsed.slice(-3)};
     };
     try{
       if(kind==="singles"||kind==="both")results.singles=await refreshOne("singles");
       if(kind==="doubles"||kind==="both")results.doubles=await refreshOne("doubles");
       return h({ok:true,...results});
     }catch(e){return h({error:String((e as any)?.message||e),...results},500)}
+  }
+
+  if(path.endsWith("/api/refresh-doubles-race")&&req.method==="GET"){
+    const snapshot=String(u.searchParams.get("date")||new Date().toISOString().slice(0,10)).slice(0,10);
+    try{
+      const url="https://live-tennis.eu/en/atp-doubles-race.html";
+      const rows=await parseLiveTennisDoublesRace(url);
+      if(!rows.length)return h({error:"Doubles race parser returned 0 rows",url},500);
+      const uniq=[...new Map(rows.filter((x:any)=>x.rank&&x.player_one&&x.player_two).map((x:any)=>[Number(x.rank),x])).values()]
+        .sort((a:any,b:any)=>Number(a.rank)-Number(b.rank));
+      const del=await db.from("doubles_race_teams").delete().eq("snapshot_date",snapshot);
+      if(del.error)return h({error:del.error.message},500);
+      const payload=uniq.map((x:any)=>({
+        rank:x.rank,player_one:x.player_one,player_two:x.player_two,points:x.points,
+        snapshot_date:snapshot,source:"Live-Tennis ATP Doubles Race · "+snapshot
+      }));
+      const ins=await db.from("doubles_race_teams").insert(payload);
+      if(ins.error)return h({error:ins.error.message},500);
+      return h({ok:true,url,snapshot,count:payload.length,rows:payload.slice(0,40)});
+    }catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
@@ -412,9 +473,12 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/doubles-race")&&req.method==="GET"){
-    const rows=await db.from("doubles_race_teams").select("*").order("snapshot_date",{ascending:false}).order("rank",{ascending:true}).limit(20);
+    const latest=await db.from("doubles_race_teams").select("snapshot_date").order("snapshot_date",{ascending:false}).limit(1).maybeSingle();
+    if(latest.error)return h({error:latest.error.message},500);
+    if(!latest.data?.snapshot_date)return h({rows:[],count:0,snapshot:null});
+    const rows=await db.from("doubles_race_teams").select("*").eq("snapshot_date",latest.data.snapshot_date).order("rank",{ascending:true}).limit(500);
     if(rows.error)return h({error:rows.error.message},500);
-    return h({rows:rows.data??[],count:(rows.data??[]).length});
+    return h({rows:rows.data??[],count:(rows.data??[]).length,snapshot:latest.data.snapshot_date});
   }
 
   if(path.endsWith("/api/player")&&req.method==="GET"){

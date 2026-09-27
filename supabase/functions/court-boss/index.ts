@@ -736,6 +736,28 @@ Deno.serve(async(req:Request)=>{
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
   }
 
+  if(path.endsWith("/api/ncaa-doubles")&&req.method==="GET"){
+    const offset=n(u.searchParams.get("offset"),0,0,500);
+    const limit=n(u.searchParams.get("limit"),100,1,100);
+    const q=(u.searchParams.get("q")??"").trim().toLowerCase().slice(0,80);
+    let query=db.from("ncaa_doubles_rankings")
+      .select("*",{count:"exact"})
+      .eq("season","2026-27")
+      .eq("snapshot_date","2026-08-25");
+    if(q) query=query.or(`player_one_name.ilike.%${q}%,player_two_name.ilike.%${q}%,school.ilike.%${q}%`);
+    query=query.order("ita_rank",{ascending:true}).range(offset,offset+limit-1);
+    const {data,error,count}=await query;
+    if(error)return h({error:error.message},500);
+    return h({
+      kind:"ncaa-doubles",
+      offset,limit,count:count??0,
+      rows:data??[],
+      officialCapacity:90,
+      rankingDate:"2026-08-25",
+      source:"ITA Division I Men's Preseason Doubles"
+    });
+  }
+
   if(path.endsWith("/api/doubles-race")&&req.method==="GET"){
     const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const referenceDate=String(career.data?.career_date||"2026-09-27");

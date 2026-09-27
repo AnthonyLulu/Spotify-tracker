@@ -984,7 +984,7 @@ window.simulateWeek=async()=>{
   const currentYear=Number(String(local.date||'2026-09-27').slice(0,4)),nextYear=Number(nextDate.slice(0,4));
   if(nextYear>currentYear){
     const roll=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:nextYear})});
-    local.date=String(nextYear)+'-01-05';local.week=1;
+    local.date=String(nextYear)+'-01-05';local.week=1;if(nextYear>2026)tourFilters.source='Tous';
     if(roll.userRanking){cr.singles_rank=roll.userRanking.rank;cr.points=roll.userRanking.points}
     if(roll.userDoublesRanking){cr.doubles_rank=roll.userDoublesRanking.rank;cr.doubles_points=roll.userDoublesRanking.points}
     local.feed=local.feed||[];

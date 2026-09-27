@@ -338,6 +338,102 @@ const rowCells=(row:string)=>{
   }
   return cells;
 };
+const isCurrentJuniorProfile=(p:any)=>{
+  const src=String(p?.junior_source||"");
+  const age=Number(p?.age);
+  if(p?.game_generated===true)return Number.isFinite(age)&&age>=13&&age<=17;
+  if(p?.is_real===true&&/^CoreTennis ITF Junior Boys/i.test(src))return true;
+  return p?.is_real===true&&Number.isFinite(age)&&age>=13&&age<=18&&!!src;
+};
+async function fetchCoreTennisJuniorRows(url:string){
+  const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+junior-database-sync)","Accept":"text/html"}});
+  if(!res.ok)throw new Error("CoreTennis HTTP "+res.status);
+  const html=await res.text();
+  const dateRaw=(html.match(/\b([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})\b/)||[])[1]||"Sep 21, 2026";
+  const parsedDate=new Date(dateRaw+" 12:00:00 UTC");
+  const snapshot=Number.isNaN(parsedDate.getTime())?"2026-09-21":parsedDate.toISOString().slice(0,10);
+  const rows:any[]=[];
+  for(const row of html.match(/<tr\b[\s\S]*?<\/tr>/gi)||[]){
+    const cells=rowCells(row);
+    if(cells.length<2)continue;
+    const rank=Number((String(cells[0]?.text||"").match(/^\s*(\d{1,5})\b/)||[])[1]||0);
+    const playerCell=String(cells[1]?.text||"").trim();
+    const pm=playerCell.match(/^(.+?)\s*\(([A-Z]{3})\)\s*$/);
+    if(!rank||!pm)continue;
+    const name=pm[1].replace(/\s+/g," ").trim();
+    const country=pm[2].toUpperCase();
+    if(name.length<3)continue;
+    rows.push({ranking:rank,name,country,snapshot,url});
+  }
+  return rows;
+}
+async function syncRealJuniorBoys(){
+  const sources=[
+    "https://www.coretennis.net/majic/pageServer/160101003i/en/ITF-Junior-Boys-Rankings.html",
+    "https://www.coretennis.net/majic/pageServer/0n0100005a/en/ITF-Junior-Boys-Best-Progression--Year-.html",
+    "https://www.coretennis.net/majic/pageServer/170100003k/en/ITF-Junior-Boys-Best-Progression--Week-.html",
+    "https://www.coretennis.net/majic/pageServer/0p0100005b/en/ITF-Junior-Boys-Biggest-Drop--Year-.html",
+    "https://www.coretennis.net/majic/pageServer/190100003l/en/ITF-Junior-Boys-Biggest-Drop--Week-.html",
+    "https://www.coretennis.net/majic/pageServer/1i010100fo/en/ITF-Junior-Boys-Biggest-Drop--6-Months-.html"
+  ];
+  const settled=await Promise.allSettled(sources.map(fetchCoreTennisJuniorRows));
+  const merged=new Map<string,any>();
+  const sourceStats:any[]=[];
+  for(let i=0;i<settled.length;i++){
+    const r=settled[i];
+    if(r.status==="rejected"){
+      sourceStats.push({url:sources[i],ok:false,error:String((r.reason as any)?.message||r.reason)});
+      continue;
+    }
+    sourceStats.push({url:sources[i],ok:true,rows:r.value.length,snapshot:r.value[0]?.snapshot||null});
+    for(const p of r.value){
+      const key=normalizeName(p.name)+"|"+p.country;
+      const prev=merged.get(key);
+      if(!prev||p.ranking<prev.ranking)merged.set(key,p);
+    }
+  }
+  let inserted=0,updated=0,failed=0;
+  for(const p of merged.values()){
+    const norm=normalizeName(p.name);
+    const existing=await db.from("players")
+      .select("id,is_real,data_source")
+      .eq("country",p.country).eq("name_norm",norm)
+      .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+      .order("is_real",{ascending:false}).order("id",{ascending:true}).limit(1);
+    if(existing.error){failed++;continue;}
+    const sourceLabel="CoreTennis ITF Junior Boys · "+p.snapshot;
+    if((existing.data??[]).length){
+      const id=Number(existing.data![0].id);
+      const up=await db.from("players").update({
+        is_real:true,junior_ranking:p.ranking,junior_snapshot_date:p.snapshot,
+        junior_source:sourceLabel,data_snapshot:p.snapshot,career_status:"active"
+      }).eq("id",id);
+      if(up.error)failed++;else updated++;
+    }else{
+      const slugBase=norm.replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,45)||"junior";
+      const ins=await db.from("players").insert({
+        slug:"real-junior-"+p.country.toLowerCase()+"-"+slugBase+"-"+crypto.randomUUID().slice(0,8),
+        name:p.name,name_norm:norm,country:p.country,is_real:true,game_generated:false,
+        junior_ranking:p.ranking,junior_snapshot_date:p.snapshot,junior_source:sourceLabel,
+        data_source:"CoreTennis current ITF Junior Boys ranking import",
+        data_snapshot:p.snapshot,ranking_current:false,career_status:"active"
+      });
+      if(ins.error)failed++;else inserted++;
+    }
+  }
+  const trim=await db.rpc("trim_junior_world_pool",{p_target:2000});
+  const totals=await db.from("players")
+    .select("id,is_real,game_generated,age,junior_ranking,junior_source")
+    .not("junior_ranking","is",null).not("junior_source","is",null).range(0,4999);
+  const active=(totals.data??[]).filter(isCurrentJuniorProfile);
+  return {
+    sources:sourceStats,discovered:merged.size,inserted,updated,failed,
+    trimmed:Number(trim.data||0),
+    activeJuniorProfiles:active.length,
+    realJuniorProfiles:active.filter((x:any)=>x.is_real).length,
+    generatedJuniorProfiles:active.filter((x:any)=>x.game_generated).length
+  };
+}
 async function parseLiveTennisRanking(url:string){
   const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+tennis-manager data refresh)","Accept":"text/html"}});
   if(!res.ok)throw new Error("live-tennis HTTP "+res.status);
@@ -705,6 +801,11 @@ Deno.serve(async(req:Request)=>{
       }
     }
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
+  }
+
+  if(path.endsWith("/api/sync-real-juniors")&&req.method==="GET"){
+    try{return h(await syncRealJuniorBoys())}
+    catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
   if(path.endsWith("/api/ncaa-doubles")&&req.method==="GET"){

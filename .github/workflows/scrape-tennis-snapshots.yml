@@ -48,8 +48,8 @@ jobs:
                       'birth_date':(r.get('dob') or r.get('birth_date') or '').strip()
                   }
 
-          cur=[]
-          prev={}
+          cur_by_pid={}
+          prev_by_pid={}
           with open('/tmp/atp/rankings.csv',encoding='utf-8',errors='ignore') as fh:
               reader=csv.DictReader(fh)
               for r in reader:
@@ -64,22 +64,28 @@ jobs:
                   except: continue
                   try: pts=int(float(raw_pts)) if raw_pts else 0
                   except: pts=0
-                  if d==PREV:
-                      prev[pid]=rank
-                  else:
-                      cur.append({
-                          'rank':rank,
-                          'player_id':int(pid),
-                          'name':p['name'],
-                          'name_norm':p['name_norm'],
-                          'country':p['country'],
-                          'birth_date':p['birth_date'],
-                          'points':pts
-                      })
 
-          cur.sort(key=lambda x:(x['rank'],x['name']))
+                  row={
+                      'rank':rank,
+                      'player_id':int(pid),
+                      'name':p['name'],
+                      'name_norm':p['name_norm'],
+                      'country':p['country'],
+                      'birth_date':p['birth_date'],
+                      'points':pts
+                  }
+
+                  # Some archive rows are duplicated for the same ATP player/date.
+                  # Keep the strongest points total, then the best rank.
+                  bucket=cur_by_pid if d==CUR else prev_by_pid
+                  old=bucket.get(pid)
+                  if old is None or pts>old['points'] or (pts==old['points'] and rank<old['rank']):
+                      bucket[pid]=row
+
+          cur=sorted(cur_by_pid.values(),key=lambda x:(x['rank'],x['name']))
           for x in cur:
-              pr=prev.get(str(x['player_id']))
+              prev=prev_by_pid.get(str(x['player_id']))
+              pr=prev['rank'] if prev else None
               x['previous_rank']=pr
               x['rank_change']=None if pr is None else pr-x['rank']
 

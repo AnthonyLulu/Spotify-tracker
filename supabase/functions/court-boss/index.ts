@@ -1843,6 +1843,48 @@ Deno.serve(async(req:Request)=>{
       });
     }
 
+    if(String(t.data.circuit)==="NCAA"){
+      const reg=await db.from("ncaa_player_registry")
+        .select("ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players(id,name,country,ranking,doubles_ranking,current_ability,potential,ncaa_current,ncaa_school,ncaa_rank)")
+        .eq("season","2026-27")
+        .eq("status","Active")
+        .order("ita_rank",{ascending:true,nullsFirst:false})
+        .limit(250);
+      if(reg.error)return h({error:reg.error.message},500);
+      const ncaaPlayers=(reg.data??[]).map((x:any)=>{
+        const p=Array.isArray(x.players)?x.players[0]:x.players;
+        return p?{
+          ...p,
+          ita_rank:x.ita_rank,
+          school:x.school,
+          division:x.division,
+          ncaa_season:x.season,
+          ncaa_status:x.status,
+          ncaa_snapshot_date:x.snapshot_date,
+          ncaa_source:x.source_label||x.source_url
+        }:null;
+      }).filter(Boolean);
+      const individual=String(t.data.registration_mode||"")==="ncaa_individual_selection"
+        ||String(t.data.registration_mode||"")==="school_nomination"
+        ||String(t.data.registration_mode||"")==="conference_selection";
+      return h({
+        tournament:t.data,
+        main:[],
+        qualifying:[],
+        ncaa_players:ncaaPlayers,
+        ncaa_mode:t.data.registration_mode,
+        ncaa_individual:individual,
+        wildcard:null,
+        forfeits:[],
+        run:null,
+        doubles_run:null,
+        doubles_main:[],
+        doubles_completed_draw:[],
+        completed_draw:[],
+        ranking_kind:"ncaa"
+      });
+    }
+
     const directCut=Number(t.data.direct_cut??t.data.projected_direct_cut??0);
     const qualCut=Number(t.data.qual_cut??t.data.projected_qual_cut??0);
     const cut=Math.max(drawSize,qualCut||directCut||drawSize*4);

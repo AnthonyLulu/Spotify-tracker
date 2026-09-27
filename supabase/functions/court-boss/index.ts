@@ -322,7 +322,21 @@ async function resolvePlayerPhoto(player:any){
         const html=await rr.text();
         const m1=html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
         const m2=html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-        const raw=String(m1?.[1]||m2?.[1]||"").replace(/&amp;/g,"&").trim();
+        let raw=String(m1?.[1]||m2?.[1]||"").replace(/&amp;/g,"&").trim();
+
+        if(!raw||/logo|default|placeholder|social-share/i.test(raw)){
+          raw="";
+          const wanted=normalizeName(String(player.name||""));
+          for(const tag of html.match(/<img\b[^>]*>/gi)||[]){
+            const alt=String((tag.match(/\balt=["']([^"']+)["']/i)||[])[1]||"").trim();
+            if(!alt||normalizeName(alt)!==wanted)continue;
+            const src=String((tag.match(/\b(?:data-src|src)=["']([^"']+)["']/i)||[])[1]||"").replace(/&amp;/g,"&").trim();
+            if(!src||/logo|default|placeholder|social-share/i.test(src))continue;
+            try{raw=new URL(src,profileUrl).toString()}catch{raw=src}
+            if(raw)break;
+          }
+        }
+
         if(raw&&/^https?:\/\//i.test(raw)&&!/logo|default|placeholder|social-share/i.test(raw)){
           player.itf_photo_url=raw;
           update.itf_photo_url=raw;
@@ -330,9 +344,11 @@ async function resolvePlayerPhoto(player:any){
             player.photo_url=raw;
             player.photo_source="ITF";
             player.photo_source_url=profileUrl;
+            player.photo_source_label="ITF player profile";
             update.photo_url=raw;
             update.photo_source="ITF";
             update.photo_source_url=profileUrl;
+            update.photo_source_label=player.photo_source_label;
             update.photo_updated_at=new Date().toISOString();
           }
           break;

@@ -960,6 +960,11 @@ async function resolveTournamentImage(t:any){
         "ausopen.com","www.ausopen.com","rolandgarros.com","www.rolandgarros.com",
         "wimbledon.com","www.wimbledon.com","usopen.org","www.usopen.org",
         "wtatennis.com","www.wtatennis.com","sites.google.com",
+        "brisbaneinternational.com.au","www.brisbaneinternational.com.au",
+        "hkmenstennisopen.com","www.hkmenstennisopen.com",
+        "adelaideinternational.com.au","www.adelaideinternational.com.au",
+        "asbclassic.co.nz","www.asbclassic.co.nz",
+        "openoccitanie.com","www.openoccitanie.com",
         "tenniseurope.org","www.tenniseurope.org"
       ];
       canFetchOfficial=allowed.includes(host);

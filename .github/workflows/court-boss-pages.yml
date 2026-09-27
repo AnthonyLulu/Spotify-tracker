@@ -80,6 +80,12 @@ jobs:
           if(ng.rows.some(x=>x.birth_date<'2005-01-01'))throw new Error('ineligible Next Gen player');
           const db=JSON.parse(fs.readFileSync('/tmp/doubles.json','utf8'));
           if(db.rows[0]?.name!=='Lloyd Glasspool')throw new Error('Doubles #1 invalid');
+          const fed=JSON.parse(fs.readFileSync('/tmp/federer.json','utf8'));
+          const nadal=JSON.parse(fs.readFileSync('/tmp/nadal.json','utf8'));
+          if(fed.player?.career_status!=='retired'||fed.tournamentHistory?.length<300)throw new Error('Federer history invalid');
+          if(nadal.player?.career_status!=='retired'||nadal.tournamentHistory?.length<300)throw new Error('Nadal history invalid');
+          if(fed.tournamentHistory.filter(x=>x.is_grand_slam&&x.result_code==='W').length!==20)throw new Error('Federer slam count invalid');
+          if(nadal.tournamentHistory.filter(x=>x.is_grand_slam&&x.result_code==='W').length!==22)throw new Error('Nadal slam count invalid');
           EOF
 
       - name: Mobile browser smoke test
@@ -147,6 +153,17 @@ jobs:
             await page.getByLabel(/Wimbledon 2025/).click();
             await page.getByText('Finaliste').waitFor();
             await page.getByText('vs Jannik Sinner').waitFor();
+            await page.getByRole('button',{name:'✕'}).click();
+
+            await page.evaluate(()=>openPlayer(14405));
+            await page.getByText('Dossier joueur · Légende').waitFor();
+            await page.getByText('Retraité').first().waitFor();
+            await page.getByRole('button',{name:'Palmarès'}).click();
+            await page.getByRole('heading',{name:'Grands Chelems année par année'}).waitFor();
+            await page.getByLabel(/Wimbledon 2009/).click();
+            await page.getByText('Vainqueur').waitFor();
+            await page.getByText('vs Andy Roddick').waitFor();
+            await page.getByText(/16-14/).waitFor();
             await page.getByRole('button',{name:'✕'}).click();
 
             await page.getByRole('button',{name:'Plus'}).click();

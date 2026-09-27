@@ -1007,8 +1007,15 @@ Deno.serve(async(req:Request)=>{
       query=query.order("junior_doubles_ranking",{ascending:true}).range(offset,offset+limit-1);
       const {data,error,count}=await query;
       if(error)return h({error:error.message},500);
+      const ids=(data??[]).map((p:any)=>Number(p.id)).filter(Boolean);
+      const simpleRanks=ids.length
+        ?await db.from("junior_display_pool").select("player_id,display_rank").in("player_id",ids)
+        :{data:[],error:null};
+      if(simpleRanks.error)return h({error:simpleRanks.error.message},500);
+      const simpleById=new Map((simpleRanks.data??[]).map((x:any)=>[Number(x.player_id),Number(x.display_rank)]));
       const rows=(data??[]).map((p:any)=>({
         ...p,
+        junior_ranking:simpleById.get(Number(p.id))??p.junior_ranking??null,
         age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
         official_ranking:p.ranking_current?p.ranking:null
       }));

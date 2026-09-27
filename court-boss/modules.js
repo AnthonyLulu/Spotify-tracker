@@ -283,22 +283,25 @@ async function loadCbPlayerSearch(reset=false){
 
 function playerCircuitLabelV2(p){
   if(p.ranking_current)return 'ATP';
+  if(p.ncaa_current)return 'NCAA';
+  if(p.nextgen_ranking!=null)return 'Next Gen';
   if(p.junior_ranking!=null)return 'Junior';
   if(p.itf_ranking!=null)return 'ITF';
-  return p.is_real?'Hors classement':'Prospect';
+  if(p.doubles_ranking!=null)return 'Double';
+  return p.is_real?'Archive ATP':'Prospect';
 }
 
 function playerDatabasePageV2(){
   const s=cbPlayerSearch;
-  const countries=['','FRA','USA','ESP','ITA','GER','AUS','CZE','ARG','GBR','CAN','BRA','NED','BEL','SUI','AUT','JPN','KOR','SRB','CRO','SWE'];
-  const circuits=['Tous','ATP','ITF','Junior','Prospects'];
+  const countries=['',...countryRows.map(x=>x.country).filter(Boolean)];
+  const circuits=['Tous','ATP','ITF','Junior','NCAA','Double','Race','Next Gen','Prospects'];
   const start=s.count?Number(s.offset)+1:0,end=Math.min(Number(s.offset)+s.rows.length,s.count);
   return `
   <div class="section-head">
     <div>
       <div class="eyebrow">Database mondiale</div>
       <h1>Base joueurs</h1>
-      <div class="muted">5 000 profils · ATP, ITF, juniors et prospects. Challenger reste une catégorie de tournoi.</div>
+      <div class="muted">${fmt(worldStats?.searchableRealPlayers||worldStats?.realPlayersTotal||s.count||10000)} joueurs réels recherchables · ATP, ITF, juniors, NCAA, double et archives. Challenger reste une catégorie de tournoi.</div>
     </div>
     <div class="row"><button class="ghost" onclick="openCustomPlayerCreatorV2()">Créer mon joueur</button><button class="primary" onclick="nav('rankings')">Classement ATP</button></div>
   </div>
@@ -310,7 +313,7 @@ function playerDatabasePageV2(){
         ${circuits.map(x=>`<option ${x===s.circuit?'selected':''}>${x}</option>`).join('')}
       </select>
       <select class="select" id="cbPlayerCountry">
-        ${countries.map(x=>`<option value="${x}" ${x===s.country?'selected':''}>${x||'Tous pays'}</option>`).join('')}
+        ${countries.map(x=>`<option value="${x}" ${x===s.country?'selected':''}>${x?(flags[x]||'🏳️')+' '+x:'Toutes nationalités'}</option>`).join('')}
       </select>
       <select class="select" id="cbPlayerAge">
         ${[[99,'Tout âge'],[23,'23 ans max'],[20,'20 ans max'],[18,'18 ans max']].map(([v,l])=>`<option value="${v}" ${Number(v)===Number(s.age_max)?'selected':''}>${l}</option>`).join('')}
@@ -333,7 +336,7 @@ function playerDatabasePageV2(){
           <div>
             <div class="eyebrow">${playerCircuitLabelV2(p)} ${p.ranking_current?'#'+p.ranking:p.itf_ranking!=null?'#'+p.itf_ranking:p.junior_ranking!=null?'#'+p.junior_ranking:''}</div>
             <h2>${flags[p.country]||'🏳️'} ${esc(p.name)}</h2>
-            <div class="muted mini">${p.age||'—'} ans · ${esc(p.style||'Non renseigné')}</div>
+            <div class="muted mini">${p.age!=null?p.age+' ans':'Âge non publié'} · ${esc(p.style||'Non renseigné')}${p.ncaa_current?' · NCAA'+(p.ncaa_school?' '+esc(p.ncaa_school):''):''}</div>
           </div>
           <span class="badge">${p.scouting_confidence||0}% scout</span>
         </div>
@@ -394,7 +397,7 @@ function fantasyPageV2(){
     <h2>Nouveau tournoi</h2>
     <div class="filters">
       <input id="fantasyName" class="input" placeholder="Nom du tournoi" value="Court Boss Invitational">
-      <select id="fantasySurface" class="select"><option>Dur</option><option>Terre</option><option>Gazon</option></select>
+      <select id="fantasySurface" class="select"><option>Dur</option><option>Dur intérieur</option><option>Terre</option><option>Gazon</option></select>
       <select id="fantasyDraw" class="select"><option value="8">8 joueurs</option><option value="16" selected>16 joueurs</option><option value="32">32 joueurs</option><option value="64">64 joueurs</option></select>
       <select id="fantasyBest" class="select"><option value="3" selected>Meilleur des 3 sets</option><option value="5">Meilleur des 5 sets</option></select>
     </div>
@@ -606,7 +609,7 @@ function liveMatchPageV2(){
           <div class="list-item row between"><span>Position retour</span><b>${esc(local.tactics?.returnPos||'Neutre')}</b></div>
         </div>
       </div>
-      <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Conditions du match</div><h2>Surface</h2></div><select class="select" style="width:auto" onchange="setLiveSurfaceV2(this.value)"><option ${cbLiveSurface==='Dur'?'selected':''}>Dur</option><option ${cbLiveSurface==='Terre'?'selected':''}>Terre</option><option ${cbLiveSurface==='Gazon'?'selected':''}>Gazon</option></select></div></div>
+      <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Conditions du match</div><h2>Surface</h2></div><select class="select" style="width:auto" onchange="setLiveSurfaceV2(this.value)"><option ${cbLiveSurface==='Dur'?'selected':''}>Dur</option><option ${cbLiveSurface==='Dur intérieur'?'selected':''}>Dur intérieur</option><option ${cbLiveSurface==='Terre'?'selected':''}>Terre</option><option ${cbLiveSurface==='Gazon'?'selected':''}>Gazon</option></select></div></div>
       <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Adversaires</div><h2>Autour de ton classement</h2></div></div>
       <div class="grid g2">
         ${cbMatchOpponents.map(p=>`
@@ -656,15 +659,18 @@ function liveMatchPageV2(){
         const bx=Number(lp.ball_x??(s.serving_user?57:43));
         const by=Number(lp.ball_y??(s.serving_user?70:28));
         const rally=Number(lp.rally||0);
-        return `<div class="court2d ${String(s.surface||'Dur').toLowerCase().replace('terre','clay').replace('gazon','grass')} ${rally?'rallying':''}">
+        const surfaceName=String(s.surface||'Dur');
+        const courtType=surfaceName.toLowerCase().includes('intérieur')?'indoor':surfaceName==='Terre'?'clay':surfaceName==='Gazon'?'grass':'hard';
+        return `<div class="court2d ${courtType} ${rally?'rallying':''}">
+          <div class="court-venue-label">${esc(surfaceName)} · vue tactique</div>
           <div class="court-line baseline top"></div><div class="court-line baseline bottom"></div>
           <div class="court-line sideline left"></div><div class="court-line sideline right"></div>
           <div class="court-line service top"></div><div class="court-line service bottom"></div>
           <div class="court-line center"></div><div class="court-net"></div>
           <div class="court-shadow opponent" style="left:${ox}%"></div>
           <div class="court-shadow user" style="left:${ux}%"></div>
-          <div class="court-player opponent" style="left:${ox}%"><span>${esc((o.name||'A').slice(0,1))}</span></div>
-          <div class="court-player user" style="left:${ux}%"><span>${esc((cr.player_name||'A').slice(0,1))}</span></div>
+          <div class="court-player opponent fm-token" data-label="${esc(o.name||'Adversaire')}" style="left:${ox}%"><span>${esc((o.name||'A').slice(0,1))}</span></div>
+          <div class="court-player user fm-token" data-label="${esc(cr.player_name||'Joueur')}" style="left:${ux}%"><span>${esc((cr.player_name||'A').slice(0,1))}</span></div>
           <div class="court-ball ${s.serving_user?'serve-user':'serve-opp'} ${rally?'ball-live':''}" style="left:${bx}%;top:${by}%"></div>
           <div class="court-zone z1 ${(local.tactics?.returnPos||'Neutre')==='Avancée'?'active':''}"></div>
           <div class="court-zone z2 ${Number(local.tactics?.net||28)>55?'active':''}"></div>
@@ -768,7 +774,7 @@ window.advanceLiveMatchGameV2=advanceLiveMatchGameV2;
 window.advanceLiveMatchSetV2=advanceLiveMatchSetV2;
 
 function setLiveSurfaceV2(v){
-  cbLiveSurface=['Dur','Terre','Gazon'].includes(v)?v:'Dur';
+  cbLiveSurface=['Dur','Dur intérieur','Terre','Gazon'].includes(v)?v:'Dur';
   shell(liveMatchPageV2());
 }
 function setLiveTacticV2(k,v){
@@ -866,7 +872,7 @@ window.openCompareV2=openCompareV2;
 window.removeComparePlayerV2=removeComparePlayerV2;
 
 window.openGlobalSearchV2=()=>{
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>${fmt(worldStats?.playersTotal??5000)} joueurs</h1><div class="muted">Joueurs réels et prospects de simulation. Challenger est une catégorie de tournoi.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInputV2" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearchV2(this.value)" autofocus><div id="globalSearchResultsV2" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>${fmt(worldStats?.playersTotal??5000)} joueurs</h1><div class="muted">${fmt(worldStats?.searchableRealPlayers||worldStats?.realPlayersTotal||worldStats?.playersTotal||10000)} joueurs réels recherchables, plus les prospects de simulation. Challenger reste une catégorie de tournoi.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInputV2" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearchV2(this.value)" autofocus><div id="globalSearchResultsV2" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
   setTimeout(()=>document.getElementById('globalSearchInputV2')?.focus(),20);
 }
 let cbSearchTimer=null;

@@ -320,7 +320,7 @@ Deno.serve(async(req:Request)=>{
           .eq("is_real",true).not("junior_source","is",null).not("junior_ranking","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01")
           .order("junior_ranking",{ascending:true}).limit(drawSize);
         if(pool.error)return h({error:pool.error.message},500);
-        main=(pool.data??[]).map((p:any)=>({...p,ranking:p.junior_ranking,points:p.junior_points}));
+        main=(pool.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,String(t.data.start_date||"2025-01-01"),p.age),ranking:p.junior_ranking,points:p.junior_points}));
       }
       return h({
         tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
@@ -1864,7 +1864,7 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01"),
       db.from("tournaments").select("id",{count:"exact",head:true}),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_verified",true),
       db.from("college_teams").select("id",{count:"exact",head:true}),

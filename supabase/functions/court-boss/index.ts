@@ -23,7 +23,30 @@ const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=n
 };
 async function resolvePlayerFacts(player:any,gameDate:string){
   if(!player||!player.is_real)return player;
-  const qid=String(player.wikidata_id||"").trim();
+  let qid=String(player.wikidata_id||"").trim();
+  if((!qid||!/^Q\d+$/.test(qid))&&player.name){
+    try{
+      const qs=new URLSearchParams({
+        action:"query",generator:"search",gsrsearch:'"'+String(player.name)+'" tennis',
+        gsrnamespace:"0",gsrlimit:"5",prop:"pageprops",format:"json",origin:"*"
+      });
+      const wr=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{headers:{"User-Agent":"CourtBoss/1.0"}});
+      if(wr.ok){
+        const wj:any=await wr.json();
+        const pages=(Object.values(wj?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+        const target=normalizeName(String(player.name)).replace(/\s+/g,"");
+        const chosen=pages.find((x:any)=>{
+          const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+          return x?.pageprops?.wikibase_item&&title.includes(target);
+        });
+        const found=String(chosen?.pageprops?.wikibase_item||"");
+        if(/^Q\d+$/.test(found)){
+          qid=found;player.wikidata_id=qid;
+          await db.from("players").update({wikidata_id:qid}).eq("id",player.id);
+        }
+      }
+    }catch{}
+  }
   if(!qid||!/^Q\d+$/.test(qid))return player;
   if(player.birth_date&&player.photo_url)return player;
   try{
@@ -893,7 +916,7 @@ Deno.serve(async(req:Request)=>{
     const anth=await getManagedPlayer("id,player_attributes(*)");
     if(career.error||anth.error||!career.data)return h({error:(career.error||anth.error)?.message||"Career missing"},500);
     const c:any=career.data,a:any=Array.isArray(anth.data?.player_attributes)?anth.data.player_attributes[0]:anth.data?.player_attributes||{};
-    const tours=await db.from("tournaments").select("*").eq("is_active",true).gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(120);
+    const tours=await db.from("tournaments").select("*").eq("is_active",true).in("circuit",["ATP","Challenger","ITF"]).gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(180);
     if(tours.error)return h({error:tours.error.message},500);
     const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
     const score=(t:any)=>{
@@ -2054,7 +2077,7 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
     const [
-      playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,
+      playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,juniorTours,ncaaTours,
       ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,currentMissingDob,
       active2025,doublesReal,raceReal,nextgenReal,juniorReal
     ] = await Promise.all([
@@ -2068,6 +2091,8 @@ Deno.serve(async(req:Request)=>{
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Challenger"),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","ITF"),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Federation"),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Junior"),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","NCAA"),
       db.from("college_teams").select("id",{count:"exact",head:true}),
       db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true),
       db.from("ncaa_player_registry").select("player_id,status").limit(5000),
@@ -2108,6 +2133,8 @@ Deno.serve(async(req:Request)=>{
       officialChallenger:challengerTours.count??0,
       officialITF:itfTours.count??0,
       officialFederation:fedTours.count??0,
+      officialJunior:juniorTours.count??0,
+      officialNCAA:ncaaTours.count??0,
       currentRankedMissingAge:currentMissingAge.count??0,
       currentRankedMissingDob:currentMissingDob.count??0
     });

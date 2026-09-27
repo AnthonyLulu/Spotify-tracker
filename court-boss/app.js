@@ -379,7 +379,15 @@ function tmCuts(t){return {direct:Number(t.direct_cut??t.projected_direct_cut??0
 function singlesEligibility(t){
  const c=career(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
- if(String(t.circuit)==="NCAA")return {label:String(t.registration_mode)==="ncaa_individual_selection"?"Sélection NCAA/ITA":"Via université",cls:"info",can:false};
+ if(String(t.circuit)==="NCAA"){
+  const mode=String(t.registration_mode||"");
+  const label=mode==="ncaa_individual_selection"?"Qualifié NCAA/ITA"
+    :mode==="conference_selection"?"Sélection conférence"
+    :mode==="school_nomination"?"Nomination université / ITA"
+    :mode==="school_selection"?"Roster / lineup université"
+    :"Parcours NCAA/ITA";
+  return {label,cls:"info",can:false};
+ }
  if(String(t.circuit)==="Junior"){
   if(age>18)return {label:"Non éligible U18",cls:"bad",can:false};
   const jr=Number(c.junior_rank||c.junior_ranking||99999);
@@ -463,7 +471,7 @@ window.tmCalendarFilter=(k,v)=>{tmCalFilters[k]=v;render()}
 window.resetTmCalendarFilters=()=>{tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};render()}
 
 function calendar(){
- const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','J500','J300','J200','J100','J60','J30','Junior Finals','Junior Davis Cup','NCAA DI Team Championship','NCAA DI Individual Championship','NCAA','Junior','Davis Cup'];
+ const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','J500','J300','J200','J100','J60','J30','Junior Finals','Junior Davis Cup','ITA Kickoff Weekend','ITA National Team Indoor Championship','ITA All-American Championships','ITA Division I Regionals','ITA Sectional Championships','ITA Conference Masters','NCAA DI Team Championship','NCAA DI Individual Championship','NCAA','Junior','Davis Cup'];
  const circs=['Tous','ATP','Challenger','ITF','NCAA','Junior','Federation'];
  const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Moquette'];
  const officialCount=worldStats?.verifiedTournaments||0;

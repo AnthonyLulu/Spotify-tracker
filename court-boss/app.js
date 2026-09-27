@@ -8,7 +8,7 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',source:'Tous',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
@@ -196,14 +196,17 @@ window.setRankCountry=async c=>{rankCountry=String(c||'').toUpperCase();rankOffs
 window.rankPage=async d=>{rankOffset=Math.max(0,rankOffset+d*100);await loadRankings();render();window.scrollTo(0,0)}
 window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump')?.value||1),1,2000);rankOffset=Math.floor((n-1)/100)*100;await loadRankings();render();window.scrollTo(0,0)}
 function calendar(){
- const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','J500','J300','J200','J100','J60','J30','Junior Finals','NCAA','Junior','Davis Cup'];
+ const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','J500','J300','J200','J100','J60','J30','Junior Finals','NCAA','Junior','Davis Cup'];
  const circs=['Tous','ATP','Challenger','ITF','NCAA','Junior','Federation'];
- return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, NCAA, Junior et fédérations sont des circuits / catégories d'événements.</div></div><span class="pill">${fmt(tourCount)} événements</span></div>
- <div class="filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
+ const surfaces=['Toutes','Dur','Dur intérieur','Terre','Gazon','Carpet'];
+ const officialCount=worldStats?.verifiedTournaments||0;
+ return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">Le calendrier s’ouvre sur les compétitions réelles vérifiées. Les événements de simulation restent disponibles avec le filtre Source.</div></div><div class="row"><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels en base</span></div></div>
+ <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
+ <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
- <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · ${esc(surfaceLabel(t))} · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
+ <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(t.surface)}">${esc(t.surface)}</span> · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
  <div class="stack">${tourRows.map(t=>tournamentCard(t)).join('')||'<div class="card empty">Aucun tournoi pour ces filtres.</div>'}</div>
- <div class="pagination"><button ${tourOffset===0?'disabled':''} onclick="tourPage(-1)">←</button><span class="muted mini">${fmt(tourOffset+1)}–${fmt(Math.min(tourOffset+tourRows.length,tourCount))} / ${fmt(tourCount)}</span><button ${tourOffset+60>=tourCount?'disabled':''} onclick="tourPage(1)">→</button></div>`
+ <div class="pagination"><button ${tourOffset===0?'disabled':''} onclick="tourPage(-1)">←</button><span class="muted mini">${tourCount?fmt(tourOffset+1):0}–${fmt(Math.min(tourOffset+tourRows.length,tourCount))} / ${fmt(tourCount)}</span><button ${tourOffset+60>=tourCount?'disabled':''} onclick="tourPage(1)">→</button></div>`
 }
 function tournamentCard(t){
  const c=career(),isJunior=String(t.circuit)==='Junior';
@@ -511,46 +514,43 @@ window.openCollegeTeam=id=>{
 window.commitCollege=async id=>{try{await managerAction('commit_college',id);await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id);await loadManagement();render()}catch(e){alert(e.message)}}
 function davisPage(){
- const f=boot.federation||{},sq=boot.davisSquad||[],allTies=[...(management?.davisTies||[])].sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
+ const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[];
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
- const future=allTies.filter(x=>x.status!=='completed'&&String(x.tie_date)>=String(local.date||'2026-09-27'));
- const final8=future.filter(x=>String(x.stage||'').includes('Final 8'));
- const france=allTies.filter(x=>x.home_nation==='FRA'||x.away_nation==='FRA');
- const franceFuture=future.find(x=>x.home_nation==='FRA'||x.away_nation==='FRA')||null;
- const franceInFinal8=final8.some(x=>x.home_nation==='FRA'||x.away_nation==='FRA');
- const tieSurface=x=>x.surface==='Dur'&&x.indoor?'Dur intérieur':x.surface||'Dur';
+ const today=String(local.date||'2026-09-27');
+ const franceTies=ties.filter(t=>t.home_nation==='FRA'||t.away_nation==='FRA').sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
+ const nextFrance=franceTies.find(t=>t.status!=='completed'&&String(t.tie_date)>=today)||null;
+ const lastFrance=[...franceTies].reverse().find(t=>t.status==='completed'||String(t.tie_date)<today)||null;
+ const focusTie=nextFrance||lastFrance||franceTies[0]||null;
+ const final8=ties.filter(t=>String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
+ const franceAlive=final8.some(t=>t.home_nation==='FRA'||t.away_nation==='FRA');
+ const scoreFor=t=>t.home_score!=null&&t.away_score!=null?`${t.home_score}-${t.away_score}`:'vs';
+ const surfaceLabel=t=>t?.surface||((t?.indoor)?'Dur intérieur':'Dur');
+ const tieCard=t=>`<div class="davis-tie-card ${t.status==='completed'?'completed':''}">
+   <div class="row between"><span class="badge tag-fed">${esc(t.stage||'Coupe Davis')}</span><span class="muted mini">${df(t.tie_date)}</span></div>
+   <div class="davis-matchup"><b>${flags[t.home_nation]||'🏳️'} ${esc(t.home_nation)}</b><strong>${scoreFor(t)}</strong><b>${flags[t.away_nation]||'🏳️'} ${esc(t.away_nation)}</b></div>
+   <div class="muted mini">${esc(t.venue||'Lieu à confirmer')} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></div>
+ </div>`;
  return `<div class="fm-dashboard">
-  <div class="fm-page-head"><div><div class="eyebrow">Compétition par nations</div><h1>Coupe Davis 2026</h1><div class="muted">Qualifiers, Final 8, sélection nationale et rubbers dans le même module.</div></div><div class="fm-head-stack"><span class="fm-head-badge">${allTies.length} ties</span><span class="fm-head-badge subtle">Final 8 · Bologna</span></div></div>
+ <div class="fm-page-head"><div><div class="eyebrow">Équipe nationale</div><h1>Coupe Davis</h1><div class="muted">Saison 2026, sélection française et tableau mondial.</div></div><div class="fm-head-stack"><div class="fm-head-badge">FRA ${f.reputation||91}/100</div><div class="fm-head-badge subtle">${franceAlive?'Final 8':'Parcours terminé'}</div></div></div>
 
-  <div class="card davis-final8">
-   <div class="row between"><div><div class="eyebrow">24–29 novembre 2026</div><h2>Final 8 · quarts de finale</h2></div><span class="badge good">Dur intérieur</span></div>
-   <div class="davis-bracket">${final8.map((t,i)=>`<div class="davis-tie-card">
-    <div class="muted mini">${df(t.tie_date)} · QF${i+1}</div>
-    <div class="davis-nation"><span>${flags[t.home_nation]||'🏳️'}</span><b>${esc(t.home_nation)}</b></div>
-    <div class="davis-vs">VS</div>
-    <div class="davis-nation"><span>${flags[t.away_nation]||'🏳️'}</span><b>${esc(t.away_nation)}</b></div>
-    <div class="muted micro">${esc(t.venue||'Bologna')} · ${esc(tieSurface(t))}</div>
-   </div>`).join('')||'<div class="empty">Final 8 non chargé.</div>'}</div>
+ <div class="grid g2">
+  <div class="card davis-focus">
+   <div class="row between"><div><div class="eyebrow">${nextFrance?'Prochaine rencontre France':'Dernière rencontre France'}</div><h2>${focusTie?`${flags[focusTie.home_nation]||'🏳️'} ${esc(focusTie.home_nation)} ${scoreFor(focusTie)} ${esc(focusTie.away_nation)} ${flags[focusTie.away_nation]||'🏳️'}`:'Aucune rencontre'}</h2></div>${nextFrance?'<span class="badge warn">À venir</span>':'<span class="badge">Terminée</span>'}</div>
+   ${focusTie?`<div class="list-item row between"><span>Date</span><b>${df(focusTie.tie_date)}</b></div><div class="list-item row between"><span>Phase</span><b>${esc(focusTie.stage||'—')}</b></div><div class="list-item row between"><span>Terrain</span><b class="${surfaceClass(surfaceLabel(focusTie))}">${esc(surfaceLabel(focusTie))}</b></div><div class="list-item row between"><span>Lieu</span><b>${esc(focusTie.venue||'—')}</b></div>`:''}
+   ${nextFrance?'<button class="primary" style="margin-top:10px" onclick="playDavisTie('+nextFrance.id+')">Jouer la rencontre</button>':'<div class="notice" style="margin-top:10px">La France n’est pas qualifiée pour le Final 8 actuellement affiché. Le tableau mondial continue quand même dans la simulation.</div>'}
   </div>
-
-  <div class="grid g2" style="margin-top:12px">
-   <div class="card">
-    <div class="row between"><div><div class="eyebrow">Équipe de France</div><h2>Sélection & statut</h2></div><span class="badge">${esc(f.captain||'Capitaine à définir')}</span></div>
-    <div class="${franceInFinal8?'notice':'info'}" style="margin-bottom:10px">${franceInFinal8?'France qualifiée pour le Final 8.':'France n’est pas dans le Final 8 2026. Les ties de qualification restent consultables ci-dessous.'}</div>
-    ${sq.map(sqrow=>{const p=sqrow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqrow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🇫🇷'} ${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${p.doubles_ranking?fmt(p.doubles_ranking):'—'}</div></div><select class="select" style="width:auto;max-width:125px" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}
-    ${franceFuture?`<button class="primary" style="margin-top:10px;width:100%" onclick="playDavisTie(${franceFuture.id})">Jouer ${franceFuture.home_nation} – ${franceFuture.away_nation}</button>`:''}
-   </div>
-
-   <div class="card"><div class="row between"><div><div class="eyebrow">Parcours 2026</div><h2>Ties de la France</h2></div><span class="badge">${france.length}</span></div>
-    ${france.map(t=>`<div class="davis-history-row"><div><b>${flags[t.home_nation]||'🏳️'} ${t.home_nation} <span class="muted">vs</span> ${flags[t.away_nation]||'🏳️'} ${t.away_nation}</b><div class="muted mini">${df(t.tie_date)} · ${esc(t.stage)} · ${esc(tieSurface(t))}</div></div><span class="badge ${t.status==='completed'?'':'warn'}">${t.status==='completed'?'Terminé':'À venir'}</span></div>`).join('')||'<div class="empty">Aucun tie France.</div>'}
-   </div>
+  <div class="card"><div class="row between"><div><div class="eyebrow">Sélection</div><h2>Équipe de France</h2></div><span class="pill">${sq.length} joueurs</span></div>
+   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}
   </div>
+ </div>
 
-  <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Tableau mondial</div><h2>Tous les ties 2026</h2></div><span class="pill">${allTies.length}</span></div>
-   <div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Tour</th><th>Rencontre</th><th>Surface</th><th>Statut</th></tr></thead><tbody>
-    ${allTies.map(t=>`<tr><td>${df(t.tie_date)}</td><td>${esc(t.stage)}</td><td><b>${flags[t.home_nation]||'🏳️'} ${t.home_nation} – ${flags[t.away_nation]||'🏳️'} ${t.away_nation}</b></td><td>${esc(tieSurface(t))}</td><td><span class="badge ${t.status==='completed'?'':'warn'}">${t.status==='completed'?'Terminé':'Programmé'}</span></td></tr>`).join('')}
-   </tbody></table></div>
-  </div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours France</div><h2>Qualifications 2026</h2></div></div>
+ <div class="davis-timeline">${franceTies.map(tieCard).join('')||'<div class="card empty">Aucune rencontre France chargée.</div>'}</div>
+
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Bologne</div><h2>Final 8 2026</h2><div class="muted">Quarts programmés du 24 au 26 novembre, puis demi-finales et finale.</div></div><span class="badge good">Dur intérieur</span></div>
+ <div class="davis-bracket">${final8.map(tieCard).join('')||'<div class="card empty">Tableau Final 8 indisponible.</div>'}</div>
+
+ ${focusTie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Détail</div><h2>Rubbers de la rencontre France</h2></div></div><div class="stack">${focusTie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score||'—')}</div><span class="badge ${r.winner_nation==='FRA'?'good':'bad'}">${esc(r.winner_nation||'—')}</span></div></div></div>`).join('')}</div>`:''}
  </div>`
 }
 window.playDavisTie=async id=>{

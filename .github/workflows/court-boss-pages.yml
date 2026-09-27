@@ -29,17 +29,23 @@ jobs:
         env:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
-          for i in {1..24}; do
-            if curl --fail --silent --show-error "$BASE/index.html" -o /tmp/index.html; then
-              if grep -q 'app.js?v=20260927-8' /tmp/index.html && grep -q 'tactics.js?v=20260927-8' /tmp/index.html; then
-                echo "Render build is current"
+          LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
+          LOCAL_MODULES=$(sha256sum court-boss/modules.js | awk '{print $1}')
+          LOCAL_CSS=$(sha256sum court-boss/app.css | awk '{print $1}')
+          for i in {1..36}; do
+            if curl --fail --silent --show-error "$BASE/app.js?v=20260927-8" -o /tmp/render-app.js               && curl --fail --silent --show-error "$BASE/modules.js?v=20260927-8" -o /tmp/render-modules.js               && curl --fail --silent --show-error "$BASE/app.css?v=20260927-8" -o /tmp/render-app.css; then
+              REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
+              REMOTE_MODULES=$(sha256sum /tmp/render-modules.js | awk '{print $1}')
+              REMOTE_CSS=$(sha256sum /tmp/render-app.css | awk '{print $1}')
+              if [ "$LOCAL_APP" = "$REMOTE_APP" ] && [ "$LOCAL_MODULES" = "$REMOTE_MODULES" ] && [ "$LOCAL_CSS" = "$REMOTE_CSS" ]; then
+                echo "Render build matches the checked-out branch"
                 exit 0
               fi
             fi
-            echo "Waiting for Render deploy ($i/24)"
+            echo "Waiting for exact Render build ($i/36)"
             sleep 5
           done
-          echo "Render did not publish the expected build in time"
+          echo "Render did not publish the exact checked-out build in time"
           exit 1
 
       - name: Check published assets

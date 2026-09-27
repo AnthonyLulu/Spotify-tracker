@@ -541,81 +541,67 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
   }
   const url="https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main/atp/atp_rankings_"+decade+".csv";
   const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+historical-ranking-sync)","Accept":"text/csv"}});
-  if(!res.ok)throw new Error("Ranking archive HTTP "+res.status);
-  const text=await res.text();
-  const lines=text.split(/\r?\n/);
+  if(!res.ok||!res.body)throw new Error("Ranking archive HTTP "+res.status);
+
   const map=new Map<string,any>();
   let accepted=0;
-
-  const addWeeks=(a:any,rank:number,weeks:number)=>{
-    const w=Math.max(0,Number(weeks||0));
-    if(rank===1)a.weeks_at_no1+=w;
-    if(rank<=10)a.weeks_top10+=w;
-    if(rank<=100)a.weeks_top100+=w;
-    a.ranking_history_weeks+=w;
-  };
-
-  for(let i=1;i<lines.length;i++){
-    const line=lines[i];
-    if(!line)continue;
+  let headerSeen=false;
+  const processLine=(line:string)=>{
+    if(!line)return;
+    if(!headerSeen){headerSeen=true;return;}
     const cells=cbCsvCells(line);
-    if(cells.length<3)continue;
+    if(cells.length<3)return;
     const dateRaw=String(cells[0]||"").trim();
     const rank=Number(cells[1]||0);
     const player=String(cells[2]||"").trim();
-    if(!player||!rank||rank<1||dateRaw>"20251201")continue;
+    if(!player||!rank||rank<1||dateRaw>"20251201")return;
     const iso=ymdToIso(dateRaw);
-    if(!iso)continue;
-
+    if(!iso)return;
     let a=map.get(player);
     if(!a){
-      a={
-        sackmann_id:player,career_high_rank:rank,career_high_rank_date:iso,
-        weeks_at_no1:0,weeks_top10:0,weeks_top100:0,ranking_history_weeks:0,
-        last_date:null,last_rank:null
-      };
+      a={sackmann_id:player,career_high_rank:rank,career_high_rank_date:iso,weeks_at_no1:0,weeks_top10:0,weeks_top100:0,ranking_history_weeks:0};
       map.set(player,a);
     }
-
-    if(a.last_date&&a.last_rank!=null){
-      const prev=new Date(a.last_date+"T12:00:00Z").getTime();
-      const cur=new Date(iso+"T12:00:00Z").getTime();
-      const diffDays=Math.max(1,Math.round((cur-prev)/86400000));
-      // Normal publication gaps count as elapsed ranking weeks.
-      // Very long suspensions (notably the 2020 Covid freeze) do not.
-      const elapsedWeeks=diffDays>70?1:Math.max(1,Math.round(diffDays/7));
-      addWeeks(a,Number(a.last_rank),elapsedWeeks);
-    }
-
     if(rank<a.career_high_rank){
       a.career_high_rank=rank;a.career_high_rank_date=iso;
     }else if(rank===a.career_high_rank&&iso<a.career_high_rank_date){
       a.career_high_rank_date=iso;
     }
-    a.last_date=iso;
-    a.last_rank=rank;
+    if(rank===1)a.weeks_at_no1++;
+    if(rank<=10)a.weeks_top10++;
+    if(rank<=100)a.weeks_top100++;
+    a.ranking_history_weeks++;
     accepted++;
-  }
+  };
 
-  for(const a of map.values()){
-    if(a.last_rank!=null)addWeeks(a,Number(a.last_rank),1);
-    delete a.last_date;delete a.last_rank;
+  const reader=res.body.getReader();
+  const decoder=new TextDecoder();
+  let carry="";
+  while(true){
+    const {value,done}=await reader.read();
+    if(done)break;
+    carry+=decoder.decode(value,{stream:true});
+    const lines=carry.split(/\r?\n/);
+    carry=lines.pop()||"";
+    for(const line of lines)processLine(line);
   }
+  carry+=decoder.decode();
+  if(carry)processLine(carry);
 
   const rows=[...map.values()];
   let linked=0,upserted=0;
-  for(let i=0;i<rows.length;i+=600){
-    const chunk=rows.slice(i,i+600);
+  for(let i=0;i<rows.length;i+=400){
+    const chunk=rows.slice(i,i+400);
     const r=await db.rpc("apply_ranking_career_aggregates",{
       p_rows:chunk,
-      p_source:"Jeff Sackmann / Tennis Abstract weekly rankings archive · elapsed weeks",
+      p_source:"Jeff Sackmann / Tennis Abstract weekly rankings archive",
       p_cutoff:"2025-12-01"
     });
     if(r.error)throw r.error;
     linked+=Number(r.data?.players_linked||0);
     upserted+=Number(r.data?.aggregates_upserted||0);
   }
-  return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",method:"elapsed ranking weeks; long freezes excluded"};
+  return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",streamed:true};
 }
 async function syncSackmannAtpTitles(fromYear:number,toYear:number){
   const from=Math.max(1968,Math.min(2025,fromYear));

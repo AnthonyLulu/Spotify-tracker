@@ -273,7 +273,9 @@ Deno.serve(async(req:Request)=>{
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
     if(source==="Simulation") query=query.eq("is_verified",false);
-    if(surface&&surface!=="Toutes") query=query.eq("surface",surface);
+    if(surface==="Dur intérieur") query=query.eq("surface","Dur").eq("indoor",true);
+    else if(surface==="Dur extérieur"||surface==="Dur") query=query.eq("surface","Dur").eq("indoor",false);
+    else if(surface&&surface!=="Toutes") query=query.eq("surface",surface);
     if(/^\d{4}-\d{2}-\d{2}$/.test(from)) query=query.gte("start_date",from);
     if(q) query=query.ilike("name",`%${q}%`);
     if(/^\d{4}-\d{2}$/.test(month)){
@@ -284,7 +286,25 @@ Deno.serve(async(req:Request)=>{
     query=query.order("start_date",{ascending:true}).order("is_verified",{ascending:false}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
-    return h({offset,limit,count:count??0,rows:data??[]});
+
+    const year=Number((month||from||"2026").slice(0,4))||2026;
+    let tbcRows:any[]=[];
+    if(source!=="Simulation"){
+      const tbc=await db.from("tournament_tbc_events").select("*").eq("season_year",year).order("name");
+      if(!tbc.error){
+        tbcRows=(tbc.data??[]).filter((x:any)=>{
+          if(circuit&&circuit!=="Tous"&&x.circuit!==circuit)return false;
+          if(category&&category!=="Toutes"&&x.category!==category)return false;
+          if(q&&!String(x.name||"").toLowerCase().includes(q.toLowerCase()))return false;
+          if(surface==="Dur intérieur"&&!(x.surface==="Dur"&&x.indoor))return false;
+          if((surface==="Dur extérieur"||surface==="Dur")&&!(x.surface==="Dur"&&!x.indoor))return false;
+          if(surface&&surface!=="Toutes"&&!["Dur intérieur","Dur extérieur","Dur"].includes(surface)&&x.surface!==surface)return false;
+          if(month&&month!==String(year)+"-12")return false;
+          return true;
+        });
+      }
+    }
+    return h({offset,limit,count:count??0,rows:data??[],tbc:tbcRows});
   }
 
 

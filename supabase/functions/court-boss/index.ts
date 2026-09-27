@@ -250,7 +250,14 @@ async function resolvePlayerPhoto(player:any){
   };
 
   // 1) ATP Tour official headshot when an official ATP player code is known.
-  const atpCode=String(player.atp_code||"").trim().toLowerCase();
+  const directCode=/^[A-Za-z0-9]{4}$/.test(String(player.source_player_id||"").trim())
+    ?String(player.source_player_id).trim().toUpperCase()
+    :"";
+  if(!player.atp_code&&directCode){
+    player.atp_code=directCode;
+    try{await db.from("players").update({atp_code:directCode}).eq("id",player.id)}catch{}
+  }
+  const atpCode=String(player.atp_code||directCode||"").trim().toLowerCase();
   if(/^[a-z0-9]{4}$/.test(atpCode)){
     try{
       const img="https://www.atptour.com/-/media/alias/player-gladiator-headshot/"+encodeURIComponent(atpCode);

@@ -202,3 +202,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[r
   .slam-result{min-height:44px;padding:3px}
   .slam-result span{font-size:14px}
 }
+
+.tournament-season{padding:0;margin-top:7px}
+.tournament-season>summary{padding:11px 2px;list-style:none}
+.tournament-season>summary::-webkit-details-marker{display:none}
+.tournament-history-list{display:grid;gap:6px;padding:0 0 8px}
+.tournament-history-item{width:100%;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:10px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;color:inherit}
+.tournament-history-item:hover{background:rgba(255,255,255,.055)}
+.slam-result.compact{min-width:46px;width:46px;min-height:34px;height:34px;flex:0 0 46px}
+@media(max-width:640px){
+  .tournament-history-item{padding:9px 8px}
+  .tournament-history-item>div{min-width:0}
+  .tournament-history-item b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}

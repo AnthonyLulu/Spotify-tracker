@@ -555,10 +555,16 @@ window.startCareerWithPlayer=async function(id,name){
 
 async function loadCbMatchOpponents(){
   const r=Math.max(1,Number(career().singles_rank||750));
-  const offset=Math.max(0,r-8);
   try{
+    const meta=await get('/api/rankings?kind=singles&offset=0&limit=1');
+    const count=Math.max(1,Number(meta.count||0));
+    const offset=Math.max(0,Math.min(Math.max(0,count-16),r-8));
     const d=await get('/api/rankings?kind=singles&offset='+offset+'&limit=16');
     cbMatchOpponents=(d.rows||[]).filter(p=>p.name!==career().player_name);
+    if(!cbMatchOpponents.length&&offset!==0){
+      const fallback=await get('/api/rankings?kind=singles&offset=0&limit=16');
+      cbMatchOpponents=(fallback.rows||[]).filter(p=>p.name!==career().player_name);
+    }
   }catch(e){
     cbMatchOpponents=[];
   }

@@ -4,6 +4,7 @@ let cbSeasonHistory=[];
 let cbMatchOpponents=[];
 let cbLiveSession=null;
 let cbLiveOpponent=null;
+let cbLiveSurface='Dur';
 
 async function loadCbDoublesTournaments(){
   try{
@@ -363,6 +364,7 @@ function liveMatchPageV2(){
           <div class="list-item row between"><span>Position retour</span><b>${esc(local.tactics?.returnPos||'Neutre')}</b></div>
         </div>
       </div>
+      <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Conditions du match</div><h2>Surface</h2></div><select class="select" style="width:auto" onchange="setLiveSurfaceV2(this.value)"><option ${cbLiveSurface==='Dur'?'selected':''}>Dur</option><option ${cbLiveSurface==='Terre'?'selected':''}>Terre</option><option ${cbLiveSurface==='Gazon'?'selected':''}>Gazon</option></select></div></div>
       <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Adversaires</div><h2>Autour de ton classement</h2></div></div>
       <div class="grid g2">
         ${cbMatchOpponents.map(p=>`
@@ -383,7 +385,7 @@ function liveMatchPageV2(){
 
   return `
     <div class="section-head">
-      <div><div class="eyebrow">Match live · ${esc(s.surface||'Dur')}</div><h1>Anthony vs ${esc(o.name||'Adversaire')}</h1><div class="muted">ATP #${o.ranking||'—'} · set ${s.set_no||1}</div></div>
+      <div><div class="eyebrow">Match live · ${esc(s.surface||'Dur')}</div><h1>${esc(cr.player_name||'Joueur')} vs ${esc(o.name||'Adversaire')}</h1><div class="muted">ATP #${o.ranking||'—'} · set ${s.set_no||1}</div></div>
       <button class="ghost" onclick="resetLiveMatchV2()">Quitter</button>
     </div>
 
@@ -396,7 +398,7 @@ function liveMatchPageV2(){
         <div><span class="muted mini">ADVERSAIRE</span><h2>${esc(o.name||'Adversaire')}</h2></div>
         <div class="score-pills"><span>${s.opponent_sets}</span><strong>${s.opponent_games}</strong></div>
       </div>
-      <div class="muted mini" style="margin-top:8px">${s.serving_user?'🎾 Anthony au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
+      <div class="muted mini" style="margin-top:8px">${s.serving_user?'🎾 '+esc(cr.player_name||'Joueur')+' au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
     </div>
 
     <div class="grid g2" style="margin-top:12px">
@@ -429,13 +431,13 @@ function liveMatchPageV2(){
 
     <div class="card" style="margin-top:12px">
       <h2>Historique du score</h2>
-      ${(s.score_log||[]).slice(-12).reverse().map(x=>`<div class="list-item row between"><span>Set ${x.set} · ${x.user_games}-${x.opponent_games}</span><b class="${x.winner_game==='Anthony'?'good':'bad'}">${esc(x.winner_game)}</b></div>`).join('')||'<div class="empty">Le match n’a pas encore commencé.</div>'}
+      ${(s.score_log||[]).slice(-12).reverse().map(x=>`<div class="list-item row between"><span>Set ${x.set} · ${x.user_games}-${x.opponent_games}</span><b class="${x.winner_game===(cr.player_name||'Anthony')?'good':'bad'}">${esc(x.winner_game)}</b></div>`).join('')||'<div class="empty">Le match n’a pas encore commencé.</div>'}
     </div>`;
 }
 
 async function startLiveMatchV2(opponentId){
   try{
-    const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({opponent_id:opponentId,surface:'Dur',tactics:local.tactics||{}})});
+    const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({opponent_id:opponentId,surface:cbLiveSurface,tactics:local.tactics||{}})});
     cbLiveSession=d.session;cbLiveOpponent=d.opponent;
     shell(liveMatchPageV2());
   }catch(e){alert(e.message)}
@@ -456,6 +458,10 @@ async function advanceLiveMatchV2(){
   }catch(e){alert(e.message)}
 }
 
+function setLiveSurfaceV2(v){
+  cbLiveSurface=['Dur','Terre','Gazon'].includes(v)?v:'Dur';
+  shell(liveMatchPageV2());
+}
 function setLiveTacticV2(k,v){
   local.tactics=local.tactics||{};
   local.tactics[k]=v;
@@ -469,5 +475,6 @@ function resetLiveMatchV2(){
 
 window.startLiveMatchV2=startLiveMatchV2;
 window.advanceLiveMatchV2=advanceLiveMatchV2;
+window.setLiveSurfaceV2=setLiveSurfaceV2;
 window.setLiveTacticV2=setLiveTacticV2;
 window.resetLiveMatchV2=resetLiveMatchV2;

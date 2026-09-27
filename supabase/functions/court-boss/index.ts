@@ -190,7 +190,7 @@ Deno.serve(async(req:Request)=>{
       const next=mm===12?`${yy+1}-01-01`:`${yy}-${String(mm+1).padStart(2,"0")}-01`;
       query=query.gte("start_date",month+"-01").lt("start_date",next);
     }
-    query=query.order("start_date",{ascending:true}).range(offset,offset+limit-1);
+    query=query.order("start_date",{ascending:true}).order("is_verified",{ascending:false}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
     return h({offset,limit,count:count??0,rows:data??[]});

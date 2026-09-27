@@ -14,7 +14,7 @@ const country2={
  PAK:'PK',PAN:'PA',PAR:'PY',PRY:'PY',PER:'PE',PHI:'PH',PNG:'PG',POL:'PL',POR:'PT',PUR:'PR',QAT:'QA',
  REU:'RE',ROU:'RO',RSA:'ZA',RUS:'RU',RWA:'RW',SEN:'SN',SGP:'SG',SIN:'SG',SLO:'SI',SRB:'RS',SRI:'LK',SUD:'SD',SUI:'CH',SUR:'SR',SVK:'SK',SWE:'SE',SWZ:'SZ',SYR:'SY',
  TGO:'TG',TOG:'TG',THA:'TH',TJK:'TJ',TKM:'TM',TPE:'TW',TTO:'TT',TUN:'TN',TUR:'TR',
- UAE:'AE',UGA:'UG',UKR:'UA',URU:'UY',USA:'US',UZB:'UZ',VAN:'VU',VEN:'VE',VIE:'VN',YEM:'YE',ZAM:'ZM',ZIM:'ZW'
+ UAE:'AE',UGA:'UG',UKR:'UA',URU:'UY',USA:'US',UZB:'UZ',TWN:'TW',BRU:'BN',OMA:'OM',PLE:'PS',MGL:'MN',VAN:'VU',VEN:'VE',VIE:'VN',YEM:'YE',ZAM:'ZM',ZIM:'ZW'
 };
 const emojiFlag=code=>{
  const iso=country2[String(code||'').toUpperCase()]||(String(code||'').length===2?String(code).toUpperCase():'');
@@ -319,7 +319,7 @@ function scouting(){
 }
 window.changeScoutAssignment=async(id,focus)=>{try{await managerAction('set_scouting_assignment',id,{focus});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
 function more(){
- const items=[['players','Base joueurs','10 000+ profils · ATP au-delà du #2000 + ITF + Juniors + NCAA'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
+ const items=[['players','Base joueurs','14 000+ profils réels · ATP au-delà du #2000 + ITF + Juniors + NCAA'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
@@ -327,7 +327,7 @@ function playersPage(){
  const circuits=['Tous','Tous réels','ATP classés','ITF','Junior','NCAA','Double','Race','Next Gen'];
  const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
  return `<div class="fm-dashboard">
-  <div class="fm-page-head"><div><div class="eyebrow">Scouting database</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche mondiale type scouting : ATP, ITF, NCAA, juniors et historiques dans la même base.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||10000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
+  <div class="fm-page-head"><div><div class="eyebrow">Scouting database</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche mondiale type scouting : ATP, ITF, NCAA, juniors et historiques dans la même base.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||14000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
   <div class="card fm-db-toolbar">
    <div class="fm-db-filters">
     <input id="dbSearch" class="input" value="${esc(dbQuery)}" placeholder="Nom du joueur…" onkeydown="if(event.key==='Enter')searchPlayerDatabase(this.value)">
@@ -682,12 +682,12 @@ function worldPage(){
  return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">Base mondiale, circuits séparés et simulation persistante.</div></div><button class="ghost" onclick="get('/api/world').then(x=>{worldStats=x;render()})">Actualiser</button></div>
  <div class="kpi-strip">
   <div class="kpi click" onclick="nav('players')"><span class="muted mini">Joueurs réels recherchables</span><b>${fmt(w.searchableRealPlayers||w.realPlayersTotal||w.playersTotal||10000)}</b></div>
-  <div class="kpi click" onclick="setRankKind('singles');nav('rankings')"><span class="muted mini">Classés ATP</span><b>${fmt(w.atpRanked||2000)}</b></div>
+  <div class="kpi click" onclick="setRankKind('singles');nav('rankings')"><span class="muted mini">Classés ATP</span><b>${fmt(w.atpRanked??0)}</b></div>
   <div class="kpi click" onclick="nav('calendar')"><span class="muted mini">Tournois</span><b>${fmt(w.tournaments||0)}</b></div>
   <div class="kpi"><span class="muted mini">Tournois vérifiés</span><b>${fmt(w.verifiedTournaments||0)}</b></div>
  </div>
  <div class="menu-grid" style="margin-top:14px">
-  <div class="menu-card" onclick="setRankKind('singles');nav('rankings')"><div class="menu-icon">🎾</div><strong>ATP</strong><span class="muted">${fmt(w.atpRanked||2000)} joueurs classés</span></div>
+  <div class="menu-card" onclick="setRankKind('singles');nav('rankings')"><div class="menu-icon">🎾</div><strong>ATP</strong><span class="muted">${fmt(w.atpRanked??0)} joueurs classés</span></div>
   <div class="menu-card" onclick="setRankKind('itf');nav('rankings')"><div class="menu-icon">🌍</div><strong>ITF WTT</strong><span class="muted">${fmt(w.itfPlayers||0)} profils avec rang ITF</span></div>
   <div class="menu-card" onclick="setRankKind('junior');nav('rankings')"><div class="menu-icon">🌱</div><strong>Junior</strong><span class="muted">${fmt(w.juniorPlayers||0)} profils juniors</span></div>
   <div class="menu-card" onclick="rankKind='ncaa';rankOffset=0;rankQuery='';loadRankings().then(()=>nav('rankings'))"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaProfilesTotal||w.ncaaPlayers||0)} profils · ${fmt(w.ncaaActiveProfiles||w.ncaaPlayers||0)} actifs</span></div>
@@ -1081,7 +1081,7 @@ window.simulateWeek=async()=>{
  finally{simulating=false;render()}
 }
 window.openGlobalSearch=()=>{
- overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Base mondiale · ${fmt(worldStats?.searchableRealPlayers||10000)} joueurs</div><h1>Recherche joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div>
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Base mondiale · ${fmt(worldStats?.searchableRealPlayers||14000)} joueurs</div><h1>Recherche joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div>
  <input id="globalSearchInput" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearch(this.value)" autofocus>
  <div class="filters" style="margin-top:8px">
   <select id="globalSearchCountry" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}">${flags[x.country]||'🏳️'} ${esc(x.country)}</option>`).join('')}</select>

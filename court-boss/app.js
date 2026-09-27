@@ -460,6 +460,28 @@ function tmCalendarRows(){
   return true;
  });
 }
+function tmCalendarRows(){
+ return (tourRows||[]).filter(t=>{
+  const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),wk=calWeekStart(t.start_date);
+  if(tmCalFilters.week!=="Toutes"&&wk!==tmCalFilters.week)return false;
+  if(tmCalFilters.country!=="Tous"&&String(t.country)!==tmCalFilters.country)return false;
+  if(tmCalFilters.status!=="Tous"&&st.label!==tmCalFilters.status)return false;
+  if(tmCalFilters.environment==="Indoor"&&!t.indoor)return false;
+  if(tmCalFilters.environment==="Outdoor"&&t.indoor)return false;
+  if(tmCalFilters.entry==="Simple"&&!t.singles)return false;
+  if(tmCalFilters.entry==="Double"&&!t.doubles)return false;
+  if(tmCalFilters.entry==="Simple + Double"&&!(t.singles&&t.doubles))return false;
+  if(tmCalFilters.holder==="Avec tenant"&&!t.defending_champion_name)return false;
+  if(tmCalFilters.holder==="Sans tenant"&&t.defending_champion_name)return false;
+  if(tmCalFilters.eligibility==="Éligible simple"&&!se.can)return false;
+  if(tmCalFilters.eligibility==="Éligible double"&&!de.can)return false;
+  if(tmCalFilters.eligibility==="Tableau direct"&&!/Tableau direct/.test(se.label))return false;
+  if(tmCalFilters.eligibility==="Qualifications"&&!/Qualif/.test(se.label))return false;
+  if(tmCalFilters.eligibility==="Alternate / WC"&&!/Alternate|WC/.test(se.label))return false;
+  if(tmCalFilters.eligibility==="Sélection"&&!/Sélection|université|NCAA/.test(se.label))return false;
+  return true;
+ });
+}
 function renderTournamentWeeks(){
  const groups={};tmCalendarRows().forEach(t=>{const k=calWeekStart(t.start_date);(groups[k]??=[]).push(t)});
  return Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([week,rows])=>{
@@ -1256,7 +1278,12 @@ window.openTournament=async id=>{
         <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:singleRule.can?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id});closeOverlay()">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>`}</div>
         ${played?`<div class="notice" style="margin-top:10px"><b>Résultat :</b> ${esc(played.user_round)} · +${played.user_points} pts · +${euro(played.user_prize)}</div>`:''}
       </div>
-      <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${t.qualifying_draw_size||'—'}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||'—':'Non'}</b></div><div class="list-item row between"><span>Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Simulation future'}</b></div></div>
+      <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${t.qualifying_draw_size||'—'}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||'—':'Non'}</b></div><div class="list-item row between"><span>Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Fictive Court Boss'}</b></div></div>
+      <div class="card"><div class="row between"><div><div class="eyebrow">Historique</div><h2>Tenant du titre</h2></div><span class="badge">${t.defending_champion_year||'—'}</span></div>
+       ${t.defending_champion_name?`<div class="list-item row between"><span>Simple</span><b class="click" ${t.defending_champion_player_id?`onclick="openPlayer(${t.defending_champion_player_id})"`:''}>🏆 ${esc(t.defending_champion_name)}</b></div>`:`<div class="list-item row between"><span>Simple</span><b>${t.defending_champion_source&&/première édition/i.test(t.defending_champion_source)?'Première édition':'—'}</b></div>`}
+       ${t.defending_doubles_champion_name?`<div class="list-item row between"><span>Double</span><b>🏆 ${esc(t.defending_doubles_champion_name)} / ${esc(t.defending_doubles_partner_name||'')}</b></div>`:''}
+       ${t.defending_champion_source?`<div class="muted micro" style="margin-top:8px">${esc(t.defending_champion_source)}</div>`:''}
+      </div>
     </div>
     ${t.doubles?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Inscription double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge ${doubleRule.cls}">${esc(doubleRule.label)}</span></div><div class="list-item row between"><span>Ton rang double</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)} · ${esc(activePartner.name)}</b></div>`:''}<div class="list-item row between"><span>Advance entry double</span><b>${t.doubles_entry_deadline?df(t.doubles_entry_deadline):String(t.entry_rule_code)==='ITF_M15'?'Aucune':'—'}</b></div><div class="list-item row between"><span>On-site sign-in</span><b>${t.doubles_onsite_deadline?df(t.doubles_onsite_deadline):'—'}</b></div>${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:doubleRule.can?`<button class="${dJoined?'danger-btn':'primary'}" style="width:100%;margin-top:8px" onclick="toggleDoublesEntry(${t.id});closeOverlay()">${dJoined?'Retirer le double':'Inscrire la paire'}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">${activePartner?'Voir le hub Double':'Choisir un partenaire'}</button>`}</div>`:''}
    </div>

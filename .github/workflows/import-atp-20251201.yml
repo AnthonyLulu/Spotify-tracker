@@ -15,8 +15,15 @@ jobs:
     steps:
       - name: Import canonical ATP snapshot
         run: |
-          curl --fail-with-body --silent --show-error --max-time 300             https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-atp-20251201-import             -o /tmp/result.json
-          cat /tmp/result.json
+          set +e
+          code=$(curl --silent --show-error --max-time 300             -w "%{http_code}"             https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-atp-20251201-import             -o /tmp/result.json)
+          curl_status=$?
+          set -e
+          echo "curl_status=$curl_status HTTP=$code"
+          cat /tmp/result.json || true
+          echo
+          if [ "$curl_status" -ne 0 ]; then exit "$curl_status"; fi
+          if [ "$code" -ge 400 ]; then exit 1; fi
           node - <<'EOF'
           const r=require('/tmp/result.json');
           if(!r.ok) throw new Error('import failed: '+JSON.stringify(r));

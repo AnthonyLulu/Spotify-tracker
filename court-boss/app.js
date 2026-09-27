@@ -253,7 +253,7 @@ function matchPage(){
  <div class="list-item"><div class="row between"><span>Montées au filet</span><b>${t.net}%</b></div><input class="range" type="range" min="1" max="100" value="${t.net}" oninput="setTactic('net',this.value)"></div>
  <div class="list-item row between"><span>Position retour</span><select class="select" style="width:auto" onchange="setTactic('returnPos',this.value)"><option ${t.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${t.returnPos==='Neutre'?'selected':''}>Neutre</option><option ${t.returnPos==='Reculée'?'selected':''}>Reculée</option></select></div></div>
  <div class="card"><h2>Lecture tactique</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Intensité</span><b>${Math.round((t.aggression+t.risk)/2)}</b></div><div class="kpi"><span class="muted mini">Jeu avant</span><b>${t.net}</b></div><div class="kpi"><span class="muted mini">Retour</span><b style="font-size:15px">${esc(t.returnPos)}</b></div></div><p class="muted mini" style="margin-top:10px">Le simulateur combine niveau, forme, fatigue, surface et consignes. L'analyse conserve service, rallyes, winners et fautes.</p></div></div>
- <div class="stack" style="margin-top:12px">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner==='Anthony'?'good':'bad'}">${m.winner==='Anthony'?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
+ <div class="stack" style="margin-top:12px">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner==='Anthony'?'good':'bad'}">${m.winner==='Anthony'?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
 }
 function doublesPage(){
  const c=career();
@@ -459,7 +459,44 @@ window.simulatePracticeMatch=async()=>{
 }
 window.openMatch=idx=>{
   const all=[...(local.practiceMatches||[]),...(boot.matches||[])],m=all[idx];if(!m)return;
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(m.tournament_name)}</div><h1>${esc(m.player_a)} vs ${esc(m.player_b)}</h1><div class="muted">${esc(m.score||'—')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="grid g2" style="margin-top:12px">${Object.entries(m.match_data||{}).map(([k,v])=>`<div class="card"><div class="muted mini">${esc(k.replaceAll('_',' '))}</div><div class="big">${v}</div></div>`).join('')}</div></div></div>`;
+  const d=m.match_data||{};
+  const firstServe=d.first_serve_pct??d.premieres_balles??'—';
+  const winners=d.winners??'—';
+  const errors=d.unforced_errors??d.fautes_directes??'—';
+  const net=d.net_points_won_pct??'—';
+  const rally=d.avg_rally??d.rallye_moyen??'—';
+  const bp=d.break_points_won??'—';
+  const plan=d.tactical_plan||local.tactics||{};
+  const result=m.winner===(career().player_name||'Anthony')||m.winner==='Anthony';
+  const efficiency=(()=>{
+    const w=Number(winners)||0,e=Number(errors)||0,n=Number(net)||50,r=Number(rally)||5;
+    return clamp(Math.round(50+(w-e)*1.2+(n-50)*.25-(r>8?3:0)),20,95);
+  })();
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet">
+    <div class="sheet-head"><div><div class="eyebrow">${esc(m.tournament_name||'Match')}</div><h1>${esc(m.player_a)} vs ${esc(m.player_b)}</h1><div class="muted">${df(m.match_date||local.date)} · ${esc(m.surface||'Dur')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+    <div class="score-hero" style="margin-top:12px">${esc(m.score||'—')}</div><div class="row" style="justify-content:center;margin-top:7px"><span class="badge ${result?'good':'bad'}">${result?'Victoire':'Défaite'}</span></div>
+    <div class="kpi-strip" style="margin-top:14px">
+      <div class="kpi"><span class="muted mini">1res balles</span><b>${typeof firstServe==='number'?firstServe+'%':esc(firstServe)}</b></div>
+      <div class="kpi"><span class="muted mini">Winners</span><b>${winners}</b></div>
+      <div class="kpi"><span class="muted mini">Fautes directes</span><b>${errors}</b></div>
+      <div class="kpi"><span class="muted mini">Filet gagné</span><b>${net==='—'?'—':net+'%'}</b></div>
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><h2>Lecture du match</h2>
+        <div class="list-item row between"><span>Longueur moyenne des échanges</span><b>${rally} coups</b></div>
+        <div class="list-item row between"><span>Break points gagnés</span><b>${bp}</b></div>
+        <div class="list-item row between"><span>Efficacité globale</span><b>${efficiency}/100</b></div>
+        <div class="bar"><i style="width:${efficiency}%"></i></div>
+      </div>
+      <div class="card"><h2>Plan tactique utilisé</h2>
+        <div class="list-item row between"><span>Agressivité</span><b>${plan.aggression??'—'}${plan.aggression!=null?'%':''}</b></div>
+        <div class="list-item row between"><span>Prise de risque</span><b>${plan.risk??'—'}${plan.risk!=null?'%':''}</b></div>
+        <div class="list-item row between"><span>Montées au filet</span><b>${plan.net??'—'}${plan.net!=null?'%':''}</b></div>
+        <div class="list-item row between"><span>Position au retour</span><b>${esc(plan.return_position??plan.returnPos??'Neutre')}</b></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px"><h2>Recommandation coach</h2><p class="muted">${errors!=='—'&&Number(errors)>Number(winners)?'Réduire légèrement la prise de risque sur le prochain match.':net!=='—'&&Number(net)>65?'Le jeu vers l’avant a été efficace. Conserver les montées au filet sur surface rapide.':rally!=='—'&&Number(rally)>7?'Les échanges sont longs : surveiller la fatigue et privilégier les schémas service + 1.':'Plan de jeu équilibré. Ajuster surtout selon le prochain adversaire.'}</p></div>
+  </div></div>`;
 }
 window.pairScore=(p,k)=>{const seed=(Number(p.id||1)*17+(k==='chem'?7:k==='comp'?13:19))%19;return clamp(68+seed,55,94)}
 window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}

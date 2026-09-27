@@ -157,7 +157,7 @@ Deno.serve(async(req:Request)=>{
       db.from("player_career_stats").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_final_results").select("*").eq("player_id",id).order("final_date",{ascending:false}).limit(200),
       db.from("junior_tournament_entries").select("id,seed,result,snapshot_date,source_url,tournaments(id,name,city,country,surface,category,start_date,end_date,is_verified,source_url)").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(30),
-      db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(250)
+      db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500)
     ]);
     const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error;
     if(err) return h({error:err.message},500);

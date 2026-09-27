@@ -111,6 +111,17 @@ async function resolvePlayerFacts(player:any,gameDate:string){
     const heightClaim=claims?.P2048?.[0]?.mainsnak?.datavalue?.value;
     const update:any={};
 
+    const atpClaim=claims?.P536?.[0]?.mainsnak?.datavalue?.value;
+    const itfClaim=claims?.P8618?.[0]?.mainsnak?.datavalue?.value;
+    if(typeof atpClaim==="string"&&/^[A-Za-z0-9]{4}$/.test(atpClaim)){
+      const code=atpClaim.toUpperCase();
+      player.atp_code=code;update.atp_code=code;
+    }
+    if(typeof itfClaim==="string"&&/^[a-z0-9-]+\/800\d+\/[a-z]{3}$/i.test(itfClaim)){
+      const wid=itfClaim.toLowerCase();
+      player.itf_player_id=wid;update.itf_player_id=wid;
+    }
+
     if(!player.birth_date&&typeof rawBirth==="string"){
       const m=rawBirth.match(/^\+?(\d{4}-\d{2}-\d{2})T/);
       if(m){
@@ -219,7 +230,80 @@ async function resolvePlayerFacts(player:any,gameDate:string){
 }
 async function resolvePlayerPhoto(player:any){
   if(!player||!player.is_real||!player.name)return player;
+
+  const savePhoto=async(url:string,source:string,sourceUrl:string,label:string)=>{
+    player.photo_url=url;
+    player.photo_source=source;
+    player.photo_source_url=sourceUrl;
+    player.photo_source_label=label;
+    player.photo_updated_at=new Date().toISOString();
+    player.photo_checked_at=new Date().toISOString();
+    await db.from("players").update({
+      photo_url:url,
+      photo_source:source,
+      photo_source_url:sourceUrl,
+      photo_source_label:label,
+      photo_updated_at:player.photo_updated_at,
+      photo_checked_at:player.photo_checked_at
+    }).eq("id",player.id);
+    return player;
+  };
+
+  // 1) ATP Tour official headshot when an official ATP player code is known.
+  const atpCode=String(player.atp_code||"").trim().toLowerCase();
+  if(/^[a-z0-9]{4}$/.test(atpCode)){
+    try{
+      const img="https://www.atptour.com/-/media/alias/player-gladiator-headshot/"+encodeURIComponent(atpCode);
+      const rr=await fetch(img,{headers:{"User-Agent":"CourtBoss/1.0","Accept":"image/avif,image/webp,image/apng,image/*,*/*;q=0.8"},redirect:"follow"});
+      const ct=String(rr.headers.get("content-type")||"").toLowerCase();
+      const cl=Number(rr.headers.get("content-length")||0);
+      if(rr.ok&&ct.startsWith("image/")&&(cl===0||cl>1200)){
+        return await savePhoto(
+          img,
+          "ATP Tour",
+          "https://www.atptour.com/en/players/-/"+atpCode+"/overview",
+          "ATP Tour · photo officielle"
+        );
+      }
+    }catch{}
+  }
+  if(player.photo_url&&/^ATP Tour$/i.test(String(player.photo_source||"")))return player;
+
+  // 2) World Tennis / ITF profile photo.
+  const itfId=String(player.itf_player_id||"").trim();
+  if(/^[a-z0-9-]+\/800\d+\/[a-z]{3}$/i.test(itfId)){
+    const pages=[
+      "https://www.itftennis.com/en/players/"+itfId+"/mt/s/overview/",
+      "https://www.itftennis.com/en/players/"+itfId+"/jt/s/overview/",
+      "https://www.itftennis.com/en/players/"+itfId+"/"
+    ];
+    for(const page of pages){
+      try{
+        const rr=await fetch(page,{headers:{"User-Agent":"CourtBoss/1.0 (+official player photo resolver)","Accept":"text/html"}});
+        if(!rr.ok)continue;
+        const html=await rr.text();
+        let m=html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+          ||html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+        let img=String(m?.[1]||"").replace(/&amp;/g,"&").trim();
+        if(!/remote\.axd|assetbank-itf|media\.itftennis\.com/i.test(img)){
+          const raw=html.match(/(?:https?:)?\/\/www\.itftennis\.com\/remote\.axd\/[^"'<>\s]+/i)
+            ||html.match(/\/remote\.axd\/[^"'<>\s]+/i);
+          img=String(raw?.[0]||"").replace(/&amp;/g,"&");
+        }
+        if(img.startsWith("//"))img="https:"+img;
+        else if(img.startsWith("/"))img="https://www.itftennis.com"+img;
+        if(img&&/^https:\/\//i.test(img)&&/remote\.axd|assetbank-itf|media\.itftennis\.com/i.test(img)){
+          return await savePhoto(img,"World Tennis / ITF",page,"World Tennis / ITF · photo officielle");
+        }
+      }catch{}
+    }
+  }
+  if(player.photo_url&&/World Tennis|ITF/i.test(String(player.photo_source||"")))return player;
+
+  // Keep an existing Wikimedia photo only after both official sources have been attempted.
   if(player.photo_url)return player;
+
+  // 3) Wikipedia / Wikimedia fallback.
   try{
     const qs=new URLSearchParams({
       action:"query",generator:"search",gsrsearch:'"'+String(player.name)+'" tennis',
@@ -233,19 +317,23 @@ async function resolvePlayerPhoto(player:any){
     const target=normalizeName(String(player.name)).replace(/\s+/g,"");
     const chosen=pages.find((x:any)=>x?.thumbnail?.source&&normalizeName(String(x.title||"")).replace(/\s+/g,"").includes(target))
       ??pages.find((x:any)=>x?.thumbnail?.source);
-    const photo=chosen?.thumbnail?.source;
+    const photo=String(chosen?.thumbnail?.source||"");
     if(photo){
-      player.photo_url=photo;
-      player.photo_source="Wikipedia/Wikimedia";
-      player.photo_source_url=String(chosen?.fullurl||"");
-      await db.from("players").update({
-        photo_url:photo,
-        photo_source:"Wikipedia/Wikimedia",
-        photo_source_url:String(chosen?.fullurl||""),
-        photo_updated_at:new Date().toISOString(),
-        photo_checked_at:new Date().toISOString()
-      }).eq("id",player.id);
+      return await savePhoto(
+        photo,
+        "Wikipedia/Wikimedia",
+        String(chosen?.fullurl||""),
+        "Wikipedia / Wikimedia"
+      );
     }
+  }catch{}
+
+  try{
+    await db.from("players").update({
+      photo_checked_at:new Date().toISOString(),
+      photo_source:null,
+      photo_source_label:null
+    }).eq("id",player.id);
   }catch{}
   return player;
 }

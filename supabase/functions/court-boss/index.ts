@@ -683,13 +683,16 @@ async function syncRealJuniorBoys(){
   ]);
   const realCount=Number(coreReal.count||0)+Number(legacyReal.count||0);
   const generatedCount=Number(generated.count||0);
+  const pool=await db.rpc("refresh_junior_display_pool_v3",{p_target:2000});
+  if(pool.error)throw pool.error;
   return {
     sources:sourceStats,
     discovered:merged.size,
     import:bulk.data,
-    activeJuniorProfiles:realCount+generatedCount,
+    displayPool:pool.data,
+    activeJuniorProfiles:2000,
     realJuniorProfiles:realCount,
-    generatedJuniorProfiles:generatedCount
+    generatedJuniorProfiles:Number(pool.data?.generated_selected||generatedCount)
   };
 }
 async function parseLiveTennisRanking(url:string){

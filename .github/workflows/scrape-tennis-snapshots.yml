@@ -1,4 +1,4 @@
-name: Scrape Tennis Snapshot
+name: Import ATP Historical Snapshot
 
 on:
   workflow_dispatch:
@@ -10,71 +10,30 @@ permissions:
   contents: write
 
 jobs:
-  scrape:
+  import:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build exact ATP 2025-12-01 top 2000 snapshot
+      - name: Download complete ATP snapshots
         run: |
           mkdir -p court-boss/data
-          python - <<'PY'
-          import csv, io, json, urllib.request
-
-          base="https://raw.githubusercontent.com/azhou5849/tennis-atp-sackmann-data/master/"
-          def get(name):
-              req=urllib.request.Request(base+name,headers={"User-Agent":"CourtBossData/1.0"})
-              with urllib.request.urlopen(req,timeout=120) as r:
-                  return r.read().decode("utf-8-sig")
-
-          players={}
-          for row in csv.DictReader(io.StringIO(get("atp_players.csv"))):
-              pid=str(row.get("player_id","")).strip()
-              first=str(row.get("name_first",row.get("first_name","")) or "").strip()
-              last=str(row.get("name_last",row.get("last_name","")) or "").strip()
-              name=(" ".join(x for x in [first,last] if x)).strip()
-              if not name:
-                  name=str(row.get("name","") or "").strip()
-              players[pid]={
-                  "name":name,
-                  "country":str(row.get("ioc",row.get("country_code","")) or "UNK").strip() or "UNK",
-                  "dob":str(row.get("dob",row.get("birth_date","")) or "").strip()
-              }
-
-          rows=[]
-          for row in csv.DictReader(io.StringIO(get("atp_rankings_20s.csv"))):
-              if str(row.get("ranking_date","")).strip()!="20251201":
-                  continue
-              rank=int(float(row["ranking"]))
-              if rank>2000:
-                  continue
-              pid=str(row["player_id"]).strip()
-              p=players.get(pid,{})
-              rows.append({
-                  "rank":rank,
-                  "player_id":pid,
-                  "name":p.get("name",""),
-                  "country":p.get("country","UNK"),
-                  "dob":p.get("dob",""),
-                  "points":int(float(row.get("ranking_points") or 0))
-              })
-          rows.sort(key=lambda x:(x["rank"],x["name"]))
-          if len(rows)<1900:
-              raise SystemExit(f"Only {len(rows)} rows found for 2025-12-01")
-          out={
-              "snapshot":"2025-12-01",
-              "source":"Sackmann-format ATP rankings mirror",
-              "source_repo":"azhou5849/tennis-atp-sackmann-data",
-              "count":len(rows),
-              "rows":rows
+          curl --fail --silent --show-error             https://atp-rankings-data-visualization.onrender.com/api/week/2025-12-01             -o court-boss/data/atp-singles-2025-12-01.json
+          curl --fail --silent --show-error             https://atp-rankings-data-visualization.onrender.com/api/week/2025-11-24             -o court-boss/data/atp-singles-2025-11-24.json
+          node <<'EOF'
+          const fs=require('fs');
+          for(const file of ['2025-12-01','2025-11-24']){
+            const p='court-boss/data/atp-singles-'+file+'.json';
+            const x=JSON.parse(fs.readFileSync(p,'utf8'));
+            const rows=x.rankings||x.rows||[];
+            if(rows.length<1000) throw new Error(file+' only '+rows.length+' rows');
+            console.log(file,rows.length,'ranked players',rows[0],rows[rows.length-1]);
           }
-          with open("court-boss/data/atp-singles-2025-12-01.json","w",encoding="utf-8") as f:
-              json.dump(out,f,ensure_ascii=False,indent=2)
-          print("ATP snapshot rows:",len(rows),"min",rows[0]["rank"],"max",rows[-1]["rank"])
-          PY
-      - name: Commit ranking snapshot
+          EOF
+
+      - name: Commit snapshots
         run: |
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/atp-singles-2025-12-01.json
-          git diff --cached --quiet || git commit -m "Import exact ATP top 2000 snapshot 2025-12-01"
+          git add court-boss/data/atp-singles-2025-12-01.json court-boss/data/atp-singles-2025-11-24.json
+          git diff --cached --quiet || git commit -m "Import complete ATP snapshots around 2025-12-01"
           git push

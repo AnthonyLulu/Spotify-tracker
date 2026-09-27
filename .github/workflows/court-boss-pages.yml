@@ -67,6 +67,8 @@ jobs:
           for kind in singles race doubles nextgen junior; do
             curl --fail --silent --show-error "$API/api/rankings?kind=$kind&offset=0&limit=10" -o "/tmp/$kind.json"
           done
+          curl --fail --silent --show-error "$API/api/player?id=14405" -o /tmp/federer.json
+          curl --fail --silent --show-error "$API/api/player?id=14406" -o /tmp/nadal.json
           node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
           node <<'EOF'
           const fs=require('fs');

@@ -942,6 +942,7 @@ window.renderPalmaresHtml=function(d,p){
   const titles=d?.titles||[];
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
+  const indexedHistory=tournamentHistory.map((x,i)=>({...x,__i:i}));
   window.__cbPalmares={player:p,titles,tournamentHistory};
 
   const slamKey=name=>{
@@ -1113,6 +1114,25 @@ window.renderPalmaresHtml=function(d,p){
               </button>\`).join('')}
           </div>
         </details>\`).join(''):'<div class="empty">Pas encore d’historique tournoi importé.</div>'}
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="row between"><div><div class="eyebrow">Historique TM</div><h2>Résultats tournoi par saison</h2></div><span class="pill">${tournamentHistory.length} tournoi(s)</span></div>
+      <div class="muted mini" style="margin-top:4px">Tous les tournois réels disponibles : ATP, Masters, Grand Chelem, Challenger, Coupe Davis et Finals. Clique sur une ligne pour voir le dernier adversaire et le score.</div>
+      <div class="tm-season-history" style="margin-top:12px">
+        ${seasonYears.length?seasonYears.map((year,yi)=>{
+          const rows=seasonHistory[year]||[];
+          return `<details class="tm-season" ${yi===0?'open':''}>
+            <summary class="row between click"><b>${year}</b><span class="badge">${rows.length} tournoi${rows.length>1?'s':''}</span></summary>
+            <div class="tm-season-list">
+              ${rows.map(h=>`<button class="tm-history-row" data-tournament-history-index="${h.__i}">
+                <span class="tm-history-main"><b>${esc(String(h.tournament_name||'Tournoi').replace(/^Us Open$/i,'US Open'))}</b><small>${esc(h.category||h.level||'ATP')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</small></span>
+                <span class="tm-history-result ${resultClass(h.result_code)}">${esc(h.result_code||'—')}</span>
+              </button>`).join('')}
+            </div>
+          </details>`;
+        }).join(''):'<div class="empty">Aucun historique tournoi réel disponible.</div>'}
+      </div>
     </div>
 
     <div class="card" style="margin-top:12px">

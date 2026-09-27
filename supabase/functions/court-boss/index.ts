@@ -863,6 +863,132 @@ Deno.serve(async(req:Request)=>{
   }
 
 
+
+  if(path.endsWith("/api/live-match/point")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*))").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
+    if(session.data.status!=="active")return h({ok:true,session:session.data,completed:true});
+
+    const [career,managed]=await Promise.all([
+      db.from("career_state").select("*").eq("id","demo").maybeSingle(),
+      getManagedPlayer("id,name,current_ability,form,fitness,fatigue,player_attributes(*)")
+    ]);
+    if(career.error||managed.error||!career.data||!managed.data)return h({error:(career.error||managed.error)?.message||"Données match incomplètes"},500);
+
+    const opp:any={...session.data.opponent,player_attributes:Array.isArray(session.data.opponent?.player_attributes)?session.data.opponent.player_attributes[0]:session.data.opponent?.player_attributes||{}};
+    const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
+    const tactics=body?.tactics||session.data.tactics||{};
+    const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
+    const ret=String(tactics.returnPos||"Neutre");
+    const surface=String(session.data.surface||"Dur");
+    const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+
+    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
+    const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.17+Number(opp.fitness||90)*.08-Number(opp.fatigue||20)*.12+Number(opp.player_attributes?.[key]||10)*.8;
+    const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
+    const netBonus=(surface==="Gazon"?.035:surface==="Dur"?.018:.006)*net;
+    const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
+    const momentum=(Number(session.data.momentum||50)-50)*.05;
+    let uStrength=uBase+balance+netBonus+retBonus+momentum;
+    let oStrength=oBase;
+    if(session.data.serving_user)uStrength+=2.2;else oStrength+=2.2;
+
+    const prob=1/(1+Math.exp(-(uStrength-oStrength)/7.5));
+    const userWon=Math.random()<prob;
+    let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
+    if(userWon)up++;else op++;
+
+    const rally=2+Math.floor(Math.random()*(4+Math.max(1,Math.round((100-risk)/10))));
+    const shot=userWon?(Math.random()<.22?"ace":Math.random()<.54?"winner":"forced error"):(Math.random()<.2?"return winner":Math.random()<.55?"winner":"forced error");
+    const lastPoint={
+      winner:userWon?"user":"opponent",
+      rally,
+      shot,
+      user_x:18+Math.floor(Math.random()*64),
+      opp_x:18+Math.floor(Math.random()*64),
+      ball_x:18+Math.floor(Math.random()*64),
+      ball_y:userWon?20+Math.floor(Math.random()*28):52+Math.floor(Math.random()*28),
+      at:new Date().toISOString()
+    };
+
+    const stats:any={user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,double_faults:0,...(session.data.stats||{})};
+    if(userWon){
+      if(shot==="ace")stats.user_aces++;
+      else if(shot==="winner")stats.user_winners++;
+      else stats.opp_errors++;
+    }else{
+      if(shot==="winner"||shot==="return winner")stats.opp_winners++;
+      else stats.user_errors++;
+    }
+
+    let ug=Number(session.data.user_games||0),og=Number(session.data.opponent_games||0);
+    let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
+    let setNo=Number(session.data.set_no||1),gameFinished=false,setFinished=false,setWinner="";
+    const userName=String(career.data.player_name||"Joueur");
+
+    if((up>=4||op>=4)&&Math.abs(up-op)>=2){
+      gameFinished=true;
+      if(up>op)ug++;else og++;
+      up=0;op=0;
+      if(((ug>=6||og>=6)&&Math.abs(ug-og)>=2)||ug===7||og===7){
+        setFinished=true;
+        setWinner=ug>og?userName:String(opp.name);
+        if(ug>og)us++;else os++;
+      }
+    }
+
+    let status="active",completed=false;
+    if(setFinished){
+      if(us>=2||os>=2){status="completed";completed=true}
+      else{setNo++;ug=0;og=0}
+    }
+
+    const log:any[]=Array.isArray(session.data.score_log)?session.data.score_log:[];
+    if(gameFinished){
+      log.push({set:Number(session.data.set_no||1),user_games:ug,opponent_games:og,winner_game:lastPoint.winner==="user"?userName:opp.name,set_finished:setFinished,set_winner:setWinner});
+    }
+
+    const momentumNew=Math.max(10,Math.min(90,
+      Number(session.data.momentum||50)+(userWon?1:-1)+(gameFinished?(lastPoint.winner==="user"?3:-3):0)+(setFinished?(setWinner===userName?7:-7):0)
+    ));
+    const update:any={
+      user_sets:us,opponent_sets:os,set_no:setNo,user_games:ug,opponent_games:og,
+      user_points:up,opponent_points:op,rally_no:Number(session.data.rally_no||0)+1,last_point:lastPoint,
+      serving_user:gameFinished?!session.data.serving_user:session.data.serving_user,
+      momentum:momentumNew,tactics,stats,score_log:log,status,updated_at:new Date().toISOString()
+    };
+    if(completed)update.completed_at=new Date().toISOString();
+
+    const saved=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
+    if(saved.error)return h({error:saved.error.message},500);
+
+    if(completed){
+      const won=us>os;
+      const sets=log.filter((x:any)=>x.set_finished).map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ");
+      await db.from("match_history").insert({
+        tournament_name:"Live Match Center",match_date:career.data.career_date,surface,round:"Match live",
+        player_a:userName,player_b:opp.name,winner:won?userName:opp.name,score:sets,user_involved:true,
+        match_data:{live:true,stats,tactics}
+      });
+      await db.from("career_state").update({
+        fatigue:Math.min(100,Number(career.data.fatigue||18)+8),
+        fitness:Math.max(35,Number(career.data.fitness||91)-3),
+        form:Math.max(35,Math.min(100,Number(career.data.form||72)+(won?2:-1))),
+        updated_at:new Date().toISOString()
+      }).eq("id","demo");
+    }
+
+    return h({
+      ok:true,session:saved.data,
+      opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},
+      point_winner:lastPoint.winner,game_finished:gameFinished,set_finished:setFinished,set_winner:setWinner,
+      completed,win_probability:Math.round(prob*100),last_point:lastPoint
+    });
+  }
+
+
   if(path.endsWith("/api/live-match/game")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const id=n(body?.session_id,0,1,99999999);

@@ -13,10 +13,14 @@ jobs:
   import:
     runs-on: ubuntu-latest
     steps:
-      - name: Import full ATP snapshot
+      - name: Import canonical ATP snapshot
         run: |
-          curl --fail-with-body --silent --show-error --max-time 240 \
-            https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-atp-20251201-import \
-            -o /tmp/result.json
+          curl --fail-with-body --silent --show-error --max-time 300             https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-atp-20251201-import             -o /tmp/result.json
           cat /tmp/result.json
-          node -e "const r=require('/tmp/result.json'); if(!r.count || r.count < 100) throw new Error('incomplete ranking import: '+JSON.stringify(r))"
+          node - <<'EOF'
+          const r=require('/tmp/result.json');
+          if(!r.ok) throw new Error('import failed: '+JSON.stringify(r));
+          if(!r.source_count || r.source_count < 1800) throw new Error('incomplete source: '+JSON.stringify(r));
+          if(!r.active_count || r.active_count < 1800) throw new Error('incomplete active ranking: '+JSON.stringify(r));
+          console.log('canonical import OK',r);
+          EOF

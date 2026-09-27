@@ -14,42 +14,67 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Parse ATP 2025-12-01 archive
+      - name: Build exact ATP 2025-12-01 top 2000 snapshot
         run: |
           mkdir -p court-boss/data
-          cd /tmp
-          npm init -y >/dev/null 2>&1
-          npm install --silent playwright@1.55.0
-          npx playwright install --with-deps chromium >/dev/null
-          cat > scrape.cjs <<'EOF'
-          const fs=require('fs');
-          const {chromium}=require('playwright');
-          (async()=>{
-            const browser=await chromium.launch({headless:true});
-            const page=await browser.newPage({viewport:{width:1440,height:1800}});
-            await page.goto('https://hiyun0727.blogspot.com/2025/12/atp-ranking-20251201.html?m=1',{waitUntil:'domcontentloaded',timeout:90000});
-            await page.waitForTimeout(2000);
-            const rows=await page.locator('table tr').evaluateAll(trs=>trs.map(tr=>[...tr.querySelectorAll('th,td')].map(td=>(td.textContent||'').trim().replace(/\s+/g,' '))));
-            const singles=[];
-            for(const cells of rows){
-              if(cells.length<3)continue;
-              const rank=Number(String(cells[0]).replace(/[^0-9]/g,''));
-              const name=String(cells[1]||'').trim();
-              const pts=Number(String(cells[2]||'').replace(/[^0-9]/g,''));
-              if(rank>0&&name&&pts>=0)singles.push({rank,name,points:pts});
-            }
-            const uniq=[...new Map(singles.map(x=>[x.rank,x])).values()].sort((a,b)=>a.rank-b.rank);
-            fs.writeFileSync(process.env.GITHUB_WORKSPACE+'/court-boss/data/atp-singles-2025-12-01.json',JSON.stringify({snapshot:'2025-12-01',source:'Hiyun archive mirroring ATP ranking',count:uniq.length,rows:uniq},null,2));
-            await browser.close();
-            if(uniq.length<200)throw new Error('Only parsed '+uniq.length+' ranking rows');
-            console.log('parsed',uniq.length,'singles rows');
-          })().catch(e=>{console.error(e);process.exit(1)});
-          EOF
-          node scrape.cjs
+          python - <<'PY'
+          import csv, io, json, urllib.request
+
+          base="https://raw.githubusercontent.com/azhou5849/tennis-atp-sackmann-data/master/"
+          def get(name):
+              req=urllib.request.Request(base+name,headers={"User-Agent":"CourtBossData/1.0"})
+              with urllib.request.urlopen(req,timeout=120) as r:
+                  return r.read().decode("utf-8-sig")
+
+          players={}
+          for row in csv.DictReader(io.StringIO(get("atp_players.csv"))):
+              pid=str(row.get("player_id","")).strip()
+              first=str(row.get("name_first",row.get("first_name","")) or "").strip()
+              last=str(row.get("name_last",row.get("last_name","")) or "").strip()
+              name=(" ".join(x for x in [first,last] if x)).strip()
+              if not name:
+                  name=str(row.get("name","") or "").strip()
+              players[pid]={
+                  "name":name,
+                  "country":str(row.get("ioc",row.get("country_code","")) or "UNK").strip() or "UNK",
+                  "dob":str(row.get("dob",row.get("birth_date","")) or "").strip()
+              }
+
+          rows=[]
+          for row in csv.DictReader(io.StringIO(get("atp_rankings_20s.csv"))):
+              if str(row.get("ranking_date","")).strip()!="20251201":
+                  continue
+              rank=int(float(row["ranking"]))
+              if rank>2000:
+                  continue
+              pid=str(row["player_id"]).strip()
+              p=players.get(pid,{})
+              rows.append({
+                  "rank":rank,
+                  "player_id":pid,
+                  "name":p.get("name",""),
+                  "country":p.get("country","UNK"),
+                  "dob":p.get("dob",""),
+                  "points":int(float(row.get("ranking_points") or 0))
+              })
+          rows.sort(key=lambda x:(x["rank"],x["name"]))
+          if len(rows)<1900:
+              raise SystemExit(f"Only {len(rows)} rows found for 2025-12-01")
+          out={
+              "snapshot":"2025-12-01",
+              "source":"Sackmann-format ATP rankings mirror",
+              "source_repo":"azhou5849/tennis-atp-sackmann-data",
+              "count":len(rows),
+              "rows":rows
+          }
+          with open("court-boss/data/atp-singles-2025-12-01.json","w",encoding="utf-8") as f:
+              json.dump(out,f,ensure_ascii=False,indent=2)
+          print("ATP snapshot rows:",len(rows),"min",rows[0]["rank"],"max",rows[-1]["rank"])
+          PY
       - name: Commit ranking snapshot
         run: |
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
           git add court-boss/data/atp-singles-2025-12-01.json
-          git diff --cached --quiet || git commit -m "Import ATP singles snapshot 2025-12-01"
+          git diff --cached --quiet || git commit -m "Import exact ATP top 2000 snapshot 2025-12-01"
           git push

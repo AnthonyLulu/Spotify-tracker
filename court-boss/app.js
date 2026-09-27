@@ -10,6 +10,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
+let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous',dbLoaded=false,dbLoading=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
@@ -302,7 +303,7 @@ function playersPage(){
  const circuits=['Tous','ATP','ITF','Junior','NCAA','Double','Race','Next Gen'];
  const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
  return `<div class="fm-dashboard">
-  <div class="fm-page-head"><div><div class="eyebrow">Scouting database</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche dans toute la base, pas seulement dans les 2 000 classés ATP.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||10000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
+  <div class="fm-page-head"><div><div class="eyebrow">Scouting database</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche mondiale type scouting : ATP, ITF, NCAA, juniors et historiques dans la même base.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||10000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
   <div class="card fm-db-toolbar">
    <div class="fm-db-filters">
     <input id="dbSearch" class="input" value="${esc(dbQuery)}" placeholder="Nom du joueur…" onkeydown="if(event.key==='Enter')searchPlayerDatabase(this.value)">
@@ -455,7 +456,12 @@ function liveMatchPanel(){
    <div><span>Aces</span><b>${st.user_aces||0}</b></div>
    <div><span>Rallyes</span><b>${s.rally_no||0}</b></div>
   </div>
-  ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>`}
+  ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-live-toolbar">
+   <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button>
+   <button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button>
+   <button class="soft-btn ${liveAutoSpeed===2?'active':''}" onclick="setLiveSpeed(2)">2x</button>
+   <button class="soft-btn ${liveAutoSpeed===4?'active':''}" onclick="setLiveSpeed(4)">4x</button>
+  </div><div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>`}
  </div>`
 }
 function matchPage(){
@@ -484,7 +490,7 @@ window.playLivePoint=async()=>{
  if(!local.liveMatch)return;
  try{
   const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveGame=async()=>{
@@ -517,7 +523,33 @@ window.simulateLiveMatch=async()=>{
   persist();render();
  }catch(e){alert(e.message)}
 }
-window.clearLiveMatch=()=>{delete local.liveMatch;delete local.liveOpponent;persist();render()}
+window.setLiveSpeed=speed=>{
+ liveAutoSpeed=[1,2,4].includes(Number(speed))?Number(speed):1;
+ if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;toggleLiveAuto()}
+ render();
+}
+async function liveAutoTick(){
+ if(liveAutoBusy||!local.liveMatch||local.liveMatch.status==='completed'){
+   if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
+   return;
+ }
+ liveAutoBusy=true;
+ try{
+   const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+   local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+   if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
+ }catch(e){
+   if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}
+   alert(e.message);
+ }finally{liveAutoBusy=false}
+}
+window.toggleLiveAuto=()=>{
+ if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render();return}
+ if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ liveAutoTimer=setInterval(liveAutoTick,Math.max(180,900/liveAutoSpeed));
+ liveAutoTick();render();
+}
+window.clearLiveMatch=()=>{if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}delete local.liveMatch;delete local.liveOpponent;persist();render()}
 function doublesPage(){
  const c=career();
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);

@@ -117,3 +117,20 @@ button:disabled{cursor:not-allowed;opacity:.55}
   .court2d{height:300px}
   .court-player{width:30px;height:30px;font-size:12px}
 }
+
+/* Mobile/touch polish */
+.tactic-presets{flex-wrap:wrap;margin:12px 0}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:640px){
+  .topbar{gap:6px;flex-wrap:wrap}
+  .topbar .top-date{font-size:11px}
+  .topbar button{min-height:42px}
+  .section-head{flex-wrap:wrap;gap:10px}
+  .row{flex-wrap:wrap}
+  .rank-jump{max-width:100%}
+  .sheet .tabs{overflow-x:auto;flex-wrap:nowrap;white-space:nowrap}
+  .sheet .tabs button{flex-shrink:0}
+  .kpi{min-width:0}
+  .kpi b{overflow-wrap:anywhere}
+  .page{overflow-x:hidden}
+}

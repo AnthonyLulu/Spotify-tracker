@@ -1140,7 +1140,9 @@ Deno.serve(async(req:Request)=>{
       rally,
       shot,
       user_x:18+Math.floor(Math.random()*64),
+      user_y:Math.max(56,Math.min(88,82-Math.round(net*.18)-Math.min(8,Math.floor(rally/2))+Math.floor(Math.random()*7-3))),
       opp_x:18+Math.floor(Math.random()*64),
+      opp_y:Math.max(12,Math.min(44,18+Math.min(12,Math.floor(rally/2))+Math.floor(Math.random()*9-4))),
       ball_x:18+Math.floor(Math.random()*64),
       ball_y:userWon?20+Math.floor(Math.random()*28):52+Math.floor(Math.random()*28),
       at:new Date().toISOString()

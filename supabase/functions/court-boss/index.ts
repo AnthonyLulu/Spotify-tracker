@@ -367,6 +367,59 @@ async function fetchCoreTennisJuniorRows(url:string){
   }
   return rows;
 }
+async function fetchCoreTennisJuniorStatRows(url:string){
+  const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+junior-profile-sync)","Accept":"text/html"}});
+  if(!res.ok)throw new Error("CoreTennis stats HTTP "+res.status);
+  const html=await res.text();
+  const rows:any[]=[];
+  for(const row of html.match(/<tr\b[\s\S]*?<\/tr>/gi)||[]){
+    const cells=rowCells(row);
+    if(cells.length<2)continue;
+    const playerCell=String(cells[1]?.text||"").trim();
+    const pm=playerCell.match(/^(.+?)\s*\(([A-Z]{3})\)\s*$/);
+    if(!pm)continue;
+    const name=pm[1].replace(/\s+/g," ").trim();
+    const country=pm[2].toUpperCase();
+    if(name.length<3)continue;
+    rows.push({name,country,url});
+  }
+  return rows;
+}
+async function scrapeRealJuniorStatProfiles(){
+  const snapshot="2026-09-27";
+  const sources=[
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/3/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/4/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/5/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/6/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/7/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/8/2026-Junior-Boys-Tennis-Stats.html",
+    "https://www.coretennis.net/majic/pageServer/0l010000m9/en/sort/9/2026-Junior-Boys-Tennis-Stats.html"
+  ];
+  const settled=await Promise.allSettled(sources.map(fetchCoreTennisJuniorStatRows));
+  const merged=new Map<string,any>(),stats:any[]=[];
+  for(let i=0;i<settled.length;i++){
+    const r=settled[i];
+    if(r.status==="rejected"){stats.push({url:sources[i],ok:false,error:String((r.reason as any)?.message||r.reason)});continue;}
+    stats.push({url:sources[i],ok:true,rows:r.value.length});
+    for(const p of r.value){
+      const key=normalizeName(p.name)+"|"+p.country;
+      if(!merged.has(key))merged.set(key,p);
+    }
+  }
+  const stageRows=[...merged.values()].map((p:any)=>({
+    name_norm:normalizeName(p.name),country:p.country,name:p.name,
+    snapshot_date:snapshot,source_url:p.url,
+    source_label:"CoreTennis 2026 Junior Boys Stats · verified competitor",
+    updated_at:new Date().toISOString()
+  }));
+  for(let i=0;i<stageRows.length;i+=500){
+    const up=await db.from("junior_real_profile_staging").upsert(stageRows.slice(i,i+500),{onConflict:"name_norm,country"});
+    if(up.error)throw up.error;
+  }
+  return {snapshot,discovered:merged.size,staged:stageRows.length,sources:stats};
+}
 async function syncRealJuniorBoys(){
   const sources=[
     "https://www.coretennis.net/majic/pageServer/160101003i/en/ITF-Junior-Boys-Rankings.html",
@@ -807,6 +860,11 @@ Deno.serve(async(req:Request)=>{
       }
     }
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
+  }
+
+  if(path.endsWith("/api/scrape-real-junior-profiles")&&req.method==="GET"){
+    try{return h(await scrapeRealJuniorStatProfiles())}
+    catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
   if(path.endsWith("/api/scrape-real-juniors")&&req.method==="GET"){

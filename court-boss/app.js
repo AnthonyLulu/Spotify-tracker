@@ -427,7 +427,7 @@ function more(){
 }
 function playersPage(){
  if(!dbLoaded&&!dbLoading)setTimeout(()=>loadPlayerDatabase().then(()=>{if(route==='players')render()}).catch(()=>{}),0);
- const circuits=['Tous','Tous réels','ATP classés','ATP profond','ITF','Junior','NCAA','Double','Race','Next Gen'];
+ const circuits=['Tous','Tous réels','ATP classés','ATP profond','ITF','Junior','Junior Double','NCAA','Double','Race','Next Gen'];
  const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
  return `<div class="fm-dashboard">
   <div class="fm-page-head"><div><div class="eyebrow">Scouting database · ${fmt(worldStats?.searchableRealPlayers||dbCount||20000)} profils réels</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche sans plafond Top 2000 : ATP profond, ITF, NCAA, juniors, anciens joueurs et prospects réels.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||20000)} joueurs</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithDob||0)} DOB sourcées</div><div class="fm-head-badge subtle">${fmt(worldStats?.estimatedAgeReal||0)} âges estimés</div></div></div>
@@ -442,7 +442,7 @@ function playersPage(){
   </div>
   <div class="card fm-panel" style="margin-top:12px">
    <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
-   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge 01/12/25</th><th>Pays</th><th>ATP</th><th>Double</th><th>ITF</th><th>Revers</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${displayAge(p)==null?'<span class="muted">N/V</span>':`<span title="${esc(p.age_source||'')}">${esc(ageLabel(p,false))}</span>`}</td><td>${flags[p.country]||'🌐'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td><span class="badge ${p.backhand_verified?'good':''}">${esc(p.backhand||'2 mains')}${p.backhand_verified?'':' · estimé'}</span></td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA actif')+'</span>':p.ncaa_verified?'<span class="badge">'+(p.ncaa_status==='Alumni'?'NCAA Alumni':'NCAA historique')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
+   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge 01/12/25</th><th>Pays</th><th>ATP</th><th>Double</th><th>Junior Dbl</th><th>ITF</th><th>Revers</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${displayAge(p)==null?'<span class="muted">N/V</span>':`<span title="${esc(p.age_source||'')}">${esc(ageLabel(p,false))}</span>`}</td><td>${flags[p.country]||'🌐'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'—'}</td><td>${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td><span class="badge ${p.backhand_verified?'good':''}">${esc(p.backhand||'2 mains')}${p.backhand_verified?'':' · estimé'}</span></td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA actif')+'</span>':p.ncaa_verified?'<span class="badge">'+(p.ncaa_status==='Alumni'?'NCAA Alumni':'NCAA historique')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
    ${!dbLoading&&!dbRows.length?'<div class="empty">Aucun joueur trouvé avec ces filtres.</div>':''}
    <div class="pagination"><button ${dbOffset===0?'disabled':''} onclick="dbPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(dbCount)}</span><button ${dbOffset+100>=dbCount?'disabled':''} onclick="dbPage(1)">→</button></div>
   </div>
@@ -1265,7 +1265,7 @@ window.openGlobalSearch=()=>{
  <div class="filters" style="margin-top:8px">
   <select id="globalSearchCountry" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}">${flags[x.country]||'🏳️'} ${esc(x.country)}</option>`).join('')}</select>
   <select id="globalSearchCircuit" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
-   <option>Tous</option><option>Tous réels</option><option>ATP classés</option><option>ATP profond</option><option>Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
+   <option>Tous</option><option>Tous réels</option><option>ATP classés</option><option>ATP profond</option><option>Double</option><option>Junior Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
   </select>
   <select id="globalSearchAge" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
    <option value="99">Tous âges</option><option value="18">U18</option><option value="21">U21</option><option value="23">U23</option><option value="30">30 ans max</option>
@@ -1288,6 +1288,7 @@ window.runGlobalSearch=async q=>{
    const tags=[];
    if(p.ranking)tags.push('ATP #'+fmt(p.ranking));
    if(p.doubles_ranking)tags.push('Double #'+fmt(p.doubles_ranking));
+   if(p.junior_doubles_ranking)tags.push('Junior Double #'+fmt(p.junior_doubles_ranking));
    if(p.itf_ranking)tags.push('ITF #'+fmt(p.itf_ranking));
    if(p.ncaa_current)tags.push('NCAA'+(p.ncaa_rank?' #'+fmt(p.ncaa_rank):'')+(p.ncaa_school?' · '+p.ncaa_school:''));
    if(p.junior_ranking&&p.birth_date&&String(p.birth_date)>='2007-01-01')tags.push('Junior #'+fmt(p.junior_ranking));

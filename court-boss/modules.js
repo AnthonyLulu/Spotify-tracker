@@ -1018,7 +1018,12 @@ window.renderPalmaresHtml=function(d,p){
     (years[y]??=[]).push({...t,__i:i});
   });
   const yearRows=Object.entries(years).sort((a,b)=>Number(b[0])-Number(a[0]));
-  const bestSeason=yearRows.length?yearRows.reduce((best,x)=>x[1].length>best[1].length?x:best,yearRows[0]):null;
+  const seasonRows=d?.historicalSeasons||[];
+  const seasonScore=x=>Number(x?.grand_slams||0)*100+Number(x?.masters||0)*35+Number(x?.tour_finals||0)*30+Number(x?.titles||0)*5;
+  const weightedBestSeason=seasonRows.filter(x=>Number(x.season)<=2025).sort((a,b)=>seasonScore(b)-seasonScore(a)||Number(b.season)-Number(a.season))[0]||null;
+  const bestSeason=weightedBestSeason
+    ?[String(weightedBestSeason.season),Array(Math.max(0,Number(weightedBestSeason.titles||0))).fill(null)]
+    :(yearRows.length?yearRows.reduce((best,x)=>x[1].length>best[1].length?x:best,yearRows[0]):null);
 
   const repeated=Object.entries(titles.reduce((acc,t)=>{
     const k=String(t.tournament_name||'Tournoi');
@@ -1057,6 +1062,16 @@ window.renderPalmaresHtml=function(d,p){
         <div class="kpi"><span class="muted mini">NCAA / College</span><b>${collegeTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">Statut NCAA</span><b style="font-size:12px">${esc(ncaaCareer?.status||p.ncaa_status||'—')}</b></div>
       </div>
+      <div class="card" style="margin-top:10px;padding:12px;background:rgba(92,222,145,.05)">
+        <div class="row between"><div><div class="eyebrow">Sommet de carrière</div><h3 style="margin:2px 0">Peak FM</h3></div><span class="badge good">${p.best_season_year||weightedBestSeason?.season||'—'}</span></div>
+        <div class="kpi-strip" style="margin-top:8px">
+          <div class="kpi"><span class="muted mini">Meilleur simple</span><b>${p.career_high_rank?'#'+fmt(p.career_high_rank):'—'}</b></div>
+          <div class="kpi"><span class="muted mini">Meilleur double</span><b>${p.career_high_doubles_rank?'#'+fmt(p.career_high_doubles_rank):'—'}</b></div>
+          <div class="kpi"><span class="muted mini">Meilleure saison</span><b>${p.best_season_year||weightedBestSeason?.season||'—'}</b></div>
+          <div class="kpi"><span class="muted mini">Score saison</span><b>${p.best_season_score!=null?fmt(Math.round(Number(p.best_season_score))):weightedBestSeason?fmt(seasonScore(weightedBestSeason)):'—'}</b></div>
+        </div>
+        <div class="muted mini" style="margin-top:8px">${p.best_season_summary?esc(p.best_season_summary):weightedBestSeason?`${weightedBestSeason.titles||0} titre(s) · ${weightedBestSeason.grand_slams||0} GC · ${weightedBestSeason.masters||0} Masters 1000`:'Meilleure saison non documentée.'}</div>
+      </div>
       ${ncaaCareer?`<div class="notice mini" style="margin-top:10px"><b>${esc(ncaaCareer.school)}</b> · ${esc(ncaaCareer.status)}${ncaaCareer.verified?' · carrière universitaire certifiée':''}${ncaaCareer.start_season||ncaaCareer.end_season?` · ${esc(ncaaCareer.start_season||'?')} → ${esc(ncaaCareer.end_season||'?')}`:''}</div>`:''}
     </div>
     ${ncaaTransfers.length?`
@@ -1082,7 +1097,7 @@ window.renderPalmaresHtml=function(d,p){
           <div class="kpi"><span class="muted mini">Premier titre</span><b style="font-size:12px">${first?df(first.title_date):'—'}</b></div>
           <div class="kpi"><span class="muted mini">Dernier titre</span><b style="font-size:12px">${last?df(last.title_date):'—'}</b></div>
         </div>
-        ${bestSeason?`<div class="notice mini" style="margin-top:10px"><b>Meilleure saison :</b> ${bestSeason[0]} · ${bestSeason[1].length} trophée(s)${repeated[0]?` · tournoi le plus remporté : ${esc(repeated[0][0])} (${repeated[0][1]}×)`:''}</div>`:''}
+        ${bestSeason?`<div class="notice mini" style="margin-top:10px"><b>Meilleure saison :</b> ${bestSeason[0]} · ${weightedBestSeason?`${weightedBestSeason.titles||0} titre(s) · ${weightedBestSeason.grand_slams||0} GC · ${weightedBestSeason.masters||0} Masters 1000`:`${bestSeason[1].length} trophée(s)`}${repeated[0]?` · tournoi le plus remporté : ${esc(repeated[0][0])} (${repeated[0][1]}×)`:''}</div>`:''}
       </div>
 
       <div class="card">

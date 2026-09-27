@@ -902,8 +902,14 @@ window.openPlayer=async id=>{
   const ncaa=p.ncaa_current?(ncaaRows.find(x=>String(x.status||'')==='Active')||null):null;
   const ncaaIsAlumni=String(p.ncaa_status||'')==='Alumni'||String(ncaaCareer?.status||'')==='Alumni';
   const ncaaHistorical=!p.ncaa_current&&!!p.ncaa_verified&&!ncaaIsAlumni;
-  const allTitles=d.titles||[],singlesTitles=allTitles.filter(t=>!t.event_type||t.event_type==='singles'),doublesTitles=allTitles.filter(t=>t.event_type==='doubles'),collegeTitles=allTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
-  const titleCount=legend?.titles??singlesTitles.length;
+  const allTitles=d.titles||[];
+  const hasCanonicalSingles=allTitles.some(t=>t.origin==='sackmann_atp_canonical'&&t.event_type==='singles');
+  const singlesTitles=allTitles.filter(t=>(!t.event_type||t.event_type==='singles')&&(!hasCanonicalSingles||t.origin==='sackmann_atp_canonical'||t.origin==='game'));
+  const doublesTitles=allTitles.filter(t=>t.event_type==='doubles');
+  const juniorSinglesTitles=allTitles.filter(t=>t.event_type==='junior_singles');
+  const juniorDoublesTitles=allTitles.filter(t=>t.event_type==='junior_doubles');
+  const collegeTitles=allTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
+  const titleCount=hasCanonicalSingles?singlesTitles.length:(legend?.titles??singlesTitles.length);
   const slamCount=legend?.grand_slams??singlesTitles.filter(t=>/Grand Chelem|Grand Slam/i.test(String(t.level||''))).length;
   const mastersCount=legend?.masters??singlesTitles.filter(t=>/Masters 1000|Masters/i.test(String(t.level||''))).length;
   const hardTitles=singlesTitles.filter(t=>/Hard|Dur/i.test(String(t.surface||''))).length;

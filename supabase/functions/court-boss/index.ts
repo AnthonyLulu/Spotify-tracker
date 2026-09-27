@@ -374,6 +374,7 @@ async function syncRealJuniorBoys(){
     "https://www.coretennis.net/majic/pageServer/170100003k/en/ITF-Junior-Boys-Best-Progression--Week-.html",
     "https://www.coretennis.net/majic/pageServer/0p0100005b/en/ITF-Junior-Boys-Biggest-Drop--Year-.html",
     "https://www.coretennis.net/majic/pageServer/190100003l/en/ITF-Junior-Boys-Biggest-Drop--Week-.html",
+    "https://www.coretennis.net/majic/pageServer/1g010100fn/en/ITF-Junior-Boys-Best-Progression--6-Months-.html",
     "https://www.coretennis.net/majic/pageServer/1i010100fo/en/ITF-Junior-Boys-Biggest-Drop--6-Months-.html"
   ];
   const settled=await Promise.allSettled(sources.map(fetchCoreTennisJuniorRows));
@@ -398,17 +399,27 @@ async function syncRealJuniorBoys(){
   const sourceLabel="CoreTennis ITF Junior Boys · "+snapshot;
   const bulk=await db.rpc("import_real_junior_rankings",{p_rows:rows,p_source:sourceLabel,p_snapshot:snapshot});
   if(bulk.error)throw bulk.error;
-  const totals=await db.from("players")
-    .select("id,is_real,game_generated,age,junior_ranking,junior_source")
-    .not("junior_ranking","is",null).not("junior_source","is",null).range(0,4999);
-  const active=(totals.data??[]).filter(isCurrentJuniorProfile);
+  const [coreReal,legacyReal,generated]=await Promise.all([
+    db.from("players").select("id",{count:"exact",head:true})
+      .eq("is_real",true).not("junior_ranking","is",null)
+      .ilike("junior_source","CoreTennis ITF Junior Boys%"),
+    db.from("players").select("id",{count:"exact",head:true})
+      .eq("is_real",true).not("junior_ranking","is",null)
+      .not("junior_source","ilike","CoreTennis ITF Junior Boys%")
+      .gte("age",13).lte("age",18),
+    db.from("players").select("id",{count:"exact",head:true})
+      .eq("game_generated",true).not("junior_ranking","is",null)
+      .not("junior_source","is",null).gte("age",13).lte("age",17)
+  ]);
+  const realCount=Number(coreReal.count||0)+Number(legacyReal.count||0);
+  const generatedCount=Number(generated.count||0);
   return {
     sources:sourceStats,
     discovered:merged.size,
     import:bulk.data,
-    activeJuniorProfiles:active.length,
-    realJuniorProfiles:active.filter((x:any)=>x.is_real).length,
-    generatedJuniorProfiles:active.filter((x:any)=>x.game_generated).length
+    activeJuniorProfiles:realCount+generatedCount,
+    realJuniorProfiles:realCount,
+    generatedJuniorProfiles:generatedCount
   };
 }
 async function parseLiveTennisRanking(url:string){

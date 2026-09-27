@@ -72,13 +72,16 @@ Deno.serve(async(req:Request)=>{
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
     let orderCol="ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
+    if(kind==="race") orderCol="race_ranking";
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,ranking,source_ranking,points,doubles_ranking,itf_ranking,junior_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
-      .not(orderCol,"is",null);
+      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,doubles_ranking,doubles_points,doubles_snapshot_date,race_ranking,race_points,race_snapshot_date,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,age,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
+      .not(orderCol,"is",null)
+      .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);
     else query=query.eq("is_real",true);
+    if(kind==="junior") query=query.lte("age",18);
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
@@ -104,11 +107,15 @@ Deno.serve(async(req:Request)=>{
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     if(country) query=query.eq("country",country);
     if(circuit==="ATP") query=query.eq("ranking_current",true);
+    if(circuit==="Double") query=query.not("doubles_ranking","is",null);
+    if(circuit==="Race") query=query.not("race_ranking","is",null);
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
-    if(circuit==="Junior") query=query.not("junior_ranking","is",null);
+    if(circuit==="Junior") query=query.not("junior_ranking","is",null).lte("age",18);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
     if(circuit==="ATP") query=query.order("ranking",{ascending:true});
+    else if(circuit==="Double") query=query.order("doubles_ranking",{ascending:true,nullsFirst:false});
+    else if(circuit==="Race") query=query.order("race_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="ITF") query=query.order("itf_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Junior") query=query.order("junior_ranking",{ascending:true,nullsFirst:false});
     else query=query.order("potential",{ascending:false}).order("current_ability",{ascending:false});

@@ -27,18 +27,28 @@ async function resolvePlayerPhoto(player:any){
   try{
     const qs=new URLSearchParams({
       action:"query",generator:"search",gsrsearch:'"'+String(player.name)+'" tennis',
-      gsrnamespace:"0",gsrlimit:"1",prop:"pageimages",piprop:"thumbnail|name",
+      gsrnamespace:"0",gsrlimit:"5",prop:"pageimages|info",inprop:"url",piprop:"thumbnail|name",
       pithumbsize:"640",format:"json",origin:"*"
     });
     const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{headers:{"User-Agent":"CourtBoss/1.0"}});
     if(!r.ok)return player;
     const j:any=await r.json();
-    const pages=Object.values(j?.query?.pages||{}) as any[];
-    const photo=pages?.[0]?.thumbnail?.source;
+    const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+    const target=normalizeName(String(player.name)).replace(/\s+/g,"");
+    const chosen=pages.find((x:any)=>x?.thumbnail?.source&&normalizeName(String(x.title||"")).replace(/\s+/g,"").includes(target))
+      ??pages.find((x:any)=>x?.thumbnail?.source);
+    const photo=chosen?.thumbnail?.source;
     if(photo){
       player.photo_url=photo;
       player.photo_source="Wikipedia/Wikimedia";
-      await db.from("players").update({photo_url:photo,photo_source:"Wikipedia/Wikimedia",photo_updated_at:new Date().toISOString()}).eq("id",player.id);
+      player.photo_source_url=String(chosen?.fullurl||"");
+      await db.from("players").update({
+        photo_url:photo,
+        photo_source:"Wikipedia/Wikimedia",
+        photo_source_url:String(chosen?.fullurl||""),
+        photo_updated_at:new Date().toISOString(),
+        photo_checked_at:new Date().toISOString()
+      }).eq("id",player.id);
     }
   }catch{}
   return player;
@@ -65,7 +75,7 @@ Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
 
-  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:7});
+  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:8});
 
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
     const sid=saveId(req);
@@ -119,6 +129,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="ncaa"){
       let nq=db.from("ncaa_player_registry")
         .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner(id,name,country,ranking,points,doubles_ranking,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division)",{count:"exact"})
+        .eq("season","2026-27")
         .eq("status","Active");
       if(q)nq=nq.ilike("players.name_norm",`%${normalizeName(q)}%`);
       if(country)nq=nq.eq("players.country",country);

@@ -2167,6 +2167,25 @@ Deno.serve(async(req:Request)=>{
     const runIns=await db.from("tournament_runs").insert({tournament_id:tid,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
     if(runIns.error)return h({error:runIns.error.message},500);
     const runId=runIns.data.id;
+
+    // Fictional Challenger/ITF series keep real career continuity:
+    // once this edition has a champion, the next edition displays them as defending champion.
+    if(t.is_verified===false&&["Challenger","ITF"].includes(String(t.circuit||""))&&champion?.id&&champion?.name){
+      const season=Number(String(t.start_date||"").slice(0,4));
+      if(Number.isFinite(season)&&season>0){
+        const nextStart=`${season+1}-01-01`,nextEnd=`${season+2}-01-01`;
+        await db.from("tournaments").update({
+          defending_champion_player_id:Number(champion.id),
+          defending_champion_name:String(champion.name),
+          defending_champion_year:season,
+          defending_champion_source:"Court Boss · saison simulée"
+        })
+        .eq("is_verified",false)
+        .eq("name",String(t.name))
+        .gte("start_date",nextStart)
+        .lt("start_date",nextEnd);
+      }
+    }
     if(matchRows.length){
       const rows=matchRows.map(x=>({...x,run_id:runId}));
       const ins=await db.from("tournament_draw_matches").insert(rows);

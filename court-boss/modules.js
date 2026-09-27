@@ -945,7 +945,7 @@ window.renderPalmaresHtml=function(d,p){
   const ncaaCareer=d?.ncaaCareer||null;
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
-  window.__cbPalmares={player:p,titles,tournamentHistory};
+  window.__cbPalmares={player:p,titles,tournamentHistory,allTitles};
 
   const slamKey=name=>{
     const x=String(name||'');
@@ -1028,7 +1028,7 @@ window.renderPalmaresHtml=function(d,p){
   const catOrder=['Grand Chelem','Masters 1000','ATP Finals','ATP 500','ATP 250','Jeux olympiques','ATP Tour','Challenger','Coupe Davis','Autres'];
 
   const typeLabel=t=>t.event_type==='doubles'?'Double':t.event_type==='ncaa_singles'?'NCAA individuel':t.event_type==='ncaa_team'?'NCAA équipe':t.event_type==='college_singles'?'College individuel':t.event_type==='college_team'?'College équipe':'Simple';
-  const titleSource=t=>t.source_url?`<a class="soft-btn" href="${esc(t.source_url)}" target="_blank" rel="noopener noreferrer">Source</a>`:`<span class="muted micro">${esc(t.source_label||t.origin||'Archive')}</span>`;
+  const titleSource=t=>t.source_url?`<a class="soft-btn" href="${esc(t.source_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Source</a>`:`<span class="muted micro">${esc(t.source_label||t.origin||'Archive')}</span>`;
   return `
     <div class="card" style="margin-bottom:12px">
       <div class="row between"><div><div class="eyebrow">Carrière complète</div><h2>Palmarès par discipline</h2></div><span class="pill">${allTitles.length} trophée(s)</span></div>
@@ -1132,11 +1132,11 @@ window.renderPalmaresHtml=function(d,p){
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
         <div class="row between"><div><div class="eyebrow">Circuit Double</div><h2>Titres en double</h2></div><span class="badge good">${doublesTitles.length}</span></div>
-        ${doublesTitles.length?doublesTitles.map(t=>`<div class="list-item row between"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Double')} · ${esc(t.surface||'—')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre double enregistré pour ce joueur.</div>'}
+        ${doublesTitles.length?doublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Double')} · ${esc(t.surface||'—')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre double enregistré pour ce joueur.</div>'}
       </div>
       <div class="card">
         <div class="row between"><div><div class="eyebrow">NCAA / College</div><h2>Titres universitaires</h2></div><span class="badge tag-ncaa">${collegeTitles.length}</span></div>
-        ${collegeTitles.length?collegeTitles.map(t=>`<div class="list-item row between"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${typeLabel(t)} · ${esc(t.school||ncaaCareer?.school||'Université')} · ${df(t.title_date)}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Certifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre NCAA / College enregistré.</div>'}
+        ${collegeTitles.length?collegeTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${typeLabel(t)} · ${esc(t.school||ncaaCareer?.school||'Université')} · ${df(t.title_date)}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Certifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre NCAA / College enregistré.</div>'}
       </div>
     </div>
 
@@ -1152,6 +1152,15 @@ window.renderPalmaresHtml=function(d,p){
       `).join(''):'<div class="empty">Palmarès détaillé non importé pour ce joueur.</div>'}
     </div>
   `;
+};
+
+window.openCareerTitle=function(i){
+  const data=window.__cbPalmares||{allTitles:[],player:{}};
+  const t=(data.allTitles||[])[Number(i)];
+  if(!t)return;
+  const discipline=t.event_type==='doubles'?'Double':/^ncaa_|^college_/.test(String(t.event_type||''))?'NCAA / College':'Simple';
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(discipline)} · palmarès</div><h1>${esc(t.tournament_name||'Titre')}</h1><div class="muted">${t.title_date?df(t.title_date):'Date non publiée'} · ${esc(t.level||'—')} · ${esc(t.surface||'—')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+  <div class="card"><div class="list-item row between"><span>Joueur</span><b>${esc(data.player?.name||'—')}</b></div>${t.partner_name?`<div class="list-item row between"><span>Partenaire</span><b class="click" ${t.partner_player_id?`onclick="openPlayer(${t.partner_player_id})"`:''}>${esc(t.partner_name)}</b></div>`:''}${t.school?`<div class="list-item row between"><span>Université</span><b>${esc(t.school)}</b></div>`:''}<div class="list-item row between"><span>Statut donnée</span><b>${t.verified?'Vérifié':'Carrière simulée / archive'}</b></div><div class="list-item row between"><span>Source</span><b>${esc(t.source_label||t.origin||'Archive')}</b></div>${t.source_url?`<a class="primary" style="display:inline-block;margin-top:10px" href="${esc(t.source_url)}" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>`:''}</div></div></div>`;
 };
 
 window.openPalmaresTitle=function(i){

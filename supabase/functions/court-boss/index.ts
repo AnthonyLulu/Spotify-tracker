@@ -135,12 +135,19 @@ async function resolvePlayerFacts(player:any,gameDate:string){
       }
     }
 
-    if(!player.height_cm&&heightClaim?.amount){
+    if((!player.height_cm||!player.height_verified)&&heightClaim?.amount){
       const amount=Math.abs(Number(heightClaim.amount));
       let cm=0;
       if(amount>1&&amount<3)cm=Math.round(amount*100);
       else if(amount>=100&&amount<230)cm=Math.round(amount);
-      if(cm>=140&&cm<=230){player.height_cm=cm;update.height_cm=cm;}
+      if(cm>=140&&cm<=230){
+        player.height_cm=cm;
+        player.height_verified=true;
+        player.height_source="Wikidata "+qid;
+        update.height_cm=cm;
+        update.height_verified=true;
+        update.height_source=player.height_source;
+      }
     }
 
     if(!player.photo_url&&typeof file==="string"&&file){

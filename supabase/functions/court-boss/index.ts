@@ -581,7 +581,9 @@ Deno.serve(async(req:Request)=>{
       const [currentReg,currentPlayers,allAmericanReg]=await Promise.all([
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
-          .eq("season","2026-27").eq("status","Active").order("ita_rank",{ascending:true,nullsFirst:false}).limit(500),
+          .eq("season","2026-27").eq("status","Active")
+          .eq("source_label","ITA Division I Men's Preseason Singles · 2026-08-25")
+          .order("ita_rank",{ascending:true,nullsFirst:false}).limit(500),
         db.from("players").select(playerSelect).eq("ncaa_current",true)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*").limit(1000),
         db.from("ncaa_player_registry")
@@ -597,9 +599,10 @@ Deno.serve(async(req:Request)=>{
         const id=Number(p.id);
         const old=byId.get(id);
         if(old&&Number(old.__priority||99)<=priority)return;
+        const metaHasRank=!!meta&&Object.prototype.hasOwnProperty.call(meta,"ita_rank");
         byId.set(id,{
           ...p,
-          ncaa_rank:meta?.ita_rank??p.ncaa_rank??null,
+          ncaa_rank:metaHasRank?meta.ita_rank:(p.ncaa_rank??null),
           ncaa_school:meta?.school??p.ncaa_school??p.ncaa_last_school??null,
           ncaa_division:meta?.division??p.ncaa_division??"NCAA Division I",
           ncaa_season:meta?.season??(p.ncaa_current?"2026-27":null),
@@ -616,10 +619,10 @@ Deno.serve(async(req:Request)=>{
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
         put(p,x,0);
       }
-      for(const p of currentPlayers.data??[])put(p,null,1);
+      for(const p of currentPlayers.data??[])put(p,{ita_rank:null,season:"2026-27",status:"Active pool"},1);
       for(const x of allAmericanReg.data??[]){
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
-        put(p,x,2);
+        put(p,{...x,ita_rank:null},2);
       }
 
       let rows=[...byId.values()];
@@ -629,9 +632,13 @@ Deno.serve(async(req:Request)=>{
       }
       if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
       rows.sort((a:any,b:any)=>{
-        const ac=a.ncaa_rank==null?99999:Number(a.ncaa_rank);
-        const bc=b.ncaa_rank==null?99999:Number(b.ncaa_rank);
-        if(ac!==bc)return ac-bc;
+        const ao=a.ncaa_current_verified&&a.ncaa_rank!=null?0:1;
+        const bo=b.ncaa_current_verified&&b.ncaa_rank!=null?0:1;
+        if(ao!==bo)return ao-bo;
+        if(ao===0){
+          const ac=Number(a.ncaa_rank),bc=Number(b.ncaa_rank);
+          if(ac!==bc)return ac-bc;
+        }
         if(Boolean(a.ncaa_current)!==Boolean(b.ncaa_current))return a.ncaa_current?-1:1;
         return String(a.name||"").localeCompare(String(b.name||""));
       });

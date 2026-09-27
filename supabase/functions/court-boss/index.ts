@@ -793,30 +793,38 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(kind==="junior"){
-      let juniorRows=(await loadJuniorPoolCandidates(true))
+      let juniorRows=(await loadJuniorPoolCandidates(false))
         .filter(isCurrentJuniorProfile);
       if(q){
         const nq=normalizeName(q);
         juniorRows=juniorRows.filter((p:any)=>normalizeName(String(p.name||"")).includes(nq));
       }
       if(country)juniorRows=juniorRows.filter((p:any)=>String(p.country||"").toUpperCase()===country);
-      juniorRows=juniorRows
-        .sort((a:any,b:any)=>Number(a.junior_ranking||999999)-Number(b.junior_ranking||999999)||String(a.name||"").localeCompare(String(b.name||"")));
+      juniorRows=juniorRows.sort((a:any,b:any)=>{
+        const ar=a.junior_ranking==null?999999:Number(a.junior_ranking);
+        const br=b.junior_ranking==null?999999:Number(b.junior_ranking);
+        return ar-br
+          || Number(b.is_real===true)-Number(a.is_real===true)
+          || Number(b.potential||0)-Number(a.potential||0)
+          || String(a.name||"").localeCompare(String(b.name||""));
+      });
       const total=juniorRows.length;
-      const verifiedRealRanked=juniorRows.filter((p:any)=>p.is_real).length;
-      const generatedRanked=juniorRows.filter((p:any)=>p.game_generated).length;
+      const realProfiles=juniorRows.filter((p:any)=>p.is_real).length;
+      const realRanked=juniorRows.filter((p:any)=>p.is_real&&p.junior_ranking!=null).length;
+      const realUnranked=juniorRows.filter((p:any)=>p.is_real&&p.junior_ranking==null).length;
+      const generatedProfiles=juniorRows.filter((p:any)=>p.game_generated).length;
       juniorRows=juniorRows.slice(offset,offset+limit).map((p:any)=>({
         ...p,
         age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
         official_ranking:p.ranking_current?p.ranking:null,
-        world_rank:p.game_world_rank
+        world_rank:p.game_world_rank,
+        junior_status:p.junior_ranking==null?"NR":("RANKED")
       }));
       return h({
         kind,offset,limit,count:total,rows:juniorRows,
-        eligibility:"ITF Juniors · vrais profils sourcés + vivier Court Boss 13-17",
+        eligibility:"ITF Juniors · vrais profils sourcés (classés + NR) + newgens V6 13-17",
         rankingDate:"2026-09-21",
-        verifiedRealRanked,
-        generatedRanked
+        realProfiles,realRanked,realUnranked,generatedProfiles
       });
     }
 

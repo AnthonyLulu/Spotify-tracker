@@ -225,7 +225,7 @@ Deno.serve(async(req:Request)=>{
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,careerDate] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,careerDate,legend] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -237,9 +237,10 @@ Deno.serve(async(req:Request)=>{
       db.from("junior_tournament_entries").select("id,seed,result,snapshot_date,source_url,tournaments(id,name,city,country,surface,category,start_date,end_date,is_verified,source_url)").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(30),
       db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500),
       db.from("ncaa_player_registry").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(10),
-      db.from("career_state").select("career_date").eq("id","demo").maybeSingle()
+      db.from("career_state").select("career_date").eq("id","demo").maybeSingle(),
+      db.from("historical_legend_stats").select("*").eq("player_id",id).maybeSingle()
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||careerDate.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||careerDate.error||legend.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
@@ -250,7 +251,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,
       matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[],juniorEntries:juniorEntries.data??[],
-      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[]
+      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],legend:legend.data??null
     });
   }
 

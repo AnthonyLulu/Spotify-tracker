@@ -31,7 +31,7 @@ jobs:
         run: |
           for i in {1..24}; do
             if curl --fail --silent --show-error "$BASE/index.html" -o /tmp/index.html; then
-              if grep -q 'app.js?v=20260927-6' /tmp/index.html && grep -q 'tactics.js?v=20260927-6' /tmp/index.html; then
+              if grep -q 'app.js?v=20260927-7' /tmp/index.html && grep -q 'tactics.js?v=20260927-7' /tmp/index.html; then
                 echo "Render build is current"
                 exit 0
               fi
@@ -46,9 +46,9 @@ jobs:
         env:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
-          curl --fail --silent --show-error "$BASE/app.js?v=20260927-6" -o /tmp/app.js
-          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-6" -o /tmp/tactics.js
-          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-6" -o /tmp/modules.js
+          curl --fail --silent --show-error "$BASE/app.js?v=20260927-7" -o /tmp/app.js
+          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-7" -o /tmp/tactics.js
+          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-7" -o /tmp/modules.js
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js

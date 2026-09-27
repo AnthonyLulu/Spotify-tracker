@@ -8,7 +8,7 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',source:'Tous',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',nextGenAge=21,tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',source:'Tous',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
@@ -57,7 +57,8 @@ async function init(){
 async function loadManagement(){try{management=await get('/api/management')}catch{management={contracts:[],college:[],shortlist:[]}}}
 async function loadRankings(){
  const q=rankQuery?'&q='+encodeURIComponent(rankQuery):'';
- const d=await get(`/api/rankings?kind=${rankKind}&offset=${rankOffset}&limit=100${q}`);
+ const u=rankKind==='nextgen'?'&u='+nextGenAge:'';
+ const d=await get(`/api/rankings?kind=${rankKind}&offset=${rankOffset}&limit=100${q}${u}`);
  rankRows=d.rows;rankCount=d.count;
 }
 async function loadTournaments(){
@@ -133,6 +134,7 @@ function rankings(){
  const pill=rankKind==='singles'?'01/12/2025':rankKind==='doubles'?'01/12/2025':rankKind==='race'?'Race finale · 01/12/2025':rankKind==='nextgen'?'24/11/2025':rankKind==='junior'?'Junior 2025':(snap?df(snap):label);
  return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Vue inspirée de Live-Tennis : Ranking, Race, Doubles et Next Gen séparés. Les juniors ITF restent un circuit distinct.</div></div><span class="pill">${pill}</span></div>
  <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
+ ${rankKind==='nextgen'? `<div class="age-filter"><span class="muted mini">Âge au snapshot 2025</span>${[18,19,20,21].map(a=>`<button class="${nextGenAge===a?'active':''}" onclick="setNextGenAge(${a})">U${a}</button>`).join('')}</div>`:''}
  ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
  <div class="card">
   <div class="rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
@@ -155,6 +157,7 @@ function ncaaRanking(){
  <div class="card"><table class="table" style="min-width:0"><thead><tr><th>#</th><th>Université</th><th>Bilan</th></tr></thead><tbody>${rows.map(x=>`<tr><td class="rank-num">#${x.ita_rank}</td><td><b>${esc(x.name)}</b></td><td>${esc(x.record)}</td></tr>`).join('')}</tbody></table></div>`
 }
 window.setRankKind=async k=>{rankKind=k;rankOffset=0;rankQuery='';if(k!=='ncaa')await loadRankings();render()}
+window.setNextGenAge=async a=>{nextGenAge=clamp(Number(a)||21,18,21);rankOffset=0;rankQuery='';await loadRankings();render()}
 window.searchRanking=async q=>{rankQuery=q.trim();rankOffset=0;await loadRankings();render()}
 window.rankPage=async d=>{rankOffset=Math.max(0,rankOffset+d*100);await loadRankings();render();window.scrollTo(0,0)}
 window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump')?.value||1),1,2000);rankOffset=Math.floor((n-1)/100)*100;await loadRankings();render();window.scrollTo(0,0)}

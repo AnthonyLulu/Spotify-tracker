@@ -76,12 +76,14 @@ Deno.serve(async(req:Request)=>{
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,doubles_ranking,doubles_points,doubles_snapshot_date,race_ranking,race_points,race_snapshot_date,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,age,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
+      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
       .not(orderCol,"is",null)
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);
     else query=query.eq("is_real",true);
-    if(kind==="junior") query=query.lte("age",18);
+    if(kind==="doubles") query=query.not("doubles_source","is",null);
+    if(kind==="race") query=query.not("race_source","is",null);
+    if(kind==="junior") query=query.not("junior_source","is",null).lte("age",18);
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
@@ -107,10 +109,10 @@ Deno.serve(async(req:Request)=>{
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     if(country) query=query.eq("country",country);
     if(circuit==="ATP") query=query.eq("ranking_current",true);
-    if(circuit==="Double") query=query.not("doubles_ranking","is",null);
-    if(circuit==="Race") query=query.not("race_ranking","is",null);
+    if(circuit==="Double") query=query.not("doubles_ranking","is",null).not("doubles_source","is",null);
+    if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
-    if(circuit==="Junior") query=query.not("junior_ranking","is",null).lte("age",18);
+    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).lte("age",18);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
     if(circuit==="ATP") query=query.order("ranking",{ascending:true});
@@ -126,12 +128,18 @@ Deno.serve(async(req:Request)=>{
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows:data??[]});
   }
 
+  if(path.endsWith("/api/doubles-race")&&req.method==="GET"){
+    const rows=await db.from("doubles_race_teams").select("*").order("snapshot_date",{ascending:false}).order("rank",{ascending:true}).limit(20);
+    if(rows.error)return h({error:rows.error.message},500);
+    return h({rows:rows.data??[],count:(rows.data??[]).length});
+  }
+
   if(path.endsWith("/api/player")&&req.method==="GET"){
     let id=n(u.searchParams.get("id"),0,1,99999999);
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -139,13 +147,17 @@ Deno.serve(async(req:Request)=>{
       db.from("shortlist").select("*").eq("player_id",id).maybeSingle(),
       db.from("tournament_draw_matches").select("*,tournament_runs(tournament_id,tournaments(name,start_date,surface,category,circuit))").or(`player_a_id.eq.${id},player_b_id.eq.${id}`).order("id",{ascending:false}).limit(40),
       db.from("player_career_stats").select("*").eq("player_id",id).maybeSingle(),
-      db.from("player_final_results").select("*").eq("player_id",id).order("final_date",{ascending:false}).limit(200)
+      db.from("player_final_results").select("*").eq("player_id",id).order("final_date",{ascending:false}).limit(200),
+      db.from("junior_tournament_entries").select("id,seed,result,snapshot_date,source_url,tournaments(id,name,city,country,surface,category,start_date,end_date,is_verified,source_url)").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(30)
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
-    return h({player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[]});
+    return h({
+      player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,
+      matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[],juniorEntries:juniorEntries.data??[]
+    });
   }
 
   if(path.endsWith("/api/tournaments")&&req.method==="GET"){
@@ -180,11 +192,49 @@ Deno.serve(async(req:Request)=>{
     const [t,wc,forfeits]=await Promise.all([
       db.from("tournaments").select("*").eq("id",id).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",id).maybeSingle(),
-      db.from("tournament_forfeits").select("id,player_id,reason,players(id,name,country,ranking)").eq("tournament_id",id)
+      db.from("tournament_forfeits").select("id,player_id,reason,players(id,name,country,ranking,junior_ranking)").eq("tournament_id",id)
     ]);
     if(t.error||wc.error||forfeits.error) return h({error:(t.error||wc.error||forfeits.error)?.message},500);
     if(!t.data) return h({error:"Tournament not found"},404);
+
     const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
+    const run=await db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle();
+    let completedDraw:any[]=[];
+    if(run.data?.id){
+      const rm=await db.from("tournament_draw_matches").select("*").eq("run_id",run.data.id).order("round_no",{ascending:true}).order("id",{ascending:true});
+      if(!rm.error)completedDraw=rm.data??[];
+    }
+
+    if(String(t.data.circuit)==="Junior"){
+      const entered=await db.from("junior_tournament_entries")
+        .select("id,seed,result,snapshot_date,source_url,players(id,name,country,age,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style)")
+        .eq("tournament_id",id);
+      if(entered.error)return h({error:entered.error.message},500);
+
+      let main:any[]=[];
+      if((entered.data??[]).length){
+        main=(entered.data??[])
+          .map((x:any)=>{
+            const p=Array.isArray(x.players)?x.players[0]:x.players;
+            return p?{...p,ranking:p.junior_ranking,points:p.junior_points,seed:x.seed,result:x.result,entry_source:x.source_url}:null;
+          })
+          .filter(Boolean)
+          .sort((a:any,b:any)=>Number(a.seed||999)-Number(b.seed||999)||Number(a.ranking||9999)-Number(b.ranking||9999));
+      }else{
+        const pool=await db.from("players")
+          .select("id,name,country,age,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style,junior_snapshot_date,junior_source")
+          .eq("is_real",true).not("junior_source","is",null).not("junior_ranking","is",null).lte("age",18)
+          .order("junior_ranking",{ascending:true}).limit(drawSize);
+        if(pool.error)return h({error:pool.error.message},500);
+        main=(pool.data??[]).map((p:any)=>({...p,ranking:p.junior_ranking,points:p.junior_points}));
+      }
+      return h({
+        tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
+        wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,completed_draw:completedDraw,
+        ranking_kind:"junior"
+      });
+    }
+
     const cut=Math.max(drawSize,Number(t.data.qual_cut||t.data.direct_cut||drawSize*4));
     const pool=await db.from("players")
       .select("id,name,country,ranking,points,current_ability,potential,form,fitness,fatigue,style")
@@ -197,13 +247,10 @@ Deno.serve(async(req:Request)=>{
     const available=(pool.data??[]).filter((p:any)=>!blocked.has(Number(p.id)));
     const main=available.slice(0,drawSize);
     const qualifying=available.slice(drawSize,drawSize+Math.min(32,drawSize));
-    const run=await db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle();
-    let completedDraw:any[]=[];
-    if(run.data?.id){
-      const rm=await db.from("tournament_draw_matches").select("*").eq("run_id",run.data.id).order("round_no",{ascending:true}).order("id",{ascending:true});
-      if(!rm.error)completedDraw=rm.data??[];
-    }
-    return h({tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,completed_draw:completedDraw});
+    return h({
+      tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
+      run:run.data??null,completed_draw:completedDraw,ranking_kind:"singles"
+    });
   }
 
   if(path.endsWith("/api/shortlist")&&req.method==="POST"){

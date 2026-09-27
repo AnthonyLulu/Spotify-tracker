@@ -592,14 +592,15 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
   let linked=0,upserted=0;
   for(let i=0;i<rows.length;i+=400){
     const chunk=rows.slice(i,i+400);
-    const r=await db.rpc("apply_ranking_career_aggregates",{
+    const r=await db.rpc("apply_ranking_career_decade",{
+      p_decade:decade,
       p_rows:chunk,
       p_source:"Jeff Sackmann / Tennis Abstract weekly rankings archive",
       p_cutoff:"2025-12-01"
     });
     if(r.error)throw r.error;
     linked+=Number(r.data?.players_linked||0);
-    upserted+=Number(r.data?.aggregates_upserted||0);
+    upserted+=Number(r.data?.rows_upserted||0);
   }
   return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",streamed:true};
 }

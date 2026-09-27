@@ -59,11 +59,21 @@ function ageAtSnapshot(birth,snapshot){
  if(d.getMonth()<b.getMonth()||(d.getMonth()===b.getMonth()&&d.getDate()<b.getDate()))a--;
  return a;
 }
-function rankAge(p,k){return p.age??ageAtSnapshot(p.birth_date,local.date||'2026-09-27')??'—'}
+function displayAge(p,at=local.date||'2026-09-27'){
+ if(!p)return null;
+ if(p.birth_date)return ageAtSnapshot(p.birth_date,at);
+ if(p.age==null)return null;
+ const snap=p.age_snapshot_date||p.data_snapshot||null;
+ if(!snap)return Number(p.age);
+ const y=Number(String(at).slice(0,4)),sy=Number(String(snap).slice(0,4));
+ return Number(p.age)+(Number.isFinite(y)&&Number.isFinite(sy)?y-sy:0);
+}
+function rankAge(p,k){return displayAge(p,local.date||'2026-09-27')??'—'}
 function ageLabel(p,withUnit=true){
- if(p?.age==null)return withUnit?'âge N/V':'N/V';
- const est=/estimation/i.test(String(p.age_source||''));
- return (est?'≈':'')+p.age+(withUnit?' ans':'');
+ const age=displayAge(p,local.date||'2026-09-27');
+ if(age==null)return withUnit?'âge N/V':'N/V';
+ const est=/estimation/i.test(String(p.age_source||''))||(!p.birth_date&&String(p.age_snapshot_date||'').slice(0,4)!==String(local.date||'').slice(0,4));
+ return (est?'≈':'')+age+(withUnit?' ans':'');
 }
 
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
@@ -349,7 +359,7 @@ function playersPage(){
   </div>
   <div class="card fm-panel" style="margin-top:12px">
    <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
-   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge</th><th>Pays</th><th>ATP</th><th>Double</th><th>ITF</th><th>Revers</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${p.age==null?'<span class="muted">N/V</span>':`<span title="${esc(p.age_source||'')}">${esc(ageLabel(p,false))}</span>`}</td><td>${flags[p.country]||'🌐'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td><span class="badge ${p.backhand_verified?'good':''}">${esc(p.backhand||'2 mains')}${p.backhand_verified?'':' · estimé'}</span></td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
+   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge</th><th>Pays</th><th>ATP</th><th>Double</th><th>ITF</th><th>Revers</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${displayAge(p)==null?'<span class="muted">N/V</span>':`<span title="${esc(p.age_source||'')}">${esc(ageLabel(p,false))}</span>`}</td><td>${flags[p.country]||'🌐'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td><span class="badge ${p.backhand_verified?'good':''}">${esc(p.backhand||'2 mains')}${p.backhand_verified?'':' · estimé'}</span></td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
    ${!dbLoading&&!dbRows.length?'<div class="empty">Aucun joueur trouvé avec ces filtres.</div>':''}
    <div class="pagination"><button ${dbOffset===0?'disabled':''} onclick="dbPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(dbCount)}</span><button ${dbOffset+100>=dbCount?'disabled':''} onclick="dbPage(1)">→</button></div>
   </div>

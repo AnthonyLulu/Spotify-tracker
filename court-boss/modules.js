@@ -946,8 +946,9 @@ window.renderPalmaresHtml=function(d,p){
   const doublesTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='doubles'));
   const juniorSinglesTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='junior_singles'));
   const juniorDoublesTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='junior_doubles'));
+  const nextGenTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='nextgen_title'));
   const collegeTitles=dedupeTitleRows(rawTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||''))));
-  const allTitles=[...titles,...doublesTitles,...juniorSinglesTitles,...juniorDoublesTitles,...collegeTitles];
+  const allTitles=[...titles,...doublesTitles,...juniorSinglesTitles,...juniorDoublesTitles,...nextGenTitles,...collegeTitles];
   const ncaaCareer=d?.ncaaCareer||null;
   const ncaaTransfers=(d?.ncaaTransfers||[]).slice().sort((a,b)=>Number(b.is_current)-Number(a.is_current)||String(b.season||'').localeCompare(String(a.season||''))||String(a.school||'').localeCompare(String(b.school||'')));
   const ncaaCurrentVerified=!!p?.ncaa_current||(d?.ncaa||[]).some(x=>String(x.season||'')==='2026-27'&&String(x.status||'')==='Active');
@@ -1059,6 +1060,7 @@ window.renderPalmaresHtml=function(d,p){
         <div class="kpi"><span class="muted mini">Double</span><b>${doublesTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">Junior simple</span><b>${juniorSinglesTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">Junior double</span><b>${juniorDoublesTitles.length}</b></div>
+        <div class="kpi"><span class="muted mini">Next Gen</span><b>${nextGenTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">NCAA / College</span><b>${collegeTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">Statut NCAA</span><b style="font-size:12px">${esc(ncaaCareer?.status||p.ncaa_status||'—')}</b></div>
       </div>
@@ -1197,9 +1199,10 @@ window.renderPalmaresHtml=function(d,p){
         <div><h3>Simple junior</h3>${juniorSinglesTitles.length?juniorSinglesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior')}</div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior simple enregistré.</div>'}</div>
         <div><h3>Double junior</h3>${juniorDoublesTitles.length?juniorDoublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior Double')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior double enregistré.</div>'}</div>
       </div>
-      ${(p.junior_ranking||p.junior_doubles_ranking)?`<div class="notice mini" style="margin-top:10px">Classement junior : ${p.junior_ranking?'#'+fmt(p.junior_ranking):'—'} · Double junior : ${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'}.</div>`:''}
+      ${(p.junior_ranking||p.junior_doubles_ranking)?`<div class="notice mini" style="margin-top:10px"><b>Junior simple</b> : ${p.junior_ranking?'#'+fmt(p.junior_ranking):'—'} · ${fmt(Number(p.junior_points||0)+Number(p.junior_game_points||0))} pts · <b>Double</b> : ${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'} · ${fmt(p.junior_doubles_points||0)} pts.<div class="row" style="margin-top:8px;gap:5px;flex-wrap:wrap"><span class="badge">GC 1000</span><span class="badge">J500 500</span><span class="badge">J300 300</span><span class="badge">J200 200</span><span class="badge">J100 100</span><span class="badge">J60 60</span><span class="badge">J30 30</span></div></div>`:''}
     </div>
 
+    ${nextGenTitles.length?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Jeunes élites</div><h2>Trophées Next Gen</h2></div><span class="pill">${nextGenTitles.length}</span></div>${nextGenTitles.map(t=>`<div class="list-item row between"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · Next Gen Finals</div></div><span class="badge good">🏆</span></div>`).join('')}</div>`:''}
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
         <div class="row between"><div><div class="eyebrow">Circuit Double</div><h2>Titres en double</h2></div><span class="badge good">${doublesTitles.length}</span></div>

@@ -1,5 +1,6 @@
 
 let cbDoublesTournaments=[];
+let cbPlayerSearch={q:'',country:'',circuit:'Tous',age_max:99,potential_min:0,offset:0,limit:60,rows:[],count:0};
 let cbSeasonHistory=[];
 let cbMatchOpponents=[];
 let cbLiveSession=null;
@@ -255,6 +256,126 @@ async function playDoublesV2(id){
 window.playDoublesV2=playDoublesV2;
 window.refreshSeasonV2=refreshSeasonV2;
 
+
+async function loadCbPlayerSearch(reset=false){
+  if(reset)cbPlayerSearch.offset=0;
+  const p=new URLSearchParams({
+    q:cbPlayerSearch.q||'',
+    country:cbPlayerSearch.country||'',
+    circuit:cbPlayerSearch.circuit||'Tous',
+    age_max:String(cbPlayerSearch.age_max||99),
+    potential_min:String(cbPlayerSearch.potential_min||0),
+    offset:String(cbPlayerSearch.offset||0),
+    limit:String(cbPlayerSearch.limit||60)
+  });
+  try{
+    const d=await get('/api/search-players?'+p.toString());
+    cbPlayerSearch={...cbPlayerSearch,rows:d.rows||[],count:d.count||0};
+  }catch(e){
+    cbPlayerSearch={...cbPlayerSearch,rows:[],count:0,error:e.message};
+  }
+}
+
+function playerCircuitLabelV2(p){
+  if(p.ranking_current)return 'ATP';
+  if(p.junior_ranking!=null)return 'Junior';
+  if(p.itf_ranking!=null)return 'ITF';
+  return p.is_real?'Hors classement':'Prospect';
+}
+
+function playerDatabasePageV2(){
+  const s=cbPlayerSearch;
+  const countries=['','FRA','USA','ESP','ITA','GER','AUS','CZE','ARG','GBR','CAN','BRA','NED','BEL','SUI','AUT','JPN','KOR','SRB','CRO','SWE'];
+  const circuits=['Tous','ATP','ITF','Junior','Prospects'];
+  const start=s.count?Number(s.offset)+1:0,end=Math.min(Number(s.offset)+s.rows.length,s.count);
+  return `
+  <div class="section-head">
+    <div>
+      <div class="eyebrow">Database mondiale</div>
+      <h1>Base joueurs</h1>
+      <div class="muted">5 000 profils · ATP, ITF, juniors et prospects. Challenger reste une catégorie de tournoi.</div>
+    </div>
+    <button class="primary" onclick="nav('rankings')">Classement ATP</button>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <input class="input" id="cbPlayerQ" value="${esc(s.q)}" placeholder="Nom du joueur…" onkeydown="if(event.key==='Enter')applyPlayerSearchV2()">
+      <select class="select" id="cbPlayerCircuit">
+        ${circuits.map(x=>`<option ${x===s.circuit?'selected':''}>${x}</option>`).join('')}
+      </select>
+      <select class="select" id="cbPlayerCountry">
+        ${countries.map(x=>`<option value="${x}" ${x===s.country?'selected':''}>${x||'Tous pays'}</option>`).join('')}
+      </select>
+      <select class="select" id="cbPlayerAge">
+        ${[[99,'Tout âge'],[23,'23 ans max'],[20,'20 ans max'],[18,'18 ans max']].map(([v,l])=>`<option value="${v}" ${Number(v)===Number(s.age_max)?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <select class="select" id="cbPlayerPotential">
+        ${[[0,'Tout potentiel'],[70,'PA 70+'],[80,'PA 80+'],[90,'PA 90+']].map(([v,l])=>`<option value="${v}" ${Number(v)===Number(s.potential_min)?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <button class="soft-btn" onclick="applyPlayerSearchV2()">Filtrer</button>
+    </div>
+    <div class="row between" style="margin-top:10px">
+      <span class="muted mini">${fmt(s.count)} profil(s) · lignes ${fmt(start)}–${fmt(end)}</span>
+      <button class="ghost" onclick="resetPlayerSearchV2()">Réinitialiser</button>
+    </div>
+  </div>
+
+  <div class="grid g3" style="margin-top:12px">
+    ${s.rows.map(p=>`
+      <div class="card">
+        <div class="row between click" onclick="openPlayer(${p.id})">
+          <div>
+            <div class="eyebrow">${playerCircuitLabelV2(p)} ${p.ranking_current?'#'+p.ranking:p.itf_ranking!=null?'#'+p.itf_ranking:p.junior_ranking!=null?'#'+p.junior_ranking:''}</div>
+            <h2>${flags[p.country]||'🏳️'} ${esc(p.name)}</h2>
+            <div class="muted mini">${p.age||'—'} ans · ${esc(p.style||'Non renseigné')}</div>
+          </div>
+          <span class="badge">${p.scouting_confidence||0}% scout</span>
+        </div>
+        <div class="kpi-strip" style="margin-top:10px">
+          <div class="kpi"><span class="muted mini">CA</span><b>${p.current_ability}</b></div>
+          <div class="kpi"><span class="muted mini">PA</span><b>${p.potential}</b></div>
+          <div class="kpi"><span class="muted mini">Forme</span><b>${p.form}</b></div>
+          <div class="kpi"><span class="muted mini">Fitness</span><b>${p.fitness}</b></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="soft-btn" onclick="openPlayer(${p.id})">Profil</button>
+          <button class="ghost" onclick="addComparePlayerV2(${p.id})">Comparer</button>
+        </div>
+      </div>`).join('')||`<div class="card empty">${esc(s.error||'Aucun joueur trouvé.')}</div>`}
+  </div>
+
+  <div class="pagination">
+    <button ${s.offset===0?'disabled':''} onclick="playerPageV2(-1)">←</button>
+    <span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(s.count)}</span>
+    <button ${Number(s.offset)+Number(s.limit)>=Number(s.count)?'disabled':''} onclick="playerPageV2(1)">→</button>
+  </div>`;
+}
+
+async function applyPlayerSearchV2(){
+  cbPlayerSearch.q=document.getElementById('cbPlayerQ')?.value||'';
+  cbPlayerSearch.circuit=document.getElementById('cbPlayerCircuit')?.value||'Tous';
+  cbPlayerSearch.country=document.getElementById('cbPlayerCountry')?.value||'';
+  cbPlayerSearch.age_max=Number(document.getElementById('cbPlayerAge')?.value||99);
+  cbPlayerSearch.potential_min=Number(document.getElementById('cbPlayerPotential')?.value||0);
+  await loadCbPlayerSearch(true);
+  shell(playerDatabasePageV2());
+}
+async function resetPlayerSearchV2(){
+  cbPlayerSearch={q:'',country:'',circuit:'Tous',age_max:99,potential_min:0,offset:0,limit:60,rows:[],count:0};
+  await loadCbPlayerSearch(true);
+  shell(playerDatabasePageV2());
+}
+async function playerPageV2(dir){
+  cbPlayerSearch.offset=Math.max(0,Number(cbPlayerSearch.offset)+(dir*Number(cbPlayerSearch.limit)));
+  await loadCbPlayerSearch(false);
+  shell(playerDatabasePageV2());
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+window.applyPlayerSearchV2=applyPlayerSearchV2;
+window.resetPlayerSearchV2=resetPlayerSearchV2;
+window.playerPageV2=playerPageV2;
+
 const cbBaseNav=window.nav;
 window.nav=async function(r){
   if(r==='season'){
@@ -275,6 +396,12 @@ window.nav=async function(r){
     shell(liveMatchPageV2());
     return;
   }
+  if(r==='players'){
+    route='players';window.scrollTo({top:0,behavior:'smooth'});
+    if(!cbPlayerSearch.rows.length)await loadCbPlayerSearch(true);
+    shell(playerDatabasePageV2());
+    return;
+  }
   return cbBaseNav(r);
 };
 
@@ -283,6 +410,7 @@ window.render=function(){
   if(route==='season')return shell(seasonPageV2());
   if(route==='doubles'&&cbDoublesTournaments.length)return shell(doublesPageV2());
   if(route==='match'&&cbMatchOpponents.length)return shell(liveMatchPageV2());
+  if(route==='players')return shell(playerDatabasePageV2());
   return cbBaseRender();
 };
 
@@ -552,3 +680,22 @@ function removeComparePlayerV2(id){
 window.addComparePlayerV2=addComparePlayerV2;
 window.openCompareV2=openCompareV2;
 window.removeComparePlayerV2=removeComparePlayerV2;
+
+window.openGlobalSearchV2=()=>{
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>5 000 joueurs</h1><div class="muted">ATP, ITF, juniors et prospects.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInputV2" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearchV2(this.value)" autofocus><div id="globalSearchResultsV2" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
+  setTimeout(()=>document.getElementById('globalSearchInputV2')?.focus(),20);
+}
+let cbSearchTimer=null;
+window.runGlobalSearchV2=q=>{
+  clearTimeout(cbSearchTimer);
+  const box=document.getElementById('globalSearchResultsV2');
+  if(!box)return;
+  if(q.trim().length<2){box.innerHTML='<div class="empty">Tape au moins 2 caractères.</div>';return}
+  cbSearchTimer=setTimeout(async()=>{
+    try{
+      const d=await get('/api/search-players?q='+encodeURIComponent(q.trim())+'&limit=30');
+      box.innerHTML=(d.rows||[]).map(p=>`<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${playerCircuitLabelV2(p)} · CA ${p.current_ability} · PA ${p.potential}</div></div><button class="ghost" onclick="addComparePlayerV2(${p.id})">Comparer</button></div></div>`).join('')||'<div class="empty">Aucun joueur.</div>';
+    }catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+  },180);
+}
+window.openGlobalSearch=window.openGlobalSearchV2;

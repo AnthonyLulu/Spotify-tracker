@@ -559,18 +559,29 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
     if(!iso)return;
     let a=map.get(player);
     if(!a){
-      a={sackmann_id:player,career_high_rank:rank,career_high_rank_date:iso,weeks_at_no1:0,weeks_top10:0,weeks_top100:0,ranking_history_weeks:0};
+      a={sackmann_id:player,career_high_rank:rank,career_high_rank_date:iso,weeks_at_no1:0,weeks_top10:0,weeks_top100:0,ranking_history_weeks:0,last_date:null,last_rank:null};
       map.set(player,a);
+    }
+    if(a.last_date&&a.last_rank!=null){
+      const prev=Date.parse(a.last_date+"T12:00:00Z");
+      const cur=Date.parse(iso+"T12:00:00Z");
+      const diffDays=Math.max(1,Math.round((cur-prev)/86400000));
+      // Count elapsed ranking weeks through normal 2–6 week publication gaps.
+      // Very long suspensions such as the 2020 Covid ranking freeze are not expanded.
+      const elapsedWeeks=diffDays>70?1:Math.max(1,Math.round(diffDays/7));
+      const lastRank=Number(a.last_rank);
+      if(lastRank===1)a.weeks_at_no1+=elapsedWeeks;
+      if(lastRank<=10)a.weeks_top10+=elapsedWeeks;
+      if(lastRank<=100)a.weeks_top100+=elapsedWeeks;
+      a.ranking_history_weeks+=elapsedWeeks;
     }
     if(rank<a.career_high_rank){
       a.career_high_rank=rank;a.career_high_rank_date=iso;
     }else if(rank===a.career_high_rank&&iso<a.career_high_rank_date){
       a.career_high_rank_date=iso;
     }
-    if(rank===1)a.weeks_at_no1++;
-    if(rank<=10)a.weeks_top10++;
-    if(rank<=100)a.weeks_top100++;
-    a.ranking_history_weeks++;
+    a.last_date=iso;
+    a.last_rank=rank;
     accepted++;
   };
 
@@ -588,6 +599,16 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
   carry+=decoder.decode();
   if(carry)processLine(carry);
 
+  for(const a of map.values()){
+    if(a.last_rank!=null){
+      const lastRank=Number(a.last_rank);
+      if(lastRank===1)a.weeks_at_no1++;
+      if(lastRank<=10)a.weeks_top10++;
+      if(lastRank<=100)a.weeks_top100++;
+      a.ranking_history_weeks++;
+    }
+    delete a.last_date;delete a.last_rank;
+  }
   const rows=[...map.values()];
   let linked=0,upserted=0;
   for(let i=0;i<rows.length;i+=400){
@@ -595,14 +616,14 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
     const r=await db.rpc("apply_ranking_career_decade",{
       p_decade:decade,
       p_rows:chunk,
-      p_source:"Jeff Sackmann / Tennis Abstract weekly rankings archive",
+      p_source:"Jeff Sackmann / Tennis Abstract rankings · elapsed calendar weeks",
       p_cutoff:"2025-12-01"
     });
     if(r.error)throw r.error;
     linked+=Number(r.data?.players_linked||0);
     upserted+=Number(r.data?.rows_upserted||0);
   }
-  return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",streamed:true};
+  return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",streamed:true,method:"elapsed calendar weeks; long freezes excluded"};
 }
 async function syncSackmannAtpTitles(fromYear:number,toYear:number){
   const from=Math.max(1968,Math.min(2025,fromYear));

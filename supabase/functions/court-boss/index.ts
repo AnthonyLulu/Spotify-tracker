@@ -365,10 +365,10 @@ Deno.serve(async(req:Request)=>{
         parseLiveTennisRanking("https://live-tennis.eu/en/atp-race.html"),
         parseLiveTennisRanking("https://live-tennis.eu/en/atp-race-next-gen.html")
       ]);
-      const [raceApplied,nextApplied]=await Promise.all([
-        db.rpc("apply_secondary_live_ranking",{p_kind:"race",p_snapshot:snapshot,p_rows:raceRows}),
-        db.rpc("apply_secondary_live_ranking",{p_kind:"nextgen",p_snapshot:snapshot,p_rows:nextRows})
-      ]);
+      // Apply sequentially so a player missing from the DB is created once by Race
+      // and immediately reused by Next Gen, instead of creating two parallel identities.
+      const raceApplied=await db.rpc("apply_secondary_live_ranking",{p_kind:"race",p_snapshot:snapshot,p_rows:raceRows});
+      const nextApplied=await db.rpc("apply_secondary_live_ranking",{p_kind:"nextgen",p_snapshot:snapshot,p_rows:nextRows});
       const err=raceApplied.error||nextApplied.error;
       if(err)return h({error:err.message},500);
       return h({ok:true,snapshot,race:{parsed:raceRows.length,applied:raceApplied.data,top:raceRows.slice(0,10)},nextgen:{parsed:nextRows.length,applied:nextApplied.data,top:nextRows.slice(0,15)}});

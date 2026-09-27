@@ -77,7 +77,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,ranking_previous,ranking_change,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
+      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
       .not(orderCol,"is",null)
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);

@@ -478,3 +478,77 @@ window.advanceLiveMatchV2=advanceLiveMatchV2;
 window.setLiveSurfaceV2=setLiveSurfaceV2;
 window.setLiveTacticV2=setLiveTacticV2;
 window.resetLiveMatchV2=resetLiveMatchV2;
+
+
+async function addComparePlayerV2(id){
+  local.comparePlayers=Array.isArray(local.comparePlayers)?local.comparePlayers:[];
+  if(!local.comparePlayers.includes(id)){
+    if(local.comparePlayers.length>=3)local.comparePlayers.shift();
+    local.comparePlayers.push(id);
+    persist();
+  }
+  if(local.comparePlayers.length>=2) await openCompareV2();
+  else alert('Joueur ajouté au comparateur. Ajoute encore un joueur pour comparer.');
+}
+
+async function openCompareV2(){
+  const ids=(local.comparePlayers||[]).slice(-3);
+  if(ids.length<2){alert('Ajoute au moins 2 joueurs au comparateur.');return}
+  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Comparaison des joueurs…</div></div></div>';
+  try{
+    const rows=[];
+    for(const id of ids){
+      const d=await get('/api/player?id='+id);
+      if(d.player)rows.push(d.player);
+    }
+    const attrs=[
+      ['Puissance service','serve_power'],['Précision service','serve_precision'],['Coup droit','forehand'],
+      ['Revers','backhand'],['Retour','return_game'],['Volée','volley'],['Toucher','touch'],
+      ['Déplacements','movement'],['Vitesse','speed'],['Endurance','stamina'],['Force','strength'],
+      ['Anticipation','anticipation'],['Concentration','concentration'],['Sang-froid','composure'],
+      ['Combativité','fighting_spirit'],['Tactique','tactics'],['Double','doubles'],
+      ['Terre battue','clay_affinity'],['Dur','hard_affinity'],['Gazon','grass_affinity']
+    ];
+    const best=(key)=>Math.max(...rows.map(p=>Number(p.player_attributes?.[key]||0)));
+    overlay.innerHTML=`
+      <div class="modal" onclick="if(event.target===this)closeOverlay()">
+        <div class="sheet compare-sheet">
+          <div class="sheet-head">
+            <div><div class="eyebrow">Scouting</div><h1>Comparateur joueurs</h1><div class="muted">Jusqu'à 3 profils côte à côte.</div></div>
+            <button class="close" onclick="closeOverlay()">✕</button>
+          </div>
+          <div class="compare-grid" style="margin-top:12px">
+            <div class="compare-label"></div>
+            ${rows.map(p=>`<div class="compare-player"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking}</div><button class="ghost mini" onclick="removeComparePlayerV2(${p.id})">Retirer</button></div>`).join('')}
+            
+            <div class="compare-label">CA</div>
+            ${rows.map(p=>`<div class="compare-value"><b>${p.current_ability}</b>/100</div>`).join('')}
+            <div class="compare-label">Potentiel</div>
+            ${rows.map(p=>`<div class="compare-value"><b>${p.potential}</b>/100</div>`).join('')}
+            <div class="compare-label">Forme</div>
+            ${rows.map(p=>`<div class="compare-value">${p.form}/100</div>`).join('')}
+            <div class="compare-label">Fitness</div>
+            ${rows.map(p=>`<div class="compare-value">${p.fitness}/100</div>`).join('')}
+            <div class="compare-label">Fatigue</div>
+            ${rows.map(p=>`<div class="compare-value">${p.fatigue}/100</div>`).join('')}
+            ${attrs.map(([label,key])=>`
+              <div class="compare-label">${label}</div>
+              ${rows.map(p=>{const v=Number(p.player_attributes?.[key]||0);return `<div class="compare-value ${v===best(key)?'compare-best':''}"><b>${v}</b>/20</div>`}).join('')}
+            `).join('')}
+          </div>
+        </div>
+      </div>`;
+  }catch(e){
+    overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Comparaison impossible</h2><p class="muted">${esc(e.message)}</p></div></div>`;
+  }
+}
+
+function removeComparePlayerV2(id){
+  local.comparePlayers=(local.comparePlayers||[]).filter(x=>x!==id);
+  persist();
+  if(local.comparePlayers.length>=2)openCompareV2();else closeOverlay();
+}
+
+window.addComparePlayerV2=addComparePlayerV2;
+window.openCompareV2=openCompareV2;
+window.removeComparePlayerV2=removeComparePlayerV2;

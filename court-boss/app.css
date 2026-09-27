@@ -391,3 +391,8 @@ body{background:
  .fm-db-filters{grid-template-columns:1fr 1fr}.fm-db-filters input{grid-column:1/-1}.fm-db-filters .primary{grid-column:1/-1}
  .fm-sim-controls{grid-template-columns:repeat(2,1fr)}
 }
+
+.davis-later-rounds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.davis-later{border:1px dashed var(--line2);border-radius:9px;padding:8px;background:rgba(255,255,255,.02)}
+.davis-later span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.08em}.davis-later b{display:block;margin-top:4px;font-size:11px}
+@media(max-width:520px){.davis-later-rounds{grid-template-columns:1fr}}

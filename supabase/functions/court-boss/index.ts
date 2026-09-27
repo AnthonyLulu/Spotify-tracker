@@ -342,7 +342,7 @@ const isCurrentJuniorProfile=(p:any)=>{
   const src=String(p?.junior_source||"");
   const age=Number(p?.age);
   if(p?.game_generated===true)return Number.isFinite(age)&&age>=13&&age<=17;
-  if(p?.is_real===true&&/^CoreTennis ITF Junior Boys/i.test(src))return true;
+  if(p?.is_real===true&&/^CoreTennis/i.test(src))return true;
   return p?.is_real===true&&Number.isFinite(age)&&age>=13&&age<=18&&!!src;
 };
 async function fetchCoreTennisJuniorRows(url:string){
@@ -773,6 +773,39 @@ Deno.serve(async(req:Request)=>{
       });
     }
 
+    if(kind==="junior"){
+      let juniorQuery=db.from("players")
+        .select("id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified")
+        .not("junior_ranking","is",null)
+        .not("junior_source","is",null)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .order("junior_ranking",{ascending:true})
+        .range(0,4999);
+      if(q)juniorQuery=juniorQuery.ilike("name_norm",`%${normalizeName(q)}%`);
+      if(country)juniorQuery=juniorQuery.eq("country",country);
+      const jr=await juniorQuery;
+      if(jr.error)return h({error:jr.error.message},500);
+      let juniorRows=(jr.data??[])
+        .filter(isCurrentJuniorProfile)
+        .sort((a:any,b:any)=>Number(a.junior_ranking||999999)-Number(b.junior_ranking||999999)||String(a.name||"").localeCompare(String(b.name||"")));
+      const total=juniorRows.length;
+      const verifiedRealRanked=juniorRows.filter((p:any)=>p.is_real).length;
+      const generatedRanked=juniorRows.filter((p:any)=>p.game_generated).length;
+      juniorRows=juniorRows.slice(offset,offset+limit).map((p:any)=>({
+        ...p,
+        age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
+        official_ranking:p.ranking_current?p.ranking:null,
+        world_rank:p.game_world_rank
+      }));
+      return h({
+        kind,offset,limit,count:total,rows:juniorRows,
+        eligibility:"ITF Juniors · vrais profils sourcés + vivier Court Boss 13-17",
+        rankingDate:"2026-09-21",
+        verifiedRealRanked,
+        generatedRanked
+      });
+    }
+
     let orderCol=kind==="singles"?"game_world_rank":"ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
     if(kind==="race") orderCol="race_ranking";
@@ -815,6 +848,30 @@ Deno.serve(async(req:Request)=>{
     const limit=n(u.searchParams.get("limit"),60,1,120);
     const careerDateRes=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const gameDate=String(careerDateRes.data?.career_date||"2026-09-27");
+
+    if(circuit==="Junior"){
+      let jq=db.from("players")
+        .select("id,name,name_norm,country,is_real,game_generated,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified")
+        .not("junior_source","is",null)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .range(0,4999);
+      if(q)jq=jq.ilike("name_norm",`%${normalizeName(q)}%`);
+      if(country)jq=jq.eq("country",country);
+      const jd=await jq;
+      if(jd.error)return h({error:jd.error.message},500);
+      let juniorPool=(jd.data??[])
+        .filter(isCurrentJuniorProfile)
+        .filter((p:any)=>Number(p.potential||0)>=potentialMin);
+      if(ageMax<99)juniorPool=juniorPool.filter((p:any)=>p.age!=null&&Number(p.age)<=ageMax);
+      juniorPool.sort((a:any,b:any)=>{
+        const ar=a.junior_ranking==null?999999:Number(a.junior_ranking);
+        const br=b.junior_ranking==null?999999:Number(b.junior_ranking);
+        return ar-br||Number(b.potential||0)-Number(a.potential||0)||String(a.name||"").localeCompare(String(b.name||""));
+      });
+      const total=juniorPool.length;
+      let rows=juniorPool.slice(offset,offset+limit).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date)}));
+      return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:total,rows,verifiedJuniorPool:true});
+    }
 
     let query=db.from("players")
       .select("id,name,country,is_real,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})

@@ -56,7 +56,7 @@ Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
 
-  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:6});
+  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:7});
 
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
     const sid=saveId(req);
@@ -172,7 +172,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date","2005-01-01");
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
-    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null);
+    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01");
     if(circuit==="NCAA") query=query.eq("ncaa_current",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
@@ -294,7 +294,7 @@ Deno.serve(async(req:Request)=>{
       }else{
         const pool=await db.from("players")
           .select("id,name,country,age,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style,junior_snapshot_date,junior_source")
-          .eq("is_real",true).not("junior_source","is",null).not("junior_ranking","is",null).lte("age",18)
+          .eq("is_real",true).not("junior_source","is",null).not("junior_ranking","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01")
           .order("junior_ranking",{ascending:true}).limit(drawSize);
         if(pool.error)return h({error:pool.error.message},500);
         main=(pool.data??[]).map((p:any)=>({...p,ranking:p.junior_ranking,points:p.junior_points}));
@@ -342,12 +342,15 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/simulate")&&req.method==="POST"){
     let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
-    const week=n(body?.week,1,1,10000);
-    const date=String(body?.date||"").slice(0,10);
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return h({error:"Invalid date"},400);
+    const requestedDate=String(body?.date||"").slice(0,10);
+    if(requestedDate&&!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return h({error:"Invalid date"},400);
     const current=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
-    const previousDate=String(current.data.career_date||date);
+    const previousDate=String(current.data.career_date||"2026-09-27");
+    const serverNext=new Date(previousDate+"T12:00:00Z");
+    serverNext.setUTCDate(serverNext.getUTCDate()+7);
+    const date=serverNext.toISOString().slice(0,10);
+    const week=Math.max(1,Number(current.data.week||0)+1);
     const cs=body?.career_state||{};
     const [staffRows,sponsorRows,rosterRows]=await Promise.all([
       db.from("staff").select("weekly_cost,skill"),
@@ -461,7 +464,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,world:sim.data,worldTournaments:worldEvents.data,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/management")&&req.method==="GET"){

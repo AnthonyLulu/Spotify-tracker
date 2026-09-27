@@ -1137,7 +1137,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     let query=db.from("players")
-      .select("id,name,country,is_real,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
+      .select("id,name,country,is_real,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(ageMax<99) query=query.lte("age",ageMax);
 
@@ -1147,6 +1147,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="ATP profond") query=query.eq("is_real",true).not("ranking","is",null);
     if(circuit==="Tous réels") query=query.eq("is_real",true);
     if(circuit==="Double") query=query.not("doubles_ranking","is",null);
+    if(circuit==="Junior Double") query=query.not("junior_doubles_ranking","is",null);
     if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("age","is",null).lte("age",21);
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
@@ -1158,6 +1159,7 @@ Deno.serve(async(req:Request)=>{
     else if(q&&circuit==="Tous") query=query.order("name",{ascending:true});
     else if(circuit==="Tous réels") query=query.order("name",{ascending:true});
     else if(circuit==="Double") query=query.order("doubles_ranking",{ascending:true,nullsFirst:false});
+    else if(circuit==="Junior Double") query=query.order("junior_doubles_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Race") query=query.order("race_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Next Gen") query=query.order("nextgen_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="ITF") query=query.order("itf_ranking",{ascending:true,nullsFirst:false});
@@ -1169,9 +1171,9 @@ Deno.serve(async(req:Request)=>{
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
     let rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
-    // Search/browse progressively enriches missing real-world facts without inventing DOBs.
+    // Search/browse progressively replaces Court Boss fictive estimates with sourced public facts when available.
     // ATP is already complete; NCAA/ITF pages hydrate a few missing profiles on every browse.
-    if(q.length>=2||["NCAA","ITF","Junior"].includes(circuit)){
+    if(q.length>=2||["NCAA","ITF","Junior","Junior Double"].includes(circuit)){
       const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url||!p.wikidata_id||!p.backhand_verified)).slice(0,q.length>=2?4:2);
       if(enrich.length){
         const enriched=await Promise.all(enrich.map((p:any)=>resolvePlayerFacts({...p},gameDate)));

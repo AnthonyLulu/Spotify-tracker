@@ -92,12 +92,31 @@ function officialAtpPhotoUrl(p){
    ?'https://www.atptour.com/-/media/alias/player-gladiator-headshot/'+encodeURIComponent(code)
    :'';
 }
+function playerPhotoCandidates(p){
+ const out=[];
+ const add=(url,source)=>{
+   const u=String(url||'').trim();
+   if(!u||out.some(x=>x.url===u))return;
+   out.push({url:u,source});
+ };
+ if(p?.is_real)add(officialAtpPhotoUrl(p),'ATP');
+ add(p?.itf_photo_url,'ITF');
+ const wiki=String(p?.wiki_photo_url||'').trim()
+   ||(/wiki|commons/i.test(String(p?.photo_source||''))?String(p?.photo_url||'').trim():'');
+ add(wiki,'Wikipedia/Wikimedia');
+ if(p?.photo_url&&!/wiki|commons/i.test(String(p?.photo_source||'')))add(p.photo_url,p.photo_source_label||p.photo_source||'Photo joueur');
+ return out;
+}
+function playerPhotoSourceLabel(p){
+ return playerPhotoCandidates(p)[0]?.source||'';
+}
 window.cbPhotoFallback=img=>{
  if(!img)return;
- const fallback=String(img.dataset?.fallback||'').trim();
- if(fallback&&!img.dataset.fallbackUsed){
-   img.dataset.fallbackUsed='1';
-   img.src=fallback;
+ const fallbacks=String(img.dataset?.fallbacks||'').split('|').filter(Boolean);
+ const idx=Number(img.dataset?.fallbackIndex||0);
+ if(idx<fallbacks.length){
+   img.dataset.fallbackIndex=String(idx+1);
+   try{img.src=decodeURIComponent(fallbacks[idx])}catch{img.src=fallbacks[idx]}
    return;
  }
  img.style.display='none';
@@ -105,13 +124,12 @@ window.cbPhotoFallback=img=>{
  if(blank)blank.style.display='flex';
 };
 function playerPhotoMarkup(p){
- const official=p?.is_real?officialAtpPhotoUrl(p):'';
- const saved=String(p?.photo_url||'').trim();
- const primary=official||saved;
- const fallback=official&&saved&&saved!==official?saved:'';
+ const candidates=playerPhotoCandidates(p);
  const blank=(visible=false)=>`<div aria-label="Aucune photo officielle disponible" title="Aucune photo officielle disponible" style="display:${visible?'flex':'none'};width:100%;height:100%;align-items:center;justify-content:center;background:linear-gradient(160deg,#10251c,#09150f)"><span style="display:block;width:42px;height:52px;border:2px solid rgba(225,238,231,.18);border-radius:24px 24px 14px 14px;position:relative"></span></div>`;
- if(!primary)return blank(true);
- return `<img src="${esc(primary)}" data-fallback="${esc(fallback)}" alt="${esc(p?.name||'Joueur')}" style="width:100%;height:100%;object-fit:cover" onerror="cbPhotoFallback(this)">${blank(false)}`;
+ if(!candidates.length)return blank(true);
+ const primary=candidates[0].url;
+ const fallbacks=candidates.slice(1).map(x=>encodeURIComponent(x.url)).join('|');
+ return `<img src="${esc(primary)}" data-fallbacks="${esc(fallbacks)}" data-fallback-index="0" alt="${esc(p?.name||'Joueur')}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;object-position:center 10%" onerror="cbPhotoFallback(this)">${blank(false)}`;
 }
 
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
@@ -897,7 +915,7 @@ window.openPlayer=async id=>{
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier joueur ${isRetired?'· Légende':''}</div><h1>${flags[p.country]||'🏳️'} ${esc(p.name)} ${isRetired?'<span class="badge">Retraité</span>':''}</h1><div class="muted">${esc(rankSummary)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
    <div class="tabs" style="margin-top:12px"><button class="active" data-player-tab="profile" onclick="playerSection('profile')">Profil</button><button data-player-tab="attrs" onclick="playerSection('attrs')">Attributs</button><button data-player-tab="development" onclick="playerSection('development')">Développement</button><button data-player-tab="matches" onclick="playerSection('matches')">Matchs</button><button data-player-tab="double" onclick="playerSection('double')">Double</button><button data-player-tab="career" onclick="playerSection('career')">Palmarès</button><button data-player-tab="commercial" onclick="playerSection('commercial')">Commercial</button><button data-player-tab="history" onclick="playerSection('history')">Historique</button></div>
    <div id="playerBody">
-    <div class="card fm-player-header" style="margin-bottom:12px"><div class="row" style="align-items:center;gap:14px"><div style="width:92px;height:112px;border-radius:16px;overflow:hidden;background:#10251c;display:flex;align-items:center;justify-content:center;flex:0 0 auto">${playerPhotoMarkup(p)}</div><div><div class="eyebrow">${p.is_real?'Identité réelle':'Joueur généré Court Boss'}</div><h2 style="margin:2px 0 5px">${esc(p.name)}</h2><div class="muted">${p.birth_date?'Né le '+df(p.birth_date)+' · '+ageLabel(p,true):p.age!=null?(ageLabel(p,true)+' · date de naissance non vérifiée'):'Âge non vérifié'}</div><div class="row" style="margin-top:8px;flex-wrap:wrap">${p.photo_url?`<span class="badge">${esc(p.photo_source_label||p.photo_source||'Photo joueur')}</span>`:''}${ncaa?`<span class="badge good">NCAA actif · ${esc(ncaa.school)} · #${ncaa.ita_rank||'—'}</span>`:ncaaCareer?`<span class="badge good">NCAA Alumni${ncaaCareer.verified?' certifié':''} · ${esc(ncaaCareer.school)}</span>`:''}${Array.isArray(p.circuits_2025)&&p.circuits_2025.map(c=>`<span class="badge">${esc(c)}</span>`).join('')}</div></div></div></div>
+    <div class="card fm-player-header" style="margin-bottom:12px"><div class="row" style="align-items:center;gap:14px"><div style="width:108px;height:128px;border-radius:16px;overflow:hidden;background:#10251c;display:flex;align-items:center;justify-content:center;flex:0 0 auto">${playerPhotoMarkup(p)}</div><div><div class="eyebrow">${p.is_real?'Identité réelle':'Joueur généré Court Boss'}</div><h2 style="margin:2px 0 5px">${esc(p.name)}</h2><div class="muted">${p.birth_date?'Né le '+df(p.birth_date)+' · '+ageLabel(p,true):p.age!=null?(ageLabel(p,true)+' · date de naissance non vérifiée'):'Âge non vérifié'}</div><div class="row" style="margin-top:8px;flex-wrap:wrap">${playerPhotoSourceLabel(p)?`<span class="badge">${esc(playerPhotoSourceLabel(p))}</span>`:''}${ncaa?`<span class="badge good">NCAA actif · ${esc(ncaa.school)} · #${ncaa.ita_rank||'—'}</span>`:ncaaCareer?`<span class="badge good">NCAA Alumni${ncaaCareer.verified?' certifié':''} · ${esc(ncaaCareer.school)}</span>`:''}${Array.isArray(p.circuits_2025)&&p.circuits_2025.map(c=>`<span class="badge">${esc(c)}</span>`).join('')}</div></div></div></div>
     <div class="grid g2"><div class="card"><h2>Profil</h2><div class="statline"><div class="statbox"><span class="muted mini">Âge</span><b>${esc(ageLabel(p,false))}</b><small class="muted micro">${/estimation/i.test(String(p.age_source||''))?'estimé':'sourcé'}</small></div><div class="statbox"><span class="muted mini">Taille</span><b>${p.height_cm?p.height_cm+' cm':'—'}</b></div><div class="statbox"><span class="muted mini">Main</span><b style="font-size:15px">${esc(p.handedness||'—')}</b></div><div class="statbox"><span class="muted mini">Revers</span><b style="font-size:15px">${esc(p.backhand||'2 mains')}</b><small class="muted micro">${p.backhand_verified?'sourcé':'estimé'}</small></div><div class="statbox"><span class="muted mini">Style</span><b style="font-size:15px">${esc(p.style||'—')}</b></div></div><div class="muted micro" style="margin-top:8px">Revers : ${esc(p.backhand_source||'Estimation Court Boss · non sourcée')}${p.birth_date_source?' · DOB : '+esc(p.birth_date_source):''}${p.age_source?' · Âge : '+esc(p.age_source):''}</div>
 <div class="player-bio-grid" style="margin-top:10px">
  ${p.weight_kg?`<div class="list-item row between"><span>Poids</span><b>${p.weight_kg} kg</b></div>`:''}

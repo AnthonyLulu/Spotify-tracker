@@ -91,7 +91,7 @@ function career(){
 function home(){
  const c=career(),next=boot.upcoming?.[0],academy=boot.academy||{},fin=boot.finance||{};
  const msgs=[...(local.feed||[]),...(boot.news||[]).map(x=>x.body)].slice(0,6);
- return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP · Top 200 exacts au 01/12/2025</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP réel · snapshot 01/12/2025</span></div>
  <section class="hero">
   <div class="card click" onclick="nav('myplayer')">
    <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double #${fmt(c.doubles_rank)} · ${fmt(c.points)} pts</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
@@ -120,7 +120,7 @@ function rankings(){
  const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
  const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
  const reference=rankKind==='singles'
-   ?'Top 200 vérifiés au 01/12/2025 · #201–#2000 = continuation de la base, non certifiée à cette date'
+   ?'Snapshot ATP 01/12/2025 issu de l’archive Sackmann/Kadantte · classement profond avec vrais IDs joueurs'
    :rankKind==='doubles'
      ?'Top 10 au 01/12/2025 · classement year-end étendu publié le 17/11/2025'
      :rankKind==='race'
@@ -242,7 +242,7 @@ function more(){
 function playersPage(){
  rankKind='singles';
  return `<div class="section-head"><div><div class="eyebrow">Database</div><h1>Base joueurs</h1><div class="muted">Clique sur n'importe quel joueur pour ouvrir son dossier.</div></div><button class="primary" onclick="nav('rankings')">Classement ATP</button></div>
- <div class="card"><input class="input" placeholder="Recherche globale…" value="${esc(rankQuery)}" onkeydown="if(event.key==='Enter'){rankKind='singles';searchRanking(this.value);nav('rankings')}"><p class="muted mini" style="margin-top:9px">La recherche couvre le snapshot courant et le fallback identifié jusqu’à la zone ATP #2000.</p></div>
+ <div class="card"><input class="input" placeholder="Recherche globale…" value="${esc(rankQuery)}" onkeydown="if(event.key==='Enter'){rankKind='singles';searchRanking(this.value);nav('rankings')}"><p class="muted mini" style="margin-top:9px">Base réelle enrichie : joueurs ATP, Challenger et Futures 2025 reliés à leurs identités Sackmann. Un joueur peut apparaître dans plusieurs classements.</p></div>
  <div class="grid g3" style="margin-top:12px">${(boot.topPlayers||[]).slice(0,18).map(p=>`<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><b>#${p.ranking}</b><span>${flags[p.country]||'🏳️'}</span></div><h2>${esc(p.name)}</h2><div class="muted">${fmt(p.points)} pts · CA ${p.current_ability} · PA ${p.potential}</div></div>`).join('')}</div>`
 }
 function staffPage(){

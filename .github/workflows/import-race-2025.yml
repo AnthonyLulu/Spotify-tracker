@@ -3,89 +3,90 @@ name: Build ATP Race 2025 Snapshot
 on:
   workflow_dispatch:
   push:
-    branches: ["court-boss-live"]
-    paths: [".github/workflows/import-race-2025.yml"]
+    branches:
+      - court-boss-live
+    paths:
+      - .github/workflows/import-race-2025.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  build-race:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: r-lib/actions/setup-r@v2
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          r-version: 'release'
+          fetch-depth: 0
 
-      - name: Download Race RData
-        run: |
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData" \
-            -o /tmp/V_RACE_RANK_2025.RData
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
 
-      - name: Build week 49 Race JSON
+      - name: Download Race data
+        shell: bash
         run: |
-          mkdir -p /tmp/race-out
-          Rscript - <<'RS'
+          curl -fL "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData" -o /tmp/race.RData
+
+      - name: Convert Race weeks 48 and 49
+        shell: bash
+        run: |
+          mkdir -p court-boss/data
+          cat > /tmp/build_race.R <<'RS'
           e <- new.env()
-          load("/tmp/V_RACE_RANK_2025.RData", envir=e)
-          x <- e[["V_RACE_RANK_F"]]
-          stopifnot(is.data.frame(x))
+          loaded <- load("/tmp/race.RData", envir=e)
+          frames <- loaded[sapply(loaded, function(nm) is.data.frame(e[[nm]]))]
+          if (length(frames) == 0) stop("No data.frame found")
+          x <- e[[frames[[1]]]]
 
-          current <- x[x$Season == 2025 & x$Week == 49,
-                       c("Player_ID","Cum_Race_points","Rank")]
-          previous <- x[x$Season == 2025 & x$Week == 48,
-                        c("Player_ID","Rank")]
+          need <- c("Season","Week","Player_ID","Cum_Race_points","Rank")
+          if (!all(need %in% names(x))) stop(paste("Missing columns:", paste(setdiff(need,names(x)),collapse=",")))
 
-          names(current) <- c("name","points","rank")
-          names(previous) <- c("name","previous_rank")
+          cur <- x[x$Season == 2025 & x$Week == 49, c("Player_ID","Cum_Race_points","Rank")]
+          prv <- x[x$Season == 2025 & x$Week == 48, c("Player_ID","Rank")]
+          names(cur) <- c("name","points","rank")
+          names(prv) <- c("name","previous_rank")
 
-          current <- current[!is.na(current$name) & !is.na(current$rank), ]
-          current <- current[order(current$rank, -current$points, current$name), ]
-          current <- current[!duplicated(current$name), ]
+          cur <- cur[!is.na(cur$name) & !is.na(cur$rank),]
+          cur <- cur[order(cur$rank, -cur$points, cur$name),]
+          cur <- cur[!duplicated(cur$name),]
+          prv <- prv[!is.na(prv$name) & !is.na(prv$previous_rank),]
+          prv <- prv[order(prv$previous_rank, prv$name),]
+          prv <- prv[!duplicated(prv$name),]
 
-          previous <- previous[!is.na(previous$name) & !is.na(previous$previous_rank), ]
-          previous <- previous[order(previous$previous_rank, previous$name), ]
-          previous <- previous[!duplicated(previous$name), ]
-
-          out <- merge(current, previous, by="name", all.x=TRUE, sort=FALSE)
-          out$rank_change <- ifelse(is.na(out$previous_rank), NA,
-                                   out$previous_rank - out$rank)
-          out <- out[order(out$rank, out$name), ]
+          out <- merge(cur, prv, by="name", all.x=TRUE, sort=FALSE)
+          out$rank_change <- ifelse(is.na(out$previous_rank), NA, out$previous_rank-out$rank)
+          out <- out[order(out$rank,out$name),]
 
           esc <- function(s) {
             s <- gsub("\\", "\\\\", s, fixed=TRUE)
-            s <- gsub('"', '\\"', s, fixed=TRUE)
-            s
+            gsub('"', '\\"', s, fixed=TRUE)
           }
-
           rows <- vapply(seq_len(nrow(out)), function(i) {
             prev <- if (is.na(out$previous_rank[i])) "null" else as.character(as.integer(out$previous_rank[i]))
             chg <- if (is.na(out$rank_change[i])) "null" else as.character(as.integer(out$rank_change[i]))
-            sprintf(
-              '{"rank":%d,"name":"%s","points":%d,"previous_rank":%s,"rank_change":%s}',
-              as.integer(out$rank[i]),
-              esc(as.character(out$name[i])),
-              as.integer(out$points[i]),
-              prev, chg
-            )
+            sprintf('{"rank":%d,"name":"%s","points":%d,"previous_rank":%s,"rank_change":%s}',
+              as.integer(out$rank[i]), esc(as.character(out$name[i])), as.integer(out$points[i]), prev, chg)
           }, character(1))
 
-          payload <- paste0(
+          json <- paste0(
             '{"snapshot":"2025-12-01","previous_snapshot":"2025-11-24",',
             '"source":"Thibaud-Meynier/Tennis-Data V_RACE_RANK_2025",',
-            '"week":49,"count":', nrow(out),
-            ',"rows":[', paste(rows, collapse=","), ']}'
+            '"count":',nrow(out),',"rows":[',paste(rows,collapse=","),']}'
           )
-          writeLines(payload, "/tmp/race-out/atp-race-2025-12-01.json", useBytes=TRUE)
-          cat("rows:", nrow(out), "\n")
-          print(head(out, 25))
+          writeLines(json,"court-boss/data/atp-race-2025-12-01.json",useBytes=TRUE)
+          cat("Race rows:",nrow(out),"\n")
+          print(head(out,15))
           RS
+          Rscript /tmp/build_race.R
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: atp-race-2025-12-01
-          path: /tmp/race-out/atp-race-2025-12-01.json
-          if-no-files-found: error
+      - name: Commit Race snapshot
+        shell: bash
+        run: |
+          git config user.name "Court Boss Data Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add court-boss/data/atp-race-2025-12-01.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Build ATP Race snapshot for 2025-12-01"
+          git pull --rebase origin court-boss-live
+          git push origin HEAD:court-boss-live

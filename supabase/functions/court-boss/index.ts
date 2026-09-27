@@ -1434,21 +1434,25 @@ Deno.serve(async(req:Request)=>{
     const offset=n(u.searchParams.get("offset"),0,0,500);
     const limit=n(u.searchParams.get("limit"),100,1,100);
     const q=(u.searchParams.get("q")??"").trim().toLowerCase().slice(0,80);
+    const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+    const referenceDate=String(career.data?.career_date||AGE_REFERENCE_DATE);
+    const latest=await db.from("ncaa_doubles_rankings").select("snapshot_date")
+      .lte("snapshot_date",referenceDate).order("snapshot_date",{ascending:false}).limit(1).maybeSingle();
+    if(latest.error)return h({error:latest.error.message},500);
+    if(!latest.data?.snapshot_date)return h({
+      kind:"ncaa-doubles",offset,limit,count:0,rows:[],officialCapacity:0,
+      rankingDate:referenceDate,source:"Aucun classement NCAA double disponible avant le cutoff."
+    });
     let query=db.from("ncaa_doubles_rankings")
-      .select("*",{count:"exact"})
-      .eq("season","2026-27")
-      .eq("snapshot_date","2026-08-25");
+      .select("*",{count:"exact"}).eq("snapshot_date",latest.data.snapshot_date);
     if(q) query=query.or(`player_one_name.ilike.%${q}%,player_two_name.ilike.%${q}%,school.ilike.%${q}%`);
     query=query.order("ita_rank",{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
     return h({
-      kind:"ncaa-doubles",
-      offset,limit,count:count??0,
-      rows:data??[],
-      officialCapacity:90,
-      rankingDate:gameDate,
-      source:"ITA Division I Men's Preseason Doubles"
+      kind:"ncaa-doubles",offset,limit,count:count??0,rows:data??[],
+      officialCapacity:count??0,rankingDate:latest.data.snapshot_date,
+      source:"NCAA double · dernière source disponible avant le cutoff"
     });
   }
 

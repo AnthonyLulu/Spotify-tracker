@@ -1215,7 +1215,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
+      .select("id,name,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,career_high_rank,career_high_rank_date,weeks_at_no1,weeks_top10,weeks_top100,ranking_history_weeks,ranking_history_source,ranking_history_cutoff,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(kind==="singles"){
       query=query.not("game_world_rank","is",null).lte("game_world_rank",30000);
@@ -3397,7 +3397,7 @@ Deno.serve(async(req:Request)=>{
     const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||"2026-09-27");
 
-    const [historyRows,youthRows,ncaaRows] = await Promise.all([
+    const [historyRows,youthRows,ncaaRows,rankRecordRows] = await Promise.all([
       db.from("history_player_scores").select("*").order("history_score",{ascending:false}).limit(1500),
       db.from("players")
         .select("id,name,country,birth_date,age,ranking,points,junior_ranking,junior_points,itf_ranking,current_ability,potential,photo_url,game_generated,generated_year,ncaa_current,ncaa_school,career_status,data_source")
@@ -3406,12 +3406,22 @@ Deno.serve(async(req:Request)=>{
         .order("ranking",{ascending:true,nullsFirst:false})
         .limit(2500),
       db.from("ncaa_player_registry").select("player_id,status,season,ita_rank,school,division,snapshot_date")
-        .order("snapshot_date",{ascending:false}).limit(5000)
+        .order("snapshot_date",{ascending:false}).limit(5000),
+      db.from("players")
+        .select("id,name,country,career_high_rank,career_high_rank_date,weeks_at_no1,weeks_top10,weeks_top100,ranking_history_weeks,ranking_history_source,ranking_history_cutoff")
+        .gt("ranking_history_weeks",0)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .limit(5000)
     ]);
-    const err=historyRows.error||youthRows.error||ncaaRows.error;
+    const err=historyRows.error||youthRows.error||ncaaRows.error||rankRecordRows.error;
     if(err)return h({error:err.message},500);
 
-    const allHistory=(historyRows.data??[]).map((x:any)=>({...x,continent:continentOf(x.country)}));
+    const rankRecordById=new Map((rankRecordRows.data??[]).map((x:any)=>[Number(x.id),x]));
+    const allHistory=(historyRows.data??[]).map((x:any)=>({
+      ...x,
+      ...(rankRecordById.get(Number(x.id))||{}),
+      continent:continentOf(x.country)
+    }));
     let pool=allHistory;
     if(country)pool=pool.filter((x:any)=>x.country===country);
     if(continent)pool=pool.filter((x:any)=>x.continent===continent);
@@ -3440,7 +3450,15 @@ Deno.serve(async(req:Request)=>{
       grand_slams:bestBy("grand_slams"),
       titles:bestBy("titles"),
       wins:bestBy("wins"),
-      win_pct:[...nationalPool].filter((x:any)=>Number(x.wins||0)+Number(x.losses||0)>=50).sort((a:any,b:any)=>Number(b.win_pct||0)-Number(a.win_pct||0))[0]||null
+      win_pct:[...nationalPool].filter((x:any)=>Number(x.wins||0)+Number(x.losses||0)>=50).sort((a:any,b:any)=>Number(b.win_pct||0)-Number(a.win_pct||0))[0]||null,
+      weeks_at_no1:bestBy("weeks_at_no1"),
+      weeks_top10:bestBy("weeks_top10"),
+      weeks_top100:bestBy("weeks_top100")
+    };
+    const rankingRecords={
+      weeks_at_no1:[...allHistory].filter((x:any)=>Number(x.weeks_at_no1||0)>0).sort((a:any,b:any)=>Number(b.weeks_at_no1||0)-Number(a.weeks_at_no1||0)||Number(a.career_high_rank||9999)-Number(b.career_high_rank||9999)).slice(0,30),
+      weeks_top10:[...allHistory].filter((x:any)=>Number(x.weeks_top10||0)>0).sort((a:any,b:any)=>Number(b.weeks_top10||0)-Number(a.weeks_top10||0)).slice(0,30),
+      weeks_top100:[...allHistory].filter((x:any)=>Number(x.weeks_top100||0)>0).sort((a:any,b:any)=>Number(b.weeks_top100||0)-Number(a.weeks_top100||0)).slice(0,30)
     };
 
     const ageRows=(youthRows.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),continent:continentOf(p.country)}));
@@ -3470,6 +3488,7 @@ Deno.serve(async(req:Request)=>{
       hallOfFame,
       grandSlamRecords,
       nationalRecords,
+      rankingRecords,
       u18,u21,
       coverage:{
         players:pool.length,

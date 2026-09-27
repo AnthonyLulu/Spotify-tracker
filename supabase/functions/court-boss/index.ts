@@ -638,7 +638,7 @@ Deno.serve(async(req:Request)=>{
       query=query.not("nextgen_source","is",null).not("age","is",null).lte("age",nextGenU);
     }
     if(kind==="junior"){
-      query=query.not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01");
+      query=query.not("junior_source","is",null).not("junior_ranking","is",null).gte("age",13).lte("age",17);
     }
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     if(country) query=query.eq("country",country);
@@ -675,7 +675,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("age","is",null).lte("age",21);
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
-    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01");
+    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).gte("age",13).lte("age",17);
     if(circuit==="NCAA") query=query.eq("ncaa_current",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
@@ -904,7 +904,7 @@ Deno.serve(async(req:Request)=>{
       }else{
         const pool=await db.from("players")
           .select("id,name,country,age,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style,junior_snapshot_date,junior_source")
-          .eq("is_real",true).not("junior_source","is",null).not("junior_ranking","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01")
+          .not("junior_source","is",null).not("junior_ranking","is",null).gte("age",13).lte("age",17)
           .order("junior_ranking",{ascending:true}).limit(drawSize);
         if(pool.error)return h({error:pool.error.message},500);
         main=(pool.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,String(t.data.start_date||"2025-01-01"),p.age),ranking:p.junior_ranking,points:p.junior_points}));
@@ -2682,7 +2682,7 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null).gte("age",13).lte("age",17),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","ATP"),
@@ -2705,7 +2705,7 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).not("doubles_ranking","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("nextgen_source","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null).gte("age",13).lte("age",17),
       db.from("players").select("id",{count:"exact",head:true}).not("backhand","is",null),
       db.from("players").select("id",{count:"exact",head:true}).eq("backhand_verified",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("birth_date","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),

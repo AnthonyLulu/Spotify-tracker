@@ -1165,7 +1165,7 @@ window.openTournament=async id=>{
   const joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
   const singleRule=singlesEligibility(t),doubleRule=doublesEligibility(t);
   const serverRun=d.run||null,doublesRun=d.doubles_run||null;
-  const activePartner=(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean)||doublesHubRows.find(p=>p.id===local.partnerId)||null;
+  const activePartner=activeDoublesPartner();
   const played=local.playedTournaments?.[t.id]||(serverRun?{user_round:serverRun.user_round,user_points:serverRun.user_points,user_prize:serverRun.user_prize}:null);
   const pairs=(d.main||[]).slice(0,Math.min(64,t.draw_size||32));
   const forfeits=d.forfeits||[];
@@ -1192,6 +1192,7 @@ window.openTournament=async id=>{
   }).join('');
 
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+   ${t.image_url?`<div class="tm-tour-hero"><img src="${esc(t.image_url)}" alt="${esc(t.name)}" onerror="this.parentElement.style.display='none'"><div class="tm-tour-hero-overlay"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span><span class="badge good">Visuel officiel</span></div></div>`:''}
    <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button><button onclick="tourSection('draw')">${isJunior?'Engagés':'Tableau'}</button>${!isJunior?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}</div>
    <div id="tourBody">
     <div class="grid g2">

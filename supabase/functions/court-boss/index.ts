@@ -43,6 +43,15 @@ async function resolvePlayerPhoto(player:any){
   }catch{}
   return player;
 }
+const CONTINENT_CODES:any={
+  Europe:new Set("ALB AND AUT BEL BIH BLR BUL CRO CYP CZE DEN ESP EST FIN FRA GBR GEO GER GRE HUN IRL ISL ITA KOS LAT LTU LUX MDA MKD MLT MNE NED NOR POL POR ROU RUS SRB SLO SVK SWE SUI UKR".split(" ")),
+  "North America":new Set("ANT BAH BAR BER CAN CRC CUB DOM ESA GUA HAI HON JAM MEX NCA PAN PUR TTO USA".split(" ")),
+  "South America":new Set("ARG BOL BRA CHI COL ECU GUY PAR PER SUR URU VEN".split(" ")),
+  Asia:new Set("AFG BAN BHU BRN CAM CHN HKG INA IND IRI IRQ ISR JPN JOR KAZ KGZ KOR KUW LAO LIB MAS MGL MYA NEP OMA PAK PLE PHI QAT KSA SIN SRI SYR TAD THA TKM TPE UAE UZB VIE".split(" ")),
+  Africa:new Set("ALG ANG BEN BOT BUR BDI CMR CPV CAF CHA COM CGO COD CIV DJI EGY EQG ERI ETH GAB GAM GHA GUI GNB KEN LES LBR LBA MAD MAW MLI MRI MAR MOZ NAM NIG NGR RWA SEN SEY SLE SOM RSA SSD SUD SWZ TAN TOG TUN UGA ZAM ZIM".split(" ")),
+  Oceania:new Set("AUS FIJ FSM KIR MHL NRU NZL PLW PNG SAM SOL TGA TUV VAN".split(" "))
+};
+const continentOf=(code:any)=>{const c=String(code||"").toUpperCase();for(const [k,set] of Object.entries(CONTINENT_CODES) as any)if(set.has(c))return k;return "Other";};
 
 function saveId(req:Request){const k=req.headers.get("x-save-key")??"";return /^[0-9a-f-]{36}$/i.test(k)?"browser:"+k:null}
 async function getManagedPlayer(select="*"){
@@ -102,6 +111,7 @@ Deno.serve(async(req:Request)=>{
     const kind=u.searchParams.get("kind")??"singles";
     const offset=n(u.searchParams.get("offset"),0,0,9999), limit=n(u.searchParams.get("limit"),100,1,200);
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
     const nextGenU=n(u.searchParams.get("u"),21,18,21);
     const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||"2026-09-27");
@@ -111,6 +121,7 @@ Deno.serve(async(req:Request)=>{
         .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner(id,name,country,ranking,points,doubles_ranking,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division)",{count:"exact"})
         .eq("status","Active");
       if(q)nq=nq.ilike("players.name_norm",`%${normalizeName(q)}%`);
+      if(country)nq=nq.eq("players.country",country);
       nq=nq.order("ita_rank",{ascending:true,nullsFirst:false}).range(offset,offset+limit-1);
       const {data,error,count}=await nq;
       if(error)return h({error:error.message},500);
@@ -143,6 +154,7 @@ Deno.serve(async(req:Request)=>{
       query=query.not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01");
     }
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
+    if(country) query=query.eq("country",country);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
@@ -1799,8 +1811,45 @@ Deno.serve(async(req:Request)=>{
     return h({error:"Unknown action"},400);
   }
 
+
+  if(path.endsWith("/api/countries")&&req.method==="GET"){
+    const rows=await db.from("country_player_counts").select("*").order("players",{ascending:false});
+    if(rows.error)return h({error:rows.error.message},500);
+    return h({rows:(rows.data??[]).map((x:any)=>({...x,continent:continentOf(x.country)}))});
+  }
+
+  if(path.endsWith("/api/history-leaders")&&req.method==="GET"){
+    const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
+    const continent=(u.searchParams.get("continent")??"").trim().slice(0,40);
+    const limit=n(u.searchParams.get("limit"),50,1,200);
+    let query=db.from("history_player_scores").select("*").order("history_score",{ascending:false}).limit(1200);
+    if(country)query=query.eq("country",country);
+    const rows=await query;
+    if(rows.error)return h({error:rows.error.message},500);
+    let pool=(rows.data??[]).map((x:any)=>({...x,continent:continentOf(x.country)}));
+    if(continent)pool=pool.filter((x:any)=>x.continent===continent);
+    const countryBest:any[]=[];
+    const seenCountry=new Set<string>();
+    for(const x of pool){
+      if(!seenCountry.has(x.country)){seenCountry.add(x.country);countryBest.push(x);}
+    }
+    const continentBest:any[]=[];
+    const seenContinent=new Set<string>();
+    for(const x of (rows.data??[]).map((x:any)=>({...x,continent:continentOf(x.country)}))){
+      if(!seenContinent.has(x.continent)){seenContinent.add(x.continent);continentBest.push(x);}
+    }
+    return h({
+      methodology:"Court Boss historical score = 10,000 per Grand Slam + 2,200 ATP Finals + 1,200 Masters + 180 other titles + 2 per recorded win. It ranks imported career data, not an official GOAT list.",
+      filters:{country:country||null,continent:continent||null},
+      rows:pool.slice(0,limit),
+      countryBest:countryBest.slice(0,80),
+      continentBest,
+      coverage:{players:pool.length,countries:new Set(pool.map((x:any)=>x.country)).size}
+    });
+  }
+
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const [playersTotal,atp,itf,junior,tours,realTours,ncaa,newgens,realPlayers,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
+    const [playersTotal,atp,itf,junior,tours,realTours,ncaaTeams,ncaaPlayers,newgens,realPlayers,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
@@ -1808,6 +1857,7 @@ Deno.serve(async(req:Request)=>{
       db.from("tournaments").select("id",{count:"exact",head:true}),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_verified",true),
       db.from("college_teams").select("id",{count:"exact",head:true}),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("game_generated",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
@@ -1828,7 +1878,8 @@ Deno.serve(async(req:Request)=>{
       sourcedJuniors:juniorReal.count??0,
       itfPlayers:itf.count??0,
       juniorPlayers:junior.count??0,
-      ncaaTeams:ncaa.count??0,
+      ncaaTeams:ncaaTeams.count??0,
+      ncaaPlayers:ncaaPlayers.count??0,
       gameGenerated:newgens.count??0,
       tournaments:tours.count??0,
       verifiedTournaments:realTours.count??0

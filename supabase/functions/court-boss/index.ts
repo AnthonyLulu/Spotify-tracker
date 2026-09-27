@@ -1413,26 +1413,45 @@ Deno.serve(async(req:Request)=>{
 
     if(String(t.data.circuit)==="Junior"){
       const entered=await db.from("junior_tournament_entries")
-        .select("id,seed,result,snapshot_date,source_url,players(id,name,country,age,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style)")
+        .select("id,seed,result,snapshot_date,source_url,players(id,name,country,age,age_snapshot_date,birth_date,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style)")
         .eq("tournament_id",id);
       if(entered.error)return h({error:entered.error.message},500);
 
       let main:any[]=[];
       if((entered.data??[]).length){
+        const entryIds=(entered.data??[])
+          .map((x:any)=>Array.isArray(x.players)?x.players[0]?.id:x.players?.id)
+          .filter(Boolean)
+          .map(Number);
+        const poolRanks=entryIds.length
+          ?await db.from("junior_display_pool").select("player_id,display_rank").in("player_id",entryIds)
+          :{data:[],error:null};
+        if(poolRanks.error)return h({error:poolRanks.error.message},500);
+        const rankMap=new Map((poolRanks.data??[]).map((x:any)=>[Number(x.player_id),Number(x.display_rank)]));
         main=(entered.data??[])
           .map((x:any)=>{
             const p=Array.isArray(x.players)?x.players[0]:x.players;
-            return p?{...p,ranking:p.junior_ranking,points:p.junior_points,seed:x.seed,result:x.result,entry_source:x.source_url}:null;
+            return p?{
+              ...p,
+              age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
+              ranking:rankMap.get(Number(p.id))??p.junior_ranking,
+              points:p.junior_points,
+              seed:x.seed,result:x.result,entry_source:x.source_url
+            }:null;
           })
           .filter(Boolean)
           .sort((a:any,b:any)=>Number(a.seed||999)-Number(b.seed||999)||Number(a.ranking||9999)-Number(b.ranking||9999));
       }else{
-        const pool=await db.from("players")
-          .select("id,name,country,age,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style,junior_snapshot_date,junior_source")
-          .not("junior_source","is",null).not("junior_ranking","is",null).gte("age",13).lte("age",18)
-          .order("junior_ranking",{ascending:true}).limit(drawSize);
+        const pool=await db.from("junior_display_pool_view")
+          .select("id,name,country,age,age_snapshot_date,birth_date,display_rank,junior_points,current_ability,potential,form,fitness,fatigue,style")
+          .order("display_order",{ascending:true}).limit(drawSize);
         if(pool.error)return h({error:pool.error.message},500);
-        main=(pool.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),ranking:p.junior_ranking,points:p.junior_points}));
+        main=(pool.data??[]).map((p:any)=>({
+          ...p,
+          age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
+          ranking:p.display_rank,
+          points:p.junior_points
+        }));
       }
       return h({
         tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],

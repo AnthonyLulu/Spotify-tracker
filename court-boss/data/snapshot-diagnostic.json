@@ -1,0 +1,36 @@
+{
+  "singles": {
+    "url": "https://www.aiscore.com/tennis/rankings/atp-rankings/",
+    "marker": -1,
+    "api": [
+      {
+        "status": 307,
+        "url": "https://www.aiscore.com/tennis/rankings/atp-rankings/",
+        "ct": ""
+      },
+      {
+        "status": 403,
+        "url": "https://www.aiscore.com/tennis/rankings/atp-rankings/",
+        "ct": "text/html; charset=UTF-8"
+      }
+    ],
+    "sample": "www.aiscore.com\nPerforming security verification\n\nThis website uses a security service to protect against malicious bots. This page is displayed while the website verifies you are not a bot.\n\nRay ID: a41abc84e83f5df7\nPerformance and Security by Cloudflare\nPrivacy"
+  },
+  "doubles": {
+    "url": "https://www.aiscore.com/tennis/rankings/atp-rankings-doubles",
+    "marker": -1,
+    "api": [
+      {
+        "status": 307,
+        "url": "https://www.aiscore.com/tennis/rankings/atp-rankings-doubles",
+        "ct": ""
+      },
+      {
+        "status": 403,
+        "url": "https://www.aiscore.com/tennis/rankings/atp-rankings-doubles",
+        "ct": "text/html; charset=UTF-8"
+      }
+    ],
+    "sample": "www.aiscore.com\nPerforming security verification\n\nThis website uses a security service to protect against malicious bots. This page is displayed while the website verifies you are not a bot.\n\nRay ID: a41abc9ebfec33b8\nPerformance and Security by Cloudflare\nPrivacy"
+  }
+}

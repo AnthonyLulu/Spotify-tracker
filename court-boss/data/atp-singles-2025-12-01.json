@@ -1,1007 +1,1407 @@
 {
   "snapshot": "2025-12-01",
-  "source": "Hiyun archive mirroring ATP ranking",
   "count": 200,
+  "source": "https://hiyun0727.blogspot.com/2025/12/atp-ranking-20251201.html?m=1",
   "rows": [
     {
       "rank": 1,
       "name": "Carlos Alcaraz",
-      "points": 12050
+      "points": 12050,
+      "previous_rank": 1,
+      "rank_change": 0
     },
     {
       "rank": 2,
       "name": "Jannik Sinner",
-      "points": 11500
+      "points": 11500,
+      "previous_rank": 2,
+      "rank_change": 0
     },
     {
       "rank": 3,
       "name": "Alexander Zverev",
-      "points": 5160
+      "points": 5160,
+      "previous_rank": 3,
+      "rank_change": 0
     },
     {
       "rank": 4,
       "name": "Novak Djokovic",
-      "points": 4830
+      "points": 4830,
+      "previous_rank": 4,
+      "rank_change": 0
     },
     {
       "rank": 5,
       "name": "Felix Auger-Aliassime",
-      "points": 4245
+      "points": 4245,
+      "previous_rank": 5,
+      "rank_change": 0
     },
     {
       "rank": 6,
       "name": "Taylor Fritz",
-      "points": 4135
+      "points": 4135,
+      "previous_rank": 6,
+      "rank_change": 0
     },
     {
       "rank": 7,
       "name": "Alex de Minaur",
-      "points": 4135
+      "points": 4135,
+      "previous_rank": 7,
+      "rank_change": 0
     },
     {
       "rank": 8,
       "name": "Lorenzo Musetti",
-      "points": 4040
+      "points": 4040,
+      "previous_rank": 8,
+      "rank_change": 0
     },
     {
       "rank": 9,
       "name": "Ben Shelton",
-      "points": 3970
+      "points": 3970,
+      "previous_rank": 9,
+      "rank_change": 0
     },
     {
       "rank": 10,
       "name": "Jack Draper",
-      "points": 2990
+      "points": 2990,
+      "previous_rank": 10,
+      "rank_change": 0
     },
     {
       "rank": 11,
       "name": "Alexander Bublik",
-      "points": 2870
+      "points": 2870,
+      "previous_rank": 11,
+      "rank_change": 0
     },
     {
       "rank": 12,
       "name": "Casper Ruud",
-      "points": 2835
+      "points": 2835,
+      "previous_rank": 12,
+      "rank_change": 0
     },
     {
       "rank": 13,
       "name": "Daniil Medvedev",
-      "points": 2760
+      "points": 2760,
+      "previous_rank": 13,
+      "rank_change": 0
     },
     {
       "rank": 14,
       "name": "Alejandro Davidovich Fokina",
-      "points": 2635
+      "points": 2635,
+      "previous_rank": 14,
+      "rank_change": 0
     },
     {
       "rank": 15,
       "name": "Holger Rune",
-      "points": 2590
+      "points": 2590,
+      "previous_rank": 15,
+      "rank_change": 0
     },
     {
       "rank": 16,
       "name": "Andrey Rublev",
-      "points": 2520
+      "points": 2520,
+      "previous_rank": 16,
+      "rank_change": 0
     },
     {
       "rank": 17,
       "name": "Jiri Lehecka",
-      "points": 2325
+      "points": 2325,
+      "previous_rank": 17,
+      "rank_change": 0
     },
     {
       "rank": 18,
       "name": "Karen Khachanov",
-      "points": 2320
+      "points": 2320,
+      "previous_rank": 18,
+      "rank_change": 0
     },
     {
       "rank": 19,
       "name": "Jakub Mensik",
-      "points": 2180
+      "points": 2180,
+      "previous_rank": 19,
+      "rank_change": 0
     },
     {
       "rank": 20,
       "name": "Tommy Paul",
-      "points": 2100
+      "points": 2100,
+      "previous_rank": 20,
+      "rank_change": 0
     },
     {
       "rank": 21,
       "name": "Francisco Cerundolo",
-      "points": 2085
+      "points": 2085,
+      "previous_rank": 21,
+      "rank_change": 0
     },
     {
       "rank": 22,
       "name": "Flavio Cobolli",
-      "points": 2025
+      "points": 2025,
+      "previous_rank": 22,
+      "rank_change": 0
     },
     {
       "rank": 23,
       "name": "Denis Shapovalov",
-      "points": 1675
+      "points": 1675,
+      "previous_rank": 23,
+      "rank_change": 0
     },
     {
       "rank": 24,
       "name": "Joao Fonseca",
-      "points": 1635
+      "points": 1635,
+      "previous_rank": 24,
+      "rank_change": 0
     },
     {
       "rank": 25,
       "name": "Tallon Griekspoor",
-      "points": 1615
+      "points": 1615,
+      "previous_rank": 25,
+      "rank_change": 0
     },
     {
       "rank": 26,
       "name": "Luciano Darderi",
-      "points": 1609
+      "points": 1609,
+      "previous_rank": 26,
+      "rank_change": 0
     },
     {
       "rank": 27,
       "name": "Cameron Norrie",
-      "points": 1573
+      "points": 1573,
+      "previous_rank": 27,
+      "rank_change": 0
     },
     {
       "rank": 28,
       "name": "Learner Tien",
-      "points": 1550
+      "points": 1550,
+      "previous_rank": 28,
+      "rank_change": 0
     },
     {
       "rank": 29,
       "name": "Arthur Rinderknech",
-      "points": 1540
+      "points": 1540,
+      "previous_rank": 29,
+      "rank_change": 0
     },
     {
       "rank": 30,
       "name": "Frances Tiafoe",
-      "points": 1510
+      "points": 1510,
+      "previous_rank": 30,
+      "rank_change": 0
     },
     {
       "rank": 31,
       "name": "Valentin Vacherot",
-      "points": 1483
+      "points": 1483,
+      "previous_rank": 31,
+      "rank_change": 0
     },
     {
       "rank": 32,
       "name": "Tomas Machac",
-      "points": 1445
+      "points": 1445,
+      "previous_rank": 32,
+      "rank_change": 0
     },
     {
       "rank": 33,
       "name": "Brandon Nakashima",
-      "points": 1430
+      "points": 1430,
+      "previous_rank": 33,
+      "rank_change": 0
     },
     {
       "rank": 34,
       "name": "Stefanos Tsitsipas",
-      "points": 1425
+      "points": 1425,
+      "previous_rank": 34,
+      "rank_change": 0
     },
     {
       "rank": 35,
       "name": "Corentin Moutet",
-      "points": 1408
+      "points": 1408,
+      "previous_rank": 35,
+      "rank_change": 0
     },
     {
       "rank": 36,
       "name": "Jaume Munar",
-      "points": 1395
+      "points": 1395,
+      "previous_rank": 36,
+      "rank_change": 0
     },
     {
       "rank": 37,
       "name": "Ugo Humbert",
-      "points": 1380
+      "points": 1380,
+      "previous_rank": 37,
+      "rank_change": 0
     },
     {
       "rank": 38,
       "name": "Alex Michelsen",
-      "points": 1325
+      "points": 1325,
+      "previous_rank": 38,
+      "rank_change": 0
     },
     {
       "rank": 39,
       "name": "Lorenzo Sonego",
-      "points": 1265
+      "points": 1265,
+      "previous_rank": 39,
+      "rank_change": 0
     },
     {
       "rank": 40,
       "name": "Arthur Fils",
-      "points": 1260
+      "points": 1260,
+      "previous_rank": 40,
+      "rank_change": 0
     },
     {
       "rank": 41,
       "name": "Gabriel Diallo",
-      "points": 1253
+      "points": 1253,
+      "previous_rank": 41,
+      "rank_change": 0
     },
     {
       "rank": 42,
       "name": "Alexandre Muller",
-      "points": 1230
+      "points": 1230,
+      "previous_rank": 42,
+      "rank_change": 0
     },
     {
       "rank": 43,
       "name": "Zizou Bergs",
-      "points": 1218
+      "points": 1218,
+      "previous_rank": 43,
+      "rank_change": 0
     },
     {
       "rank": 44,
       "name": "Grigor Dimitrov",
-      "points": 1180
+      "points": 1180,
+      "previous_rank": 44,
+      "rank_change": 0
     },
     {
       "rank": 45,
       "name": "Sebastian Baez",
-      "points": 1155
+      "points": 1155,
+      "previous_rank": 45,
+      "rank_change": 0
     },
     {
       "rank": 46,
       "name": "Daniel Altmaier",
-      "points": 1148
+      "points": 1148,
+      "previous_rank": 46,
+      "rank_change": 0
     },
     {
       "rank": 47,
       "name": "Nuno Borges",
-      "points": 1145
+      "points": 1145,
+      "previous_rank": 47,
+      "rank_change": 0
     },
     {
       "rank": 48,
       "name": "Sebastian Korda",
-      "points": 1100
+      "points": 1100,
+      "previous_rank": 48,
+      "rank_change": 0
     },
     {
       "rank": 49,
       "name": "Camilo Ugo Carabelli",
-      "points": 1053
+      "points": 1053,
+      "previous_rank": 49,
+      "rank_change": 0
     },
     {
       "rank": 50,
       "name": "Reilly Opelka",
-      "points": 1026
+      "points": 1026,
+      "previous_rank": 50,
+      "rank_change": 0
     },
     {
       "rank": 51,
       "name": "Fabian Marozsan",
-      "points": 1025
+      "points": 1025,
+      "previous_rank": 51,
+      "rank_change": 0
     },
     {
       "rank": 52,
       "name": "Miomir Kecmanovic",
-      "points": 1025
+      "points": 1025,
+      "previous_rank": 52,
+      "rank_change": 0
     },
     {
       "rank": 53,
       "name": "Jenson Brooksby",
-      "points": 1017
+      "points": 1017,
+      "previous_rank": 53,
+      "rank_change": 0
     },
     {
       "rank": 54,
       "name": "Alexei Popyrin",
-      "points": 1000
+      "points": 1000,
+      "previous_rank": 54,
+      "rank_change": 0
     },
     {
       "rank": 55,
       "name": "Marton Fucsovics",
-      "points": 963
+      "points": 963,
+      "previous_rank": 55,
+      "rank_change": 0
     },
     {
       "rank": 56,
       "name": "Matteo Berrettini",
-      "points": 945
+      "points": 945,
+      "previous_rank": 56,
+      "rank_change": 0
     },
     {
       "rank": 57,
       "name": "Valentin Royer",
-      "points": 936
+      "points": 936,
+      "previous_rank": 58,
+      "rank_change": 1
     },
     {
       "rank": 58,
       "name": "Giovanni Mpetshi Perricard",
-      "points": 925
+      "points": 925,
+      "previous_rank": 59,
+      "rank_change": 1
     },
     {
       "rank": 59,
       "name": "Tomas Martin Etcheverry",
-      "points": 920
+      "points": 920,
+      "previous_rank": 60,
+      "rank_change": 1
     },
     {
       "rank": 60,
       "name": "Aleksandar Kovacevic",
-      "points": 890
+      "points": 890,
+      "previous_rank": 62,
+      "rank_change": 2
     },
     {
       "rank": 61,
       "name": "Matteo Arnaldi",
-      "points": 883
+      "points": 883,
+      "previous_rank": 63,
+      "rank_change": 2
     },
     {
       "rank": 62,
       "name": "Kamil Majchrzak",
-      "points": 861
+      "points": 861,
+      "previous_rank": 64,
+      "rank_change": 2
     },
     {
       "rank": 63,
       "name": "Terence Atmane",
-      "points": 855
+      "points": 855,
+      "previous_rank": 65,
+      "rank_change": 2
     },
     {
       "rank": 64,
       "name": "Marcos Giron",
-      "points": 855
+      "points": 855,
+      "previous_rank": 66,
+      "rank_change": 2
     },
     {
       "rank": 65,
       "name": "Damir Dzumhur",
-      "points": 850
+      "points": 850,
+      "previous_rank": 57,
+      "rank_change": -8
     },
     {
       "rank": 66,
       "name": "Arthur Cazaux",
-      "points": 848
+      "points": 848,
+      "previous_rank": 67,
+      "rank_change": 1
     },
     {
       "rank": 67,
       "name": "Francisco Comesana",
-      "points": 845
+      "points": 845,
+      "previous_rank": 61,
+      "rank_change": -6
     },
     {
       "rank": 68,
       "name": "Gael Monfils",
-      "points": 825
+      "points": 825,
+      "previous_rank": 68,
+      "rank_change": 0
     },
     {
       "rank": 69,
       "name": "Adrian Mannarino",
-      "points": 817
+      "points": 817,
+      "previous_rank": 69,
+      "rank_change": 0
     },
     {
       "rank": 70,
       "name": "Ethan Quinn",
-      "points": 802
+      "points": 802,
+      "previous_rank": 70,
+      "rank_change": 0
     },
     {
       "rank": 71,
       "name": "Jacob Fearnley",
-      "points": 787
+      "points": 787,
+      "previous_rank": 71,
+      "rank_change": 0
     },
     {
       "rank": 72,
       "name": "Mariano Navone",
-      "points": 785
+      "points": 785,
+      "previous_rank": 72,
+      "rank_change": 0
     },
     {
       "rank": 73,
       "name": "Hubert Hurkacz",
-      "points": 775
+      "points": 775,
+      "previous_rank": 73,
+      "rank_change": 0
     },
     {
       "rank": 74,
       "name": "Mattia Bellucci",
-      "points": 766
+      "points": 766,
+      "previous_rank": 74,
+      "rank_change": 0
     },
     {
       "rank": 75,
       "name": "Marin Cilic",
-      "points": 765
+      "points": 765,
+      "previous_rank": 75,
+      "rank_change": 0
     },
     {
       "rank": 76,
       "name": "Jesper de Jong",
-      "points": 763
+      "points": 763,
+      "previous_rank": 76,
+      "rank_change": 0
     },
     {
       "rank": 77,
       "name": "Botic van de Zandschulp",
-      "points": 756
+      "points": 756,
+      "previous_rank": 77,
+      "rank_change": 0
     },
     {
       "rank": 78,
       "name": "Adam Walton",
-      "points": 740
+      "points": 740,
+      "previous_rank": 78,
+      "rank_change": 0
     },
     {
       "rank": 79,
       "name": "Filip Misolic",
-      "points": 726
+      "points": 726,
+      "previous_rank": 79,
+      "rank_change": 0
     },
     {
       "rank": 80,
       "name": "Cristian Garin",
-      "points": 726
+      "points": 726,
+      "previous_rank": 80,
+      "rank_change": 0
     },
     {
       "rank": 81,
       "name": "Alejandro Tabilo",
-      "points": 721
+      "points": 721,
+      "previous_rank": 81,
+      "rank_change": 0
     },
     {
       "rank": 82,
       "name": "Aleksandar Vukic",
-      "points": 718
+      "points": 718,
+      "previous_rank": 82,
+      "rank_change": 0
     },
     {
       "rank": 83,
       "name": "Hamad Medjedovic",
-      "points": 718
+      "points": 718,
+      "previous_rank": 83,
+      "rank_change": 0
     },
     {
       "rank": 84,
       "name": "Jan-Lennard Struff",
-      "points": 711
+      "points": 711,
+      "previous_rank": 84,
+      "rank_change": 0
     },
     {
       "rank": 85,
       "name": "Juan Manuel Cerundolo",
-      "points": 710
+      "points": 710,
+      "previous_rank": 85,
+      "rank_change": 0
     },
     {
       "rank": 86,
       "name": "James Duckworth",
-      "points": 704
+      "points": 704,
+      "previous_rank": 106,
+      "rank_change": 20
     },
     {
       "rank": 87,
       "name": "Raphael Collignon",
-      "points": 704
+      "points": 704,
+      "previous_rank": 86,
+      "rank_change": -1
     },
     {
       "rank": 88,
       "name": "Emilio Nava",
-      "points": 684
+      "points": 684,
+      "previous_rank": 88,
+      "rank_change": 0
     },
     {
       "rank": 89,
       "name": "Pablo Carreno Busta",
-      "points": 681
+      "points": 681,
+      "previous_rank": 89,
+      "rank_change": 0
     },
     {
       "rank": 90,
       "name": "Eliot Spizzirri",
-      "points": 680
+      "points": 680,
+      "previous_rank": 91,
+      "rank_change": 1
     },
     {
       "rank": 91,
       "name": "Quentin Halys",
-      "points": 679
+      "points": 679,
+      "previous_rank": 92,
+      "rank_change": 1
     },
     {
       "rank": 92,
       "name": "Roberto Bautista Agut",
-      "points": 670
+      "points": 670,
+      "previous_rank": 93,
+      "rank_change": 1
     },
     {
       "rank": 93,
       "name": "Pedro Martinez",
-      "points": 668
+      "points": 668,
+      "previous_rank": 95,
+      "rank_change": 2
     },
     {
       "rank": 94,
       "name": "Benjamin Bonzi",
-      "points": 667
+      "points": 667,
+      "previous_rank": 96,
+      "rank_change": 2
     },
     {
       "rank": 95,
       "name": "Alexander Shevchenko",
-      "points": 662
+      "points": 662,
+      "previous_rank": 97,
+      "rank_change": 2
     },
     {
       "rank": 96,
       "name": "Dalibor Svrcina",
-      "points": 661
+      "points": 661,
+      "previous_rank": 90,
+      "rank_change": -6
     },
     {
       "rank": 97,
       "name": "Hugo Gaston",
-      "points": 653
+      "points": 653,
+      "previous_rank": 98,
+      "rank_change": 1
     },
     {
       "rank": 98,
       "name": "Laslo Djere",
-      "points": 652
+      "points": 652,
+      "previous_rank": 99,
+      "rank_change": 1
     },
     {
       "rank": 99,
       "name": "Tristan Schoolkate",
-      "points": 649
+      "points": 649,
+      "previous_rank": 100,
+      "rank_change": 1
     },
     {
       "rank": 100,
       "name": "Shintaro Mochizuki",
-      "points": 647
+      "points": 647,
+      "previous_rank": 94,
+      "rank_change": -6
     },
     {
       "rank": 101,
       "name": "Vit Kopriva",
-      "points": 636
+      "points": 636,
+      "previous_rank": 102,
+      "rank_change": 1
     },
     {
       "rank": 102,
       "name": "Carlos Taberner",
-      "points": 636
+      "points": 636,
+      "previous_rank": 103,
+      "rank_change": 1
     },
     {
       "rank": 103,
       "name": "Yannick Hanfmann",
-      "points": 631
+      "points": 631,
+      "previous_rank": 104,
+      "rank_change": 1
     },
     {
       "rank": 104,
       "name": "Ignacio Buse",
-      "points": 627
+      "points": 627,
+      "previous_rank": 105,
+      "rank_change": 1
     },
     {
       "rank": 105,
       "name": "Roman Andres Burruchaga",
-      "points": 615
+      "points": 615,
+      "previous_rank": 107,
+      "rank_change": 2
     },
     {
       "rank": 106,
       "name": "Thiago Agustin Tirante",
-      "points": 612
+      "points": 612,
+      "previous_rank": 101,
+      "rank_change": -5
     },
     {
       "rank": 107,
       "name": "Luca Nardi",
-      "points": 599
+      "points": 599,
+      "previous_rank": 87,
+      "rank_change": -20
     },
     {
       "rank": 108,
       "name": "Jordan Thompson",
-      "points": 586
+      "points": 586,
+      "previous_rank": 108,
+      "rank_change": 0
     },
     {
       "rank": 109,
       "name": "Nikoloz Basilashvili",
-      "points": 573
+      "points": 573,
+      "previous_rank": 110,
+      "rank_change": 1
     },
     {
       "rank": 110,
       "name": "Yoshihito Nishioka",
-      "points": 566
+      "points": 566,
+      "previous_rank": 111,
+      "rank_change": 1
     },
     {
       "rank": 111,
       "name": "Tomas Barrios Vera",
-      "points": 564
+      "points": 564,
+      "previous_rank": 109,
+      "rank_change": -2
     },
     {
       "rank": 112,
       "name": "Mackenzie McDonald",
-      "points": 559
+      "points": 559,
+      "previous_rank": 112,
+      "rank_change": 0
     },
     {
       "rank": 113,
       "name": "Brandon Holt",
-      "points": 559
+      "points": 559,
+      "previous_rank": 113,
+      "rank_change": 0
     },
     {
       "rank": 114,
       "name": "Rinky Hijikata",
-      "points": 556
+      "points": 556,
+      "previous_rank": 127,
+      "rank_change": 13
     },
     {
       "rank": 115,
       "name": "Christopher O'Connell",
-      "points": 546
+      "points": 546,
+      "previous_rank": 114,
+      "rank_change": -1
     },
     {
       "rank": 116,
       "name": "Alexander Blockx",
-      "points": 542
+      "points": 542,
+      "previous_rank": 116,
+      "rank_change": 0
     },
     {
       "rank": 117,
       "name": "Borna Coric",
-      "points": 538
+      "points": 538,
+      "previous_rank": 115,
+      "rank_change": -2
     },
     {
       "rank": 118,
       "name": "Patrick Kypson",
-      "points": 533
+      "points": 533,
+      "previous_rank": 117,
+      "rank_change": -1
     },
     {
       "rank": 119,
       "name": "David Goffin",
-      "points": 525
+      "points": 525,
+      "previous_rank": 118,
+      "rank_change": -1
     },
     {
       "rank": 120,
       "name": "Dusan Lajovic",
-      "points": 519
+      "points": 519,
+      "previous_rank": 119,
+      "rank_change": -1
     },
     {
       "rank": 121,
       "name": "Elmer Moller",
-      "points": 517
+      "points": 517,
+      "previous_rank": 152,
+      "rank_change": 31
     },
     {
       "rank": 122,
       "name": "Yunchaokete Bu",
-      "points": 509
+      "points": 509,
+      "previous_rank": 120,
+      "rank_change": -2
     },
     {
       "rank": 123,
       "name": "Nicolas Jarry",
-      "points": 501
+      "points": 501,
+      "previous_rank": 121,
+      "rank_change": -2
     },
     {
       "rank": 124,
       "name": "Chun-Hsin Tseng",
-      "points": 498
+      "points": 498,
+      "previous_rank": 124,
+      "rank_change": 0
     },
     {
       "rank": 125,
       "name": "Jan Choinski",
-      "points": 498
+      "points": 498,
+      "previous_rank": 129,
+      "rank_change": 4
     },
     {
       "rank": 126,
       "name": "Billy Harris",
-      "points": 490
+      "points": 490,
+      "previous_rank": 125,
+      "rank_change": -1
     },
     {
       "rank": 127,
       "name": "Otto Virtanen",
-      "points": 488
+      "points": 488,
+      "previous_rank": 126,
+      "rank_change": -1
     },
     {
       "rank": 128,
       "name": "Dino Prizmic",
-      "points": 487
+      "points": 487,
+      "previous_rank": 122,
+      "rank_change": -6
     },
     {
       "rank": 129,
       "name": "Liam Draxl",
-      "points": 476
+      "points": 476,
+      "previous_rank": 123,
+      "rank_change": -6
     },
     {
       "rank": 130,
       "name": "Marco Trungelliti",
-      "points": 474
+      "points": 474,
+      "previous_rank": 135,
+      "rank_change": 5
     },
     {
       "rank": 131,
       "name": "Roberto Carballes Baena",
-      "points": 469
+      "points": 469,
+      "previous_rank": 133,
+      "rank_change": 2
     },
     {
       "rank": 132,
       "name": "Vilius Gaubas",
-      "points": 469
+      "points": 469,
+      "previous_rank": 130,
+      "rank_change": -2
     },
     {
       "rank": 133,
       "name": "Nicolai Budkov Kjaer",
-      "points": 464
+      "points": 464,
+      "previous_rank": 132,
+      "rank_change": -1
     },
     {
       "rank": 134,
       "name": "Sebastian Ofner",
-      "points": 463
+      "points": 463,
+      "previous_rank": 134,
+      "rank_change": 0
     },
     {
       "rank": 135,
       "name": "Martin Landaluce",
-      "points": 455
+      "points": 455,
+      "previous_rank": 131,
+      "rank_change": -4
     },
     {
       "rank": 136,
       "name": "Moez Echargui",
-      "points": 452
+      "points": 452,
+      "previous_rank": 136,
+      "rank_change": 0
     },
     {
       "rank": 137,
       "name": "Francesco Passaro",
-      "points": 449
+      "points": 449,
+      "previous_rank": 128,
+      "rank_change": -9
     },
     {
       "rank": 138,
       "name": "Kyrian Jacquet",
-      "points": 442
+      "points": 442,
+      "previous_rank": 137,
+      "rank_change": -1
     },
     {
       "rank": 139,
       "name": "Francesco Maestrelli",
-      "points": 442
+      "points": 442,
+      "previous_rank": 157,
+      "rank_change": 18
     },
     {
       "rank": 140,
       "name": "Hugo Dellien",
-      "points": 438
+      "points": 438,
+      "previous_rank": 138,
+      "rank_change": -2
     },
     {
       "rank": 141,
       "name": "Andrea Pellegrino",
-      "points": 438
+      "points": 438,
+      "previous_rank": 139,
+      "rank_change": -2
     },
     {
       "rank": 142,
       "name": "Lukas Klein",
-      "points": 436
+      "points": 436,
+      "previous_rank": 140,
+      "rank_change": -2
     },
     {
       "rank": 143,
       "name": "Zachary Svajda",
-      "points": 431
+      "points": 431,
+      "previous_rank": 141,
+      "rank_change": -2
     },
     {
       "rank": 144,
       "name": "Adolfo Daniel Vallejo",
-      "points": 431
+      "points": 431,
+      "previous_rank": 163,
+      "rank_change": 19
     },
     {
       "rank": 145,
       "name": "Ugo Blanchet",
-      "points": 427
+      "points": 427,
+      "previous_rank": 142,
+      "rank_change": -3
     },
     {
       "rank": 146,
       "name": "Colton Smith",
-      "points": 424
+      "points": 424,
+      "previous_rank": 144,
+      "rank_change": -2
     },
     {
       "rank": 147,
       "name": "Sho Shimabukuro",
-      "points": 414
+      "points": 414,
+      "previous_rank": 145,
+      "rank_change": -2
     },
     {
       "rank": 148,
       "name": "Mark Lajal",
-      "points": 413
+      "points": 413,
+      "previous_rank": 146,
+      "rank_change": -2
     },
     {
       "rank": 149,
       "name": "Titouan Droguet",
-      "points": 410
+      "points": 410,
+      "previous_rank": 147,
+      "rank_change": -2
     },
     {
       "rank": 150,
       "name": "Matteo Gigante",
-      "points": 407
+      "points": 407,
+      "previous_rank": 148,
+      "rank_change": -2
     },
     {
       "rank": 151,
       "name": "Coleman Wong",
-      "points": 406
+      "points": 406,
+      "previous_rank": 143,
+      "rank_change": -8
     },
     {
       "rank": 152,
       "name": "Jaime Faria",
-      "points": 405
+      "points": 405,
+      "previous_rank": 149,
+      "rank_change": -3
     },
     {
       "rank": 153,
       "name": "Daniel Elahi Galan",
-      "points": 405
+      "points": 405,
+      "previous_rank": 150,
+      "rank_change": -3
     },
     {
       "rank": 154,
       "name": "Giulio Zeppieri",
-      "points": 405
+      "points": 405,
+      "previous_rank": 151,
+      "rank_change": -3
     },
     {
       "rank": 155,
       "name": "Pierre-Hugues Herbert",
-      "points": 399
+      "points": 399,
+      "previous_rank": 154,
+      "rank_change": -1
     },
     {
       "rank": 156,
       "name": "Kei Nishikori",
-      "points": 397
+      "points": 397,
+      "previous_rank": 158,
+      "rank_change": 2
     },
     {
       "rank": 157,
       "name": "Stan Wawrinka",
-      "points": 397
+      "points": 397,
+      "previous_rank": 156,
+      "rank_change": -1
     },
     {
       "rank": 158,
       "name": "Henrique Rocha",
-      "points": 394
+      "points": 394,
+      "previous_rank": 153,
+      "rank_change": -5
     },
     {
       "rank": 159,
       "name": "Yosuke Watanuki",
-      "points": 380
+      "points": 380,
+      "previous_rank": 159,
+      "rank_change": 0
     },
     {
       "rank": 160,
       "name": "Guy Den Ouden",
-      "points": 372
+      "points": 372,
+      "previous_rank": 160,
+      "rank_change": 0
     },
     {
       "rank": 161,
       "name": "Juan Pablo Ficovich",
-      "points": 369
+      "points": 369,
+      "previous_rank": 164,
+      "rank_change": 3
     },
     {
       "rank": 162,
       "name": "Luka Mikrut",
-      "points": 367
+      "points": 367,
+      "previous_rank": 161,
+      "rank_change": -1
     },
     {
       "rank": 163,
       "name": "Harold Mayot",
-      "points": 361
+      "points": 361,
+      "previous_rank": 162,
+      "rank_change": -1
     },
     {
       "rank": 164,
       "name": "Zsombor Piros",
-      "points": 353
+      "points": 353,
+      "previous_rank": 165,
+      "rank_change": 1
     },
     {
       "rank": 165,
       "name": "Daniel Merida",
-      "points": 353
+      "points": 353,
+      "previous_rank": 172,
+      "rank_change": 7
     },
     {
       "rank": 166,
       "name": "Luca Van Assche",
-      "points": 352
+      "points": 352,
+      "previous_rank": 167,
+      "rank_change": 1
     },
     {
       "rank": 167,
       "name": "Nishesh Basavareddy",
-      "points": 349
+      "points": 349,
+      "previous_rank": 155,
+      "rank_change": -12
     },
     {
       "rank": 168,
       "name": "Rafael Jodar",
-      "points": 349
+      "points": 349,
+      "previous_rank": 168,
+      "rank_change": 0
     },
     {
       "rank": 169,
       "name": "Vitaliy Sachko",
-      "points": 349
+      "points": 349,
+      "previous_rank": 166,
+      "rank_change": -3
     },
     {
       "rank": 170,
       "name": "Nicolas Mejia",
-      "points": 348
+      "points": 348,
+      "previous_rank": null,
+      "rank_change": null
     },
     {
       "rank": 171,
       "name": "Alex Bolt",
-      "points": 339
+      "points": 339,
+      "previous_rank": 188,
+      "rank_change": 17
     },
     {
       "rank": 172,
       "name": "Roman Safiullin",
-      "points": 338
+      "points": 338,
+      "previous_rank": 170,
+      "rank_change": -2
     },
     {
       "rank": 173,
       "name": "Elias Ymer",
-      "points": 337
+      "points": 337,
+      "previous_rank": 169,
+      "rank_change": -4
     },
     {
       "rank": 174,
       "name": "Jay Clarke",
-      "points": 336
+      "points": 336,
+      "previous_rank": null,
+      "rank_change": null
     },
     {
       "rank": 175,
       "name": "Hugo Grenier",
-      "points": 334
+      "points": 334,
+      "previous_rank": 173,
+      "rank_change": -2
     },
     {
       "rank": 176,
       "name": "Zdenek Kolar",
-      "points": 331
+      "points": 331,
+      "previous_rank": null,
+      "rank_change": null
     },
     {
       "rank": 177,
       "name": "Martin Damm",
-      "points": 330
+      "points": 330,
+      "previous_rank": 175,
+      "rank_change": -2
     },
     {
       "rank": 178,
       "name": "Jurij Rodionov",
-      "points": 329
+      "points": 329,
+      "previous_rank": 177,
+      "rank_change": -1
     },
     {
       "rank": 179,
       "name": "Alex Barrena",
-      "points": 327
+      "points": 327,
+      "previous_rank": 174,
+      "rank_change": -5
     },
     {
       "rank": 180,
       "name": "Leandro Riedi",
-      "points": 326
+      "points": 326,
+      "previous_rank": 179,
+      "rank_change": -1
     },
     {
       "rank": 181,
       "name": "Tristan Boyer",
-      "points": 326
+      "points": 326,
+      "previous_rank": 180,
+      "rank_change": -1
     },
     {
       "rank": 182,
       "name": "Dane Sweeny",
-      "points": 323
+      "points": 323,
+      "previous_rank": null,
+      "rank_change": null
     },
     {
       "rank": 183,
       "name": "Yibing Wu",
-      "points": 322
+      "points": 322,
+      "previous_rank": 181,
+      "rank_change": -2
     },
     {
       "rank": 184,
       "name": "Jason Kubler",
-      "points": 321
+      "points": 321,
+      "previous_rank": 190,
+      "rank_change": 6
     },
     {
       "rank": 185,
       "name": "Federico Agustin Gomez",
-      "points": 319
+      "points": 319,
+      "previous_rank": null,
+      "rank_change": null
     },
     {
       "rank": 186,
       "name": "Bernard Tomic",
-      "points": 319
+      "points": 319,
+      "previous_rank": 182,
+      "rank_change": -4
     },
     {
       "rank": 187,
       "name": "Rei Sakamoto",
-      "points": 318
+      "points": 318,
+      "previous_rank": 176,
+      "rank_change": -11
     },
     {
       "rank": 188,
       "name": "Daniel Evans",
-      "points": 317
+      "points": 317,
+      "previous_rank": 183,
+      "rank_change": -5
     },
     {
       "rank": 189,
       "name": "Justin Engel",
-      "points": 316
+      "points": 316,
+      "previous_rank": 195,
+      "rank_change": 6
     },
     {
       "rank": 190,
       "name": "Jerome Kym",
-      "points": 315
+      "points": 315,
+      "previous_rank": 184,
+      "rank_change": -6
     },
     {
       "rank": 191,
       "name": "James McCabe",
-      "points": 315
+      "points": 315,
+      "previous_rank": 196,
+      "rank_change": 5
     },
     {
       "rank": 192,
       "name": "Michael Zheng",
-      "points": 315
+      "points": 315,
+      "previous_rank": 185,
+      "rank_change": -7
     },
     {
       "rank": 193,
       "name": "Arthur Fery",
-      "points": 313
+      "points": 313,
+      "previous_rank": 198,
+      "rank_change": 5
     },
     {
       "rank": 194,
       "name": "August Holmgren",
-      "points": 312
+      "points": 312,
+      "previous_rank": 171,
+      "rank_change": -23
     },
     {
       "rank": 195,
       "name": "Stefano Travaglia",
-      "points": 308
+      "points": 308,
+      "previous_rank": null,
+      "rank_change": null
     },
     {
       "rank": 196,
       "name": "Alvaro Guillen Meza",
-      "points": 308
+      "points": 308,
+      "previous_rank": 197,
+      "rank_change": 1
     },
     {
       "rank": 197,
       "name": "Thiago Monteiro",
-      "points": 304
+      "points": 304,
+      "previous_rank": 186,
+      "rank_change": -11
     },
     {
       "rank": 198,
       "name": "Daniil Glinka",
-      "points": 300
+      "points": 300,
+      "previous_rank": 191,
+      "rank_change": -7
     },
     {
       "rank": 199,
       "name": "Oliver Crawford",
-      "points": 300
+      "points": 300,
+      "previous_rank": 192,
+      "rank_change": -7
     },
     {
       "rank": 200,
       "name": "Sascha Gueymard Wayenburg",
-      "points": 297
+      "points": 297,
+      "previous_rank": 193,
+      "rank_change": -7
     }
   ]
 }

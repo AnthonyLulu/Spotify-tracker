@@ -28,6 +28,23 @@ const emojiFlag=code=>{
 const flags=new Proxy({},{
  get(_target,key){return emojiFlag(String(key||''))}
 });
+function countryTheme(code){
+ const c=String(code||'').toUpperCase();
+ const fixed={
+  SRB:['#c6363c','#244aa5'],FRA:['#244aa5','#e63946'],ESP:['#aa151b','#f1bf00'],
+  ITA:['#16864b','#d33d3d'],USA:['#1d4f91','#b22234'],GBR:['#21468b','#cf142b'],
+  GER:['#272727','#d6a700'],SUI:['#d52b1e','#f7f7f7'],AUT:['#d81e35','#f4f4f4'],
+  AUS:['#0b6b46','#f1c40f'],CAN:['#d52b1e','#f3f3f3'],ARG:['#64b5e8','#f3f3f3'],
+  BRA:['#169b62','#ffdf00'],CZE:['#3155a6','#d51d36'],POL:['#dc143c','#f6f6f6'],
+  NED:['#e86a17','#21468b'],BEL:['#202020','#f0c808'],GRE:['#2d5da8','#f5f5f5'],
+  JPN:['#f4f4f4','#bc002d'],CHN:['#de2910','#ffde00'],KOR:['#f3f3f3','#2457a5'],
+  SWE:['#1769aa','#f5cc18'],NOR:['#ba0c2f','#173b6c'],DEN:['#c60c30','#f5f5f5'],
+  RUS:['#f5f5f5','#1c57a7'],UKR:['#1e75bb','#ffd700'],CRO:['#d91e36','#21468b']
+ };
+ if(fixed[c])return {a:fixed[c][0],b:fixed[c][1]};
+ let h=0;for(const ch of c)h=(h*31+ch.charCodeAt(0))%360;
+ return {a:`hsl(${h} 55% 34%)`,b:`hsl(${(h+42)%360} 58% 24%)`};
+}
 const saveKey=(()=>{let k=localStorage.getItem('courtBossSaveKey');if(!k){k=crypto.randomUUID();localStorage.setItem('courtBossSaveKey',k)}return k})();
 const fmt=n=>new Intl.NumberFormat('fr-FR').format(Math.round(Number(n)||0));
 const euro=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n)||0);

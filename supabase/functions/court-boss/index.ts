@@ -1730,7 +1730,7 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const [playersTotal,atp,itf,junior,tours,realTours,ncaa,newgens,realPlayers] = await Promise.all([
+    const [playersTotal,atp,itf,junior,tours,realTours,ncaa,newgens,realPlayers,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
@@ -1739,13 +1739,23 @@ Deno.serve(async(req:Request)=>{
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_verified",true),
       db.from("college_teams").select("id",{count:"exact",head:true}),
       db.from("players").select("id",{count:"exact",head:true}).eq("game_generated",true),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true)
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true),
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("nextgen_source","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null)
     ]);
     return h({
       players:atp.count??0,
       playersTotal:playersTotal.count??0,
       realPlayersTotal:realPlayers.count??0,
+      activeRealPlayers2025:active2025.count??0,
       atpRanked:atp.count??0,
+      sourcedDoubles:doublesReal.count??0,
+      sourcedRace:raceReal.count??0,
+      sourcedNextGen:nextgenReal.count??0,
+      sourcedJuniors:juniorReal.count??0,
       itfPlayers:itf.count??0,
       juniorPlayers:junior.count??0,
       ncaaTeams:ncaa.count??0,

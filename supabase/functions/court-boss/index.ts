@@ -577,20 +577,74 @@ Deno.serve(async(req:Request)=>{
     const gameDate=String(career.data?.career_date||"2026-09-27");
 
     if(kind==="ncaa"){
-      let nq=db.from("ncaa_player_registry")
-        .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner(id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division)",{count:"exact"})
-        .eq("season","2026-27")
-        .eq("status","Active");
-      if(q)nq=nq.ilike("players.name_norm",`%${normalizeName(q)}%`);
-      if(country)nq=nq.eq("players.country",country);
-      nq=nq.order("ita_rank",{ascending:true,nullsFirst:false}).range(offset,offset+limit-1);
-      const {data,error,count}=await nq;
-      if(error)return h({error:error.message},500);
-      const rows=(data??[]).map((x:any)=>{
-        const p=Array.isArray(x.players)?x.players[0]:x.players;
-        return {...(p||{}),ncaa_rank:x.ita_rank,ncaa_school:x.school,ncaa_division:x.division,ncaa_season:x.season,ncaa_status:x.status,ncaa_snapshot_date:x.snapshot_date,ncaa_source:x.source_label||x.source_url,age:ageAt(p?.birth_date,gameDate,p?.age,p?.age_snapshot_date)};
+      const playerSelect="id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division,ncaa_status,ncaa_last_school,ncaa_verified,ranking_snapshot_date";
+      const [currentReg,currentPlayers,allAmericanReg]=await Promise.all([
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .eq("season","2026-27").eq("status","Active").order("ita_rank",{ascending:true,nullsFirst:false}).limit(500),
+        db.from("players").select(playerSelect).eq("ncaa_current",true)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*").limit(1000),
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .eq("season","2025-26").eq("status","ITA All-American 2025-26").limit(500)
+      ]);
+      const e=currentReg.error||currentPlayers.error||allAmericanReg.error;
+      if(e)return h({error:e.message},500);
+
+      const byId=new Map<number,any>();
+      const put=(p:any,meta:any,priority:number)=>{
+        if(!p?.id)return;
+        const id=Number(p.id);
+        const old=byId.get(id);
+        if(old&&Number(old.__priority||99)<=priority)return;
+        byId.set(id,{
+          ...p,
+          ncaa_rank:meta?.ita_rank??p.ncaa_rank??null,
+          ncaa_school:meta?.school??p.ncaa_school??p.ncaa_last_school??null,
+          ncaa_division:meta?.division??p.ncaa_division??"NCAA Division I",
+          ncaa_season:meta?.season??(p.ncaa_current?"2026-27":null),
+          ncaa_status:meta?.status??p.ncaa_status??(p.ncaa_current?"Active":"NCAA profile"),
+          ncaa_snapshot_date:meta?.snapshot_date??null,
+          ncaa_source:meta?.source_label||meta?.source_url||p.ncaa_source||null,
+          ncaa_current_verified:priority<=1,
+          age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
+          __priority:priority
+        });
+      };
+
+      for(const x of currentReg.data??[]){
+        const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
+        put(p,x,0);
+      }
+      for(const p of currentPlayers.data??[])put(p,null,1);
+      for(const x of allAmericanReg.data??[]){
+        const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
+        put(p,x,2);
+      }
+
+      let rows=[...byId.values()];
+      if(q){
+        const nq=normalizeName(q);
+        rows=rows.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));
+      }
+      if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
+      rows.sort((a:any,b:any)=>{
+        const ac=a.ncaa_rank==null?99999:Number(a.ncaa_rank);
+        const bc=b.ncaa_rank==null?99999:Number(b.ncaa_rank);
+        if(ac!==bc)return ac-bc;
+        if(Boolean(a.ncaa_current)!==Boolean(b.ncaa_current))return a.ncaa_current?-1:1;
+        return String(a.name||"").localeCompare(String(b.name||""));
       });
-      return h({kind,offset,limit,count:count??0,rows,eligibility:"NCAA / ITA · joueurs universitaires réels"});
+      const total=rows.length;
+      const ranked=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_season==="2026-27").length;
+      rows=rows.slice(offset,offset+limit).map(({__priority,...x}:any)=>x);
+      return h({
+        kind,offset,limit,count:total,rows,
+        officialCapacity:125,
+        verifiedCurrentRanks:ranked,
+        eligibility:"NCAA Division I · ITA Top 125 + pool universitaire vérifié",
+        rankingDate:"2026-08-25"
+      });
     }
 
     let orderCol=kind==="singles"?"game_world_rank":"ranking";

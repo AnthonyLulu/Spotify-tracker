@@ -445,7 +445,7 @@ function liveMatchPanel(){
     <div class="fm-player-dot opponent" style="left:${ox}%;top:${oy}%"><span>${oInit}</span><small>${esc(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
     <div class="fm-player-dot user" style="left:${ux}%;top:${uy}%"><span>${uInit}</span><small>${esc(userName.split(' ').slice(-1)[0]||'MOI')}</small></div>
     <i class="fm-ball" style="left:${bx}%;top:${by}%"></i>
-    ${lp.shot?`<div class="fm-rally-call">${esc(lp.shot)} · ${Number(lp.rally||0)} coups</div>`:''}
+    ${lp.shot?`<div class="fm-rally-call">${esc(lp.shot)} · ${Number(lp.rally||0)} coups${lp.zone?' · '+esc(lp.zone):''}</div>`:''}
   </div>
 
   <div class="fm-momentum"><span>${esc(oppName)}</span><div><i style="left:${momentum}%"></i></div><span>${esc(userName)}</span></div>

@@ -14,7 +14,9 @@ try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
 function surfaceClass(s){return s==='Terre'?'surface-clay':s==='Gazon'?'surface-grass':'surface-hard'}
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
-function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:p.ranking}
+function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='race'?p.race_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:p.ranking}
+function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='race'?p.race_points:k==='junior'?p.junior_points:p.points}
+function rankSnapshot(p,k){return k==='doubles'?p.doubles_snapshot_date:k==='race'?p.race_snapshot_date:k==='junior'?p.junior_snapshot_date:p.ranking_snapshot_date||p.data_snapshot}
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
 function header(){
  const cr=local.career||boot?.career||{};
@@ -90,30 +92,32 @@ function home(){
  </section>`
 }
 function rankings(){
- const kinds=[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['junior','Junior'],['ncaa','NCAA / ITA']];
+ const kinds=[['singles','ATP Simple'],['doubles','ATP Double'],['race','Race'],['junior','ITF Junior'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
  if(rankKind==='ncaa')return ncaaRanking();
- const start=rankCount?rankOffset+1:0,end=Math.min(rankOffset+rankRows.length,rankCount);
- return `<div class="section-head"><div><div class="eyebrow">Classements mondiaux</div><h1>Classements</h1><div class="muted">Challenger est une catégorie de tournoi. Les joueurs Challenger restent dans le classement ATP.</div></div><span class="pill">${rankKind==='singles'?'ATP jusqu’au #2000':'Circuit mondial'}</span></div>
- <div class="tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
- ${rankKind==='singles'?`<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
+ const startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rankRows.length,rankCount);
+ const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
+ const label=rankKind==='singles'?'ATP Simple':rankKind==='doubles'?'ATP Double':rankKind==='race'?'Race to Turin':rankKind==='junior'?'ITF Junior':'ITF World Tennis Tour';
+ return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Simple, double, Race et juniors sont des classements indépendants. Challenger reste une catégorie de tournoi.</div></div><span class="pill">${snap?'Snapshot '+df(snap):label}</span></div>
+ <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
+ ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
  <div class="card">
-  <div class="rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="2000" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
-  ${rankKind==='singles'?'<div class="notice mini" style="margin-top:10px">Classement actif Court Boss construit à partir d’un snapshot ATP importé et de compléments historiques. Le rang source est conservé séparément. Les points marqués simulation sont des valeurs de jeu et évoluent avec la carrière.</div>':''}
+  <div class="rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
+  <div class="notice mini" style="margin-top:10px"><b>${label}</b> · ${snap?'référence '+df(snap):'snapshot en cours d’import'} · les données simulées restent séparées des snapshots historiques.</div>
   <div class="table-wrap" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Pays</th><th>Points</th><th>Âge</th><th>Niveau</th><th>Potentiel</th></tr></thead><tbody>
-  ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b><div class="muted micro">${rankKind==='singles'?esc((p.source_ranking&&p.source_ranking!==p.ranking?'source #'+p.source_ranking+' · ':'')+(p.ranking_source||'Court Boss')):""}</div></td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td>${rankKind==='singles'?fmt(p.points)+(String(p.data_source||'').includes('simulated game points')?' <span class="muted micro">jeu</span>':''):'—'}</td><td>${p.age||'—'}</td><td>${p.current_ability}/100</td><td>${p.potential}/100</td></tr>`).join('')}
+  ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b><div class="muted micro">${rankSnapshot(p,rankKind)?'au '+df(rankSnapshot(p,rankKind)):''}</div></td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td>${rankPoints(p,rankKind)==null?'—':fmt(rankPoints(p,rankKind))}</td><td>${p.age||'—'}</td><td>${p.current_ability}/100</td><td>${p.potential}/100</td></tr>`).join('')}
   </tbody></table></div>
-  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(start)}–${fmt(end)} / ${fmt(rankCount)} · classement affiché jusqu’au #2000</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
+  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
  </div>`
 }
 window.jumpRanking=async()=>{
- const target=clamp(Number(document.getElementById('rankJump')?.value||1),1,2000);
+ const target=clamp(Number(document.getElementById('rankJump')?.value||1),1,Math.max(1,rankCount));
  rankQuery='';rankOffset=Math.max(0,Math.min(Math.max(0,rankCount-100),target-1));
  await loadRankings();render();
 }
 function ncaaRanking(){
  const rows=management?.college||[];
  return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Classement universitaire</h1><div class="muted">Vue équipe actuellement disponible.</div></div></div>
- <div class="tabs">${[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['junior','Junior'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
+ <div class="tabs rank-tabs">${[['singles','ATP Simple'],['doubles','ATP Double'],['race','Race'],['junior','ITF Junior'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
  <div class="card"><table class="table" style="min-width:0"><thead><tr><th>#</th><th>Université</th><th>Bilan</th></tr></thead><tbody>${rows.map(x=>`<tr><td class="rank-num">#${x.ita_rank}</td><td><b>${esc(x.name)}</b></td><td>${esc(x.record)}</td></tr>`).join('')}</tbody></table></div>`
 }
 window.setRankKind=async k=>{rankKind=k;rankOffset=0;rankQuery='';if(k!=='ncaa')await loadRankings();render()}

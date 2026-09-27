@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: court-boss-smoke
+  group: court-boss-smoke-v7
   cancel-in-progress: true
 
 jobs:

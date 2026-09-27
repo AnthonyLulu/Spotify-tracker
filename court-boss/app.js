@@ -15,9 +15,9 @@ try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
 function surfaceClass(s){return s==='Terre'?'surface-clay':s==='Gazon'?'surface-grass':'surface-hard'}
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
-function rankValue(p,k){return k==='doubles'?p.doubles_ranking:(k==='race'||k==='nextgen')?p.race_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:p.ranking}
-function rankPoints(p,k){return k==='doubles'?p.doubles_points:(k==='race'||k==='nextgen')?p.race_points:k==='junior'?p.junior_points:p.points}
-function rankSnapshot(p,k){return k==='doubles'?p.doubles_snapshot_date:(k==='race'||k==='nextgen')?p.race_snapshot_date:k==='junior'?p.junior_snapshot_date:p.ranking_snapshot_date||p.data_snapshot}
+function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='race'?p.race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:p.ranking}
+function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='race'?p.race_points:k==='nextgen'?p.nextgen_points:k==='junior'?p.junior_points:p.points}
+function rankSnapshot(p,k){return k==='doubles'?p.doubles_snapshot_date:k==='race'?p.race_snapshot_date:k==='nextgen'?p.nextgen_snapshot_date:k==='junior'?p.junior_snapshot_date:p.ranking_snapshot_date||p.data_snapshot}
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
 function header(){
  const cr=local.career||boot?.career||{};
@@ -130,7 +130,7 @@ function rankings(){
   <div class="rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
   <div class="notice mini" style="margin-top:10px"><b>${label}</b> · ${reference}. Les valeurs de simulation restent séparées des snapshots historiques.</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Âge</th><th>Pays</th><th>Pts</th><th>${rankKind==='nextgen'?'ATP':'Niv.'}</th><th>Pot.</th></tr></thead><tbody>
-  ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b><div class="muted micro">${rankSnapshot(p,rankKind)?'au '+df(rankSnapshot(p,rankKind)):''}</div></td><td>${p.age||'—'}</td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td><b>${rankPoints(p,rankKind)==null?'—':fmt(rankPoints(p,rankKind))}</b></td><td>${rankKind==='nextgen'?(p.ranking?'#'+fmt(p.ranking):'—'):p.current_ability+'/100'}</td><td>${p.potential}/100</td></tr>`).join('')}
+  ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b><div class="muted micro">${rankSnapshot(p,rankKind)?'au '+df(rankSnapshot(p,rankKind)):''}</div></td><td>${p.age||'—'}</td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td><b>${rankPoints(p,rankKind)==null?'—':fmt(rankPoints(p,rankKind))}</b></td><td>${rankKind==='nextgen'?(p.ranking?'#'+fmt(p.ranking):'—'):p.current_ability+'/100'}</td><td>${rankKind==='nextgen'?(p.nextgen_status==='withdrawn'?'<span class="badge bad">Retiré</span>':p.nextgen_status==='alternate'?'<span class="badge warn">Alternate</span>':p.nextgen_status==='qualified'?'<span class="badge good">Qualifié</span>':p.potential+'/100'):p.potential+'/100'}</td></tr>`).join('')}
   </tbody></table></div>
   <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
  </div>`

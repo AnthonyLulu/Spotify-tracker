@@ -214,7 +214,7 @@ Deno.serve(async(req:Request)=>{
       .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
       .not(orderCol,"is",null)
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
-    if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);
+    if(kind==="singles") query=query.eq("ranking_current",true);
     else query=query.eq("is_real",true);
     if(kind==="doubles") query=query.not("doubles_source","is",null);
     if(kind==="race") query=query.not("race_source","is",null);
@@ -241,7 +241,7 @@ Deno.serve(async(req:Request)=>{
     const circuit=(u.searchParams.get("circuit")??"Tous").trim();
     const ageMax=n(u.searchParams.get("age_max"),99,12,99);
     const potentialMin=n(u.searchParams.get("potential_min"),0,0,100);
-    const offset=n(u.searchParams.get("offset"),0,0,10000);
+    const offset=n(u.searchParams.get("offset"),0,0,50000);
     const limit=n(u.searchParams.get("limit"),60,1,120);
     const careerDateRes=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const gameDate=String(careerDateRes.data?.career_date||"2026-09-27");
@@ -253,7 +253,8 @@ Deno.serve(async(req:Request)=>{
 
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     if(country) query=query.eq("country",country);
-    if(circuit==="ATP") query=query.eq("ranking_current",true);
+    if(circuit==="ATP"||circuit==="ATP classés") query=query.eq("ranking_current",true);
+    if(circuit==="Tous réels") query=query.eq("is_real",true);
     if(circuit==="Double") query=query.not("doubles_ranking","is",null).not("doubles_source","is",null);
     if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date","2005-01-01");
@@ -262,7 +263,9 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="NCAA") query=query.eq("ncaa_current",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
-    if(circuit==="ATP") query=query.order("ranking",{ascending:true});
+    if(circuit==="ATP"||circuit==="ATP classés") query=query.order("ranking",{ascending:true});
+    else if(q&&circuit==="Tous") query=query.order("name",{ascending:true});
+    else if(circuit==="Tous réels") query=query.order("name",{ascending:true});
     else if(circuit==="Double") query=query.order("doubles_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Race") query=query.order("race_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Next Gen") query=query.order("nextgen_ranking",{ascending:true,nullsFirst:false});
@@ -2092,7 +2095,7 @@ Deno.serve(async(req:Request)=>{
       active2025,doublesReal,raceReal,nextgenReal,juniorReal
     ] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true),

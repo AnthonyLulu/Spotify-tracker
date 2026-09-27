@@ -85,7 +85,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="doubles") query=query.not("doubles_source","is",null);
     if(kind==="race") query=query.not("race_source","is",null);
     if(kind==="nextgen") query=query.not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date","2005-01-01");
-    if(kind==="junior") query=query.not("junior_source","is",null).lte("age",18);
+    if(kind==="junior") query=query.not("junior_source","is",null);
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
@@ -104,7 +104,7 @@ Deno.serve(async(req:Request)=>{
     const limit=n(u.searchParams.get("limit"),60,1,120);
 
     let query=db.from("players")
-      .select("id,name,country,is_real,ranking,points,doubles_ranking,itf_ranking,junior_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source",{count:"exact"})
+      .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(ageMax<99) query=query.lte("age",ageMax);
 
@@ -113,13 +113,15 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="ATP") query=query.eq("ranking_current",true);
     if(circuit==="Double") query=query.not("doubles_ranking","is",null).not("doubles_source","is",null);
     if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
+    if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date","2005-01-01");
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
-    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).lte("age",18);
+    if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
     if(circuit==="ATP") query=query.order("ranking",{ascending:true});
     else if(circuit==="Double") query=query.order("doubles_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Race") query=query.order("race_ranking",{ascending:true,nullsFirst:false});
+    else if(circuit==="Next Gen") query=query.order("nextgen_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="ITF") query=query.order("itf_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Junior") query=query.order("junior_ranking",{ascending:true,nullsFirst:false});
     else query=query.order("potential",{ascending:false}).order("current_ability",{ascending:false});

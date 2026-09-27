@@ -268,18 +268,91 @@ function medicalPage(){
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Monde</div><h2>Blessures connues</h2></div></div>
  <div class="card">${inj.length?inj.map(i=>`<div class="list-item click" onclick="openInjury(${i.id})"><div class="row between"><b>${esc(i.players?.name||'Joueur')} · ${esc(i.injury_type)}</b><span class="badge ${i.status==='Active'?'bad':'good'}">${esc(i.status)}</span></div><div class="muted mini">Sévérité ${esc(i.severity)} · retour ${df(i.expected_return)} · rechute ${i.aggravation_risk}%</div></div>`).join(''):'<div class="empty">Aucune blessure enregistrée.</div>'}</div>`
 }
+function pointLabel(a,b,side){
+ if(a>=3&&b>=3){
+  if(a===b)return '40';
+  if(side==='A'&&a>b)return 'AV';
+  if(side==='B'&&b>a)return 'AV';
+  return '40';
+ }
+ return ['0','15','30','40'][side==='A'?Math.min(a,3):Math.min(b,3)];
+}
+function liveMatchPanel(){
+ const s=local.liveMatch;
+ if(!s)return `<div class="card"><div class="row between"><div><div class="eyebrow">Coaching live</div><h2>Match point par point</h2><div class="muted">Lance une rencontre et modifie tes consignes pendant le match.</div></div><button class="primary" onclick="startLiveMatch()">Démarrer</button></div></div>`;
+ const st=s.stats||{a:{},b:{}},done=s.status==='completed';
+ const avgA=st.a?.rallies?Math.round((st.a.rally_shots||0)/st.a.rallies):0;
+ const avgB=st.b?.rallies?Math.round((st.b.rally_shots||0)/st.b.rallies):0;
+ return `<div class="card live-match-card">
+  <div class="row between"><div><div class="eyebrow">Match live · ${esc(s.surface)}</div><h2>${esc(s.player_a_name)} vs ${esc(s.player_b_name)}</h2></div><span class="badge ${done?'good':'warn'}">${done?'Terminé':'En cours'}</span></div>
+  <div class="live-score">
+    <div class="live-player"><span>${s.server_side==='A'?'●':''} ${esc(s.player_a_name)}</span><b>${s.sets_a}</b><b>${s.games_a}</b><strong>${pointLabel(s.points_a,s.points_b,'A')}</strong></div>
+    <div class="live-player"><span>${s.server_side==='B'?'●':''} ${esc(s.player_b_name)}</span><b>${s.sets_b}</b><b>${s.games_b}</b><strong>${pointLabel(s.points_a,s.points_b,'B')}</strong></div>
+  </div>
+  <div class="muted mini" style="margin-top:6px">Sets terminés : ${(s.set_history||[]).map(x=>x[0]+'-'+x[1]).join(' · ')||'aucun'}</div>
+  <div class="kpi-strip" style="margin-top:12px">
+    <div class="kpi"><span class="muted mini">Points gagnés</span><b>${st.a?.points||0} / ${st.b?.points||0}</b></div>
+    <div class="kpi"><span class="muted mini">Winners</span><b>${st.a?.winners||0} / ${st.b?.winners||0}</b></div>
+    <div class="kpi"><span class="muted mini">Fautes</span><b>${st.a?.errors||0} / ${st.b?.errors||0}</b></div>
+    <div class="kpi"><span class="muted mini">Rallye moyen</span><b>${avgA} / ${avgB}</b></div>
+  </div>
+  <div class="row" style="margin-top:12px;flex-wrap:wrap">
+    ${done?`<button class="ghost" onclick="clearLiveMatch()">Nouveau match</button>`:`
+      <button class="primary" onclick="playLivePoint()">Jouer 1 point</button>
+      <button class="soft-btn" onclick="simulateLiveGame()">Simuler le jeu</button>
+      <button class="soft-btn" onclick="simulateLiveSet()">Simuler le set</button>`}
+  </div>
+  ${done?`<div class="notice" style="margin-top:10px"><b>${s.winner_side==='A'?esc(s.player_a_name):esc(s.player_b_name)}</b> remporte le match.</div>`:''}
+ </div>`;
+}
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
  const all=[...(local.practiceMatches||[]),...(boot.matches||[])];
- return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, simule et analyse les tendances.</div></div><button class="primary" onclick="simulatePracticeMatch()">Simuler un match</button></div>
- <div class="grid g2"><div class="card"><h2>Plan de jeu</h2>
+ return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" onclick="simulatePracticeMatch()">Simulation rapide</button></div>
+ ${liveMatchPanel()}
+ <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Plan de jeu</h2>
  <div class="list-item"><div class="row between"><span>Agressivité</span><b>${t.aggression}%</b></div><input class="range" type="range" min="1" max="100" value="${t.aggression}" oninput="setTactic('aggression',this.value)"></div>
  <div class="list-item"><div class="row between"><span>Prise de risque</span><b>${t.risk}%</b></div><input class="range" type="range" min="1" max="100" value="${t.risk}" oninput="setTactic('risk',this.value)"></div>
  <div class="list-item"><div class="row between"><span>Montées au filet</span><b>${t.net}%</b></div><input class="range" type="range" min="1" max="100" value="${t.net}" oninput="setTactic('net',this.value)"></div>
  <div class="list-item row between"><span>Position retour</span><select class="select" style="width:auto" onchange="setTactic('returnPos',this.value)"><option ${t.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${t.returnPos==='Neutre'?'selected':''}>Neutre</option><option ${t.returnPos==='Reculée'?'selected':''}>Reculée</option></select></div></div>
- <div class="card"><h2>Lecture tactique</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Intensité</span><b>${Math.round((t.aggression+t.risk)/2)}</b></div><div class="kpi"><span class="muted mini">Jeu avant</span><b>${t.net}</b></div><div class="kpi"><span class="muted mini">Retour</span><b style="font-size:15px">${esc(t.returnPos)}</b></div></div><p class="muted mini" style="margin-top:10px">Le simulateur combine niveau, forme, fatigue, surface et consignes. L'analyse conserve service, rallyes, winners et fautes.</p></div></div>
- <div class="stack" style="margin-top:12px">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(career().player_name||'Joueur')?'good':'bad'}">${m.winner===(career().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
+ <div class="card"><h2>Lecture tactique</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Intensité</span><b>${Math.round((t.aggression+t.risk)/2)}</b></div><div class="kpi"><span class="muted mini">Jeu avant</span><b>${t.net}</b></div><div class="kpi"><span class="muted mini">Retour</span><b style="font-size:15px">${esc(t.returnPos)}</b></div></div><p class="muted mini" style="margin-top:10px">Les changements de tactique influencent les points suivants du match live et les simulations de tournoi.</p></div></div>
+ <div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Historique</div><h2>Matchs analysés</h2></div></div>
+ <div class="stack">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(career().player_name||'Joueur')?'good':'bad'}">${m.winner===(career().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
 }
+window.startLiveMatch=async()=>{
+ try{
+  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface:'Dur',tactics:local.tactics||{}})});
+  local.liveMatch=d.session;persist();render();
+ }catch(e){alert(e.message)}
+}
+window.playLivePoint=async()=>{
+ if(!local.liveMatch)return;
+ try{
+  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:local.liveMatch.id,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;persist();render();
+ }catch(e){alert(e.message)}
+}
+window.simulateLiveGame=async()=>{
+ if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ const startGames=(local.liveMatch.games_a||0)+(local.liveMatch.games_b||0);
+ for(let i=0;i<24;i++){
+  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:local.liveMatch.id,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;
+  if(local.liveMatch.status==='completed'||(local.liveMatch.games_a||0)+(local.liveMatch.games_b||0)!==startGames)break;
+ }
+ persist();render();
+}
+window.simulateLiveSet=async()=>{
+ if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ const startSets=(local.liveMatch.sets_a||0)+(local.liveMatch.sets_b||0);
+ for(let i=0;i<120;i++){
+  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:local.liveMatch.id,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;
+  if(local.liveMatch.status==='completed'||(local.liveMatch.sets_a||0)+(local.liveMatch.sets_b||0)!==startSets)break;
+ }
+ persist();render();
+}
+window.clearLiveMatch=()=>{delete local.liveMatch;persist();render()}
 function doublesPage(){
  const c=career();
  const pool=[...(boot.davisSquad||[]).map(x=>x.players).filter(Boolean),...(boot.topPlayers||[]).filter(p=>p.country==='FRA')];

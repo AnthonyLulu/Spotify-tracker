@@ -945,6 +945,7 @@ window.renderPalmaresHtml=function(d,p){
   const collegeTitles=allTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
   const ncaaCareer=d?.ncaaCareer||null;
   const ncaaTransfers=(d?.ncaaTransfers||[]).slice().sort((a,b)=>Number(b.is_current)-Number(a.is_current)||String(b.season||'').localeCompare(String(a.season||''))||String(a.school||'').localeCompare(String(b.school||'')));
+  const ncaaCurrentVerified=!!p?.ncaa_current||(d?.ncaa||[]).some(x=>String(x.season||'')==='2026-27'&&String(x.status||'')==='Active');
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
   const indexedHistory=tournamentHistory.map((x,i)=>({...x,__i:i}));
@@ -1056,7 +1057,7 @@ window.renderPalmaresHtml=function(d,p){
       <div class="row between"><div><div class="eyebrow">Parcours universitaire</div><h2>Écoles & transferts NCAA</h2></div><span class="pill">${ncaaTransfers.length} étape${ncaaTransfers.length>1?'s':''}</span></div>
       <div class="muted mini" style="margin-top:4px">Les rosters successifs restent attachés à une seule fiche joueur. Le badge Actuel n'est utilisé que lorsque la source 2026-27 est vérifiée.</div>
       <div style="margin-top:10px">
-        ${ncaaTransfers.map(x=>`<div class="list-item row between"><div><b>${esc(x.school||'Université')}</b><div class="muted mini">${esc(x.class_standing||x.season||'NCAA')} · ${esc(x.conference||'NCAA Division I')}${x.hometown_raw?' · '+esc(x.hometown_raw):''}</div></div><div style="text-align:right">${x.is_current?'<span class="badge good">Actuel</span>':'<span class="badge">Précédent</span>'}${x.source_url?`<div style="margin-top:5px"><a class="soft-btn" href="${esc(x.source_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Source roster</a></div>`:''}</div></div>`).join('')}
+        ${ncaaTransfers.map(x=>`<div class="list-item row between"><div><b>${esc(x.school||'Université')}</b><div class="muted mini">${esc(x.class_standing||x.season||'NCAA')} · ${esc(x.conference||'NCAA Division I')}${x.hometown_raw?' · '+esc(x.hometown_raw):''}</div></div><div style="text-align:right">${x.is_current?(ncaaCurrentVerified?'<span class="badge good">Actuel 2026-27</span>':'<span class="badge">Dernière école connue</span>'):'<span class="badge">Précédent</span>'}${x.source_url?`<div style="margin-top:5px"><a class="soft-btn" href="${esc(x.source_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Source roster</a></div>`:''}</div></div>`).join('')}
       </div>
     </div>`:''}
     <div class="grid g2">

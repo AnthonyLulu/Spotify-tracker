@@ -1,4 +1,4 @@
-name: Deploy Court Boss
+name: Court Boss Smoke Test
 
 on:
   push:
@@ -7,30 +7,45 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: court-boss-pages
+  group: court-boss-smoke
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  smoke:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload Court Boss
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: court-boss
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check court-boss/app.js
+          node --check court-boss/tactics.js
+          node --check court-boss/modules.js
+
+      - name: Check published HTML and assets
+        env:
+          BASE: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-static-publish
+        run: |
+          curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
+          grep -q 'Court Boss' /tmp/index.html
+          grep -q 'app.js?v=20260927-6' /tmp/index.html
+          grep -q 'tactics.js?v=20260927-6' /tmp/index.html
+          grep -q 'modules.js?v=20260927-6' /tmp/index.html
+          curl --fail --silent --show-error "$BASE/app.js?v=20260927-6" -o /tmp/app.js
+          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-6" -o /tmp/tactics.js
+          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-6" -o /tmp/modules.js
+          node --check /tmp/app.js
+          node --check /tmp/tactics.js
+          node --check /tmp/modules.js
+
+      - name: Check live backend
+        env:
+          API: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss
+        run: |
+          curl --fail --silent --show-error "$API/api/world" -o /tmp/world.json
+          curl --fail --silent --show-error "$API/api/rankings?kind=singles&offset=0&limit=5" -o /tmp/rankings.json
+          node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
+          node -e "const r=require('/tmp/rankings.json'); if(!Array.isArray(r.rows)||r.rows.length!==5) throw new Error('ranking payload invalid'); console.log(r.rows.map(x=>'#'+x.ranking+' '+x.name).join(' | '))"

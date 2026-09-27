@@ -1,0 +1,66 @@
+name: Scrape Tennis Snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["court-boss-live"]
+    paths: [".github/workflows/scrape-tennis-snapshots.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scrape 2025-12-01 ranking snapshots
+        run: |
+          mkdir -p court-boss/data
+          cd /tmp
+          npm init -y >/dev/null 2>&1
+          npm install --silent playwright@1.55.0
+          npx playwright install --with-deps chromium >/dev/null
+          cat > scrape.cjs <<'EOF'
+          const fs=require('fs');
+          const {chromium}=require('playwright');
+
+          async function inspect(page,url,label){
+            const api=[];
+            page.on('response',r=>{
+              const u=r.url();
+              if(/rank|standing|tennis/i.test(u)&&/api|ajax|graphql|ranking/i.test(u)){
+                api.push({status:r.status(),url:u,ct:r.headers()['content-type']||''});
+              }
+            });
+            await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
+            await page.waitForTimeout(4000);
+            const date=page.getByText('2025/12/01',{exact:true}).first();
+            if(await date.count()){
+              await date.click();
+              await page.waitForTimeout(5000);
+            }
+            const body=await page.locator('body').innerText();
+            const markers=['Team Points','Points +/-','Points'];
+            let marker=-1; for(const m of markers){const i=body.indexOf(m); if(i>=0){marker=i;break}}
+            return {url:page.url(),marker,api:api.slice(-60),sample:body.slice(Math.max(0,marker),Math.max(0,marker)+12000)};
+          }
+
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const p1=await browser.newPage({viewport:{width:1280,height:1200}});
+            const singles=await inspect(p1,'https://www.aiscore.com/tennis/rankings/atp-rankings/','singles');
+            const p2=await browser.newPage({viewport:{width:1280,height:1200}});
+            const doubles=await inspect(p2,'https://www.aiscore.com/tennis/rankings/atp-rankings-doubles','doubles');
+            fs.writeFileSync(process.env.GITHUB_WORKSPACE+'/court-boss/data/snapshot-diagnostic.json',JSON.stringify({singles,doubles},null,2));
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          EOF
+          node scrape.cjs
+      - name: Commit diagnostic
+        run: |
+          git config user.name "Court Boss Data Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add court-boss/data/snapshot-diagnostic.json
+          git diff --cached --quiet || git commit -m "Capture historical tennis ranking source"
+          git push

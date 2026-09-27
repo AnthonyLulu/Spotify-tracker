@@ -3,44 +3,43 @@ name: Build ATP Race 2025 Snapshot
 on:
   workflow_dispatch:
   push:
-    branches:
-      - court-boss-live
-    paths:
-      - .github/workflows/import-race-2025.yml
+    branches: ["court-boss-live"]
+    paths: [".github/workflows/import-race-2025.yml"]
 
 permissions:
   contents: write
 
 jobs:
-  build-race:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "release"
 
       - name: Download Race data
-        shell: bash
         run: |
-          curl -fL "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData" -o /tmp/race.RData
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData" \
+            -o /tmp/race.RData
 
-      - name: Convert Race weeks 48 and 49
-        shell: bash
+      - name: Build compact Race CSV
         run: |
           mkdir -p court-boss/data
           cat > /tmp/build_race.R <<'RS'
           e <- new.env()
           loaded <- load("/tmp/race.RData", envir=e)
-          frames <- loaded[sapply(loaded, function(nm) is.data.frame(e[[nm]]))]
-          if (length(frames) == 0) stop("No data.frame found")
-          x <- e[[frames[[1]]]]
+          frame_name <- loaded[sapply(loaded, function(nm) is.data.frame(e[[nm]]))][1]
+          if (is.na(frame_name)) stop("No data.frame found")
+          x <- e[[frame_name]]
 
           need <- c("Season","Week","Player_ID","Cum_Race_points","Rank")
-          if (!all(need %in% names(x))) stop(paste("Missing columns:", paste(setdiff(need,names(x)),collapse=",")))
+          missing <- setdiff(need, names(x))
+          if (length(missing)) stop(paste("Missing columns", paste(missing, collapse=",")))
 
           cur <- x[x$Season == 2025 & x$Week == 49, c("Player_ID","Cum_Race_points","Rank")]
           prv <- x[x$Season == 2025 & x$Week == 48, c("Player_ID","Rank")]
@@ -55,38 +54,22 @@ jobs:
           prv <- prv[!duplicated(prv$name),]
 
           out <- merge(cur, prv, by="name", all.x=TRUE, sort=FALSE)
-          out$rank_change <- ifelse(is.na(out$previous_rank), NA, out$previous_rank-out$rank)
-          out <- out[order(out$rank,out$name),]
+          out$rank_change <- ifelse(is.na(out$previous_rank), NA, out$previous_rank - out$rank)
+          out <- out[order(out$rank, out$name),]
 
-          esc <- function(s) {
-            s <- gsub("\\", "\\\\", s, fixed=TRUE)
-            gsub('"', '\\"', s, fixed=TRUE)
-          }
-          rows <- vapply(seq_len(nrow(out)), function(i) {
-            prev <- if (is.na(out$previous_rank[i])) "null" else as.character(as.integer(out$previous_rank[i]))
-            chg <- if (is.na(out$rank_change[i])) "null" else as.character(as.integer(out$rank_change[i]))
-            sprintf('{"rank":%d,"name":"%s","points":%d,"previous_rank":%s,"rank_change":%s}',
-              as.integer(out$rank[i]), esc(as.character(out$name[i])), as.integer(out$points[i]), prev, chg)
-          }, character(1))
-
-          json <- paste0(
-            '{"snapshot":"2025-12-01","previous_snapshot":"2025-11-24",',
-            '"source":"Thibaud-Meynier/Tennis-Data V_RACE_RANK_2025",',
-            '"count":',nrow(out),',"rows":[',paste(rows,collapse=","),']}'
-          )
-          writeLines(json,"court-boss/data/atp-race-2025-12-01.json",useBytes=TRUE)
-          cat("Race rows:",nrow(out),"\n")
-          print(head(out,15))
+          write.csv(out, "court-boss/data/atp-race-2025-12-01.csv", row.names=FALSE, na="")
+          cat("Race rows:", nrow(out), "\n")
+          print(head(out, 15))
           RS
           Rscript /tmp/build_race.R
 
       - name: Commit Race snapshot
-        shell: bash
         run: |
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/atp-race-2025-12-01.json
+          git add court-boss/data/atp-race-2025-12-01.csv
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "Build ATP Race snapshot for 2025-12-01"
-          git pull --rebase origin court-boss-live
+          git fetch origin court-boss-live
+          git rebase origin/court-boss-live
           git push origin HEAD:court-boss-live

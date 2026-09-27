@@ -998,6 +998,51 @@ async function resolveTournamentImage(t:any){
       image_source_label:t.image_source_label
     }).eq("id",t.id);
   }catch{}
+
+  if(!t.image_url&&t.is_verified&&t.name){
+    try{
+      const query=String(t.name)+" "+String(t.city||"")+" tennis";
+      const qs=new URLSearchParams({
+        action:"query",
+        generator:"search",
+        gsrsearch:query,
+        gsrnamespace:"0",
+        gsrlimit:"4",
+        prop:"pageimages|info",
+        piprop:"thumbnail|original",
+        pithumbsize:"900",
+        inprop:"url",
+        format:"json",
+        origin:"*"
+      });
+      const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{
+        headers:{"User-Agent":"CourtBoss/1.0 (+safe-tournament-image)"}
+      });
+      if(r.ok){
+        const j:any=await r.json();
+        const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+        const wanted=normalizeName(String(t.name||"")).replace(/\s+/g,"");
+        const city=normalizeName(String(t.city||"")).replace(/\s+/g,"");
+        const chosen=pages.find((x:any)=>{
+          const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+          const nameHit=title===wanted||title.includes(wanted)||wanted.includes(title);
+          const cityHit=city.length>=4&&title.includes(city);
+          return (nameHit||cityHit)&&/tennis|open|championship|masters|challenger/i.test(String(x.title||""));
+        });
+        const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
+        if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)){
+          t.image_url=raw;
+          t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
+          t.image_source_label="Wikipedia/Wikimedia · tournoi vérifié";
+          await db.from("tournaments").update({
+            image_url:raw,
+            image_source_url:t.image_source_url,
+            image_source_label:t.image_source_label
+          }).eq("id",t.id);
+        }
+      }
+    }catch{}
+  }
   return t;
 }
 
@@ -1628,6 +1673,16 @@ Deno.serve(async(req:Request)=>{
       matches:visibleMatches,careerStats:careerStats.data??null,finals:visibleFinals,juniorEntries:visibleJuniorEntries,
       tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons
     });
+  }
+
+  if(path.endsWith("/api/tournament-image")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const q=await db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle();
+    if(q.error)return new Response("",{status:500,headers:cors});
+    if(!q.data)return new Response("",{status:404,headers:cors});
+    const t=await resolveTournamentImage(q.data);
+    if(!t?.image_url)return new Response("",{status:404,headers:{...cors,"Cache-Control":"public, max-age=3600"}});
+    return new Response(null,{status:302,headers:{...cors,"Location":String(t.image_url),"Cache-Control":"public, max-age=86400"}});
   }
 
   if(path.endsWith("/api/tournaments")&&req.method==="GET"){

@@ -120,17 +120,17 @@ function rankings(){
  const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
  const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
  const reference=rankKind==='singles'
-   ?'Snapshot ATP 01/12/2025 issu de l’archive Sackmann/Kadantte · classement profond avec vrais IDs joueurs'
+   ?'Snapshot ATP 01/12/2025 · classement profond, vrais IDs joueurs et ex æquo conservés'
    :rankKind==='doubles'
-     ?'Top 10 au 01/12/2025 · classement year-end étendu publié le 17/11/2025'
+     ?'Top 100 double · classement year-end 2025, encore en vigueur au 01/12/2025'
      :rankKind==='race'
-       ?'Race finale de qualification ATP Finals 2025'
+       ?'PIF ATP Race to Turin · classement de qualification avant les Finals 2025'
        :rankKind==='nextgen'
-         ?'Race Next Gen 2025 · joueurs nés en 2005 ou après'
+         ?'PIF ATP Race to Jeddah · snapshot 24/11/2025 · éligibles nés en 2005 ou après'
        :rankKind==='junior'
          ?'Top 100 garçons · bilan 2025'
          :(snap?'Référence '+df(snap):'Snapshot importé');
- const pill=rankKind==='singles'?'01/12/2025':rankKind==='doubles'?'2025 vérifié':rankKind==='race'?'Race 2025':rankKind==='nextgen'?'Next Gen 2025':rankKind==='junior'?'Junior 2025':(snap?df(snap):label);
+ const pill=rankKind==='singles'?'01/12/2025':rankKind==='doubles'?'01/12/2025':rankKind==='race'?'Race Turin 2025':rankKind==='nextgen'?'24/11/2025':rankKind==='junior'?'Junior 2025':(snap?df(snap):label);
  return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Vue inspirée de Live-Tennis : Ranking, Race, Doubles et Next Gen séparés. Les juniors ITF restent un circuit distinct.</div></div><span class="pill">${pill}</span></div>
  <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
  ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}

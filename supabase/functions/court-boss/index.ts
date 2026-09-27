@@ -1175,6 +1175,7 @@ Deno.serve(async(req:Request)=>{
 
       const rows=(page.data??[]).map((p:any)=>({
         ...p,
+        junior_points:Number(p.junior_points||0)+Number(p.junior_game_points||0),
         junior_ranking:p.display_rank==null?null:Number(p.display_rank),
         junior_rank_type:p.rank_type,
         junior_snapshot_date:p.junior_rank_snapshot_date??p.junior_snapshot_date,

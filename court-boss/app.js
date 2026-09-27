@@ -164,7 +164,7 @@ function career(){
 function home(){
  const c=career(),next=boot.upcoming?.[0],academy=boot.academy||{},fin=boot.finance||{};
  const msgs=[...(local.feed||[]),...(boot.news||[]).map(x=>x.body)].slice(0,6);
- return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP réel · snapshot 01/12/2025</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP réel · snapshot ${df("2026-09-27")}</span></div>
  <section class="hero">
   <div class="card click" onclick="nav('myplayer')">
    <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double #${fmt(c.doubles_rank)} · ${fmt(c.points)} pts</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
@@ -193,9 +193,9 @@ function rankings(){
  const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
  const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
  const reference=rankKind==='singles'
-   ?'Snapshot ATP 01/12/2025 · tous les rangs sourcés disponibles, y compris au-delà du #2000'
+   ?'Classement ATP officiel Live-Tennis au '+(snap?df(snap):df('2026-09-27'))+' · Top 1000 sourcé. La recherche mondiale 20K+ reste disponible au-delà.'
    :rankKind==='doubles'
-     ?'Top 100 double sourcé + index double étendu sur '+fmt(rankCount)+' profils pour le scouting. Les lignes sans source officielle sont signalées comme index Court Boss.'
+     ?'Classement ATP Double officiel Live-Tennis au '+(snap?df(snap):df('2026-09-27'))+' · Top 1000 sourcé + index double étendu sur '+fmt(worldStats?.indexedDoubles||rankCount)+' profils.'
      :rankKind==='race'
        ?'ATP Race finale 2025 · après les ATP Finals · points de fin de saison'
        :rankKind==='nextgen'
@@ -203,8 +203,8 @@ function rankings(){
        :rankKind==='junior'
          ?'Top 100 garçons · bilan 2025'
          :(snap?'Référence '+df(snap):'Snapshot importé');
- const pill=rankKind==='singles'?'01/12/2025':rankKind==='doubles'?'01/12/2025':rankKind==='race'?'Race finale · 01/12/2025':rankKind==='nextgen'?'24/11/2025':rankKind==='junior'?'Junior 2025':(snap?df(snap):label);
- return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Vue inspirée de Live-Tennis : Ranking, Race, Doubles et Next Gen séparés. Les juniors ITF restent un circuit distinct.</div></div><span class="pill">${pill}</span></div>
+ const pill=(rankKind==='singles'||rankKind==='doubles')?(snap?df(snap):df('2026-09-27')):rankKind==='race'?'Race · '+(snap?df(snap):'2025'):rankKind==='nextgen'?'24/11/2025':rankKind==='junior'?'Junior 2025':(snap?df(snap):label);
+ return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Ranking, Race, Double et Next Gen séparés. Simple et Double utilisent le snapshot Live-Tennis 2026; la base scouting reste beaucoup plus profonde que le classement affiché.</div></div><span class="pill">${pill}</span></div>
  <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button onclick="nav('players')">Base ${fmt(worldStats?.searchableRealPlayers||20000)}+</button></div>
  ${rankKind==='nextgen'? `<div class="age-filter"><span class="muted mini">Âge au snapshot 2025</span>${[18,19,20,21].map(a=>`<button class="${nextGenAge===a?'active':''}" onclick="setNextGenAge(${a})">U${a}</button>`).join('')}</div>`:''}
  ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
@@ -329,7 +329,7 @@ function scouting(){
 }
 window.changeScoutAssignment=async(id,focus)=>{try{await managerAction('set_scouting_assignment',id,{focus});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
 function more(){
- const items=[['players','Base joueurs','14 000+ profils réels · ATP au-delà du #2000 + ITF + Juniors + NCAA'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
+ const items=[['players','Base joueurs',fmt(worldStats?.searchableRealPlayers||22000)+' profils réels · recherche mondiale au-delà du Top 2000 + ITF + Juniors + NCAA + Double'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
@@ -345,7 +345,7 @@ function playersPage(){
     <select class="select" onchange="setDbCircuit(this.value)">${circuits.map(x=>`<option ${dbCircuit===x?'selected':''}>${x}</option>`).join('')}</select>
     <button class="primary" onclick="searchPlayerDatabase(document.getElementById('dbSearch').value)">Rechercher</button>
    </div>
-   <div class="row" style="margin-top:9px;flex-wrap:wrap"><span class="badge good">ATP/ITF réels</span><span class="badge tag-ncaa">NCAA</span><span class="badge tag-junior">Junior</span><span class="muted mini">Les âges non sourcés restent N/V au lieu d’être inventés.</span></div>
+   <div class="row" style="margin-top:9px;flex-wrap:wrap"><span class="badge good">ATP/ITF réels</span><span class="badge tag-ncaa">NCAA</span><span class="badge tag-junior">Junior</span><span class="badge">Double</span><span class="muted mini">Âge affiché pour toute la base : date de naissance quand disponible, sinon âge sourcé ou clairement estimé. Revers vérifié quand une source existe, sinon marqué estimé.</span></div>
   </div>
   <div class="card fm-panel" style="margin-top:12px">
    <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
@@ -603,8 +603,8 @@ function doublesPage(){
    ${pool.slice(0,12).map(p=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>#${p.doubles_ranking} ${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${p.doubles_points==null?'points non publiés dans ce snapshot':fmt(p.doubles_points)+' pts'} · ${df(p.doubles_snapshot_date)}</div></div><button class="soft-btn" onclick="choosePartner(${p.id})">Choisir</button></div>`).join('')||'<div class="loader">Chargement du classement double…</div>'}
   </div>
  </div>
- <div id="dblRace" class="section-head" style="margin-top:18px"><div><div class="eyebrow">ATP Finals</div><h2>Race double par équipes</h2><div class="muted">Classement final de qualification 2025.</div></div></div>
- <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Équipe</th><th>Points</th><th>Référence</th></tr></thead><tbody>
+ <div id="dblRace" class="section-head" style="margin-top:18px"><div><div class="eyebrow">ATP Finals</div><h2>Race double par équipes</h2><div class="muted">Race Live-Tennis 2026 · ${doublesRaceRows[0]?.snapshot_date?df(doublesRaceRows[0].snapshot_date):"snapshot courant"} · ${fmt(doublesRaceRows.length)} équipes chargées.</div></div></div>
+ <div class="card"><div class="row between" style="margin-bottom:8px"><span class="muted mini">Race complète importée : ${fmt(doublesRaceRows.length)} équipes</span><button class="ghost" onclick="setRankKind(\'doubles\');nav(\'rankings\')">Classement individuel</button></div><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Équipe</th><th>Points</th><th>Référence</th></tr></thead><tbody>
  ${doublesRaceRows.map(x=>`<tr><td class="rank-num">#${x.rank}</td><td><b>${esc(x.player_one)} / ${esc(x.player_two)}</b></td><td>${fmt(x.points)}</td><td>${df(x.snapshot_date)}</td></tr>`).join('')}
  </tbody></table></div>${!doublesRaceRows.length?'<div class="loader">Chargement de la Race équipes…</div>':''}</div>
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Scouting double</div><h2>Spécialistes disponibles</h2></div></div>

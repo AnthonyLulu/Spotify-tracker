@@ -215,3 +215,54 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[r
   .tournament-history-item>div{min-width:0}
   .tournament-history-item b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
+
+/* FM-inspired data-room polish */
+body{background:
+  radial-gradient(circle at 20% -10%,rgba(64,150,102,.16),transparent 32%),
+  linear-gradient(180deg,#040b08 0%,#07110d 36%,#08130e 100%)}
+.topbar{border-bottom-color:#2b4a39;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.card{position:relative}
+.card:before{content:"";position:absolute;inset:0 auto 0 0;width:2px;border-radius:17px 0 0 17px;background:linear-gradient(180deg,transparent,rgba(183,255,67,.28),transparent);pointer-events:none}
+.fm-player-header{overflow:hidden;background:
+ linear-gradient(110deg,rgba(183,255,67,.09),transparent 38%),
+ linear-gradient(180deg,#11261c,#0b1711)}
+.fm-player-header:after{content:"SCOUTING DOSSIER";position:absolute;right:14px;top:10px;font-size:9px;letter-spacing:.18em;font-weight:900;color:rgba(183,255,67,.28)}
+.fm-page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:18px;border:1px solid var(--line2);border-radius:18px;background:
+ linear-gradient(135deg,rgba(183,255,67,.12),transparent 45%),
+ linear-gradient(180deg,#12281d,#0a1711);box-shadow:var(--shadow);margin-bottom:12px}
+.fm-head-badge{border:1px solid rgba(183,255,67,.35);background:rgba(183,255,67,.08);color:var(--accent);padding:9px 11px;border-radius:10px;font-size:12px;font-weight:900}
+.fm-filterbar{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:12px}
+.fm-history-hero{display:grid;grid-template-columns:minmax(0,1.4fr) auto minmax(320px,1fr);align-items:center;gap:18px;overflow:hidden;background:
+ linear-gradient(110deg,rgba(75,228,150,.14),transparent 48%),
+ linear-gradient(180deg,#12271d,#0a1711)}
+.fm-history-score{padding:12px 16px;border-left:1px solid var(--line);border-right:1px solid var(--line);text-align:center}
+.fm-history-score span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+.fm-history-score b{font-size:28px;color:var(--accent)}
+.fm-history-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.fm-history-stats div{background:#09150f;border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center}
+.fm-history-stats span{display:block;color:var(--muted);font-size:9px}.fm-history-stats b{font-size:17px}
+.fm-scout-row{display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid var(--line)}
+.fm-scout-row:last-child{border-bottom:0}.fm-rank-dot{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:#172c22;border:1px solid var(--line2);font-size:10px;font-weight:900;color:var(--accent)}
+.fm-country-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
+.fm-country-tile{border:1px solid var(--line);background:#09150f;color:var(--text);border-radius:11px;padding:9px;text-align:left}
+.fm-country-tile span{display:block;color:var(--muted);font-size:10px}.fm-country-tile b{display:block;margin-top:3px}.fm-country-tile small{color:var(--muted2)}
+.fm-panel{border-color:#315443}.fm-rank-tools{grid-template-columns:minmax(180px,1.2fr) minmax(170px,.8fr) auto}
+.fm-history-table td:nth-last-child(1){background:rgba(183,255,67,.035)}
+.table tr.click{transition:background .12s ease,box-shadow .12s ease}.table tr.click:hover{box-shadow:inset 3px 0 0 var(--accent)}
+@media(min-width:900px){
+ .page{padding-top:18px}
+ .section-head h1{font-size:30px}
+ .card{border-radius:14px}
+}
+@media(max-width:820px){
+ .fm-page-head{align-items:flex-start}.fm-head-badge{white-space:nowrap}
+ .fm-filterbar{grid-template-columns:1fr 1fr}.fm-filterbar .ghost{grid-column:1/-1}
+ .fm-history-hero{grid-template-columns:1fr 1fr}.fm-history-stats{grid-column:1/-1}.fm-history-score{border-right:0}
+ .fm-rank-tools{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+ .fm-page-head{display:block}.fm-head-badge{display:inline-block;margin-top:10px}
+ .fm-history-hero{grid-template-columns:1fr}.fm-history-score{border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+ .fm-history-stats{grid-template-columns:repeat(2,1fr)}
+ .fm-country-grid{grid-template-columns:1fr}
+}

@@ -580,7 +580,9 @@ async function syncJuniorDemographics(){
   if(applied.error)throw applied.error;
   const pool=await db.rpc("refresh_junior_display_pool_v3",{p_target:2000});
   if(pool.error)throw pool.error;
-  return {source:jtd.url,parsed:jtd.rows.length,sample:jtd.rows.slice(0,10),apply:applied.data,pool:pool.data};
+  const juniorDoublePool=await db.rpc("refresh_junior_doubles_ranking",{p_snapshot:"2025-12-01"});
+  if(juniorDoublePool.error)throw juniorDoublePool.error;
+  return {source:jtd.url,parsed:jtd.rows.length,sample:jtd.rows.slice(0,10),apply:applied.data,pool:pool.data,juniorDoubles:juniorDoublePool.data};
 }
 
 async function fetchCoreTennisJuniorStatRows(url:string){
@@ -685,11 +687,14 @@ async function syncRealJuniorBoys(){
   const generatedCount=Number(generated.count||0);
   const pool=await db.rpc("refresh_junior_display_pool_v3",{p_target:2000});
   if(pool.error)throw pool.error;
+  const juniorDoublePool=await db.rpc("refresh_junior_doubles_ranking",{p_snapshot:"2025-12-01"});
+  if(juniorDoublePool.error)throw juniorDoublePool.error;
   return {
     sources:sourceStats,
     discovered:merged.size,
     import:bulk.data,
     displayPool:pool.data,
+    juniorDoubles:juniorDoublePool.data,
     activeJuniorProfiles:2000,
     realJuniorProfiles:realCount,
     generatedJuniorProfiles:Number(pool.data?.generated_selected||generatedCount)

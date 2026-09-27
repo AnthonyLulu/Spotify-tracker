@@ -1838,7 +1838,9 @@ Deno.serve(async(req:Request)=>{
       });
     }
 
-    const cut=Math.max(drawSize,Number(t.data.qual_cut||t.data.direct_cut||drawSize*4));
+    const directCut=Number(t.data.direct_cut??t.data.projected_direct_cut??0);
+    const qualCut=Number(t.data.qual_cut??t.data.projected_qual_cut??0);
+    const cut=Math.max(drawSize,qualCut||directCut||drawSize*4);
     const pool=await db.from("players")
       .select("id,name,country,ranking,points,current_ability,potential,form,fitness,fatigue,style")
       .eq("ranking_current",true)
@@ -2051,7 +2053,7 @@ Deno.serve(async(req:Request)=>{
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
-    const direct=Number(t.direct_cut||0),qual=Number(t.qual_cut||0),rank=Number(c.singles_rank||9999);
+    const direct=Number(t.direct_cut??t.projected_direct_cut??0),qual=Number(t.qual_cut??t.projected_qual_cut??0),rank=Number(c.singles_rank||9999);
     const wildcardGranted=wc.data?.status==="accepted";
     const alternateEligible=direct&&qual&&rank>qual&&rank<=qual+50;
     if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible)return h({error:"Classement insuffisant. Demande une wild card."},409);
@@ -2464,7 +2466,8 @@ Deno.serve(async(req:Request)=>{
     if(tours.error)return h({error:tours.error.message},500);
     const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
     const score=(t:any)=>{
-      const cut=t.direct_cut&&c.singles_rank<=t.direct_cut?30:t.qual_cut&&c.singles_rank<=t.qual_cut?18:t.qual_cut&&c.singles_rank<=t.qual_cut+50?8:-10;
+      const direct=Number(t.direct_cut??t.projected_direct_cut??0),qual=Number(t.qual_cut??t.projected_qual_cut??0);
+      const cut=direct&&c.singles_rank<=direct?30:qual&&c.singles_rank<=qual?18:qual&&c.singles_rank<=qual+50?8:-10;
       const surf=t.surface==="Terre"?Number(a.clay_affinity||10):t.surface==="Gazon"?Number(a.grass_affinity||10):Number(a.hard_affinity||10);
       const travel=t.country===c.country?10:european.includes(t.country)?5:-3;
       const fatigue=Number(c.fatigue||18)>55?-18:Number(c.fatigue||18)>35?-8:7;
@@ -3310,7 +3313,7 @@ Deno.serve(async(req:Request)=>{
         db.from("academies").select("reputation").eq("id","demo").maybeSingle()
       ]);
       if(t.error||a.error||!t.data)return h({error:(t.error||a.error)?.message||"Tournoi introuvable"},404);
-      const rank=Number(career.data.singles_rank||9999),qual=Number(t.data.qual_cut||t.data.direct_cut||rank);
+      const rank=Number(career.data.singles_rank||9999),qual=Number(t.data.qual_cut??t.data.projected_qual_cut??t.data.direct_cut??t.data.projected_direct_cut??rank);
       const rep=Number(a.data?.reputation||48);
       const proximity=Math.max(0,35-Math.max(0,rank-qual)/12);
       const score=Math.round(rep*.65+proximity+Math.random()*22);

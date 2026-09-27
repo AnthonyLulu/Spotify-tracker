@@ -125,7 +125,7 @@ async function refreshSeasonV2(){
 }
 
 async function rolloverSeasonV2(){
-  const current=Number((boot?.career?.season_year)||String(local.date||RANKING_SNAPSHOT).slice(0,4)||2026);
+  const current=Number((boot?.career?.season_year)||String(local.date||RANKING_SNAPSHOT).slice(0,4)||2025);
   const next=current+1;
   if(!confirm('Passer à la saison '+next+' ? Les joueurs vieilliront, les points expireront normalement et la saison '+current+' sera archivée.'))return;
   try{

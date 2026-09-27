@@ -1880,9 +1880,9 @@ Deno.serve(async(req:Request)=>{
     const [tour,career,anth,oldRun,partnership]=await Promise.all([
       db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
       db.from("career_state").select("*").eq("id","demo").maybeSingle(),
-      getManagedPlayer("id,name,country,doubles_ranking,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)"),
+      getManagedPlayer("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)"),
       db.from("doubles_runs").select("id").eq("tournament_id",tid).maybeSingle(),
-      db.from("doubles_partnerships").select("*,partner:players!doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity))").order("id",{ascending:false}).limit(1).maybeSingle()
+      db.from("doubles_partnerships").select("*,partner:players!doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity))").order("id",{ascending:false}).limit(1).maybeSingle()
     ]);
     const err=tour.error||career.error||anth.error||oldRun.error||partnership.error;
     if(err)return h({error:err.message},500);
@@ -1907,7 +1907,7 @@ Deno.serve(async(req:Request)=>{
         .order("junior_doubles_ranking",{ascending:true}).limit(160);
     }else{
       poolRes=await db.from("players")
-        .select("id,name,country,doubles_ranking,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+        .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
         .eq("is_real",true).not("doubles_ranking","is",null)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
         .order("doubles_ranking",{ascending:true}).limit(160);

@@ -1,5 +1,6 @@
 
 let cbDoublesTournaments=[];
+let cbLiveWinProb=50;
 let cbPlayerSearch={q:'',country:'',circuit:'Tous',age_max:99,potential_min:0,offset:0,limit:60,rows:[],count:0};
 let cbSeasonHistory=[];
 let cbMatchOpponents=[];
@@ -529,6 +530,29 @@ function liveMatchPageV2(){
       <div class="muted mini" style="margin-top:8px">${s.serving_user?'🎾 '+esc(cr.player_name||'Joueur')+' au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
     </div>
 
+    <div class="card" style="margin-top:12px">
+      <div class="row between">
+        <div><div class="eyebrow">Vue tactique</div><h2>Terrain 2D</h2></div>
+        <div style="text-align:right"><span class="muted mini">Chance prochain jeu</span><div class="big" style="font-size:22px">${Math.round(cbLiveWinProb)}%</div></div>
+      </div>
+      <div class="court2d ${String(s.surface||'Dur').toLowerCase().replace('terre','clay').replace('gazon','grass')}">
+        <div class="court-line baseline top"></div><div class="court-line baseline bottom"></div>
+        <div class="court-line sideline left"></div><div class="court-line sideline right"></div>
+        <div class="court-line service top"></div><div class="court-line service bottom"></div>
+        <div class="court-line center"></div><div class="court-net"></div>
+        <div class="court-player opponent" style="left:${45+Math.max(-18,Math.min(18,-momentum*.28))}%">${esc((o.name||'A').slice(0,1))}</div>
+        <div class="court-player user" style="left:${55+Math.max(-18,Math.min(18,momentum*.28))}%">A</div>
+        <div class="court-ball ${s.serving_user?'serve-user':'serve-opp'}"></div>
+        <div class="court-zone z1 ${(local.tactics?.returnPos||'Neutre')==='Avancée'?'active':''}"></div>
+        <div class="court-zone z2 ${Number(local.tactics?.net||28)>55?'active':''}"></div>
+      </div>
+      <div class="grid g3" style="margin-top:10px">
+        <div class="kpi"><span class="muted mini">Service ciblé</span><b style="font-size:13px">${Number(local.tactics?.risk||52)>65?'Extérieur':'Mixte'}</b></div>
+        <div class="kpi"><span class="muted mini">Position retour</span><b style="font-size:13px">${esc(local.tactics?.returnPos||'Neutre')}</b></div>
+        <div class="kpi"><span class="muted mini">Montée filet</span><b>${local.tactics?.net||28}%</b></div>
+      </div>
+    </div>
+
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
         <h2>Momentum</h2>
@@ -566,7 +590,7 @@ function liveMatchPageV2(){
 async function startLiveMatchV2(opponentId){
   try{
     const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({opponent_id:opponentId,surface:cbLiveSurface,tactics:local.tactics||{}})});
-    cbLiveSession=d.session;cbLiveOpponent=d.opponent;
+    cbLiveSession=d.session;cbLiveOpponent=d.opponent;cbLiveWinProb=50;
     shell(liveMatchPageV2());
   }catch(e){alert(e.message)}
 }
@@ -575,7 +599,7 @@ async function advanceLiveMatchV2(){
   if(!cbLiveSession)return;
   try{
     const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
-    cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;
+    cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;cbLiveWinProb=Number(d.win_probability||cbLiveWinProb||50);
     if(d.completed){
       boot=await get('/api/bootstrap');
       if(boot.career)local.career={...(local.career||{}),...boot.career};
@@ -597,7 +621,7 @@ function setLiveTacticV2(k,v){
 }
 
 function resetLiveMatchV2(){
-  cbLiveSession=null;cbLiveOpponent=null;
+  cbLiveSession=null;cbLiveOpponent=null;cbLiveWinProb=50;
   shell(liveMatchPageV2());
 }
 

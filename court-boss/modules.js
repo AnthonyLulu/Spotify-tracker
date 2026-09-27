@@ -458,7 +458,7 @@ async function openFantasyV2(id){
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court · ${esc(t.surface)}</div><h1>${esc(t.name)}</h1><div class="muted">${entries.length}/${t.draw_size} joueurs · ${t.best_of===5?'Best of 5':'Best of 3'}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
   ${run?.champion?`<div class="notice good" style="margin-top:12px">Champion actuel : <b>${esc(run.champion.name)}</b></div>`:''}
   <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Participants</h2>${entries.map((e,i)=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${e.players?.id})"><b>#${i+1} ${esc(e.players?.name||'Joueur')}</b><div class="muted mini">${e.players?.country||''} · ATP #${e.players?.ranking||'—'}</div></div>${t.status!=='completed'?`<button class="danger-btn" onclick="removeFantasyEntryV2(${id},${e.players?.id})">Retirer</button>`:''}</div>`).join('')||'<div class="empty">Aucun participant.</div>'}</div>
-  <div class="card"><h2>Ajouter un joueur</h2><input class="input" placeholder="Nom du joueur…" oninput="fantasySearchV2(${id},this.value)"><div id="fantasySearchResults" style="margin-top:8px"><div class="empty">Recherche dans les 5 000 profils.</div></div></div></div>
+  <div class="card"><h2>Ajouter un joueur</h2><input class="input" placeholder="Nom du joueur…" oninput="fantasySearchV2(${id},this.value)"><div id="fantasySearchResults" style="margin-top:8px"><div class="empty">Recherche dans la base mondiale de plus de 10 000 joueurs réels.</div></div></div></div>
   ${t.status!=='completed'?`<button class="primary" style="margin-top:12px" ${entries.length<2?'disabled':''} onclick="runFantasyV2(${id})">Simuler le tournoi</button>`:''}
   </div></div>`;
 }
@@ -483,12 +483,6 @@ window.nav=async function(r){
     shell(doublesPageV2());
     return;
   }
-  if(r==='match'){
-    route='match';window.scrollTo({top:0,behavior:'smooth'});
-    await Promise.all([loadCbMatchOpponents(),restoreLiveMatchV2()]);
-    shell(liveMatchPageV2());
-    return;
-  }
   if(r==='players'){
     route='players';window.scrollTo({top:0,behavior:'smooth'});
     if(!cbPlayerSearch.rows.length)await loadCbPlayerSearch(true);
@@ -508,7 +502,6 @@ const cbBaseRender=window.render;
 window.render=function(){
   if(route==='season')return shell(seasonPageV2());
   if(route==='doubles'&&cbDoublesTournaments.length)return shell(doublesPageV2());
-  if(route==='match')return shell(liveMatchPageV2());
   if(route==='players')return shell(playerDatabasePageV2());
   if(route==='fantasy')return shell(fantasyPageV2());
   return cbBaseRender();

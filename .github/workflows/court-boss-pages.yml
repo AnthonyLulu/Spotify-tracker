@@ -134,6 +134,15 @@ jobs:
             await page.getByText('Technique').waitFor();
             await page.getByRole('button',{name:'✕'}).click();
 
+            await page.evaluate(()=>openPlayer(3));
+            await page.getByText('Dossier joueur').waitFor();
+            await page.getByRole('button',{name:'Palmarès'}).click();
+            await page.getByRole('heading',{name:'Grands Chelems année par année'}).waitFor();
+            await page.getByLabel(/Wimbledon 2025/).click();
+            await page.getByText('Finaliste').waitFor();
+            await page.getByText('vs Jannik Sinner').waitFor();
+            await page.getByRole('button',{name:'✕'}).click();
+
             await page.getByRole('button',{name:'Plus'}).click();
             await page.getByRole('heading',{name:'Tous les modules'}).waitFor();
             await page.getByText('Plan de match & coaching').click();

@@ -1097,6 +1097,25 @@ window.renderPalmaresHtml=function(d,p){
     </div>
 
     <div class="card" style="margin-top:12px">
+      <div class="row between"><div><div class="eyebrow">Historique compétitions</div><h2>Tournois joués année par année</h2></div><span class="pill">\${tournamentHistory.length} résultat(s)</span></div>
+      <div class="muted mini" style="margin-top:4px">Historique réel importé : Grand Chelem, Masters 1000, ATP Tour, ATP Finals et Jeux olympiques.</div>
+      \${historyYears.length?historyYears.map(y=>\`
+        <details class="list-item tournament-season">
+          <summary class="row between click"><b>\${y}</b><span class="badge">\${allHistoryByYear[y].length} tournoi\${allHistoryByYear[y].length>1?'s':''}</span></summary>
+          <div class="tournament-history-list">
+            \${allHistoryByYear[y].map(h=>\`
+              <button class="tournament-history-item" data-tournament-history-index="\${h.__i}">
+                <div>
+                  <b>\${esc(tourName(h.tournament_name))}</b>
+                  <div class="muted mini">\${esc(h.category||h.level||'ATP')} · \${esc(h.surface||'—')} · \${h.tournament_date?df(h.tournament_date):''}</div>
+                </div>
+                <span class="slam-result compact \${resultClass(h.result_code)}"><span>\${esc(h.result_code||'—')}</span></span>
+              </button>\`).join('')}
+          </div>
+        </details>\`).join(''):'<div class="empty">Pas encore d’historique tournoi importé.</div>'}
+    </div>
+
+    <div class="card" style="margin-top:12px">
       <div class="row between"><div><div class="eyebrow">Chronologie</div><h2>Palmarès année par année</h2></div><span class="pill">${yearRows.length} saison(s) titrée(s)</span></div>
       ${yearRows.length?yearRows.map(([year,rows])=>`
         <details class="list-item">

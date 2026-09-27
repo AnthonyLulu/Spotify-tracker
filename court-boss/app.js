@@ -1007,7 +1007,19 @@ ${p.bio_source?`<div class="muted micro" style="margin-top:6px">Bio : ${esc(p.bi
     </div>
    </template>
    <template id="commercialTpl"><div class="card"><h2>Sponsors vérifiés</h2>${d.sponsors.filter(s=>s.verified).length?d.sponsors.filter(s=>s.verified).map(s=>`<span class="badge good" style="margin:4px">${esc(s.sponsor)}</span>`).join(''):'<div class="empty">Non vérifié</div>'}<p class="muted mini" style="margin-top:10px">Aucune marque n'est inventée quand la donnée n'est pas vérifiée.</p></div></template>
-   <template id="historyTpl"><div class="card"><h2>Historique de classement</h2>${d.history.length?d.history.map(h=>`<div class="list-item row between"><span>${df(h.snapshot_date)}</span><b>#${h.ranking} · ${fmt(h.points)} pts</b></div>`).join(''):'<div class="empty">Pas encore assez de snapshots.</div>'}</div></template>
+   <template id="historyTpl">
+    <div class="card">
+      <div class="row between"><div><div class="eyebrow">Records ATP · au 01/12/2025</div><h2>Historique de classement</h2></div><span class="badge">\${p.ranking_history_source?'Sourcé':'Court Boss'}</span></div>
+      <div class="kpi-strip" style="margin-top:10px">
+        <div class="kpi"><span class="muted mini">Meilleur classement carrière</span><b>\${p.career_high_rank?'#'+fmt(p.career_high_rank):'—'}</b><small class="muted micro">\${p.career_high_rank_date?df(p.career_high_rank_date):''}</small></div>
+        <div class="kpi"><span class="muted mini">Semaines n°1</span><b>\${fmt(p.weeks_at_no1||0)}</b></div>
+        <div class="kpi"><span class="muted mini">Semaines Top 10</span><b>\${fmt(p.weeks_top10||0)}</b></div>
+        <div class="kpi"><span class="muted mini">Semaines Top 100</span><b>\${fmt(p.weeks_top100||0)}</b></div>
+      </div>
+      <div class="muted mini" style="margin-top:8px">\${esc(p.ranking_history_source||'Historique non sourcé')} · \${p.ranking_history_cutoff?'cutoff '+df(p.ranking_history_cutoff):'cutoff 01/12/2025'}</div>
+    </div>
+    <div class="card" style="margin-top:12px"><h2>Snapshots disponibles</h2>\${d.history.length?d.history.map(h=>\`<div class="list-item row between"><span>\${df(h.snapshot_date)}</span><b>#\${h.ranking} · \${fmt(h.points)} pts</b></div>\`).join(''):'<div class="empty">Pas de snapshots détaillés locaux.</div>'}</div>
+   </template>
   </div></div>`;
  }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Erreur</h2><p>${esc(e.message)}</p></div></div>`}
 }

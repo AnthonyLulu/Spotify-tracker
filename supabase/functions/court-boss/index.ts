@@ -182,6 +182,8 @@ Deno.serve(async(req:Request)=>{
     const potentialMin=n(u.searchParams.get("potential_min"),0,0,100);
     const offset=n(u.searchParams.get("offset"),0,0,10000);
     const limit=n(u.searchParams.get("limit"),60,1,120);
+    const careerDateRes=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+    const gameDate=String(careerDateRes.data?.career_date||"2026-09-27");
 
     let query=db.from("players")
       .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
@@ -211,7 +213,8 @@ Deno.serve(async(req:Request)=>{
     query=query.range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
-    return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows:data??[]});
+    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age)}));
+    return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
   }
 
   if(path.endsWith("/api/doubles-race")&&req.method==="GET"){
@@ -263,12 +266,14 @@ Deno.serve(async(req:Request)=>{
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
     const month=(u.searchParams.get("month")??"").trim();
     const source=(u.searchParams.get("source")??"").trim();
+    const surface=(u.searchParams.get("surface")??"").trim().slice(0,40);
     const from=(u.searchParams.get("from")??"").trim();
     let query=db.from("tournaments").select("*",{count:"exact"});
     if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
     if(source==="Simulation") query=query.eq("is_verified",false);
+    if(surface&&surface!=="Toutes") query=query.eq("surface",surface);
     if(/^\d{4}-\d{2}-\d{2}$/.test(from)) query=query.gte("start_date",from);
     if(q) query=query.ilike("name",`%${q}%`);
     if(/^\d{4}-\d{2}$/.test(month)){
@@ -1945,7 +1950,7 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const [playersTotal,atp,itf,junior,tours,realTours,ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
+    const [playersTotal,atp,itf,junior,tours,realTours,ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
@@ -1957,6 +1962,8 @@ Deno.serve(async(req:Request)=>{
       db.from("ncaa_player_registry").select("player_id,status").limit(5000),
       db.from("players").select("id",{count:"exact",head:true}).eq("game_generated",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true),
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
@@ -1967,6 +1974,8 @@ Deno.serve(async(req:Request)=>{
       players:atp.count??0,
       playersTotal:playersTotal.count??0,
       realPlayersTotal:realPlayers.count??0,
+      searchableRealPlayers:searchableReal.count??0,
+      realPlayersWithAge:ageKnownReal.count??0,
       activeRealPlayers2025:active2025.count??0,
       atpRanked:atp.count??0,
       sourcedDoubles:doublesReal.count??0,

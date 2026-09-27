@@ -340,6 +340,63 @@ async function resolvePlayerPhoto(player:any){
     }
   }
 
+  if(!player.wiki_photo_url&&/^Q\d+$/.test(String(player.wikidata_id||""))){
+    try{
+      const qid=String(player.wikidata_id);
+      const qs=new URLSearchParams({
+        action:"wbgetentities",
+        ids:qid,
+        props:"labels|aliases|claims",
+        languages:"en|fr|de|es|it|pt|nl|pl|cs|sr|hr|ru|uk",
+        languagefallback:"1",
+        format:"json",
+        origin:"*"
+      });
+      const rr=await fetch("https://www.wikidata.org/w/api.php?"+qs.toString(),{
+        headers:{"User-Agent":"CourtBoss/1.0 (+safe-wikidata-photo)"}
+      });
+      if(rr.ok){
+        const jj:any=await rr.json();
+        const ent=jj?.entities?.[qid];
+        if(ent&&!ent.missing){
+          const candidates:string[]=[];
+          for(const x of Object.values(ent.labels||{}) as any[]){
+            if(x?.value)candidates.push(String(x.value));
+          }
+          for(const arr of Object.values(ent.aliases||{}) as any[]){
+            for(const x of (arr||[]))if(x?.value)candidates.push(String(x.value));
+          }
+          const wanted=normalizeName(String(player.name||"")).replace(/\s+/g,"");
+          const nameOk=candidates.some(x=>normalizeName(String(x)).replace(/\s+/g,"")===wanted);
+
+          let dobOk=true;
+          const wdTime=String(ent?.claims?.P569?.[0]?.mainsnak?.datavalue?.value?.time||"");
+          if(player.birth_date&&/^[-+]\d{4}-\d{2}-\d{2}T/.test(wdTime)){
+            dobOk=String(player.birth_date).slice(0,10)===wdTime.replace(/^\+/,"").slice(0,10);
+          }
+
+          const file=String(ent?.claims?.P18?.[0]?.mainsnak?.datavalue?.value||"").trim();
+          if(nameOk&&dobOk&&file){
+            const photo="https://commons.wikimedia.org/wiki/Special:FilePath/"+encodeURIComponent(file)+"?width=640";
+            player.wiki_photo_url=photo;
+            update.wiki_photo_url=photo;
+            if(!player.photo_url){
+              player.photo_url=photo;
+              player.photo_source="Wikidata/Wikimedia";
+              player.photo_source_url="https://www.wikidata.org/wiki/"+qid;
+              player.photo_source_label="Wikidata P18 · identité vérifiée";
+              update.photo_url=photo;
+              update.photo_source="Wikidata/Wikimedia";
+              update.photo_source_url=player.photo_source_url;
+              update.photo_source_label=player.photo_source_label;
+              update.photo_updated_at=new Date().toISOString();
+            }
+          }
+        }
+      }
+    }catch{}
+  }
+
   if(!player.wiki_photo_url){
     try{
       const qs=new URLSearchParams({

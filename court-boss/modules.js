@@ -939,13 +939,14 @@ window.createCustomPlayerV2=async()=>{
 
 
 window.renderPalmaresHtml=function(d,p){
-  const rawTitles=d?.titles||[];
+  const rawTitles=(d?.titles||[]).filter(t=>t.origin==='game'||!t.title_date||String(t.title_date)<='2025-12-01');
   const hasCanonicalSingles=rawTitles.some(t=>t.origin==='sackmann_atp_canonical'&&t.event_type==='singles');
   const titles=rawTitles.filter(t=>(!t.event_type||t.event_type==='singles')&&(!hasCanonicalSingles||t.origin==='sackmann_atp_canonical'||t.origin==='game'));
-  const doublesTitles=rawTitles.filter(t=>t.event_type==='doubles');
-  const juniorSinglesTitles=rawTitles.filter(t=>t.event_type==='junior_singles');
-  const juniorDoublesTitles=rawTitles.filter(t=>t.event_type==='junior_doubles');
-  const collegeTitles=rawTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
+  const dedupeTitleRows=rows=>[...new Map(rows.map(t=>[[String(t.event_type||''),String(t.tournament_name||'').toLowerCase().replace(/[^a-z0-9]+/g,' '),String(t.title_date||'').slice(0,4)].join('|'),t])).values()].sort((a,b)=>String(b.title_date||'').localeCompare(String(a.title_date||'')));
+  const doublesTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='doubles'));
+  const juniorSinglesTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='junior_singles'));
+  const juniorDoublesTitles=dedupeTitleRows(rawTitles.filter(t=>t.event_type==='junior_doubles'));
+  const collegeTitles=dedupeTitleRows(rawTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||''))));
   const allTitles=[...titles,...doublesTitles,...juniorSinglesTitles,...juniorDoublesTitles,...collegeTitles];
   const ncaaCareer=d?.ncaaCareer||null;
   const ncaaTransfers=(d?.ncaaTransfers||[]).slice().sort((a,b)=>Number(b.is_current)-Number(a.is_current)||String(b.season||'').localeCompare(String(a.season||''))||String(a.school||'').localeCompare(String(b.school||'')));

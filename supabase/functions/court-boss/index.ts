@@ -23,6 +23,14 @@ const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=n
 };
 async function resolvePlayerFacts(player:any,gameDate:string){
   if(!player||!player.is_real)return player;
+  if(player.birth_date){
+    const exactAge=ageAt(player.birth_date,gameDate,player.age);
+    const exactSource=String(player.birth_date_source||"Date de naissance enregistrée");
+    if(player.age!==exactAge||/estimation/i.test(String(player.age_source||""))||!player.age_source){
+      player.age=exactAge;player.age_source=exactSource;player.age_snapshot_date=gameDate;
+      try{await db.from("players").update({age:exactAge,age_source:exactSource,age_snapshot_date:gameDate}).eq("id",player.id)}catch{}
+    }
+  }
   let qid=String(player.wikidata_id||"").trim();
   let wikiTitle="";
   if((!qid||!/^Q\d+$/.test(qid))&&player.name){
@@ -67,7 +75,10 @@ async function resolvePlayerFacts(player:any,gameDate:string){
         player.birth_date=m[1];
         player.age=ageAt(m[1],gameDate,player.age);
         player.birth_date_source="Wikidata "+qid;
+        player.age_source="Wikidata "+qid;
+        player.age_snapshot_date=gameDate;
         update.birth_date=m[1];update.age=player.age;update.birth_date_source=player.birth_date_source;
+        update.age_source=player.age_source;update.age_snapshot_date=gameDate;
       }
     }
 

@@ -1952,15 +1952,24 @@ Deno.serve(async(req:Request)=>{
       participants=next;roundNo++;
     }
     const champion=participants[0];
-    const basePoints=(()=>{
-      const cat=String(t.category||t.level||"");
-      if(/Grand Chelem/i.test(cat))return 2000;if(/Masters 1000/i.test(cat))return 1000;
-      if(/ATP 500/i.test(cat))return 500;if(/ATP 250/i.test(cat))return 250;
-      const m=cat.match(/Challenger\s+(175|125|100|75|50)/i);if(m)return Number(m[1]);
-      if(/M25/i.test(cat))return 25;if(/M15/i.test(cat))return 15;return 50;
-    })();
-    const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:userRound==="R16"?.1:userRound==="R32"?.05:userRound==="Qualifié"?.03:.01;
-    const userPoints=Math.max(0,Math.round(basePoints*mult));
+    const isJuniorSingles=String(t.circuit||"")==="Junior";
+    let userPoints=0;
+    if(isJuniorSingles){
+      const roundCode=userRound==="Champion"?"W":userRound;
+      const jp=await db.rpc("junior_points_for",{p_event_type:"singles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
+      if(jp.error)return h({error:jp.error.message},500);
+      userPoints=Number(jp.data||0);
+    }else{
+      const basePoints=(()=>{
+        const cat=String(t.category||t.level||"");
+        if(/Grand Chelem/i.test(cat))return 2000;if(/Masters 1000/i.test(cat))return 1000;
+        if(/ATP 500/i.test(cat))return 500;if(/ATP 250/i.test(cat))return 250;
+        const m=cat.match(/Challenger\s+(175|125|100|75|50)/i);if(m)return Number(m[1]);
+        if(/M25/i.test(cat))return 25;if(/M15/i.test(cat))return 15;return 50;
+      })();
+      const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:userRound==="R16"?.1:userRound==="R32"?.05:userRound==="Qualifié"?.03:.01;
+      userPoints=Math.max(0,Math.round(basePoints*mult));
+    }
     const prizePool=Number(t.prize_money||0);
     const prizeMult=userRound==="Champion"?.18:userRound==="F"?.10:userRound==="SF"?.055:userRound==="QF"?.03:userRound==="R16"?.015:userRound==="R32"?.008:.003;
     const userPrize=Math.max(0,Math.round(prizePool*prizeMult));
@@ -2000,25 +2009,44 @@ Deno.serve(async(req:Request)=>{
     const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(totalFatigue*.45));
     const newForm=Math.max(35,Math.min(100,Number(c.form||72)+(userRound==="Champion"?6:userRound==="F"?4:userRound==="SF"?2:userMatches.length?1:-1)));
     const travelCost=dest===homeCountry?120:(european.includes(dest)?380:850);
-    if(userPoints>0){
-      const earnedDate=String(t.end_date||t.start_date||new Date().toISOString().slice(0,10));
-      const exp=new Date(earnedDate+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
-      await db.from("user_ranking_points").insert({owner_id:"demo",tournament_id:tid,label:t.name,earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true});
+    let newPoints=Number(c.points||0),newRank=Number(c.singles_rank||2001);
+    if(isJuniorSingles){
+      if(userPoints>0){
+        const current=await db.from("players").select("junior_game_points,junior_points").eq("id",managedId).maybeSingle();
+        if(current.error)return h({error:current.error.message},500);
+        await db.from("players").update({junior_game_points:Number(current.data?.junior_game_points||0)+userPoints}).eq("id",managedId);
+      }
+      const pr=await db.rpc("refresh_junior_display_pool_v3",{p_target:2000});
+      if(pr.error)return h({error:pr.error.message},500);
+      const jr=await db.from("junior_display_pool").select("display_rank").eq("player_id",managedId).maybeSingle();
+      if(jr.error)return h({error:jr.error.message},500);
+      newRank=Number(jr.data?.display_rank||newRank);
+      const jp=await db.from("players").select("junior_points,junior_game_points").eq("id",managedId).maybeSingle();
+      newPoints=Number(jp.data?.junior_points||0)+Number(jp.data?.junior_game_points||0);
+    }else{
+      if(userPoints>0){
+        const earnedDate=String(t.end_date||t.start_date||new Date().toISOString().slice(0,10));
+        const exp=new Date(earnedDate+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
+        await db.from("user_ranking_points").insert({owner_id:"demo",tournament_id:tid,label:t.name,earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true});
+      }
+      const rankCalc=await db.rpc("recalculate_user_ranking",{p_date:String(t.end_date||t.start_date||new Date().toISOString().slice(0,10))});
+      if(rankCalc.error)return h({error:rankCalc.error.message},500);
+      newPoints=Number(rankCalc.data?.points??c.points??0);newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     }
-    const rankCalc=await db.rpc("recalculate_user_ranking",{p_date:String(t.end_date||t.start_date||new Date().toISOString().slice(0,10))});
-    if(rankCalc.error)return h({error:rankCalc.error.message},500);
-    const newPoints=Number(rankCalc.data?.points??c.points??0),newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     const newBudget=Number(c.budget||0)+userPrize-travelCost;
     if(userRound==="Champion"){
       await db.from("player_titles").insert({
         player_id:managedId,tournament_name:t.name,title_date:String(t.end_date||t.start_date),
         level:String(t.category||t.level||t.circuit||"ATP"),surface:String(t.surface||""),
-        event_type:"singles",verified:false,source_label:"Court Boss · carrière simulée",origin:"game"
+        event_type:isJuniorSingles?"junior_singles":"singles",verified:false,source_label:isJuniorSingles?"Court Boss · titre junior simulé":"Court Boss · carrière simulée",origin:"game"
       });
     }
     const finState=await db.from("finances").select("prize_money,travel_cost").eq("id","demo").maybeSingle();
     await Promise.all([
-      db.from("career_state").update({budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}).eq("id","demo"),
+      db.from("career_state").update(isJuniorSingles
+        ?{budget:newBudget,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}
+        :{budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}
+      ).eq("id","demo"),
       db.from("finances").update({
         prize_money:Number(finState.data?.prize_money||0)+userPrize,
         travel_cost:Number(finState.data?.travel_cost||0)+travelCost
@@ -2109,8 +2137,16 @@ Deno.serve(async(req:Request)=>{
 
     const cat=String(t.category||t.level||"");
     const base= /Grand Chelem/i.test(cat)?2000:/Masters 1000/i.test(cat)?1000:/ATP 500/i.test(cat)?500:/ATP 250/i.test(cat)?250:(cat.match(/Challenger\s+(175|125|100|75|50)/i)?.[1]?Number(cat.match(/Challenger\s+(175|125|100|75|50)/i)![1]):/M25/i.test(cat)?25:/M15/i.test(cat)?15:50);
-    const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:.08;
-    const pts=Math.max(1,Math.round(base*mult));
+    let pts=0;
+    if(isJuniorDouble){
+      const roundCode=userRound==="Champion"?"W":userRound;
+      const jp=await db.rpc("junior_points_for",{p_event_type:"doubles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
+      if(jp.error)return h({error:jp.error.message},500);
+      pts=Number(jp.data||0);
+    }else{
+      const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:.08;
+      pts=Math.max(1,Math.round(base*mult));
+    }
     const prize=Math.max(0,Math.round(Number(t.prize_money||0)*(userRound==="Champion"?.09:userRound==="F"?.055:userRound==="SF"?.032:userRound==="QF"?.018:.007)));
 
     const run=await db.from("doubles_runs").insert({tournament_id:tid,partnership_id:partnership.data.id,partner_id:partner.id,user_round:userRound,user_points:pts,user_prize:prize,status:"completed"}).select("id").single();
@@ -2150,14 +2186,14 @@ Deno.serve(async(req:Request)=>{
         db.from("player_titles").insert({
           player_id:anthony.id,tournament_name:t.name,title_date:earned,
           level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
-          event_type:"doubles",partner_player_id:partner.id,partner_name:partner.name,
-          verified:false,source_label:"Court Boss · carrière simulée",origin:"game"
+          event_type:isJuniorDouble?"junior_doubles":"doubles",partner_player_id:partner.id,partner_name:partner.name,
+          verified:false,source_label:isJuniorDouble?"Court Boss · titre junior double simulé":"Court Boss · carrière simulée",origin:"game"
         }),
         db.from("player_titles").insert({
           player_id:partner.id,tournament_name:t.name,title_date:earned,
           level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
-          event_type:"doubles",partner_player_id:anthony.id,partner_name:anthony.name,
-          verified:false,source_label:"Court Boss · carrière simulée",origin:"game"
+          event_type:isJuniorDouble?"junior_doubles":"doubles",partner_player_id:anthony.id,partner_name:anthony.name,
+          verified:false,source_label:isJuniorDouble?"Court Boss · titre junior double simulé":"Court Boss · carrière simulée",origin:"game"
         })
       ]);
     }

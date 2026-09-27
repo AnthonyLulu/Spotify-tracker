@@ -72,7 +72,7 @@ Deno.serve(async(req:Request)=>{
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
     let orderCol="ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
-    if(kind==="race") orderCol="race_ranking";
+    if(kind==="race"||kind==="nextgen") orderCol="race_ranking";
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
@@ -82,13 +82,14 @@ Deno.serve(async(req:Request)=>{
     if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);
     else query=query.eq("is_real",true);
     if(kind==="doubles") query=query.not("doubles_source","is",null);
-    if(kind==="race") query=query.not("race_source","is",null);
+    if(kind==="race"||kind==="nextgen") query=query.not("race_source","is",null);
+    if(kind==="nextgen") query=query.not("birth_date","is",null).gte("birth_date","2005-01-01");
     if(kind==="junior") query=query.not("junior_source","is",null).lte("age",18);
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
-    return h({kind,offset,limit,count:count??0,rows:data??[]});
+    return h({kind,offset,limit,count:count??0,rows:data??[],eligibility:kind==="nextgen"?"born 2005 or later":null});
   }
 
 

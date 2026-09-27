@@ -21,6 +21,44 @@ const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=n
   if(md<0)a--;
   return a;
 };
+async function resolvePlayerFacts(player:any,gameDate:string){
+  if(!player||!player.is_real)return player;
+  const qid=String(player.wikidata_id||"").trim();
+  if(!qid||!/^Q\d+$/.test(qid))return player;
+  if(player.birth_date&&player.photo_url)return player;
+  try{
+    const r=await fetch("https://www.wikidata.org/wiki/Special:EntityData/"+encodeURIComponent(qid)+".json",{headers:{"User-Agent":"CourtBoss/1.0"}});
+    if(!r.ok)return player;
+    const j:any=await r.json(),entity=j?.entities?.[qid],claims=entity?.claims||{};
+    const rawBirth=claims?.P569?.[0]?.mainsnak?.datavalue?.value?.time;
+    const file=claims?.P18?.[0]?.mainsnak?.datavalue?.value;
+    const update:any={};
+    if(!player.birth_date&&typeof rawBirth==="string"){
+      const m=rawBirth.match(/^\+?(\d{4}-\d{2}-\d{2})T/);
+      if(m){
+        player.birth_date=m[1];
+        player.age=ageAt(m[1],gameDate,player.age);
+        player.birth_date_source="Wikidata "+qid;
+        update.birth_date=m[1];
+        update.age=player.age;
+        update.birth_date_source=player.birth_date_source;
+      }
+    }
+    if(!player.photo_url&&typeof file==="string"&&file){
+      const photo="https://commons.wikimedia.org/wiki/Special:FilePath/"+encodeURIComponent(file)+"?width=640";
+      player.photo_url=photo;
+      player.photo_source="Wikimedia Commons";
+      player.photo_source_url="https://www.wikidata.org/wiki/"+qid;
+      update.photo_url=photo;
+      update.photo_source=player.photo_source;
+      update.photo_source_url=player.photo_source_url;
+      update.photo_updated_at=new Date().toISOString();
+      update.photo_checked_at=new Date().toISOString();
+    }
+    if(Object.keys(update).length)await db.from("players").update(update).eq("id",player.id);
+  }catch{}
+  return player;
+}
 async function resolvePlayerPhoto(player:any){
   if(!player||!player.is_real||!player.name)return player;
   if(player.photo_url)return player;
@@ -249,7 +287,10 @@ Deno.serve(async(req:Request)=>{
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
     if(player){
-      player.age=ageAt(player.birth_date,String(careerDate.data?.career_date||"2026-09-27"),player.age);
+      const gameDate=String(careerDate.data?.career_date||"2026-09-27");
+      player.age=ageAt(player.birth_date,gameDate,player.age);
+      player=await resolvePlayerFacts(player,gameDate);
+      player.age=ageAt(player.birth_date,gameDate,player.age);
       player=await resolvePlayerPhoto(player);
     }
     return h({
@@ -1991,13 +2032,21 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const [playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingDob,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
+    const [
+      playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,
+      ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,
+      active2025,doublesReal,raceReal,nextgenReal,juniorReal
+    ] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01"),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true),
       db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","ATP"),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Challenger"),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","ITF"),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Federation"),
       db.from("college_teams").select("id",{count:"exact",head:true}),
       db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true),
       db.from("ncaa_player_registry").select("player_id,status").limit(5000),
@@ -2005,7 +2054,7 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("birth_date",null),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("age",null),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
@@ -2037,7 +2086,8 @@ Deno.serve(async(req:Request)=>{
       officialChallenger:challengerTours.count??0,
       officialITF:itfTours.count??0,
       officialFederation:fedTours.count??0,
-      currentRankedMissingDob:currentMissingDob.count??0
+      currentRankedMissingAge:currentMissingAge.count??0,
+      currentRankedMissingDob:currentMissingAge.count??0
     });
   }
 

@@ -50,6 +50,7 @@ async function loadRankings(){
 }
 async function loadTournaments(){
  const p=new URLSearchParams({offset:String(tourOffset),limit:'60'});
+ if(!tourFilters.month)p.set('from',local.date||'2026-09-27');
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows;tourCount=d.count;
 }

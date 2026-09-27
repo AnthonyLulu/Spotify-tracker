@@ -12,6 +12,7 @@ const cors={
 const h=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
 const n=(v:unknown,d:number,min=0,max=5000)=>{const value=v==null||v===""?d:Number(v);return Math.max(min,Math.min(max,Number.isFinite(value)?value:d));};
 const normalizeName=(value:string)=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+const AGE_REFERENCE_DATE="2025-12-01";
 const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=null,fallbackSnapshot:string|null|undefined=null)=>{
   const target=new Date(String(at||new Date().toISOString().slice(0,10))+"T12:00:00Z");
   if(Number.isNaN(target.getTime()))return fallback;
@@ -561,7 +562,9 @@ async function syncJuniorDemographics(){
   const jtd=await fetchJuniorTennisDbBirthYears();
   const applied=await db.rpc("apply_jtd_junior_birth_years",{p_rows:jtd.rows,p_snapshot:"2026-09-21"});
   if(applied.error)throw applied.error;
-  return {source:jtd.url,parsed:jtd.rows.length,sample:jtd.rows.slice(0,10),apply:applied.data};
+  const pool=await db.rpc("refresh_junior_display_pool_v3",{p_target:2000});
+  if(pool.error)throw pool.error;
+  return {source:jtd.url,parsed:jtd.rows.length,sample:jtd.rows.slice(0,10),apply:applied.data,pool:pool.data};
 }
 
 async function fetchCoreTennisJuniorStatRows(url:string){
@@ -921,7 +924,7 @@ Deno.serve(async(req:Request)=>{
           ncaa_snapshot_date:meta?.snapshot_date??null,
           ncaa_source:meta?.source_label||meta?.source_url||p.ncaa_source||null,
           ncaa_current_verified:priority<=1,
-          age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
+          age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
           __priority:priority
         });
       };
@@ -996,7 +999,7 @@ Deno.serve(async(req:Request)=>{
         junior_snapshot_date:p.junior_rank_snapshot_date??p.junior_snapshot_date,
         junior_source:p.junior_rank_source??p.junior_source,
         junior_source_url:p.junior_rank_source_url??null,
-        age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
+        age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
         official_ranking:p.ranking_current?p.ranking:null,
         world_rank:p.game_world_rank,
         junior_status:p.rank_type==="official"
@@ -1050,7 +1053,7 @@ Deno.serve(async(req:Request)=>{
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
-    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),doubles_verified:!!p.doubles_source,official_ranking:p.ranking_current?p.ranking:null,world_rank:p.game_world_rank}));
+    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),doubles_verified:!!p.doubles_source,official_ranking:p.ranking_current?p.ranking:null,world_rank:p.game_world_rank}));
     return h({kind,offset,limit,count:count??0,rows,eligibility:kind==="nextgen"?"U"+nextGenU+" · ATP Next Gen Race 2026 · âge au snapshot/career date":kind==="junior"?"ITF Juniors · DOB vérifiée":null});
   }
 
@@ -1082,7 +1085,7 @@ Deno.serve(async(req:Request)=>{
         return ar-br||Number(b.potential||0)-Number(a.potential||0)||String(a.name||"").localeCompare(String(b.name||""));
       });
       const total=juniorPool.length;
-      let rows=juniorPool.slice(offset,offset+limit).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date)}));
+      let rows=juniorPool.slice(offset,offset+limit).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
       return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:total,rows,verifiedJuniorPool:true});
     }
 
@@ -1118,7 +1121,7 @@ Deno.serve(async(req:Request)=>{
     query=query.range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
-    let rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date)}));
+    let rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
     // Search/browse progressively enriches missing real-world facts without inventing DOBs.
     // ATP is already complete; NCAA/ITF pages hydrate a few missing profiles on every browse.
     if(q.length>=2||["NCAA","ITF","Junior"].includes(circuit)){
@@ -1126,7 +1129,7 @@ Deno.serve(async(req:Request)=>{
       if(enrich.length){
         const enriched=await Promise.all(enrich.map((p:any)=>resolvePlayerFacts({...p},gameDate)));
         const byId=new Map(enriched.map((p:any)=>[Number(p.id),p]));
-        rows=rows.map((p:any)=>byId.get(Number(p.id))??p).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date)}));
+        rows=rows.map((p:any)=>byId.get(Number(p.id))??p).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
       }
     }
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
@@ -1222,7 +1225,7 @@ Deno.serve(async(req:Request)=>{
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,ncaaTransfers,careerDate,legend,historicalSeasons] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,ncaaTransfers,careerDate,legend,historicalSeasons,juniorDisplay] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -1238,9 +1241,10 @@ Deno.serve(async(req:Request)=>{
       db.from("ncaa_transfer_history").select("*").eq("player_id",id).order("is_current",{ascending:false}).order("verified_at",{ascending:false}).limit(30),
       db.from("career_state").select("career_date").eq("id","demo").maybeSingle(),
       db.from("historical_legend_stats").select("*").eq("player_id",id).maybeSingle(),
-      db.from("historical_season_summary").select("*").eq("player_id",id).order("season",{ascending:false}).limit(80)
+      db.from("historical_season_summary").select("*").eq("player_id",id).order("season",{ascending:false}).limit(80),
+      db.from("junior_display_pool").select("*").eq("player_id",id).maybeSingle()
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||ncaaTransfers.error||careerDate.error||legend.error||historicalSeasons.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||ncaaTransfers.error||careerDate.error||legend.error||historicalSeasons.error||juniorDisplay.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
@@ -1251,9 +1255,33 @@ Deno.serve(async(req:Request)=>{
     }
     if(player){
       const gameDate=String(careerDate.data?.career_date||"2026-09-27");
-      player.age=ageAt(player.birth_date,gameDate,player.age);
+      player.age=ageAt(player.birth_date,gameDate,player.age,player.age_snapshot_date);
       player=await resolvePlayerFacts(player,gameDate);
-      player.age=ageAt(player.birth_date,gameDate,player.age);
+      player.age=ageAt(player.birth_date,AGE_REFERENCE_DATE,player.age,player.age_snapshot_date);
+      player.age_reference_date=AGE_REFERENCE_DATE;
+
+      if(juniorDisplay.data){
+        player.junior_ranking=juniorDisplay.data.display_rank;
+        player.junior_game_ranking=juniorDisplay.data.display_rank;
+        player.junior_rank_type=juniorDisplay.data.rank_type;
+        player.junior_official_ranking=juniorDisplay.data.official_rank;
+        player.junior_rank_source=juniorDisplay.data.source_label;
+        player.junior_rank_source_url=juniorDisplay.data.source_url;
+        player.junior_rank_snapshot_date=juniorDisplay.data.snapshot_date;
+      }
+
+      const ncaaRows=ncaa.data??[];
+      const bestNcaa=ncaaRows.find((x:any)=>x.status==="Active"&&x.ita_rank!=null)
+        ??ncaaRows.find((x:any)=>x.ita_rank!=null)
+        ??ncaaRows[0];
+      if(bestNcaa){
+        player.ncaa_rank=bestNcaa.ita_rank??player.ncaa_rank;
+        player.ncaa_school=bestNcaa.school??player.ncaa_school;
+        player.ncaa_division=bestNcaa.division??player.ncaa_division;
+        player.ncaa_status=bestNcaa.status??player.ncaa_status;
+        player.ncaa_snapshot_date=bestNcaa.snapshot_date??player.ncaa_snapshot_date;
+      }
+
       player=await resolvePlayerPhoto(player);
     }
     return h({
@@ -1385,7 +1413,7 @@ Deno.serve(async(req:Request)=>{
           .not("junior_source","is",null).not("junior_ranking","is",null).gte("age",13).lte("age",18)
           .order("junior_ranking",{ascending:true}).limit(drawSize);
         if(pool.error)return h({error:pool.error.message},500);
-        main=(pool.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,String(t.data.start_date||"2025-01-01"),p.age),ranking:p.junior_ranking,points:p.junior_points}));
+        main=(pool.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),ranking:p.junior_ranking,points:p.junior_points}));
       }
       return h({
         tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
@@ -3112,7 +3140,7 @@ Deno.serve(async(req:Request)=>{
       win_pct:[...nationalPool].filter((x:any)=>Number(x.wins||0)+Number(x.losses||0)>=50).sort((a:any,b:any)=>Number(b.win_pct||0)-Number(a.win_pct||0))[0]||null
     };
 
-    const ageRows=(youthRows.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),continent:continentOf(p.country)}));
+    const ageRows=(youthRows.data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),continent:continentOf(p.country)}));
     const youthFilter=(maxAge:number)=>ageRows.filter((p:any)=>{
       if(Number(p.age)>maxAge)return false;
       if(country&&p.country!==country)return false;

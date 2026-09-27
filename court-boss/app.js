@@ -59,6 +59,7 @@ let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
 let local={date:'2025-12-01',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
+local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
 function surfaceClass(s){const v=String(s||'');return v==='Terre'?'surface-clay':v==='Gazon'?'surface-grass':/intérieur/i.test(v)?'surface-indoor':'surface-hard'}
@@ -228,10 +229,10 @@ async function loadHistory(){
  try{historyData=await get('/api/history-hub?'+p.toString())}catch(e){historyData={rows:[],countryBest:[],continentBest:[],methodology:e.message,coverage:{players:0,countries:0}}}
 }
 async function loadTournaments(){
- const p=new URLSearchParams({offset:String(tourOffset),limit:'60'});
- if(!tourFilters.month&&!tourShowPast)p.set('from',local.date||RANKING_SNAPSHOT);
+ const p=new URLSearchParams({offset:String(tourOffset),limit:'150'});
+ if(!tourFilters.month)p.set('from','2025-12-01');
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
- const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows;tourTbc=d.tbc||[];tourCount=d.count;
+ const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows||[];tourTbc=d.tbc||[];tourCount=d.count||0;
 }
 async function loadRankingLedger(){try{rankingLedger=await get('/api/ranking-ledger?date='+(local.date||RANKING_SNAPSHOT))}catch(e){rankingLedger={total:((local.career&&local.career.points)||34),active:[],expired:[]}}}
 async function loadSeasonSummary(){try{seasonSummary=await get('/api/season-summary')}catch(e){seasonSummary={stats:{tournaments:0,titles:0,finals:0,prize:0,matches:0,wins:0},singles:[],doubles:[],singles_points:[],doubles_points:[]}}}
@@ -352,18 +353,98 @@ window.searchRanking=async q=>{rankQuery=q.trim();rankOffset=0;await loadRanking
 window.setRankCountry=async c=>{rankCountry=String(c||'').toUpperCase();rankOffset=0;await loadRankings();render()}
 window.rankPage=async d=>{rankOffset=Math.max(0,rankOffset+d*100);await loadRankings();render();window.scrollTo(0,0)}
 window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump')?.value||1),1,Math.max(1,rankCount));rankOffset=Math.floor((n-1)/100)*100;await loadRankings();render();window.scrollTo(0,0)}
+
+function calWeekStart(date){
+ const d=new Date(String(date||"2025-12-01")+"T12:00:00"),day=(d.getDay()+6)%7;
+ d.setDate(d.getDate()-day);return d.toISOString().slice(0,10);
+}
+function calWeekEnd(date){const d=new Date(calWeekStart(date)+"T12:00:00");d.setDate(d.getDate()+6);return d.toISOString().slice(0,10)}
+function calGameWeek(date){return Math.floor((new Date(calWeekStart(date)+"T12:00:00")-new Date("2025-12-01T12:00:00"))/604800000)+1}
+function calShortDate(date){return new Date(String(date)+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}).replace(".","")}
+function activeDoublesPartner(){
+ const m=(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(p=>Number(p?.id)===Number(local.partnerId))
+   ||(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean);
+ return m||doublesHubRows.find(p=>Number(p.id)===Number(local.partnerId))||null;
+}
+function tournamentStatus(t){
+ const now=String(local.date||"2025-12-01"),start=String(t.start_date||""),end=String(t.end_date||t.start_date||""),deadline=String(t.singles_entry_deadline||t.deadline||"");
+ if(end&&end<now)return {label:"Terminé",cls:""};
+ if(start&&start<=now&&end>=now)return {label:"En cours",cls:"good"};
+ if(deadline&&now>deadline&&now<start)return {label:"Inscriptions closes",cls:"bad"};
+ if(deadline&&now<=deadline)return {label:"Inscriptions ouvertes",cls:"good"};
+ return {label:"À venir",cls:"warn"};
+}
+function tmCuts(t){return {direct:Number(t.direct_cut??t.projected_direct_cut??0)||null,qual:Number(t.qual_cut??t.projected_qual_cut??0)||null,projected:t.direct_cut==null&&t.projected_direct_cut!=null}}
+function singlesEligibility(t){
+ const c=career(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
+ if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
+ if(String(t.circuit)==="NCAA")return {label:String(t.registration_mode)==="ncaa_individual_selection"?"Sélection NCAA/ITA":"Via université",cls:"info",can:false};
+ if(String(t.circuit)==="Junior"){
+  if(age>18)return {label:"Non éligible U18",cls:"bad",can:false};
+  const jr=Number(c.junior_rank||c.junior_ranking||99999);
+  if(cuts.direct&&jr<=cuts.direct)return {label:"Tableau direct junior",cls:"good",can:true};
+  if(cuts.qual&&jr<=cuts.qual)return {label:"Qualifs junior",cls:"warn",can:true};
+  return {label:"Alternate junior",cls:"",can:true};
+ }
+ if(String(t.circuit)==="ATP"&&rank>500)return {label:"WC / alternate seulement",cls:"bad",can:false};
+ if(cuts.direct&&rank<=cuts.direct)return {label:"Tableau direct",cls:"good",can:true};
+ if(cuts.qual&&rank<=cuts.qual)return {label:"Qualifications",cls:"warn",can:true};
+ if(String(t.circuit)==="ITF")return {label:"Alternate / WTN",cls:"",can:true};
+ return {label:"Alternate / hors cut",cls:"",can:true};
+}
+function doublesEligibility(t){
+ const partner=activeDoublesPartner(),c=career(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
+ if(!t.doubles)return {label:"Pas de double",cls:"",can:false};
+ if(String(t.circuit)==="NCAA")return {label:"Via lineup NCAA",cls:"info",can:false};
+ if(String(t.circuit)==="Federation")return {label:"Par sélection",cls:"info",can:false};
+ if(!partner)return {label:"Partenaire requis",cls:"warn",can:false};
+ if(String(t.entry_rule_code)==="ITF_M15")return {label:"Sign-in sur site",cls:"warn",can:true};
+ if(String(t.entry_rule_code)==="ITF_M25"&&(myRank>=99999||partnerRank>=99999))return {label:"Sur site uniquement",cls:"warn",can:true};
+ const combined=(myRank>=99999||partnerRank>=99999)?null:myRank+partnerRank;
+ return {label:combined?"Rang combiné "+fmt(combined):"Équipe enregistrable",cls:"good",can:true};
+}
+function tournamentThumb(t){
+ if(t.image_url)return "<img class='tm-tour-photo' src='"+esc(t.image_url)+"' alt='"+esc(t.name)+"' onerror=\"this.style.display='none';this.nextElementSibling.style.display='grid'\"><span class='tm-tour-fallback' style='display:none'>"+(flags[t.country]||"🎾")+"</span>";
+ return "<span class='tm-tour-fallback'>"+(flags[t.country]||"🎾")+"<small>"+esc(String(t.category||t.circuit||"").replace("Challenger ","CH"))+"</small></span>";
+}
+function tournamentTmRow(t){
+ const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
+ const deadline=t.singles_entry_deadline||t.deadline;
+ const sBtn=se.can?"<button class='"+(joined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleSinglesEntry("+t.id+")'>"+(joined?"S ✓":"S +")+"</button>":"<button class='ghost tm-entry-btn' disabled>S —</button>";
+ const dBtn=de.can?"<button class='"+(dJoined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleDoublesEntry("+t.id+")'>"+(dJoined?"D ✓":"D +")+"</button>":"<button class='ghost tm-entry-btn' disabled>D —</button>";
+ return "<tr class='click "+(joined||dJoined?"tm-entered":"")+"' onclick='openTournament("+t.id+")'>"+
+  "<td>"+tournamentThumb(t)+"</td>"+
+  "<td><b>"+(flags[t.country]||"🏳️")+" "+esc(t.name)+"</b><div class='muted micro'>"+esc(t.city||"")+" · "+df(t.start_date)+"–"+df(t.end_date||t.start_date)+" · <span class='badge "+circuitClass(t.circuit)+"'>"+esc(t.category||t.circuit)+"</span>"+(t.is_verified?" <span class='badge good'>Officiel</span>":"")+"</div></td>"+
+  "<td><span class='"+surfaceClass(surfaceLabel(t))+"'>"+esc(surfaceLabel(t))+"</span></td>"+
+  "<td><b>S "+(t.singles_draw_size||t.draw_size||"—")+"</b><div class='muted micro'>D "+(t.doubles?(t.doubles_draw_size||"—"):"—")+" · Q "+(t.qualifying_draw_size||"—")+"</div></td>"+
+  "<td><b>"+(t.winner_points!=null?fmt(t.winner_points):"—")+"</b></td>"+
+  "<td><b>"+(t.prize_money!=null?euro(t.prize_money):"—")+"</b></td>"+
+  "<td><span class='badge "+st.cls+"'>"+st.label+"</span><div class='muted micro "+se.cls+"'>"+esc(se.label)+(t.cut_is_projection&&t.projected_direct_cut?" · cut proj.":"")+"</div><div class='muted micro'>"+esc(de.label)+"</div></td>"+
+  "<td><b>"+(deadline?df(deadline):"—")+"</b><div class='muted micro'>"+(t.doubles_entry_deadline?"D "+df(t.doubles_entry_deadline):"")+"</div></td>"+
+  "<td><div class='tm-entry-actions'>"+sBtn+dBtn+"<button class='ghost tm-entry-btn' onclick='event.stopPropagation();openTournament("+t.id+")'>›</button></div></td>"+
+ "</tr>";
+}
+function renderTournamentWeeks(){
+ const groups={};(tourRows||[]).forEach(t=>{const k=calWeekStart(t.start_date);(groups[k]??=[]).push(t)});
+ return Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([week,rows])=>{
+  const current=calWeekStart(local.date||"2025-12-01")===week;
+  return "<section class='tm-week "+(current?"current":"")+"'><div class='tm-week-head'><div><span class='tm-week-num'>S"+calGameWeek(week)+"</span><b>"+calShortDate(week)+" → "+calShortDate(calWeekEnd(week))+"</b>"+(current?" <span class='badge good'>Semaine actuelle</span>":"")+"</div><span class='muted mini'>"+rows.length+" tournoi"+(rows.length>1?"s":"")+"</span></div><div class='table-wrap'><table class='table tm-calendar-table'><thead><tr><th></th><th>Pays / tournoi</th><th>Surface</th><th>Tableaux</th><th>Pts</th><th>Prize money</th><th>Statut / accès</th><th>Deadline</th><th>Actions</th></tr></thead><tbody>"+rows.map(tournamentTmRow).join("")+"</tbody></table></div></section>";
+ }).join("");
+}
+
 function calendar(){
  const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','J500','J300','J200','J100','J60','J30','Junior Finals','Junior Davis Cup','NCAA DI Team Championship','NCAA DI Individual Championship','NCAA','Junior','Davis Cup'];
  const circs=['Tous','ATP','Challenger','ITF','NCAA','Junior','Federation'];
  const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Moquette'];
  const officialCount=worldStats?.verifiedTournaments||0;
  const coverage=`ATP ${fmt(worldStats?.officialATP||0)} · CH ${fmt(worldStats?.officialChallenger||0)} · ITF ${fmt(worldStats?.officialITF||0)} · Junior ${fmt(worldStats?.officialJunior||0)} · NCAA ${fmt(worldStats?.officialNCAA||0)} · Davis ${fmt(worldStats?.officialFederation||0)}`;
- return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, Juniors, NCAA et Coupe Davis. Par défaut : à partir de la date de ta carrière.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button class="${tourShowPast?'primary':'ghost'}" onclick="toggleFullCalendar()">${tourShowPast?'Calendrier complet':'Voir toute la saison'}</button><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
+ return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, Juniors, NCAA et Coupe Davis. Base de départ : 01/12/2025 · affichage hebdomadaire inspiré de Tennis Manager.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button class="${tourShowPast?'primary':'ghost'}" onclick="toggleFullCalendar()">${tourShowPast?'Calendrier complet':'Voir toute la saison'}</button><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
  <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${String(t.environment||'')==='Indoor'?'surface-indoor':surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</span> · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
- <div class="stack">${tourRows.map(t=>tournamentCard(t)).join('')||'<div class="card empty">Aucun tournoi daté pour ces filtres.</div>'}</div>
+ <div class="tm-calendar-rulebar"><span><b>ATP Tour</b> : simple 28 j · qualifs 21 j · double 14 j</span><span><b>Challenger</b> : double 7 j + sign-in</span><span><b>M25</b> : advance + sur site</span><span><b>M15</b> : double sur site</span><span><b>NCAA</b> : roster/lineup, pas d’inscription libre</span></div>
+ <div class="tm-calendar-weeks">${renderTournamentWeeks()||'<div class="card empty">Aucun tournoi daté pour ces filtres.</div>'}</div>
  ${tourTbc.length?`<div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Date à confirmer</div><h2>Événements officiels TBC</h2></div></div><div class="stack">${tourTbc.map(t=>`<div class="card"><div class="row between"><div><span class="badge good">Officiel · TBC</span><h2 style="margin:8px 0 4px">${esc(t.name)}</h2><div class="muted">${esc(t.city||'TBC')} · date à confirmer · <span class="surface-indoor">${esc(surfaceLabel(t))}</span></div></div><span class="badge">${esc(t.category||'ATP')}</span></div></div>`).join('')}</div>`:''}
  <div class="pagination"><button ${tourOffset===0?'disabled':''} onclick="tourPage(-1)">←</button><span class="muted mini">${tourCount?fmt(tourOffset+1):0}–${fmt(Math.min(tourOffset+tourRows.length,tourCount))} / ${fmt(tourCount)}</span><button ${tourOffset+60>=tourCount?'disabled':''} onclick="tourPage(1)">→</button></div>`
 }
@@ -377,7 +458,7 @@ function tournamentCard(t){
 }
 window.tourFilter=async(k,v)=>{tourFilters[k]=v;if(k==='circuit'&&v==='Junior'&&tourFilters.source==='Tous')tourFilters.source='Officiel';tourOffset=0;await loadTournaments();render()}
 window.toggleFullCalendar=async()=>{tourShowPast=!tourShowPast;tourOffset=0;await loadTournaments();render()}
-window.tourPage=async d=>{tourOffset=Math.max(0,tourOffset+d*60);await loadTournaments();render();window.scrollTo(0,0)}
+window.tourPage=async d=>{tourOffset=Math.max(0,tourOffset+d*150);await loadTournaments();render();window.scrollTo(0,0)}
 function datesOverlap(aStart,aEnd,bStart,bEnd){
  const a1=new Date((aStart||aEnd)+'T12:00:00'),a2=new Date((aEnd||aStart)+'T12:00:00'),b1=new Date((bStart||bEnd)+'T12:00:00'),b2=new Date((bEnd||bStart)+'T12:00:00');
  return a1<=b2&&b1<=a2;

@@ -396,3 +396,9 @@ body{background:
 .davis-later{border:1px dashed var(--line2);border-radius:9px;padding:8px;background:rgba(255,255,255,.02)}
 .davis-later span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.08em}.davis-later b{display:block;margin-top:4px;font-size:11px}
 @media(max-width:520px){.davis-later-rounds{grid-template-columns:1fr}}
+
+.fm-live-toolbar{display:grid;grid-template-columns:1.7fr repeat(3,.7fr);gap:6px;margin-top:10px}
+.fm-live-toolbar button{min-height:40px}.fm-live-toolbar .soft-btn.active{background:#1a3929;border-color:rgba(183,255,67,.5);color:var(--accent)}
+.fm-ball{animation:fmBallPulse .8s ease-in-out infinite alternate}
+@keyframes fmBallPulse{from{box-shadow:0 0 5px rgba(234,255,83,.55)}to{box-shadow:0 0 14px rgba(234,255,83,1)}}
+@media(max-width:430px){.fm-live-toolbar{grid-template-columns:1.5fr repeat(3,.75fr)}}

@@ -387,6 +387,51 @@ async function fetchCoreTennisJuniorRows(url:string){
   }
   return rows;
 }
+async function fetchJuniorTennisDbBirthYears(){
+  const url="https://tennisdbjp.com/junior-en/list/wboysrank.html";
+  const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+junior-demographics-sync)","Accept":"text/html"}});
+  if(!res.ok)throw new Error("Junior Tennis Database HTTP "+res.status);
+  const html=await res.text();
+  const rows:any[]=[];
+  for(const row of html.match(/<tr\b[\s\S]*?<\/tr>/gi)||[]){
+    const cells=rowCells(row);
+    if(cells.length<3)continue;
+    const rank=Number((String(cells[0]?.text||"").match(/\b(\d{1,3})\b/)||[])[1]||0);
+    const ym=htmlText(row).match(/\b(200[7-9]|201[0-3])\b/);
+    if(!rank||!ym)continue;
+    const birth_year=Number(ym[1]);
+    const link=row.match(/href=["'][^"']*\/junior-en\/player\/\d+\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/i)
+      || row.match(/href=["'][^"']*\/player\/\d+\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+    let name=link?htmlText(String(link[1]||"")):String(cells[1]?.text||"").trim();
+    name=name.replace(/\b[A-Z]{3}\s*[·•]?\s*(?:200[7-9]|201[0-3])\b/g," ").replace(/\s+/g," ").trim();
+    if(!name||name.length<3)continue;
+    let country="";
+    const last=String(cells[cells.length-1]?.text||"").trim().toUpperCase();
+    if(/^[A-Z]{3}$/.test(last))country=last;
+    if(!country){
+      const pcm=String(cells[1]?.text||"").match(/\b([A-Z]{3})\s*[·•]?\s*(?:200[7-9]|201[0-3])\b/);
+      if(pcm)country=pcm[1];
+    }
+    if(!country){
+      const plain=htmlText(row);
+      const cms=[...plain.matchAll(/\b([A-Z]{3})\b/g)].map((m:any)=>m[1]);
+      country=cms.length?cms[cms.length-1]:"";
+    }
+    if(!/^[A-Z]{3}$/.test(country))continue;
+    rows.push({ranking:rank,name,country,birth_year});
+  }
+  const dedup=[...new Map(rows.map((x:any)=>[normalizeName(x.name)+"|"+x.country,x])).values()]
+    .sort((a:any,b:any)=>a.ranking-b.ranking)
+    .slice(0,200);
+  return {url,rows:dedup};
+}
+async function syncJuniorDemographics(){
+  const jtd=await fetchJuniorTennisDbBirthYears();
+  const applied=await db.rpc("apply_jtd_junior_birth_years",{p_rows:jtd.rows,p_snapshot:"2026-09-21"});
+  if(applied.error)throw applied.error;
+  return {source:jtd.url,parsed:jtd.rows.length,sample:jtd.rows.slice(0,10),apply:applied.data};
+}
+
 async function fetchCoreTennisJuniorStatRows(url:string){
   const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+junior-profile-sync)","Accept":"text/html"}});
   if(!res.ok)throw new Error("CoreTennis stats HTTP "+res.status);
@@ -1038,6 +1083,11 @@ Deno.serve(async(req:Request)=>{
       }
       return h({snapshot,discovered:merged.size,staged:stageRows.length,sources:stats,rows:[...merged.values()].map((p:any)=>({name:p.name,country:p.country,ranking:p.ranking}))});
     }catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
+  if(path.endsWith("/api/sync-junior-demographics")&&req.method==="GET"){
+    try{return h(await syncJuniorDemographics())}
+    catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
   if(path.endsWith("/api/sync-real-juniors")&&req.method==="GET"){

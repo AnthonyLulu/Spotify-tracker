@@ -1202,9 +1202,9 @@ window.openTournamentHistoryItem=function(i){
         </div>
         <div class="grid g2" style="margin-top:12px">
           <div class="card"><div class="eyebrow">Résultat</div><div class="hero-name" style="font-size:28px">${esc(h.result_code||'—')}</div><div class="muted">${esc(h.result_label||'')}</div></div>
-          <div class="card"><div class="eyebrow">Dernier match</div><h2>vs ${esc(h.last_opponent||'—')}</h2><div class="muted">${esc(h.last_score||'Score non renseigné')}</div></div>
+          <div class="card"><div class="eyebrow">Dernier match</div><h2 class="${h.last_opponent?'click':''}" ${h.last_opponent?`onclick="openPlayerByName('${esc(String(h.last_opponent).replace(/'/g,"\\'"))}')"`:''}>vs ${esc(h.last_opponent||'—')}</h2><div class="muted">${esc(h.last_score||'Score non renseigné')}</div></div>
         </div>
-        <div class="notice mini" style="margin-top:12px">Source historique : ${esc(h.source||'archive ATP')}.</div>
+        <div class="notice mini" style="margin-top:12px">Source historique : ${String(h.source||'').startsWith('http')?`<a href="${esc(h.source)}" target="_blank" rel="noopener noreferrer">ouvrir la source</a>`:esc(h.source||'archive ATP')}.</div>
       </div>
     </div>`;
 };

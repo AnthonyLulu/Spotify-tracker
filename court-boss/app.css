@@ -452,3 +452,13 @@ body{background:
 .tm-tour-hero-overlay{position:absolute;left:10px;bottom:10px;z-index:2;display:flex;gap:6px;flex-wrap:wrap}
 .tm-calendar-advice summary{list-style:none}.tm-calendar-advice summary::-webkit-details-marker{display:none}
 @media(max-width:640px){.tm-tour-hero{height:150px}}
+
+.tm-advanced-filters{margin-top:10px;background:linear-gradient(135deg,rgba(183,255,67,.05),transparent 42%),#0a1711}
+.tm-filter-grid{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:7px;margin-top:10px}
+.tm-holder{display:flex;flex-direction:column;gap:2px;cursor:pointer;max-width:150px}
+.tm-holder span{font-size:11px;font-weight:900;white-space:normal;line-height:1.2}
+.tm-holder small{font-size:8px;color:var(--muted)}
+.tm-holder:hover span{color:var(--accent)}
+.tm-calendar-table th:nth-child(7),.tm-calendar-table td:nth-child(7){min-width:145px}
+@media(max-width:1100px){.tm-filter-grid{grid-template-columns:repeat(4,minmax(120px,1fr))}}
+@media(max-width:720px){.tm-filter-grid{grid-template-columns:1fr 1fr}.tm-calendar-table{min-width:1120px}}

@@ -25,9 +25,14 @@ jobs:
           node --check court-boss/tactics.js
           node --check court-boss/modules.js
 
+      - name: Publish current branch to Supabase Storage
+        run: |
+          curl --fail --silent --show-error https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-publish -o /tmp/publish.json
+          node -e "const x=require('/tmp/publish.json'); if(!x.ok) throw new Error(JSON.stringify(x)); console.log(x.results.map(f=>f.name+':'+f.bytes).join(' | '))"
+
       - name: Check published HTML and assets
         env:
-          BASE: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-static-publish
+          BASE: https://qrsvliliezbiedmaewml.supabase.co/storage/v1/object/public/court-boss-web
         run: |
           curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
           grep -q 'Court Boss' /tmp/index.html
@@ -52,7 +57,7 @@ jobs:
 
       - name: Mobile browser smoke test
         env:
-          BASE: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-static-publish
+          BASE: https://qrsvliliezbiedmaewml.supabase.co/storage/v1/object/public/court-boss-web
         run: |
           cd /tmp
           npm init -y >/dev/null 2>&1

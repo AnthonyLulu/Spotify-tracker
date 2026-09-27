@@ -346,7 +346,7 @@ const isCurrentJuniorProfile=(p:any)=>{
   if(p?.is_real===true&&/^CoreTennis/i.test(src))return true;
   return p?.is_real===true&&Number.isFinite(age)&&age>=13&&age<=18&&!!src;
 };
-const JUNIOR_POOL_SELECT="id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,height_source,height_verified,weight_kg,weight_source,weight_verified,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified";
+const JUNIOR_POOL_SELECT="id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified";
 async function loadJuniorPoolCandidates(rankedOnly=false){
   const all:any[]=[];
   for(let start=0;start<5000;start+=1000){
@@ -839,48 +839,118 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(kind==="junior"){
-      let juniorQuery=db.from("junior_world_ranking_view").select("*",{count:"exact"});
-      if(q)juniorQuery=juniorQuery.ilike("name_norm",`%${normalizeName(q)}%`);
-      if(country)juniorQuery=juniorQuery.eq("country",country);
-      juniorQuery=juniorQuery.order("game_rank",{ascending:true}).range(offset,offset+limit-1);
-
-      const [page,realCount,generatedCount,verifiedCount,generatedTotal] = await Promise.all([
-        juniorQuery,
-        db.from("junior_world_ranking").select("player_id",{count:"exact",head:true}).eq("rank_type","official"),
-        db.from("junior_world_ranking").select("player_id",{count:"exact",head:true}).eq("rank_type","simulated"),
-        db.from("junior_verified_reference").select("identity_key",{count:"exact",head:true}),
-        db.from("players").select("id",{count:"exact",head:true})
-          .eq("game_generated",true).eq("career_status","active")
+      const juniorPlayerSelect="id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified";
+      const [verifiedRefs,generated0,generated1] = await Promise.all([
+        db.from("junior_verified_reference")
+          .select("identity_key,official_rank,snapshot_date,source_url,source_label,verified,players!inner("+juniorPlayerSelect+")")
+          .eq("verified",true)
+          .order("official_rank",{ascending:true,nullsFirst:false})
+          .order("name",{ascending:true})
+          .limit(1000),
+        db.from("players").select(juniorPlayerSelect)
+          .eq("game_generated",true)
+          .eq("is_real",false)
+          .eq("career_status","active")
+          .not("junior_ranking","is",null)
+          .ilike("junior_source","Court Boss simulated junior%")
           .gte("age",13).lte("age",17)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+          .order("junior_ranking",{ascending:true})
+          .range(0,999),
+        db.from("players").select(juniorPlayerSelect)
+          .eq("game_generated",true)
+          .eq("is_real",false)
+          .eq("career_status","active")
+          .not("junior_ranking","is",null)
+          .ilike("junior_source","Court Boss simulated junior%")
+          .gte("age",13).lte("age",17)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+          .order("junior_ranking",{ascending:true})
+          .range(1000,1999)
       ]);
-      const e=page.error||realCount.error||generatedCount.error||verifiedCount.error||generatedTotal.error;
+      const e=verifiedRefs.error||generated0.error||generated1.error;
       if(e)return h({error:e.message},500);
 
-      const rows=(page.data??[]).map((p:any)=>({
+      const realRows:any[]=[];
+      for(const x of verifiedRefs.data??[]){
+        const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
+        if(!p?.id||String(p.data_source||"").startsWith("hidden duplicate merged into "))continue;
+        const raw=(x as any).official_rank;
+        const officialRank=raw==null?null:Number(raw);
+        realRows.push({
+          ...p,
+          junior_official_ranking:Number.isFinite(officialRank as number)?officialRank:null,
+          junior_snapshot_date:(x as any).snapshot_date??p.junior_snapshot_date,
+          junior_source:(x as any).source_label??p.junior_source,
+          junior_source_url:(x as any).source_url??null,
+          junior_rank_type:officialRank==null?"verified_nr":"official"
+        });
+      }
+      realRows.sort((a:any,b:any)=>{
+        const ar=a.junior_official_ranking==null?999999:Number(a.junior_official_ranking);
+        const br=b.junior_official_ranking==null?999999:Number(b.junior_official_ranking);
+        return ar-br||String(a.name||"").localeCompare(String(b.name||""));
+      });
+
+      const genById=new Map<number,any>();
+      for(const p of [...(generated0.data??[]),...(generated1.data??[])]){
+        if(!p?.id||String(p.data_source||"").startsWith("hidden duplicate merged into "))continue;
+        const id=Number(p.id);
+        if(!genById.has(id))genById.set(id,p);
+      }
+      const genRows=[...genById.values()].sort((a:any,b:any)=>{
+        return Number(a.junior_ranking??999999)-Number(b.junior_ranking??999999)
+          || Number(b.potential||0)-Number(a.potential||0)
+          || String(a.name||"").localeCompare(String(b.name||""));
+      });
+
+      const rankedReal=realRows.filter((p:any)=>p.junior_official_ranking!=null);
+      const unrankedReal=realRows.filter((p:any)=>p.junior_official_ranking==null);
+
+      const globalRows=[
+        ...rankedReal.map((p:any)=>({
+          ...p,
+          junior_ranking:p.junior_official_ranking,
+          junior_status:"ITF vérifié"
+        })),
+        ...unrankedReal.map((p:any)=>({
+          ...p,
+          junior_ranking:null,
+          junior_status:"ITF vérifié · NR"
+        })),
+        ...genRows.map((p:any,i:number)=>({
+          ...p,
+          junior_simulated_rank:i+1,
+          junior_rank_type:"simulated",
+          junior_status:"Newgen simulé"
+        }))
+      ].map((p:any)=>({
         ...p,
-        junior_ranking:Number(p.game_rank),
-        junior_rank_type:p.rank_type,
-        junior_snapshot_date:p.junior_rank_snapshot_date??p.junior_snapshot_date,
-        junior_source:p.junior_rank_source??p.junior_source,
-        junior_source_url:p.junior_rank_source_url??null,
         age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
         official_ranking:p.ranking_current?p.ranking:null,
-        world_rank:p.game_world_rank,
-        junior_status:p.rank_type==="official"?"ITF vérifié":"Newgen simulé"
+        world_rank:p.game_world_rank
       }));
 
+      let filtered=globalRows;
+      if(q){
+        const nq=normalizeName(q);
+        filtered=filtered.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));
+      }
+      if(country)filtered=filtered.filter((x:any)=>String(x.country||"").toUpperCase()===country);
+
+      const total=filtered.length;
+      const rows=filtered.slice(offset,offset+limit);
       return h({
-        kind,offset,limit,count:page.count??0,rows,
-        officialRealCount:realCount.count??0,
-        generatedCount:generatedCount.count??0,
-        generatedReserve:Math.max(0,Number(generatedTotal.count||0)-Number(generatedCount.count||0)),
-        verifiedProfiles:verifiedCount.count??0,
-        eligibility:"ITF Juniors · vrais profils vérifiés + 1 200 newgens classés 13–17 + réserve dynamique",
-        rankingDate:"2026-09-27"
+        kind,offset,limit,count:total,rows,
+        officialRealCount:realRows.length,
+        officialRankedCount:rankedReal.length,
+        verifiedUnrankedCount:unrankedReal.length,
+        generatedCount:genRows.length,
+        verifiedProfiles:realRows.length,
+        eligibility:"ITF Juniors · vrais profils vérifiés + newgens Court Boss 13–17",
+        rankingDate:"2026-09-21"
       });
     }
-
 
     let orderCol=kind==="singles"?"game_world_rank":"ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
@@ -946,7 +1016,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     let query=db.from("players")
-      .select("id,name,country,is_real,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,height_source,height_verified,weight_kg,weight_source,weight_verified,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
+      .select("id,name,country,is_real,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(ageMax<99) query=query.lte("age",ageMax);
 

@@ -463,23 +463,44 @@ function datesOverlap(aStart,aEnd,bStart,bEnd){
  const a1=new Date((aStart||aEnd)+'T12:00:00'),a2=new Date((aEnd||aStart)+'T12:00:00'),b1=new Date((bStart||bEnd)+'T12:00:00'),b2=new Date((bEnd||bStart)+'T12:00:00');
  return a1<=b2&&b1<=a2;
 }
-window.toggleEntry=id=>{
+
+function findTournamentById(id){return [...(tourRows||[]),...(boot?.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>Number(x.id)===Number(id))}
+window.toggleSinglesEntry=id=>{
  local.entries=local.entries||[];local.entryMeta=local.entryMeta||{};
  const exists=local.entries.includes(id);
- if(exists){
-   local.entries=local.entries.filter(x=>x!==id);delete local.entryMeta[id];persist();render();return;
- }
- const t=[...(tourRows||[]),...(boot.upcoming||[])].find(x=>x.id===id);
- if(t){
-   const conflict=Object.entries(local.entryMeta).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(t.start_date,t.end_date,e.start_date,e.end_date));
-   if(conflict){
-     alert('Conflit calendrier avec '+conflict[1].name+' ('+df(conflict[1].start_date)+'). Retire d’abord l’autre inscription.');
-     return;
-   }
-   local.entryMeta[id]={name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category};
- }
+ if(exists){local.entries=local.entries.filter(x=>x!==id);delete local.entryMeta[id];persist();render();return}
+ const t=findTournamentById(id);if(!t)return;
+ const elig=singlesEligibility(t);if(!elig.can){alert(elig.label);return}
+ const deadline=t.singles_entry_deadline||t.deadline;
+ if(deadline&&String(local.date||"2025-12-01")>String(deadline)){alert("Deadline simple dépassée : "+df(deadline));return}
+ const conflict=Object.entries(local.entryMeta).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(t.start_date,t.end_date,e.start_date,e.end_date));
+ if(conflict){alert("Conflit calendrier avec "+conflict[1].name+" ("+df(conflict[1].start_date)+").");return}
+ const dConflict=Object.entries(local.doublesEntryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(t.start_date,t.end_date,e.start_date,e.end_date));
+ if(dConflict){alert("Tu es déjà engagé en double à "+dConflict[1].name+" cette semaine.");return}
+ local.entryMeta[id]={name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,status:elig.label};
  local.entries.push(id);persist();render();
 }
+window.toggleDoublesEntry=id=>{
+ local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
+ const exists=local.doublesEntries.includes(id);
+ if(exists){local.doublesEntries=local.doublesEntries.filter(x=>x!==id);delete local.doublesEntryMeta[id];persist();render();return}
+ const t=findTournamentById(id);if(!t)return;
+ const elig=doublesEligibility(t);if(!elig.can){alert(elig.label);return}
+ const deadline=t.doubles_entry_deadline;
+ if(deadline&&String(local.date||"2025-12-01")>String(deadline)&&String(t.entry_rule_code)!=="ITF_M15"){
+   alert("Deadline double dépassée : "+df(deadline)+(String(t.circuit)==="Challenger"||String(t.entry_rule_code)==="ITF_M25"?" · un sign-in sur site peut encore être possible selon le tournoi.":""));
+   return;
+ }
+ const sConflict=Object.entries(local.entryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(t.start_date,t.end_date,e.start_date,e.end_date));
+ if(sConflict){alert("Tu es déjà engagé en simple à "+sConflict[1].name+" cette semaine.");return}
+ const dConflict=Object.entries(local.doublesEntryMeta).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(t.start_date,t.end_date,e.start_date,e.end_date));
+ if(dConflict){alert("Conflit double avec "+dConflict[1].name+".");return}
+ const partner=activeDoublesPartner();
+ local.doublesEntryMeta[id]={name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,partner_id:partner?.id,partner_name:partner?.name,status:elig.label};
+ local.doublesEntries.push(id);persist();render();
+}
+window.toggleEntry=window.toggleSinglesEntry;
+
 function academy(){
  const a=boot.academy||{},c=career();
  const roster=management?.academyRoster||[];

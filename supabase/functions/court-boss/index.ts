@@ -274,7 +274,16 @@ Deno.serve(async(req:Request)=>{
     query=query.range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
-    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age)}));
+    let rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age)}));
+    // Targeted searches progressively enrich missing real-world facts without inventing DOBs.
+    if(q.length>=2){
+      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url)).slice(0,4);
+      if(enrich.length){
+        const enriched=await Promise.all(enrich.map((p:any)=>resolvePlayerFacts({...p},gameDate)));
+        const byId=new Map(enriched.map((p:any)=>[Number(p.id),p]));
+        rows=rows.map((p:any)=>byId.get(Number(p.id))??p).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age)}));
+      }
+    }
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
   }
 

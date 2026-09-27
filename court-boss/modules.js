@@ -773,3 +773,152 @@ window.createCustomPlayerV2=async()=>{
     overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Création impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`;
   }
 }
+
+
+window.renderPalmaresHtml=function(d,p){
+  const titles=d?.titles||[];
+  const cs=d?.careerStats||{};
+  window.__cbPalmares={player:p,titles};
+
+  const levels=titles.reduce((acc,t)=>{
+    const raw=String(t.level||'ATP').trim();
+    let key='Autres';
+    if(/Grand Chelem|Grand Slam/i.test(raw))key='Grand Chelem';
+    else if(/Masters 1000|Masters/i.test(raw))key='Masters 1000';
+    else if(/^500$|ATP 500/i.test(raw))key='ATP 500';
+    else if(/^250$|ATP 250/i.test(raw))key='ATP 250';
+    else if(/Finals/i.test(raw))key='ATP Finals';
+    else if(/^O$|Olymp/i.test(raw))key='Jeux olympiques';
+    else if(/Challenger/i.test(raw))key='Challenger';
+    else if(/Davis/i.test(raw))key='Coupe Davis';
+    else if(/ATP Tour/i.test(raw))key='ATP Tour';
+    acc[key]=(acc[key]||0)+1;
+    return acc;
+  },{});
+
+  const surfaces={
+    hard:titles.filter(t=>/Hard|Dur/i.test(String(t.surface||''))).length,
+    clay:titles.filter(t=>/Clay|Terre/i.test(String(t.surface||''))).length,
+    grass:titles.filter(t=>/Grass|Gazon/i.test(String(t.surface||''))).length
+  };
+
+  const years={};
+  titles.forEach((t,i)=>{
+    const y=String(t.title_date||'').slice(0,4)||'Sans date';
+    (years[y]??=[]).push({...t,__i:i});
+  });
+  const yearRows=Object.entries(years).sort((a,b)=>Number(b[0])-Number(a[0]));
+  const bestSeason=yearRows.length?yearRows.reduce((best,x)=>x[1].length>best[1].length?x:best,yearRows[0]):null;
+
+  const repeated=Object.entries(titles.reduce((acc,t)=>{
+    const k=String(t.tournament_name||'Tournoi');
+    acc[k]=(acc[k]||0)+1;
+    return acc;
+  },{})).sort((a,b)=>b[1]-a[1]);
+
+  const first=titles.length?titles[titles.length-1]:null;
+  const last=titles[0]||null;
+  const totalMatches=Number(cs.wins||0)+Number(cs.losses||0);
+  const winPct=totalMatches?Math.round(Number(cs.wins||0)/totalMatches*100):0;
+  const pct=(w,l)=>{
+    const n=Number(w||0)+Number(l||0);
+    return n?Math.round(Number(w||0)/n*100):0;
+  };
+
+  const catOrder=['Grand Chelem','Masters 1000','ATP Finals','ATP 500','ATP 250','Jeux olympiques','ATP Tour','Challenger','Coupe Davis','Autres'];
+
+  return `
+    <div class="grid g2">
+      <div class="card">
+        <div class="row between"><h2>Résumé du palmarès</h2><span class="badge good">${titles.length} titre${titles.length>1?'s':''}</span></div>
+        <div class="kpi-strip">
+          <div class="kpi"><span class="muted mini">Grand Chelem</span><b>${levels['Grand Chelem']||0}</b></div>
+          <div class="kpi"><span class="muted mini">Masters 1000</span><b>${levels['Masters 1000']||0}</b></div>
+          <div class="kpi"><span class="muted mini">ATP 500</span><b>${levels['ATP 500']||0}</b></div>
+          <div class="kpi"><span class="muted mini">ATP 250</span><b>${levels['ATP 250']||0}</b></div>
+        </div>
+        <div class="kpi-strip" style="margin-top:8px">
+          <div class="kpi"><span class="muted mini">ATP Finals</span><b>${levels['ATP Finals']||0}</b></div>
+          <div class="kpi"><span class="muted mini">JO</span><b>${levels['Jeux olympiques']||0}</b></div>
+          <div class="kpi"><span class="muted mini">Premier titre</span><b style="font-size:12px">${first?df(first.title_date):'—'}</b></div>
+          <div class="kpi"><span class="muted mini">Dernier titre</span><b style="font-size:12px">${last?df(last.title_date):'—'}</b></div>
+        </div>
+        ${bestSeason?`<div class="notice mini" style="margin-top:10px"><b>Meilleure saison :</b> ${bestSeason[0]} · ${bestSeason[1].length} trophée(s)${repeated[0]?` · tournoi le plus remporté : ${esc(repeated[0][0])} (${repeated[0][1]}×)`:''}</div>`:''}
+      </div>
+
+      <div class="card">
+        <h2>Bilan carrière</h2>
+        <div class="kpi-strip">
+          <div class="kpi"><span class="muted mini">Victoires</span><b>${fmt(cs.wins||0)}</b></div>
+          <div class="kpi"><span class="muted mini">Défaites</span><b>${fmt(cs.losses||0)}</b></div>
+          <div class="kpi"><span class="muted mini">% victoires</span><b>${winPct}%</b></div>
+          <div class="kpi"><span class="muted mini">Aces</span><b>${fmt(cs.aces||0)}</b></div>
+        </div>
+        <div class="list-item row between"><span>Dur</span><b>${fmt(cs.hard_wins||0)}-${fmt(cs.hard_losses||0)} · ${pct(cs.hard_wins,cs.hard_losses)}%</b></div>
+        <div class="list-item row between"><span>Terre battue</span><b>${fmt(cs.clay_wins||0)}-${fmt(cs.clay_losses||0)} · ${pct(cs.clay_wins,cs.clay_losses)}%</b></div>
+        <div class="list-item row between"><span>Gazon</span><b>${fmt(cs.grass_wins||0)}-${fmt(cs.grass_losses||0)} · ${pct(cs.grass_wins,cs.grass_losses)}%</b></div>
+        <div class="muted micro" style="margin-top:8px">Source matchs : ${esc(cs.source||'non vérifié')} · snapshot ${cs.source_snapshot?df(cs.source_snapshot):'—'}.</div>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card">
+        <h2>Titres par catégorie</h2>
+        ${catOrder.map(k=>`<div class="list-item row between"><span>${k}</span><b>${levels[k]||0}</b></div>`).join('')}
+      </div>
+      <div class="card">
+        <h2>Titres par surface</h2>
+        <div class="list-item row between"><span>Dur</span><b>${surfaces.hard}</b></div>
+        <div class="list-item row between"><span>Terre battue</span><b>${surfaces.clay}</b></div>
+        <div class="list-item row between"><span>Gazon</span><b>${surfaces.grass}</b></div>
+        <div class="list-item row between"><span>Autres</span><b>${Math.max(0,titles.length-surfaces.hard-surfaces.clay-surfaces.grass)}</b></div>
+        <h3 style="margin-top:14px">Tournois les plus remportés</h3>
+        ${repeated.slice(0,6).map(([name,n])=>`<div class="list-item row between click" data-palmares-name="${esc(name)}"><span>${esc(name)}</span><b>${n}×</b></div>`).join('')||'<div class="empty">Aucun titre.</div>'}
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="row between"><div><div class="eyebrow">Chronologie</div><h2>Palmarès année par année</h2></div><span class="pill">${yearRows.length} saison(s) titrée(s)</span></div>
+      ${yearRows.length?yearRows.map(([year,rows])=>`
+        <details class="list-item">
+          <summary class="row between click"><b>${year}</b><span class="badge">${rows.length} titre${rows.length>1?'s':''}</span></summary>
+          <div style="padding-top:8px">
+            ${rows.map(t=>`<div class="list-item row between click" data-palmares-index="${t.__i}"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${esc(t.level||'ATP')} · ${esc(t.surface||'—')}</div></div><span class="badge good">🏆 ${df(t.title_date)}</span></div>`).join('')}
+          </div>
+        </details>
+      `).join(''):'<div class="empty">Palmarès détaillé non importé pour ce joueur.</div>'}
+    </div>
+  `;
+};
+
+window.openPalmaresTitle=function(i){
+  const data=window.__cbPalmares||{titles:[],player:{}};
+  const t=(data.titles||[])[Number(i)];
+  if(t)window.openPalmaresByName(t.tournament_name);
+};
+
+window.openPalmaresByName=function(name){
+  const data=window.__cbPalmares||{titles:[],player:{}};
+  const rows=(data.titles||[]).filter(t=>String(t.tournament_name||'')===String(name)).sort((a,b)=>String(b.title_date||'').localeCompare(String(a.title_date||'')));
+  if(!rows.length)return;
+  overlay.innerHTML=`
+    <div class="modal" onclick="if(event.target===this)closeOverlay()">
+      <div class="sheet">
+        <div class="sheet-head">
+          <div><div class="eyebrow">Palmarès · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(String(name))}</h1><div class="muted">${rows.length} victoire${rows.length>1?'s':''} dans ce tournoi</div></div>
+          <button class="close" onclick="closeOverlay()">✕</button>
+        </div>
+        <div class="stack" style="margin-top:12px">
+          ${rows.map(t=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(t.level||'ATP')}</div><h2>${String(t.title_date||'').slice(0,4)}</h2></div><span class="badge good">🏆 ${esc(t.surface||'—')}</span></div><div class="muted mini">${df(t.title_date)}</div></div>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+document.addEventListener('click',e=>{
+  const ix=e.target.closest?.('[data-palmares-index]');
+  if(ix){window.openPalmaresTitle(Number(ix.dataset.palmaresIndex));return;}
+  const nm=e.target.closest?.('[data-palmares-name]');
+  if(nm)window.openPalmaresByName(nm.dataset.palmaresName);
+});

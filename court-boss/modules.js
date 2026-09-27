@@ -938,7 +938,11 @@ window.createCustomPlayerV2=async()=>{
 
 
 window.renderPalmaresHtml=function(d,p){
-  const titles=d?.titles||[];
+  const allTitles=d?.titles||[];
+  const titles=allTitles.filter(t=>!t.event_type||t.event_type==='singles');
+  const doublesTitles=allTitles.filter(t=>t.event_type==='doubles');
+  const collegeTitles=allTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
+  const ncaaCareer=d?.ncaaCareer||null;
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
   window.__cbPalmares={player:p,titles,tournamentHistory};
@@ -1023,7 +1027,19 @@ window.renderPalmaresHtml=function(d,p){
 
   const catOrder=['Grand Chelem','Masters 1000','ATP Finals','ATP 500','ATP 250','Jeux olympiques','ATP Tour','Challenger','Coupe Davis','Autres'];
 
+  const typeLabel=t=>t.event_type==='doubles'?'Double':t.event_type==='ncaa_singles'?'NCAA individuel':t.event_type==='ncaa_team'?'NCAA équipe':t.event_type==='college_singles'?'College individuel':t.event_type==='college_team'?'College équipe':'Simple';
+  const titleSource=t=>t.source_url?`<a class="soft-btn" href="${esc(t.source_url)}" target="_blank" rel="noopener noreferrer">Source</a>`:`<span class="muted micro">${esc(t.source_label||t.origin||'Archive')}</span>`;
   return `
+    <div class="card" style="margin-bottom:12px">
+      <div class="row between"><div><div class="eyebrow">Carrière complète</div><h2>Palmarès par discipline</h2></div><span class="pill">${allTitles.length} trophée(s)</span></div>
+      <div class="kpi-strip" style="margin-top:10px">
+        <div class="kpi"><span class="muted mini">Simple</span><b>${titles.length}</b></div>
+        <div class="kpi"><span class="muted mini">Double</span><b>${doublesTitles.length}</b></div>
+        <div class="kpi"><span class="muted mini">NCAA / College</span><b>${collegeTitles.length}</b></div>
+        <div class="kpi"><span class="muted mini">Statut NCAA</span><b style="font-size:12px">${esc(ncaaCareer?.status||p.ncaa_status||'—')}</b></div>
+      </div>
+      ${ncaaCareer?`<div class="notice mini" style="margin-top:10px"><b>${esc(ncaaCareer.school)}</b> · ${esc(ncaaCareer.status)}${ncaaCareer.verified?' · carrière universitaire certifiée':''}${ncaaCareer.start_season||ncaaCareer.end_season?` · ${esc(ncaaCareer.start_season||'?')} → ${esc(ncaaCareer.end_season||'?')}`:''}</div>`:''}
+    </div>
     <div class="grid g2">
       <div class="card">
         <div class="row between"><h2>Résumé du palmarès</h2><span class="badge good">${titles.length} titre${titles.length>1?'s':''}</span></div>
@@ -1113,6 +1129,17 @@ window.renderPalmaresHtml=function(d,p){
           </div>
         </details>`).join(''):'<div class="empty">Pas encore d’historique tournoi importé.</div>'}
     </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card">
+        <div class="row between"><div><div class="eyebrow">Circuit Double</div><h2>Titres en double</h2></div><span class="badge good">${doublesTitles.length}</span></div>
+        ${doublesTitles.length?doublesTitles.map(t=>`<div class="list-item row between"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Double')} · ${esc(t.surface||'—')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre double enregistré pour ce joueur.</div>'}
+      </div>
+      <div class="card">
+        <div class="row between"><div><div class="eyebrow">NCAA / College</div><h2>Titres universitaires</h2></div><span class="badge tag-ncaa">${collegeTitles.length}</span></div>
+        ${collegeTitles.length?collegeTitles.map(t=>`<div class="list-item row between"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${typeLabel(t)} · ${esc(t.school||ncaaCareer?.school||'Université')} · ${df(t.title_date)}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Certifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre NCAA / College enregistré.</div>'}
+      </div>
+    </div>
+
     <div class="card" style="margin-top:12px">
       <div class="row between"><div><div class="eyebrow">Chronologie</div><h2>Palmarès année par année</h2></div><span class="pill">${yearRows.length} saison(s) titrée(s)</span></div>
       ${yearRows.length?yearRows.map(([year,rows])=>`

@@ -453,12 +453,12 @@ window.openMatch=idx=>{
 window.pairScore=(p,k)=>{const seed=(Number(p.id||1)*17+(k==='chem'?7:k==='comp'?13:19))%19;return clamp(68+seed,55,94)}
 window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
-window.editCareer=(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render()}
+window.editCareer=async(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render();try{await managerAction('edit_career',0,{field:k,value:v});boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};persist();render()}catch(e){alert(e.message)}}
 window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invitational');if(!name)return;const surface=prompt('Surface ? Dur / Terre / Gazon','Dur')||'Dur';const draw=Number(prompt('Taille du tableau ?','32'))||32;local.fantasy=local.fantasy||[];local.fantasy.push({name,surface,draw,category:'Fantasy'});persist();render()}
 window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
 window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
 window.facilityLevel=f=>local.facilityLevels?.[f.id]??f.level
-window.upgradeFacility=(id,name,base)=>{local.facilityLevels=local.facilityLevels||{};const lvl=local.facilityLevels[id]??base;if(lvl>=5)return alert('Installation déjà au maximum');const cost=lvl*3500;const cr=career();if((cr.budget||0)<cost)return alert('Budget insuffisant');cr.budget-=cost;local.career=cr;local.facilityLevels[id]=lvl+1;persist();render()}
+window.upgradeFacility=async(id,name,base)=>{try{const d=await managerAction('upgrade_facility',id);boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};local.facilityLevels=local.facilityLevels||{};local.facilityLevels[id]=d.level;persist();render()}catch(e){alert(e.message)}}
 window.openInboxItem=async(id,r)=>{try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}await nav(r)}
 window.simulateWeek=async()=>{
  if(simulating)return;
@@ -474,13 +474,13 @@ window.simulateWeek=async()=>{
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
   const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
   local.date=d.toISOString().slice(0,10);local.week=(local.week||1)+1;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
-  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:local.week,date:local.date})});
+  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:local.week,date:local.date,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status}})});
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
   local.feed=local.feed||[];local.feed.unshift(`Semaine simulée : Anthony est ATP #${cr.singles_rank} avec ${cr.points} pts. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
   if(boot.career)local.career={...cr,singles_rank:boot.career.singles_rank,points:boot.career.points,budget:boot.career.budget,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
-  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger()]);
+  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice()]);
  }catch(e){alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }

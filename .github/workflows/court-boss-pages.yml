@@ -96,6 +96,15 @@ jobs:
 
             await page.getByRole('button',{name:'Classements'}).click();
             await page.getByRole('heading',{name:'Classements'}).waitFor();
+
+            await page.getByRole('button',{name:'Race'}).click();
+            await page.getByText('Carlos Alcaraz').first().waitFor();
+
+            await page.getByRole('button',{name:'ATP Double'}).click();
+            await page.getByText('Lloyd Glasspool').first().waitFor();
+
+            await page.getByRole('button',{name:'ITF Junior'}).click();
+            await page.getByText('Ivan Ivanov').first().waitFor();
             const firstPlayer=page.locator('tbody tr.click').first();
             await firstPlayer.click();
             await page.getByText('Dossier joueur').waitFor();
@@ -109,6 +118,11 @@ jobs:
             await page.getByRole('heading',{name:'Tactique'}).waitFor();
             await page.getByRole('button',{name:'Match Center'}).click();
             await page.getByRole('heading',{name:'Match live'}).waitFor();
+            const play=page.getByRole('button',{name:'Jouer'}).first();
+            await play.click();
+            await page.locator('.court2d').waitFor();
+            if(await page.locator('.court-player').count()!==2)throw new Error('match viewer needs two player circles');
+            if(await page.locator('.court-ball').count()!==1)throw new Error('match viewer needs one ball');
 
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
             console.log('mobile browser smoke: OK');

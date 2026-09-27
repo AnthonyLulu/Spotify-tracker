@@ -1,6 +1,29 @@
 const API='https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss';
 const app=document.getElementById('app'),overlay=document.getElementById('overlay');
-const flags={FRA:'🇫🇷',ITA:'🇮🇹',GER:'🇩🇪',ESP:'🇪🇸',USA:'🇺🇸',CAN:'🇨🇦',RUS:'🇷🇺',AUS:'🇦🇺',SRB:'🇷🇸',NOR:'🇳🇴',CZE:'🇨🇿',ARG:'🇦🇷',BRA:'🇧🇷',GBR:'🇬🇧',NED:'🇳🇱',BEL:'🇧🇪',SUI:'🇨🇭',AUT:'🇦🇹',JPN:'🇯🇵',KOR:'🇰🇷',CHN:'🇨🇳',MEX:'🇲🇽',POR:'🇵🇹',POL:'🇵🇱',GRE:'🇬🇷',DEN:'🇩🇰',MON:'🇲🇨',TUN:'🇹🇳',MAR:'🇲🇦',KAZ:'🇰🇿',LAT:'🇱🇻',UKR:'🇺🇦',IND:'🇮🇳',COL:'🇨🇴',CHI:'🇨🇱',TPE:'🇹🇼',ISR:'🇮🇱',UAE:'🇦🇪',HKG:'🇭🇰',NZL:'🇳🇿',BUL:'🇧🇬',UZB:'🇺🇿',PAR:'🇵🇾',RSA:'🇿🇦',SWE:'🇸🇪',CRO:'🇭🇷',ROU:'🇷🇴',SVK:'🇸🇰',HUN:'🇭🇺',ECU:'🇪🇨',PER:'🇵🇪',QAT:'🇶🇦',PHI:'🇵🇭',SIN:'🇸🇬',ESA:'🇸🇻',BLR:'🇧🇾'};
+const country2={
+ AFG:'AF',ALB:'AL',ALG:'DZ',AND:'AD',AGO:'AO',ANG:'AO',AHO:'CW',ANT:'CW',ARG:'AR',ARM:'AM',ARU:'AW',AUS:'AU',AUT:'AT',AZE:'AZ',
+ BAH:'BS',BAR:'BB',BDI:'BI',BEL:'BE',BEN:'BJ',BER:'BM',BHR:'BH',BIH:'BA',BIZ:'BZ',BLR:'BY',BOL:'BO',BOT:'BW',BRA:'BR',BRN:'BH',BUL:'BG',
+ CAL:'NC',CAM:'KH',CAN:'CA',CHI:'CL',CHL:'CL',CHN:'CN',CIV:'CI',CMR:'CM',COD:'CD',COG:'CG',CGO:'CG',COL:'CO',CRC:'CR',CRO:'HR',CUB:'CU',CUW:'CW',CYP:'CY',CZE:'CZ',
+ DEN:'DK',DOM:'DO',ECU:'EC',EGY:'EG',ESA:'SV',ESP:'ES',EST:'EE',ETH:'ET',
+ FIJ:'FJ',FIN:'FI',FRA:'FR',GAB:'GA',GAM:'GM',GBR:'GB',GEO:'GE',GER:'DE',GHA:'GH',GRE:'GR',GRN:'GD',GTM:'GT',GUA:'GT',GUD:'GP',GUI:'GN',GUM:'GU',GUY:'GY',
+ HAI:'HT',HKG:'HK',HON:'HN',HUN:'HU',INA:'ID',IND:'IN',IRI:'IR',IRL:'IE',IRQ:'IQ',ISL:'IS',ISR:'IL',ITA:'IT',
+ JAM:'JM',JOR:'JO',JPN:'JP',KAZ:'KZ',KEN:'KE',KGZ:'KG',KOR:'KR',KSA:'SA',KUW:'KW',
+ LAO:'LA',LAT:'LV',LBA:'LY',LBN:'LB',LIB:'LB',LIE:'LI',LTU:'LT',LUX:'LU',
+ MAD:'MG',MDG:'MG',MAR:'MA',MAS:'MY',MDA:'MD',MEX:'MX',MKD:'MK',MLI:'ML',MLT:'MT',MNE:'ME',MON:'MC',MOZ:'MZ',MRI:'MU',MYA:'MM',
+ NAM:'NA',NCA:'NI',NIC:'NI',NED:'NL',NEP:'NP',NPL:'NP',NGA:'NG',NGR:'NG',NMI:'MP',NOR:'NO',NZL:'NZ',
+ PAK:'PK',PAN:'PA',PAR:'PY',PRY:'PY',PER:'PE',PHI:'PH',PNG:'PG',POL:'PL',POR:'PT',PUR:'PR',QAT:'QA',
+ REU:'RE',ROU:'RO',RSA:'ZA',RUS:'RU',RWA:'RW',SEN:'SN',SGP:'SG',SIN:'SG',SLO:'SI',SRB:'RS',SRI:'LK',SUD:'SD',SUI:'CH',SUR:'SR',SVK:'SK',SWE:'SE',SWZ:'SZ',SYR:'SY',
+ TGO:'TG',TOG:'TG',THA:'TH',TJK:'TJ',TKM:'TM',TPE:'TW',TTO:'TT',TUN:'TN',TUR:'TR',
+ UAE:'AE',UGA:'UG',UKR:'UA',URU:'UY',USA:'US',UZB:'UZ',VAN:'VU',VEN:'VE',VIE:'VN',YEM:'YE',ZAM:'ZM',ZIM:'ZW'
+};
+const emojiFlag=code=>{
+ const iso=country2[String(code||'').toUpperCase()]||(String(code||'').length===2?String(code).toUpperCase():'');
+ if(!/^[A-Z]{2}$/.test(iso))return '🏳️';
+ return [...iso].map(c=>String.fromCodePoint(127397+c.charCodeAt(0))).join('');
+};
+const flags=new Proxy({},{
+ get(_target,key){return emojiFlag(String(key||''))}
+});
 const saveKey=(()=>{let k=localStorage.getItem('courtBossSaveKey');if(!k){k=crypto.randomUUID();localStorage.setItem('courtBossSaveKey',k)}return k})();
 const fmt=n=>new Intl.NumberFormat('fr-FR').format(Math.round(Number(n)||0));
 const euro=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n)||0);
@@ -160,7 +183,7 @@ function rankings(){
  const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
  const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
  const reference=rankKind==='singles'
-   ?'Snapshot ATP 01/12/2025 · classement profond, vrais IDs joueurs et ex æquo conservés'
+   ?'Snapshot ATP 01/12/2025 · tous les rangs sourcés disponibles, y compris au-delà du #2000'
    :rankKind==='doubles'
      ?'Top 100 double · classement year-end 2025, encore en vigueur au 01/12/2025'
      :rankKind==='race'
@@ -295,12 +318,12 @@ function scouting(){
 }
 window.changeScoutAssignment=async(id,focus)=>{try{await managerAction('set_scouting_assignment',id,{focus});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
 function more(){
- const items=[['players','Base joueurs','ATP #2000 + ITF + Juniors + NCAA'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
+ const items=[['players','Base joueurs','10 000+ profils · ATP au-delà du #2000 + ITF + Juniors + NCAA'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
  if(!dbLoaded&&!dbLoading)setTimeout(()=>loadPlayerDatabase().then(()=>{if(route==='players')render()}).catch(()=>{}),0);
- const circuits=['Tous','ATP','ITF','Junior','NCAA','Double','Race','Next Gen'];
+ const circuits=['Tous','Tous réels','ATP classés','ITF','Junior','NCAA','Double','Race','Next Gen'];
  const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
  return `<div class="fm-dashboard">
   <div class="fm-page-head"><div><div class="eyebrow">Scouting database</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche mondiale type scouting : ATP, ITF, NCAA, juniors et historiques dans la même base.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||10000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
@@ -315,7 +338,7 @@ function playersPage(){
   </div>
   <div class="card fm-panel" style="margin-top:12px">
    <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
-   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge</th><th>Pays</th><th>ATP</th><th>ITF</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${p.age??'<span class="muted">N/V</span>'}</td><td>${flags[p.country]||'🏳️'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
+   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge</th><th>Pays</th><th>ATP</th><th>ITF</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${p.age??'<span class="muted">N/V</span>'}</td><td>${flags[p.country]||'🏳️'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
    ${!dbLoading&&!dbRows.length?'<div class="empty">Aucun joueur trouvé avec ces filtres.</div>':''}
    <div class="pagination"><button ${dbOffset===0?'disabled':''} onclick="dbPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(dbCount)}</span><button ${dbOffset+100>=dbCount?'disabled':''} onclick="dbPage(1)">→</button></div>
   </div>
@@ -1062,7 +1085,7 @@ window.openGlobalSearch=()=>{
  <div class="filters" style="margin-top:8px">
   <select id="globalSearchCountry" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}">${flags[x.country]||'🏳️'} ${esc(x.country)}</option>`).join('')}</select>
   <select id="globalSearchCircuit" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
-   <option>Tous</option><option>ATP</option><option>Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
+   <option>Tous</option><option>Tous réels</option><option>ATP classés</option><option>Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
   </select>
   <select id="globalSearchAge" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
    <option value="99">Tous âges</option><option value="18">U18</option><option value="21">U21</option><option value="23">U23</option><option value="30">30 ans max</option>

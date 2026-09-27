@@ -141,7 +141,7 @@ async function rolloverSeasonV2(){
 function doublesPageV2(){
   const cr=career();
   const pool=[...(boot.davisSquad||[]).map(x=>x.players).filter(Boolean),...(boot.topPlayers||[]).filter(p=>p.country==='FRA')];
-  const uniq=[...new Map(pool.map(p=>[p.id,p])).values()].filter(p=>p.name!=='Anthony').slice(0,14);
+  const uniq=[...new Map(pool.map(p=>[p.id,p])).values()].filter(p=>p.name!==cr.player_name).slice(0,14);
   const stored=management?.partnerships?.[0]?.player_b||null;
   const partner=uniq.find(p=>p.id===local.partnerId)||stored;
   const dPoints=(seasonSummary?.doubles_points||[]).filter(x=>x.active);
@@ -230,7 +230,7 @@ async function playDoublesV2(id){
       <div class="modal" onclick="if(event.target===this)closeOverlay()">
         <div class="sheet">
           <div class="sheet-head">
-            <div><div class="eyebrow">Double · ${esc(d.tournament?.name||'Tournoi')}</div><h1>${d.round==='Champion'?'🏆 Champions':esc(d.round)}</h1><div class="muted">Anthony / ${esc(d.partner?.name||'Partenaire')}</div></div>
+            <div><div class="eyebrow">Double · ${esc(d.tournament?.name||'Tournoi')}</div><h1>${d.round==='Champion'?'🏆 Champions':esc(d.round)}</h1><div class="muted">${esc(career().player_name||'Joueur')} / ${esc(d.partner?.name||'Partenaire')}</div></div>
             <button class="close" onclick="closeOverlay()">✕</button>
           </div>
           <div class="kpi-strip" style="margin-top:12px">
@@ -242,7 +242,7 @@ async function playDoublesV2(id){
           <div class="card" style="margin-top:12px"><h2>Parcours</h2>
             ${(d.matches||[]).map(m=>`
               <div class="list-item">
-                <div class="row between"><b>${esc(m.round_name)}</b><span class="badge ${m.winner_pair.includes('Anthony')?'good':'bad'}">${m.winner_pair.includes('Anthony')?'Victoire':'Défaite'}</span></div>
+                <div class="row between"><b>${esc(m.round_name)}</b><span class="badge ${m.winner_pair.includes(career().player_name||'Joueur')?'good':'bad'}">${m.winner_pair.includes(career().player_name||'Joueur')?'Victoire':'Défaite'}</span></div>
                 <div>${esc(m.user_pair)} vs ${esc(m.opponent_pair)}</div>
                 <div class="muted mini">${esc(m.score)}</div>
               </div>`).join('')}
@@ -520,7 +520,7 @@ function liveMatchPageV2(){
 
     <div class="card live-score">
       <div class="score-line">
-        <div><span class="muted mini">JOUEUR</span><h2>Anthony</h2></div>
+        <div><span class="muted mini">JOUEUR</span><h2>${esc(cr.player_name||'Joueur')}</h2></div>
         <div class="score-pills"><span>${s.user_sets}</span><strong>${s.user_games}</strong></div>
       </div>
       <div class="score-line">
@@ -557,7 +557,7 @@ function liveMatchPageV2(){
       <div class="card">
         <h2>Momentum</h2>
         <div class="momentum-track"><i style="left:${50+momentum}%"></i></div>
-        <div class="row between mini muted"><span>Adversaire</span><b>${momentum>0?'Anthony +'+momentum:momentum<0?'Adversaire '+Math.abs(momentum):'Équilibre'}</b><span>Anthony</span></div>
+        <div class="row between mini muted"><span>Adversaire</span><b>${momentum>0?(cr.player_name||'Joueur')+' +'+momentum:momentum<0?'Adversaire '+Math.abs(momentum):'Équilibre'}</b><span>${esc(cr.player_name||'Joueur')}</span></div>
       </div>
       <div class="card">
         <h2>Stats live</h2>

@@ -615,19 +615,22 @@ Deno.serve(async(req:Request)=>{
 
     if(kind==="ncaa"){
       const playerSelect="id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division,ncaa_status,ncaa_last_school,ncaa_verified,ranking_snapshot_date";
-      const [currentReg,currentPlayers,allAmericanReg]=await Promise.all([
+      const [currentReg,currentPlayers,allAmericanReg,registryPool]=await Promise.all([
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .eq("season","2026-27").eq("status","Active")
           .eq("source_label","ITA Division I Men's Preseason Singles · 2026-08-25")
           .order("ita_rank",{ascending:true,nullsFirst:false}).limit(500),
         db.from("players").select(playerSelect).eq("ncaa_current",true)
-          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*").limit(1000),
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*").limit(1500),
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
-          .eq("season","2025-26").eq("status","ITA All-American 2025-26").limit(500)
+          .eq("season","2025-26").eq("status","ITA All-American 2025-26").limit(500),
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .order("snapshot_date",{ascending:false}).order("id",{ascending:false}).limit(5000)
       ]);
-      const e=currentReg.error||currentPlayers.error||allAmericanReg.error;
+      const e=currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool.error;
       if(e)return h({error:e.message},500);
 
       const byId=new Map<number,any>();
@@ -661,6 +664,10 @@ Deno.serve(async(req:Request)=>{
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
         put(p,{...x,ita_rank:null},2);
       }
+      for(const x of registryPool.data??[]){
+        const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
+        put(p,x,3);
+      }
 
       let rows=[...byId.values()];
       if(q){
@@ -686,7 +693,7 @@ Deno.serve(async(req:Request)=>{
         kind,offset,limit,count:total,rows,
         officialCapacity:125,
         verifiedCurrentRanks:ranked,
-        eligibility:"NCAA Division I · ITA Top 125 + pool universitaire vérifié",
+        eligibility:"NCAA Division I · ITA Top 125 + actifs 2026-27 + roster/alumni vérifiés",
         rankingDate:"2026-08-25"
       });
     }
@@ -749,7 +756,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("age","is",null).lte("age",21);
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
     if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).gte("age",13).lte("age",18);
-    if(circuit==="NCAA") query=query.eq("ncaa_current",true);
+    if(circuit==="NCAA") query=query.eq("ncaa_verified",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
     if(circuit==="ATP"||circuit==="ATP classés"||circuit==="ATP profond") query=query.order("ranking",{ascending:true,nullsFirst:false});
@@ -760,7 +767,7 @@ Deno.serve(async(req:Request)=>{
     else if(circuit==="Next Gen") query=query.order("nextgen_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="ITF") query=query.order("itf_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Junior") query=query.order("junior_ranking",{ascending:true,nullsFirst:false});
-    else if(circuit==="NCAA") query=query.order("ncaa_rank",{ascending:true,nullsFirst:false});
+    else if(circuit==="NCAA") query=query.order("ncaa_current",{ascending:false}).order("ncaa_rank",{ascending:true,nullsFirst:false}).order("name",{ascending:true});
     else query=query.order("potential",{ascending:false}).order("current_ability",{ascending:false});
 
     query=query.range(offset,offset+limit-1);
@@ -823,7 +830,7 @@ Deno.serve(async(req:Request)=>{
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,careerDate,legend,historicalSeasons] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,ncaaTransfers,careerDate,legend,historicalSeasons] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -836,11 +843,12 @@ Deno.serve(async(req:Request)=>{
       db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500),
       db.from("ncaa_player_registry").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(10),
       db.from("ncaa_career").select("*").eq("player_id",id).maybeSingle(),
+      db.from("ncaa_transfer_history").select("*").eq("player_id",id).order("is_current",{ascending:false}).order("verified_at",{ascending:false}).limit(30),
       db.from("career_state").select("career_date").eq("id","demo").maybeSingle(),
       db.from("historical_legend_stats").select("*").eq("player_id",id).maybeSingle(),
       db.from("historical_season_summary").select("*").eq("player_id",id).order("season",{ascending:false}).limit(80)
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||careerDate.error||legend.error||historicalSeasons.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||ncaaTransfers.error||careerDate.error||legend.error||historicalSeasons.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
@@ -859,7 +867,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,
       matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[],juniorEntries:juniorEntries.data??[],
-      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],ncaaCareer:ncaaCareer.data??null,doublesTeams:doublesTeams.data??[],legend:legend.data??null,historicalSeasons:historicalSeasons.data??[]
+      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],ncaaCareer:ncaaCareer.data??null,ncaaTransfers:ncaaTransfers.data??[],doublesTeams:doublesTeams.data??[],legend:legend.data??null,historicalSeasons:historicalSeasons.data??[]
     });
   }
 

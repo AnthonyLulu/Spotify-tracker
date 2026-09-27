@@ -1,0 +1,608 @@
+{
+  "snapshot": "2025-12-01",
+  "source": "ATP 2026 Media Guide · 2025 year-end PIF ATP Doubles Rankings; top-10 points cross-checked at 2025-12-01",
+  "note": "Ranks are verified. Points remain null where the official year-end table only supplies rank.",
+  "count": 100,
+  "rows": [
+    {
+      "rank": 1,
+      "name": "Lloyd Glasspool",
+      "country": "GBR",
+      "points": 8610
+    },
+    {
+      "rank": 2,
+      "name": "Julian Cash",
+      "country": "GBR",
+      "points": 8520
+    },
+    {
+      "rank": 3,
+      "name": "Harri Heliovaara",
+      "country": "FIN",
+      "points": 7980
+    },
+    {
+      "rank": 3,
+      "name": "Henry Patten",
+      "country": "GBR",
+      "points": 7980
+    },
+    {
+      "rank": 5,
+      "name": "Horacio Zeballos",
+      "country": "ARG",
+      "points": 7115
+    },
+    {
+      "rank": 6,
+      "name": "Marcel Granollers",
+      "country": "ESP",
+      "points": 7025
+    },
+    {
+      "rank": 7,
+      "name": "Marcelo Arevalo",
+      "country": "ESA",
+      "points": 6860
+    },
+    {
+      "rank": 7,
+      "name": "Mate Pavic",
+      "country": "CRO",
+      "points": 6860
+    },
+    {
+      "rank": 9,
+      "name": "Neal Skupski",
+      "country": "GBR",
+      "points": 6670
+    },
+    {
+      "rank": 10,
+      "name": "Joe Salisbury",
+      "country": "GBR",
+      "points": 6580
+    },
+    {
+      "rank": 11,
+      "name": "Kevin Krawietz",
+      "country": "GER",
+      "points": null
+    },
+    {
+      "rank": 11,
+      "name": "Tim Puetz",
+      "country": "GER",
+      "points": null
+    },
+    {
+      "rank": 13,
+      "name": "Simone Bolelli",
+      "country": "ITA",
+      "points": null
+    },
+    {
+      "rank": 14,
+      "name": "Andrea Vavassori",
+      "country": "ITA",
+      "points": null
+    },
+    {
+      "rank": 15,
+      "name": "Christian Harrison",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 16,
+      "name": "Evan King",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 17,
+      "name": "Edouard Roger-Vasselin",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 18,
+      "name": "Hugo Nys",
+      "country": "MON",
+      "points": null
+    },
+    {
+      "rank": 19,
+      "name": "Nikola Mektic",
+      "country": "CRO",
+      "points": null
+    },
+    {
+      "rank": 20,
+      "name": "Francisco Cabral",
+      "country": "POR",
+      "points": null
+    },
+    {
+      "rank": 21,
+      "name": "Yuki Bhambri",
+      "country": "IND",
+      "points": null
+    },
+    {
+      "rank": 22,
+      "name": "Andre Goransson",
+      "country": "SWE",
+      "points": null
+    },
+    {
+      "rank": 23,
+      "name": "Lucas Miedler",
+      "country": "AUT",
+      "points": null
+    },
+    {
+      "rank": 24,
+      "name": "Manuel Guinard",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 25,
+      "name": "Andres Molteni",
+      "country": "ARG",
+      "points": null
+    },
+    {
+      "rank": 26,
+      "name": "Michael Venus",
+      "country": "NZL",
+      "points": null
+    },
+    {
+      "rank": 27,
+      "name": "Rajeev Ram",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 28,
+      "name": "Sadio Doumbia",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 29,
+      "name": "David Pel",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 30,
+      "name": "Sander Arends",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 31,
+      "name": "Fabien Reboul",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 32,
+      "name": "Guido Andreozzi",
+      "country": "ARG",
+      "points": null
+    },
+    {
+      "rank": 33,
+      "name": "JJ Tracy",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 34,
+      "name": "Jan Zielinski",
+      "country": "POL",
+      "points": null
+    },
+    {
+      "rank": 35,
+      "name": "Maximo Gonzalez",
+      "country": "ARG",
+      "points": null
+    },
+    {
+      "rank": 36,
+      "name": "Sem Verbeek",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 37,
+      "name": "Robert Cash",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 38,
+      "name": "Luke Johnson",
+      "country": "GBR",
+      "points": null
+    },
+    {
+      "rank": 39,
+      "name": "Robert Galloway",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 40,
+      "name": "Fernando Romboli",
+      "country": "BRA",
+      "points": null
+    },
+    {
+      "rank": 41,
+      "name": "Santiago Gonzalez",
+      "country": "MEX",
+      "points": null
+    },
+    {
+      "rank": 42,
+      "name": "Rafael Matos",
+      "country": "BRA",
+      "points": null
+    },
+    {
+      "rank": 43,
+      "name": "Alexander Erler",
+      "country": "AUT",
+      "points": null
+    },
+    {
+      "rank": 44,
+      "name": "Romain Arneodo",
+      "country": "MON",
+      "points": null
+    },
+    {
+      "rank": 45,
+      "name": "John-Patrick Smith",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 46,
+      "name": "Jakob Schnaitter",
+      "country": "GER",
+      "points": null
+    },
+    {
+      "rank": 46,
+      "name": "Mark Wallner",
+      "country": "GER",
+      "points": null
+    },
+    {
+      "rank": 47,
+      "name": "Constantin Frantzen",
+      "country": "GER",
+      "points": null
+    },
+    {
+      "rank": 48,
+      "name": "Sander Gille",
+      "country": "BEL",
+      "points": null
+    },
+    {
+      "rank": 50,
+      "name": "John Peers",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 51,
+      "name": "Austin Krajicek",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 52,
+      "name": "Theo Arribage",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 53,
+      "name": "Adam Pavlasek",
+      "country": "CZE",
+      "points": null
+    },
+    {
+      "rank": 54,
+      "name": "Marcelo Melo",
+      "country": "BRA",
+      "points": null
+    },
+    {
+      "rank": 55,
+      "name": "Robin Haase",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 56,
+      "name": "Petr Nouza",
+      "country": "CZE",
+      "points": null
+    },
+    {
+      "rank": 57,
+      "name": "Patrik Rikl",
+      "country": "CZE",
+      "points": null
+    },
+    {
+      "rank": 58,
+      "name": "Orlando Luz",
+      "country": "BRA",
+      "points": null
+    },
+    {
+      "rank": 59,
+      "name": "Rinky Hijikata",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 60,
+      "name": "Vasil Kirkov",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 61,
+      "name": "Bart Stevens",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 62,
+      "name": "Ariel Behar",
+      "country": "URU",
+      "points": null
+    },
+    {
+      "rank": 63,
+      "name": "Rohan Bopanna",
+      "country": "IND",
+      "points": null
+    },
+    {
+      "rank": 64,
+      "name": "Albano Olivetti",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 65,
+      "name": "Pierre-Hugues Herbert",
+      "country": "FRA",
+      "points": null
+    },
+    {
+      "rank": 66,
+      "name": "Joran Vliegen",
+      "country": "BEL",
+      "points": null
+    },
+    {
+      "rank": 67,
+      "name": "Ryan Seggerman",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 68,
+      "name": "Jordan Thompson",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 69,
+      "name": "Matthew Ebden",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 70,
+      "name": "Ray Ho",
+      "country": "TPE",
+      "points": null
+    },
+    {
+      "rank": 71,
+      "name": "Matthew Christopher Romios",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 72,
+      "name": "Miguel Reyes-Varela",
+      "country": "MEX",
+      "points": null
+    },
+    {
+      "rank": 73,
+      "name": "Patrik Trhac",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 74,
+      "name": "Hendrik Jebens",
+      "country": "GER",
+      "points": null
+    },
+    {
+      "rank": 75,
+      "name": "Alex Michelsen",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 76,
+      "name": "Diego Hidalgo",
+      "country": "ECU",
+      "points": null
+    },
+    {
+      "rank": 77,
+      "name": "N. Sriram Balaji",
+      "country": "IND",
+      "points": null
+    },
+    {
+      "rank": 78,
+      "name": "Marcelo Demoliner",
+      "country": "BRA",
+      "points": null
+    },
+    {
+      "rank": 79,
+      "name": "Jakub Paul",
+      "country": "SUI",
+      "points": null
+    },
+    {
+      "rank": 80,
+      "name": "Matej Vocel",
+      "country": "CZE",
+      "points": null
+    },
+    {
+      "rank": 81,
+      "name": "Gonzalo Escobar",
+      "country": "ECU",
+      "points": null
+    },
+    {
+      "rank": 82,
+      "name": "Jean-Julien Rojer",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 83,
+      "name": "Marcus Willis",
+      "country": "GBR",
+      "points": null
+    },
+    {
+      "rank": 84,
+      "name": "Rithvik Choudary Bollipalli",
+      "country": "IND",
+      "points": null
+    },
+    {
+      "rank": 85,
+      "name": "Neil Oberleitner",
+      "country": "AUT",
+      "points": null
+    },
+    {
+      "rank": 86,
+      "name": "Finn Reynolds",
+      "country": "NZL",
+      "points": null
+    },
+    {
+      "rank": 87,
+      "name": "Jamie Murray",
+      "country": "GBR",
+      "points": null
+    },
+    {
+      "rank": 88,
+      "name": "James Watt",
+      "country": "NZL",
+      "points": null
+    },
+    {
+      "rank": 89,
+      "name": "Nuno Borges",
+      "country": "POR",
+      "points": null
+    },
+    {
+      "rank": 90,
+      "name": "Cleeve Harper",
+      "country": "CAN",
+      "points": null
+    },
+    {
+      "rank": 91,
+      "name": "Takeru Yuzuki",
+      "country": "JPN",
+      "points": null
+    },
+    {
+      "rank": 92,
+      "name": "Nicolas Barrientos",
+      "country": "COL",
+      "points": null
+    },
+    {
+      "rank": 93,
+      "name": "Anirudh Chandrasekar",
+      "country": "IND",
+      "points": null
+    },
+    {
+      "rank": 94,
+      "name": "Lorenzo Sonego",
+      "country": "ITA",
+      "points": null
+    },
+    {
+      "rank": 95,
+      "name": "Karel Dvorkecki",
+      "country": "POL",
+      "points": null
+    },
+    {
+      "rank": 96,
+      "name": "Blake Bayldon",
+      "country": "AUS",
+      "points": null
+    },
+    {
+      "rank": 97,
+      "name": "Mac Kiger",
+      "country": "USA",
+      "points": null
+    },
+    {
+      "rank": 98,
+      "name": "Pedro Martinez",
+      "country": "ESP",
+      "points": null
+    },
+    {
+      "rank": 99,
+      "name": "Mick Veldheer",
+      "country": "NED",
+      "points": null
+    },
+    {
+      "rank": 100,
+      "name": "Gregoire Jacq",
+      "country": "FRA",
+      "points": null
+    }
+  ]
+}

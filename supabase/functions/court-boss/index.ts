@@ -495,7 +495,7 @@ const isCurrentJuniorProfile=(p:any)=>{
   if(p?.is_real===true&&/^CoreTennis/i.test(src))return true;
   return p?.is_real===true&&Number.isFinite(age)&&age>=13&&age<=18&&!!src;
 };
-const JUNIOR_POOL_SELECT="id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified";
+const JUNIOR_POOL_SELECT="id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified";
 async function loadJuniorPoolCandidates(rankedOnly=false){
   const all:any[]=[];
   for(let start=0;start<5000;start+=1000){
@@ -992,6 +992,29 @@ Deno.serve(async(req:Request)=>{
       });
     }
 
+    if(kind==="junior_doubles"){
+      let query=db.from("players")
+        .select("id,name,name_norm,country,is_real,game_generated,career_status,ranking,ranking_current,doubles_ranking,junior_ranking,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_school,ncaa_rank",{count:"exact"})
+        .not("junior_doubles_ranking","is",null)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
+      if(q)query=query.ilike("name_norm",`%${normalizeName(q)}%`);
+      if(country)query=query.eq("country",country);
+      query=query.order("junior_doubles_ranking",{ascending:true}).range(offset,offset+limit-1);
+      const {data,error,count}=await query;
+      if(error)return h({error:error.message},500);
+      const rows=(data??[]).map((p:any)=>({
+        ...p,
+        age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
+        official_ranking:p.ranking_current?p.ranking:null
+      }));
+      return h({
+        kind,offset,limit,count:count??0,rows,
+        eligibility:"Court Boss Junior Doubles · joueurs du vivier Junior classés 1–2000",
+        rankingDate:"2025-12-01",
+        simulated:true
+      });
+    }
+
     if(kind==="junior"){
       let juniorQuery=db.from("junior_display_pool_view").select("*",{count:"exact"});
       if(q)juniorQuery=juniorQuery.ilike("name_norm",`%${normalizeName(q)}%`);
@@ -1052,7 +1075,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
+      .select("id,name,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(kind==="singles"){
       query=query.not("game_world_rank","is",null).lte("game_world_rank",30000);
@@ -1389,23 +1412,37 @@ Deno.serve(async(req:Request)=>{
 
     let doublesMain:any[]=[];
     if(t.data.doubles){
-      const dpool=await db.from("players")
-        .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
-        .eq("is_real",true)
-        .not("doubles_ranking","is",null)
-        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-        .order("doubles_ranking",{ascending:true})
-        .limit(Math.min(128,Math.max(16,drawSize*2)));
+      const isJuniorDouble=String(t.data.circuit)==="Junior";
+      let dpool:any;
+      if(isJuniorDouble){
+        dpool=await db.from("players")
+          .select("id,name,country,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,current_ability,potential")
+          .not("junior_doubles_ranking","is",null)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+          .order("junior_doubles_ranking",{ascending:true})
+          .limit(Math.min(128,Math.max(16,drawSize*2)));
+      }else{
+        dpool=await db.from("players")
+          .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
+          .eq("is_real",true)
+          .not("doubles_ranking","is",null)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+          .order("doubles_ranking",{ascending:true})
+          .limit(Math.min(128,Math.max(16,drawSize*2)));
+      }
       if(!dpool.error){
         const arr=dpool.data??[];
         for(let i=0;i+1<arr.length&&doublesMain.length<Math.min(32,drawSize);i+=2){
           const a:any=arr[i],b:any=arr[i+1];
+          const ar=isJuniorDouble?a.junior_doubles_ranking:a.doubles_ranking;
+          const br=isJuniorDouble?b.junior_doubles_ranking:b.doubles_ranking;
           doublesMain.push({
             seed:doublesMain.length+1,
-            player_a:a,player_b:b,
+            player_a:{...a,doubles_ranking:ar},
+            player_b:{...b,doubles_ranking:br},
             team_name:String(a.name)+" / "+String(b.name),
-            combined_rank:Number(a.doubles_ranking||9999)+Number(b.doubles_ranking||9999),
-            source:(a.doubles_source&&b.doubles_source)?"official":"indexed"
+            combined_rank:Number(ar||9999)+Number(br||9999),
+            source:isJuniorDouble?"junior-simulated":((a.doubles_source&&b.doubles_source)?"official":"indexed")
           });
         }
       }
@@ -1857,11 +1894,21 @@ Deno.serve(async(req:Request)=>{
     const t:any=tour.data,c:any=career.data;
     const partner:any={...partnership.data.partner,player_attributes:Array.isArray(partnership.data.partner.player_attributes)?partnership.data.partner.player_attributes[0]:partnership.data.partner.player_attributes};
     const anthony:any={...anth.data,player_attributes:Array.isArray(anth.data.player_attributes)?anth.data.player_attributes[0]:anth.data.player_attributes,isUser:true};
-    const poolRes=await db.from("players")
-      .select("id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
-      .eq("is_real",true).not("doubles_ranking","is",null)
-      .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-      .order("doubles_ranking",{ascending:true}).limit(160);
+    const isJuniorDouble=String(t.circuit)==="Junior";
+    let poolRes:any;
+    if(isJuniorDouble){
+      poolRes=await db.from("players")
+        .select("id,name,country,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+        .not("junior_doubles_ranking","is",null)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .order("junior_doubles_ranking",{ascending:true}).limit(160);
+    }else{
+      poolRes=await db.from("players")
+        .select("id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+        .eq("is_real",true).not("doubles_ranking","is",null)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .order("doubles_ranking",{ascending:true}).limit(160);
+    }
     if(poolRes.error)return h({error:poolRes.error.message},500);
     const pool=(poolRes.data??[])
       .filter((p:any)=>p.id!==partner.id)

@@ -394,14 +394,18 @@ function singlesEligibility(t){
 }
 function doublesEligibility(t){
  const partner=activeDoublesPartner(),c=career(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
- if(!t.doubles)return {label:"Pas de double",cls:"",can:false};
- if(String(t.circuit)==="NCAA")return {label:"Via lineup NCAA",cls:"info",can:false};
- if(String(t.circuit)==="Federation")return {label:"Par sélection",cls:"info",can:false};
- if(!partner)return {label:"Partenaire requis",cls:"warn",can:false};
- if(String(t.entry_rule_code)==="ITF_M15")return {label:"Sign-in sur site",cls:"warn",can:true};
- if(String(t.entry_rule_code)==="ITF_M25"&&(myRank>=99999||partnerRank>=99999))return {label:"Sur site uniquement",cls:"warn",can:true};
+ const now=String(local.date||"2025-12-01"),advance=String(t.doubles_entry_deadline||""),onsite=String(t.doubles_onsite_deadline||"");
+ if(!t.doubles)return {label:"Pas de double",cls:"",can:false,phase:"none"};
+ if(String(t.circuit)==="NCAA")return {label:"Via lineup NCAA",cls:"info",can:false,phase:"selection"};
+ if(String(t.circuit)==="Federation")return {label:"Par sélection",cls:"info",can:false,phase:"selection"};
+ if(!partner)return {label:"Partenaire requis",cls:"warn",can:false,phase:"partner"};
+ if(onsite&&now>onsite)return {label:"Double clos",cls:"bad",can:false,phase:"closed"};
+ const method=String(t.doubles_entry_method||"");
+ if(method==="onsite_only")return {label:"Sign-in sur site"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite"};
+ if(advance&&now>advance&&(!onsite||now<=onsite))return {label:"On-site sign-in"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite"};
+ if(String(t.entry_rule_code)==="ITF_M25"&&(myRank>=99999||partnerRank>=99999))return {label:"Sur site uniquement"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite"};
  const combined=(myRank>=99999||partnerRank>=99999)?null:myRank+partnerRank;
- return {label:combined?"Rang combiné "+fmt(combined):"Équipe enregistrable",cls:"good",can:true};
+ return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
 function tournamentThumb(t){
  if(t.image_url)return "<img class='tm-tour-photo' src='"+esc(t.image_url)+"' alt='"+esc(t.name)+"' onerror=\"this.style.display='none';this.nextElementSibling.style.display='grid'\"><span class='tm-tour-fallback' style='display:none'>"+(flags[t.country]||"🎾")+"</span>";
@@ -420,7 +424,7 @@ function tournamentTmRow(t){
   "<td><b>"+(t.winner_points!=null?fmt(t.winner_points):"—")+"</b></td>"+
   "<td><b>"+(t.prize_money!=null?euro(t.prize_money):"—")+"</b></td>"+
   "<td><span class='badge "+st.cls+"'>"+st.label+"</span><div class='muted micro "+se.cls+"'>"+esc(se.label)+(t.cut_is_projection&&t.projected_direct_cut?" · cut proj.":"")+"</div><div class='muted micro'>"+esc(de.label)+"</div></td>"+
-  "<td><b>"+(deadline?df(deadline):"—")+"</b><div class='muted micro'>"+(t.doubles_entry_deadline?"D "+df(t.doubles_entry_deadline):"")+"</div></td>"+
+  "<td><b>"+(deadline?df(deadline):"—")+"</b><div class='muted micro'>"+(t.doubles_entry_deadline?"D adv "+df(t.doubles_entry_deadline):"")+(t.doubles_onsite_deadline?" · site "+df(t.doubles_onsite_deadline):"")+"</div></td>"+
   "<td><div class='tm-entry-actions'>"+sBtn+dBtn+"<button class='ghost tm-entry-btn' onclick='event.stopPropagation();openTournament("+t.id+")'>›</button></div></td>"+
  "</tr>";
 }
@@ -494,9 +498,9 @@ window.toggleDoublesEntry=id=>{
  if(exists){local.doublesEntries=local.doublesEntries.filter(x=>x!==id);delete local.doublesEntryMeta[id];persist();render();return}
  const t=findTournamentById(id);if(!t)return;
  const elig=doublesEligibility(t);if(!elig.can){alert(elig.label);return}
- const deadline=t.doubles_entry_deadline;
- if(deadline&&String(local.date||"2025-12-01")>String(deadline)&&String(t.entry_rule_code)!=="ITF_M15"){
-   alert("Deadline double dépassée : "+df(deadline)+(String(t.circuit)==="Challenger"||String(t.entry_rule_code)==="ITF_M25"?" · un sign-in sur site peut encore être possible selon le tournoi.":""));
+ const onsite=t.doubles_onsite_deadline||t.start_date;
+ if(onsite&&String(local.date||"2025-12-01")>String(onsite)){
+   alert("Inscriptions double closes : dernier sign-in "+df(onsite)+".");
    return;
  }
  const sConflict=Object.entries(local.entryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(t.start_date,t.end_date,e.start_date,e.end_date));
@@ -1208,7 +1212,7 @@ window.openTournament=async id=>{
       </div>
       <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${t.qualifying_draw_size||'—'}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||'—':'Non'}</b></div><div class="list-item row between"><span>Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Simulation future'}</b></div></div>
     </div>
-    ${t.doubles?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Inscription double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge ${doubleRule.cls}">${esc(doubleRule.label)}</span></div><div class="list-item row between"><span>Ton rang double</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)} · ${esc(activePartner.name)}</b></div>`:''}<div class="list-item row between"><span>Deadline double</span><b>${t.doubles_entry_deadline?df(t.doubles_entry_deadline):String(t.entry_rule_code)==='ITF_M15'?'Sign-in sur site':'—'}</b></div>${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:doubleRule.can?`<button class="${dJoined?'danger-btn':'primary'}" style="width:100%;margin-top:8px" onclick="toggleDoublesEntry(${t.id});closeOverlay()">${dJoined?'Retirer le double':'Inscrire la paire'}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">${activePartner?'Voir le hub Double':'Choisir un partenaire'}</button>`}</div>`:''}
+    ${t.doubles?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Inscription double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge ${doubleRule.cls}">${esc(doubleRule.label)}</span></div><div class="list-item row between"><span>Ton rang double</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)} · ${esc(activePartner.name)}</b></div>`:''}<div class="list-item row between"><span>Advance entry double</span><b>${t.doubles_entry_deadline?df(t.doubles_entry_deadline):String(t.entry_rule_code)==='ITF_M15'?'Aucune':'—'}</b></div><div class="list-item row between"><span>On-site sign-in</span><b>${t.doubles_onsite_deadline?df(t.doubles_onsite_deadline):'—'}</b></div>${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:doubleRule.can?`<button class="${dJoined?'danger-btn':'primary'}" style="width:100%;margin-top:8px" onclick="toggleDoublesEntry(${t.id});closeOverlay()">${dJoined?'Retirer le double':'Inscrire la paire'}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">${activePartner?'Voir le hub Double':'Choisir un partenaire'}</button>`}</div>`:''}
    </div>
 
    <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isJunior?'Circuit Junior':'Entrée'}</h2>${isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div></div></div></template>

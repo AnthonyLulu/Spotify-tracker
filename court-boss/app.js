@@ -237,12 +237,36 @@ function injuryRisk(){
  return Math.round(clamp(r,2,95));
 }
 function medicalPage(){
- const c=career(),inj=boot.injuries||[];
- const risk=clamp(Math.round((c.fatigue||18)*.75+(trainingLoad()*3)),0,100);
- return `<div class="section-head"><div><div class="eyebrow">Centre médical</div><h1>Condition & blessures</h1><div class="muted">Charge, récupération, rechute et disponibilité.</div></div><button class="primary" onclick="applyRecovery()">Semaine récupération</button></div>
+ const c=career(),inj=boot.injuries||[],managed=boot.managedInjury||null,plan=boot.medicalPlan||{protocol:'Récupération active',physio_hours:2,weekly_cost:250};
+ const risk=managed?Number(managed.aggravation_risk||0):clamp(Math.round((c.fatigue||18)*.75+(trainingLoad()*3)),0,100);
+ const protocols=[
+  ['Repos complet','Fatigue ↓↓↓ · retour accéléré · forme légèrement en baisse','0 € / semaine'],
+  ['Physio intensive','Risque ↓↓↓ · retour le plus rapide · coût élevé','900 € / semaine'],
+  ['Récupération active','Équilibre récupération / fitness','250 € / semaine'],
+  ['Maintien de forme','Fitness préservée · risque de rechute plus élevé','120 € / semaine']
+ ];
+ return `<div class="section-head"><div><div class="eyebrow">Centre médical</div><h1>Condition & blessures</h1><div class="muted">Diagnostic, protocole, récupération et risque de rechute.</div></div><button class="primary" onclick="setMedicalProtocol('Récupération active')">Récupération active</button></div>
  <div class="grid g4"><div class="card"><h3>Fitness</h3><div class="big">${c.fitness||91}%</div><div class="bar"><i style="width:${c.fitness||91}%"></i></div></div><div class="card"><h3>Fatigue</h3><div class="big">${c.fatigue||18}%</div><div class="bar"><i style="width:${c.fatigue||18}%"></i></div></div><div class="card"><h3>Risque</h3><div class="big ${risk>65?'bad':risk>35?'warn':'good'}">${risk}%</div></div><div class="card"><h3>Statut</h3><div class="big" style="font-size:20px">${esc(c.injury_status||'Fit')}</div></div></div>
- <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Dossier blessures</h2>${inj.length?inj.map(i=>`<div class="list-item click" onclick="openInjury(${i.id})"><div class="row between"><b>${esc(i.players?.name||'Joueur')} · ${esc(i.injury_type)}</b><span class="badge ${i.status==='Active'?'bad':'good'}">${esc(i.status)}</span></div><div class="muted mini">Sévérité ${esc(i.severity)} · retour ${df(i.expected_return)} · rechute ${i.aggravation_risk}%</div></div>`).join(''):'<div class="empty">Aucune blessure active enregistrée.</div>'}</div>
- <div class="card"><h2>Protocoles</h2><div class="list-item row between"><span>Repos complet</span><button class="soft-btn" onclick="setRecovery('Repos')">Appliquer</button></div><div class="list-item row between"><span>Récupération active</span><button class="soft-btn" onclick="setRecovery('Récupération')">Appliquer</button></div><div class="list-item row between"><span>Maintien de forme</span><button class="soft-btn" onclick="setRecovery('mix')">Appliquer</button></div><div class="notice" style="margin-top:10px">Une blessure mal gérée augmente le risque d'aggravation et peut impacter la progression sur plusieurs semaines.</div></div></div>`
+ <div class="grid g2" style="margin-top:12px">
+  <div class="card"><h2>Dossier du joueur géré</h2>${managed?`
+    <div class="notice ${managed.severity==='Sévère'?'bad':''}"><b>${esc(managed.injury_type)}</b> · ${esc(managed.severity)}</div>
+    <div class="list-item row between"><span>Début</span><b>${df(managed.started_at)}</b></div>
+    <div class="list-item row between"><span>Retour estimé</span><b>${df(managed.expected_return)}</b></div>
+    <div class="list-item row between"><span>Risque d’aggravation</span><b class="${Number(managed.aggravation_risk)>50?'bad':Number(managed.aggravation_risk)>25?'warn':'good'}">${managed.aggravation_risk}%</b></div>
+    <div class="list-item row between"><span>Traitement actuel</span><b>${esc(managed.treatment||plan.protocol)}</b></div>
+    <button class="soft-btn" style="margin-top:10px" onclick="openInjury(${managed.id})">Voir le dossier complet</button>
+  `:`<div class="notice good"><b>Aucune blessure active.</b><br><span class="muted mini">Le plan médical agit quand même sur la fatigue et la prévention.</span></div>`}</div>
+  <div class="card"><h2>Plan médical actuel</h2>
+    <div class="list-item row between"><span>Protocole</span><b>${esc(plan.protocol)}</b></div>
+    <div class="list-item row between"><span>Physio</span><b>${plan.physio_hours||0} h / semaine</b></div>
+    <div class="list-item row between"><span>Coût</span><b>${euro(plan.weekly_cost||0)} / semaine</b></div>
+    <div class="muted mini" style="margin-top:8px">${esc(plan.notes||'')}</div>
+  </div>
+ </div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Traitement</div><h2>Choisir le protocole</h2></div></div>
+ <div class="grid g2">${protocols.map(x=>`<div class="card ${plan.protocol===x[0]?'selected-card':''}"><div class="row between"><div><h3>${x[0]}</h3><div class="muted mini">${x[1]}</div></div><span class="badge">${x[2]}</span></div><button class="${plan.protocol===x[0]?'ghost':'soft-btn'}" style="margin-top:10px" onclick="setMedicalProtocol('${x[0]}')">${plan.protocol===x[0]?'Actif':'Appliquer'}</button></div>`).join('')}</div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Monde</div><h2>Blessures connues</h2></div></div>
+ <div class="card">${inj.length?inj.map(i=>`<div class="list-item click" onclick="openInjury(${i.id})"><div class="row between"><b>${esc(i.players?.name||'Joueur')} · ${esc(i.injury_type)}</b><span class="badge ${i.status==='Active'?'bad':'good'}">${esc(i.status)}</span></div><div class="muted mini">Sévérité ${esc(i.severity)} · retour ${df(i.expected_return)} · rechute ${i.aggravation_risk}%</div></div>`).join(''):'<div class="empty">Aucune blessure enregistrée.</div>'}</div>`
 }
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
@@ -454,8 +478,20 @@ window.openInjury=id=>{
   const i=(boot.injuries||[]).find(x=>x.id===id);if(!i)return;
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier médical</div><h1>${esc(i.injury_type)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Sévérité</span><b>${esc(i.severity)}</b></div><div class="list-item row between"><span>Retour estimé</span><b>${df(i.expected_return)}</b></div><div class="list-item row between"><span>Risque aggravation</span><b>${i.aggravation_risk}%</b></div><div class="list-item"><span class="muted mini">Traitement</span><p>${esc(i.treatment||'Repos et suivi médical')}</p></div></div></div></div>`;
 }
-window.setRecovery=mode=>{if(mode==='mix')local.training=['Récupération','Repos','Récupération','Repos','Récupération','Repos','Repos'];else local.training=local.training.map(()=>mode);persist();render()}
-window.applyRecovery=()=>setRecovery('mix');
+window.setMedicalProtocol=async protocol=>{
+  try{
+    const d=await managerAction('set_medical_protocol',0,{protocol});
+    boot=await get('/api/bootstrap');
+    if(protocol==='Repos complet')local.training=['Repos','Repos','Récupération','Repos','Récupération','Repos','Repos'];
+    else if(protocol==='Récupération active')local.training=['Récupération','Repos','Récupération','Repos','Récupération','Repos','Repos'];
+    persist();render();
+  }catch(e){alert(e.message)}
+}
+window.setRecovery=mode=>{
+  const map={Repos:'Repos complet','Récupération':'Récupération active',mix:'Récupération active'};
+  return setMedicalProtocol(map[mode]||'Récupération active');
+}
+window.applyRecovery=()=>setMedicalProtocol('Récupération active');
 window.setTactic=(k,v)=>{local.tactics=local.tactics||{};local.tactics[k]=['aggression','risk','net'].includes(k)?Number(v):v;persist();render()}
 window.simulatePracticeMatch=async()=>{
   const cr=career();let opp={name:'Adversaire ATP',current_ability:55,form:70,fatigue:20};
@@ -541,7 +577,7 @@ window.simulateWeek=async()=>{
     local.feed=local.feed||[];
     local.feed.unshift('Progression entraînement : '+sim.training.improvements.map(x=>(labels[x.attribute]||x.attribute)+' '+x.from+'→'+x.to).join(', '));
   }
-  local.feed=local.feed||[];if(sim.weeklyFinance)local.feed.unshift(`Finances semaine : sponsors +${euro(sim.weeklyFinance.sponsors||0)}, staff -${euro(sim.weeklyFinance.staff||0)}, joueurs -${euro(sim.weeklyFinance.players||0)} · net ${sim.weeklyFinance.net>=0?'+':''}${euro(sim.weeklyFinance.net||0)}.`);if((sim.weeklyFinance?.expired_contracts||0)>0)local.feed.unshift(`${sim.weeklyFinance.expired_contracts} contrat(s) joueur arrivé(s) à échéance.`);if((sim.academyDevelopment?.ability_progressions||0)>0)local.feed.unshift(`Académie : ${sim.academyDevelopment.ability_progressions} jeune(s) ont progressé en niveau global, ${sim.academyDevelopment.attribute_improvements||0} attribut(s) amélioré(s).`);if((sim.injuries?.new_injuries||0)>0)local.feed.unshift(`${sim.injuries.new_injuries} nouvelle(s) blessure(s) dans le monde cette semaine.`);if((sim.forfeits?.forfeits||0)>0)local.feed.unshift(`${sim.forfeits.forfeits} place(s) libérée(s) par forfait sur les tournois à venir.`);local.feed.unshift(`Semaine simulée : ${cr.player_name||'Joueur'} est ATP #${cr.singles_rank} avec ${cr.points} pts. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
+  local.feed=local.feed||[];if(sim.medical){local.feed.unshift(sim.medical.recovered?'Centre médical : retour à 100%, le joueur est déclaré apte.':`Centre médical : ${sim.medical.protocol}, risque ${sim.medical.risk_delta>=0?'+':''}${sim.medical.risk_delta}, retour gagné ${sim.medical.return_days_gained||0} jour(s).`)}if(sim.weeklyFinance)local.feed.unshift(`Finances semaine : sponsors +${euro(sim.weeklyFinance.sponsors||0)}, staff -${euro(sim.weeklyFinance.staff||0)}, joueurs -${euro(sim.weeklyFinance.players||0)}, médical -${euro(sim.weeklyFinance.medical||0)} · net ${sim.weeklyFinance.net>=0?'+':''}${euro(sim.weeklyFinance.net||0)}.`);if((sim.weeklyFinance?.expired_contracts||0)>0)local.feed.unshift(`${sim.weeklyFinance.expired_contracts} contrat(s) joueur arrivé(s) à échéance.`);if((sim.academyDevelopment?.ability_progressions||0)>0)local.feed.unshift(`Académie : ${sim.academyDevelopment.ability_progressions} jeune(s) ont progressé en niveau global, ${sim.academyDevelopment.attribute_improvements||0} attribut(s) amélioré(s).`);if((sim.injuries?.new_injuries||0)>0)local.feed.unshift(`${sim.injuries.new_injuries} nouvelle(s) blessure(s) dans le monde cette semaine.`);if((sim.forfeits?.forfeits||0)>0)local.feed.unshift(`${sim.forfeits.forfeits} place(s) libérée(s) par forfait sur les tournois à venir.`);local.feed.unshift(`Semaine simulée : ${cr.player_name||'Joueur'} est ATP #${cr.singles_rank} avec ${cr.points} pts. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
   if(boot.career)local.career={...cr,...boot.career};

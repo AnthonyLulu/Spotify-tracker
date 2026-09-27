@@ -32,7 +32,7 @@ const saveKey=(()=>{let k=localStorage.getItem('courtBossSaveKey');if(!k){k=cryp
 const fmt=n=>new Intl.NumberFormat('fr-FR').format(Math.round(Number(n)||0));
 const euro=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n)||0);
 const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}):'—';
-const RANKING_SNAPSHOT='2026-09-27';
+const RANKING_SNAPSHOT='2025-12-01';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
@@ -222,7 +222,7 @@ function rankings(){
          ?'ITF Juniors · snapshot '+df(snap||RANKING_SNAPSHOT)
          :'ITF World Tennis Tour · snapshot '+df(snap||RANKING_SNAPSHOT);
  const pill=rankKind==='ncaa'?(snap?df(snap):'NCAA'):df(snap||RANKING_SNAPSHOT);
- return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Ranking, Race, Double et Next Gen sont séparés. Le snapshot réel du monde correspond au 27 septembre 2026, puis la simulation de ta carrière fait évoluer ce monde.</div></div><span class="pill">${pill}</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Ranking, Race, Double et Next Gen sont séparés. Le classement ATP de départ correspond au snapshot officiel du 1er décembre 2025, puis la simulation de ta carrière fait évoluer ce monde.</div></div><span class="pill">${pill}</span></div>
  <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  ${rankKind==='nextgen'? `<div class="age-filter"><span class="muted mini">Âge au snapshot 2026</span>${[18,19,20,21].map(a=>`<button class="${nextGenAge===a?'active':''}" onclick="setNextGenAge(${a})">U${a}</button>`).join('')}</div>`:''}
  ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Classement carrière simulé</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs · base initiale ${df(RANKING_SNAPSHOT)}</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}

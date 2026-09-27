@@ -1363,6 +1363,20 @@ Deno.serve(async(req:Request)=>{
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
   }
 
+  const baselineLockedImports=[
+    "/api/scrape-real-junior-profiles",
+    "/api/scrape-real-juniors",
+    "/api/sync-junior-demographics",
+    "/api/sync-real-juniors"
+  ];
+  if(req.method==="GET"&&baselineLockedImports.some((x)=>path.endsWith(x))){
+    return h({
+      error:"Base figée au 01/12/2025 : imports live post-cutoff désactivés.",
+      cutoff:AGE_REFERENCE_DATE,
+      mode:"historical_baseline"
+    },409);
+  }
+
   if(path.endsWith("/api/scrape-real-junior-profiles")&&req.method==="GET"){
     try{return h(await scrapeRealJuniorStatProfiles())}
     catch(e){return h({error:String((e as any)?.message||e)},500)}

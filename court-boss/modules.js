@@ -4,7 +4,7 @@ let cbSeasonHistory=[];
 
 async function loadCbDoublesTournaments(){
   try{
-    const d=await get('/api/tournaments?offset=0&limit=60');
+    const d=await get('/api/tournaments?offset=0&limit=60&from='+encodeURIComponent(local.date||'2026-09-27'));
     cbDoublesTournaments=(d.rows||[]).filter(t=>t.doubles);
   }catch(e){
     cbDoublesTournaments=[];

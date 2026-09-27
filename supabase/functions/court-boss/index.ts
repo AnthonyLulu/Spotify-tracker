@@ -2100,7 +2100,7 @@ Deno.serve(async(req:Request)=>{
     const [
       playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,juniorTours,ncaaTours,
       ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,currentMissingDob,
-      active2025,doublesReal,raceReal,nextgenReal,juniorReal
+      active2025,doublesReal,raceReal,nextgenReal,juniorReal,itfMissingAge,juniorMissingAge,ncaaMissingAge
     ] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true),
@@ -2127,7 +2127,10 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("nextgen_source","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null)
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null).is("age",null),
+      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null).is("age",null),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true).is("age",null)
     ]);
     return h({
       players:atp.count??0,
@@ -2157,7 +2160,10 @@ Deno.serve(async(req:Request)=>{
       officialJunior:juniorTours.count??0,
       officialNCAA:ncaaTours.count??0,
       currentRankedMissingAge:currentMissingAge.count??0,
-      currentRankedMissingDob:currentMissingDob.count??0
+      currentRankedMissingDob:currentMissingDob.count??0,
+      itfMissingAge:itfMissingAge.count??0,
+      juniorMissingAge:juniorMissingAge.count??0,
+      ncaaMissingAge:ncaaMissingAge.count??0
     });
   }
 

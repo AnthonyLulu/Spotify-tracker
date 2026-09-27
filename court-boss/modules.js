@@ -816,6 +816,13 @@ window.renderPalmaresHtml=function(d,p){
     return acc;
   },{})).sort((a,b)=>b[1]-a[1]);
 
+  const slamBreakdown={
+    'Australian Open':titles.filter(t=>/Australian Open/i.test(String(t.tournament_name||''))).length,
+    'Roland-Garros':titles.filter(t=>/Roland[ -]?Garros/i.test(String(t.tournament_name||''))).length,
+    'Wimbledon':titles.filter(t=>/Wimbledon/i.test(String(t.tournament_name||''))).length,
+    'US Open':titles.filter(t=>/US Open/i.test(String(t.tournament_name||''))).length
+  };
+
   const first=titles.length?titles[titles.length-1]:null;
   const last=titles[0]||null;
   const totalMatches=Number(cs.wins||0)+Number(cs.losses||0);
@@ -865,6 +872,8 @@ window.renderPalmaresHtml=function(d,p){
       <div class="card">
         <h2>Titres par catégorie</h2>
         ${catOrder.map(k=>`<div class="list-item row between"><span>${k}</span><b>${levels[k]||0}</b></div>`).join('')}
+        <h3 style="margin-top:14px">Grand Chelem en détail</h3>
+        ${Object.entries(slamBreakdown).map(([name,n])=>`<div class="list-item row between ${n?'click':''}" ${n?`data-palmares-name="${name==='Roland-Garros'?'Roland Garros':name}"`:''}><span>${name}</span><b>${n}</b></div>`).join('')}
       </div>
       <div class="card">
         <h2>Titres par surface</h2>

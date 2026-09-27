@@ -811,7 +811,16 @@ Deno.serve(async(req:Request)=>{
           if(!prev||p.ranking<prev.ranking)merged.set(key,p);
         }
       }
-      return h({snapshot,discovered:merged.size,sources:stats,rows:[...merged.values()].map((p:any)=>({name:p.name,country:p.country,ranking:p.ranking}))});
+      const stageRows=[...merged.values()].map((p:any)=>({
+        name_norm:normalizeName(p.name),country:p.country,name:p.name,
+        junior_ranking:p.ranking,snapshot_date:snapshot,source_url:p.url,
+        source_label:"CoreTennis ITF Junior Boys · "+snapshot,updated_at:new Date().toISOString()
+      }));
+      for(let i=0;i<stageRows.length;i+=500){
+        const up=await db.from("junior_real_staging").upsert(stageRows.slice(i,i+500),{onConflict:"name_norm,country"});
+        if(up.error)throw up.error;
+      }
+      return h({snapshot,discovered:merged.size,staged:stageRows.length,sources:stats,rows:[...merged.values()].map((p:any)=>({name:p.name,country:p.country,ranking:p.ranking}))});
     }catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 

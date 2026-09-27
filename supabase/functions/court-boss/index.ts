@@ -946,74 +946,62 @@ async function parseLiveTennisDoublesRace(url:string){
 
 
 async function resolveTournamentImage(t:any){
-  if(!t||t.image_url||!t.source_url)return t;
-  const source=String(t.image_source_url||t.source_url||"").trim();
-  if(!/^https?:\/\//i.test(source))return t;
-  if(/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source))return t;
-  let host="";
-  try{host=new URL(source).hostname.toLowerCase()}catch{return t}
-  const allowed=[
-    "atptour.com","www.atptour.com","itftennis.com","www.itftennis.com",
-    "ncaa.com","www.ncaa.com","ncaa.org","www.ncaa.org",
-    "wearecollegetennis.com","www.wearecollegetennis.com",
-    "ausopen.com","www.ausopen.com","rolandgarros.com","www.rolandgarros.com",
-    "wimbledon.com","www.wimbledon.com","usopen.org","www.usopen.org",
-    "wtatennis.com","www.wtatennis.com",
-    "sites.google.com",
-    "tenniseurope.org","www.tenniseurope.org"
-  ];
-  if(!allowed.includes(host))return t;
-  try{
-    const r=await fetch(source,{
-      headers:{
-        "User-Agent":"CourtBoss/1.0 (+tournament-image-cache)",
-        "Accept":"text/html,application/xhtml+xml"
-      },
-      redirect:"follow"
-    });
-    if(!r.ok)return t;
-    const type=String(r.headers.get("content-type")||"");
-    if(!/text\/html|application\/xhtml\+xml/i.test(type))return t;
-    const html=await r.text();
-    const picks=[
-      /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
-      /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i
-    ];
-    let raw="";
-    for(const re of picks){
-      const m=html.match(re);
-      if(m?.[1]){raw=String(m[1]).replace(/&amp;/g,"&").trim();break;}
-    }
-    if(!raw)return t;
-    try{raw=new URL(raw,source).toString()}catch{}
-    if(!/^https?:\/\//i.test(raw)||/placeholder|default-avatar|favicon|sprite/i.test(raw))return t;
-    t.image_url=raw;
-    t.image_source_url=source;
-    t.image_source_label="Visuel officiel du tournoi";
-    await db.from("tournaments").update({
-      image_url:raw,
-      image_source_url:source,
-      image_source_label:t.image_source_label
-    }).eq("id",t.id);
-  }catch{}
+  if(!t||t.image_url||!t.name)return t;
 
-  if(!t.image_url&&t.is_verified&&t.name){
+  const source=String(t.image_source_url||t.source_url||"").trim();
+  let canFetchOfficial=false;
+  if(/^https?:\/\//i.test(source)&&!/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source)){
+    try{
+      const host=new URL(source).hostname.toLowerCase();
+      const allowed=[
+        "atptour.com","www.atptour.com","itftennis.com","www.itftennis.com",
+        "ncaa.com","www.ncaa.com","ncaa.org","www.ncaa.org",
+        "wearecollegetennis.com","www.wearecollegetennis.com",
+        "ausopen.com","www.ausopen.com","rolandgarros.com","www.rolandgarros.com",
+        "wimbledon.com","www.wimbledon.com","usopen.org","www.usopen.org",
+        "wtatennis.com","www.wtatennis.com","sites.google.com",
+        "tenniseurope.org","www.tenniseurope.org"
+      ];
+      canFetchOfficial=allowed.includes(host);
+    }catch{}
+  }
+
+  if(canFetchOfficial){
+    try{
+      const r=await fetch(source,{
+        headers:{"User-Agent":"CourtBoss/1.0 (+tournament-image-cache)","Accept":"text/html,application/xhtml+xml"},
+        redirect:"follow"
+      });
+      if(r.ok&&/text\/html|application\/xhtml\+xml/i.test(String(r.headers.get("content-type")||""))){
+        const html=await r.text();
+        const picks=[
+          /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+          /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
+          /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i,
+          /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i
+        ];
+        let raw="";
+        for(const re of picks){const m=html.match(re);if(m?.[1]){raw=String(m[1]).replace(/&amp;/g,"&").trim();break;}}
+        try{if(raw)raw=new URL(raw,source).toString()}catch{}
+        if(raw&&/^https?:\/\//i.test(raw)&&!/placeholder|default-avatar|favicon|sprite|logo/i.test(raw)){
+          t.image_url=raw;
+          t.image_source_url=source;
+          t.image_source_label="Visuel officiel du tournoi";
+          await db.from("tournaments").update({
+            image_url:raw,image_source_url:source,image_source_label:t.image_source_label
+          }).eq("id",t.id);
+        }
+      }
+    }catch{}
+  }
+
+  if(!t.image_url&&t.is_verified){
     try{
       const query=String(t.name)+" "+String(t.city||"")+" tennis";
       const qs=new URLSearchParams({
-        action:"query",
-        generator:"search",
-        gsrsearch:query,
-        gsrnamespace:"0",
-        gsrlimit:"4",
-        prop:"pageimages|info",
-        piprop:"thumbnail|original",
-        pithumbsize:"900",
-        inprop:"url",
-        format:"json",
-        origin:"*"
+        action:"query",generator:"search",gsrsearch:query,gsrnamespace:"0",gsrlimit:"5",
+        prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"900",
+        inprop:"url",format:"json",origin:"*"
       });
       const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{
         headers:{"User-Agent":"CourtBoss/1.0 (+safe-tournament-image)"}
@@ -1027,7 +1015,8 @@ async function resolveTournamentImage(t:any){
           const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
           const nameHit=title===wanted||title.includes(wanted)||wanted.includes(title);
           const cityHit=city.length>=4&&title.includes(city);
-          return (nameHit||cityHit)&&/tennis|open|championship|masters|challenger/i.test(String(x.title||""));
+          const tennisContext=/tennis|open|championship|masters|challenger|wimbledon|rolandgarros/i.test(String(x.title||""));
+          return (nameHit||cityHit)&&tennisContext;
         });
         const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
         if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)){
@@ -1035,9 +1024,7 @@ async function resolveTournamentImage(t:any){
           t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
           t.image_source_label="Wikipedia/Wikimedia · tournoi vérifié";
           await db.from("tournaments").update({
-            image_url:raw,
-            image_source_url:t.image_source_url,
-            image_source_label:t.image_source_label
+            image_url:raw,image_source_url:t.image_source_url,image_source_label:t.image_source_label
           }).eq("id",t.id);
         }
       }

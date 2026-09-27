@@ -58,9 +58,23 @@ jobs:
           API: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss
         run: |
           curl --fail --silent --show-error "$API/api/world" -o /tmp/world.json
-          curl --fail --silent --show-error "$API/api/rankings?kind=singles&offset=0&limit=5" -o /tmp/rankings.json
+          for kind in singles race doubles nextgen junior; do
+            curl --fail --silent --show-error "$API/api/rankings?kind=$kind&offset=0&limit=10" -o "/tmp/$kind.json"
+          done
           node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
-          node -e "const r=require('/tmp/rankings.json'); if(!Array.isArray(r.rows)||r.rows.length!==5) throw new Error('ranking payload invalid'); console.log(r.rows.map(x=>'#'+x.ranking+' '+x.name).join(' | '))"
+          node <<'EOF'
+          const fs=require('fs');
+          for(const kind of ['singles','race','doubles','nextgen','junior']){
+            const r=JSON.parse(fs.readFileSync('/tmp/'+kind+'.json','utf8'));
+            if(!Array.isArray(r.rows)||!r.rows.length)throw new Error(kind+' ranking empty');
+            console.log(kind,r.rows.slice(0,3).map(x=>x.name).join(' | '));
+          }
+          const ng=JSON.parse(fs.readFileSync('/tmp/nextgen.json','utf8'));
+          if(ng.rows[0]?.name!=='Jakub Mensik'||ng.rows[0]?.nextgen_ranking!==1)throw new Error('Next Gen #1 invalid');
+          if(ng.rows.some(x=>x.birth_date<'2005-01-01'))throw new Error('ineligible Next Gen player');
+          const db=JSON.parse(fs.readFileSync('/tmp/doubles.json','utf8'));
+          if(db.rows[0]?.name!=='Lloyd Glasspool')throw new Error('Doubles #1 invalid');
+          EOF
 
       - name: Mobile browser smoke test
         env:
@@ -97,13 +111,17 @@ jobs:
             await page.getByRole('button',{name:'Classements'}).click();
             await page.getByRole('heading',{name:'Classements'}).waitFor();
 
-            await page.getByRole('button',{name:'Race'}).click();
+            await page.getByRole('button',{name:'ATP Race'}).click();
             await page.getByText('Carlos Alcaraz').first().waitFor();
 
-            await page.getByRole('button',{name:'ATP Double'}).click();
+            await page.getByRole('button',{name:'ATP Doubles'}).click();
             await page.getByText('Lloyd Glasspool').first().waitFor();
 
-            await page.getByRole('button',{name:'ITF Junior'}).click();
+            await page.getByRole('button',{name:'Next Gen U21'}).click();
+            await page.getByText('Jakub Mensik').first().waitFor();
+            await page.getByText('Qualifié').first().waitFor();
+
+            await page.getByRole('button',{name:'ITF Juniors'}).click();
             await page.getByText('Ivan Ivanov').first().waitFor();
             const firstPlayer=page.locator('tbody tr.click').first();
             await firstPlayer.click();
@@ -118,11 +136,30 @@ jobs:
             await page.getByRole('heading',{name:'Tactique'}).waitFor();
             await page.getByRole('button',{name:'Match Center'}).click();
             await page.getByRole('heading',{name:'Match live'}).waitFor();
+
+            await page.route('**/api/live-match/start',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({
+                session:{id:999999,status:'active',surface:'Dur',user_sets:0,opponent_sets:0,set_no:1,user_games:0,opponent_games:0,user_points:0,opponent_points:0,serving_user:true,momentum:50,stats:{},score_log:[],last_point:{}},
+                opponent:{id:2,name:'Test Opponent',country:'FRA',ranking:740},
+                win_probability:50
+              })
+            }));
+            await page.route('**/api/live-match/point',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({
+                session:{id:999999,status:'active',surface:'Dur',user_sets:0,opponent_sets:0,set_no:1,user_games:0,opponent_games:0,user_points:1,opponent_points:0,serving_user:true,momentum:51,stats:{user_winners:1},score_log:[],last_point:{winner:'user',rally:6,shot:'winner',user_x:62,opp_x:31,ball_x:28,ball_y:24}},
+                opponent:{id:2,name:'Test Opponent',country:'FRA',ranking:740},
+                win_probability:54,last_point:{winner:'user',rally:6,shot:'winner',user_x:62,opp_x:31,ball_x:28,ball_y:24}
+              })
+            }));
             const play=page.getByRole('button',{name:'Jouer'}).first();
             await play.click();
             await page.locator('.court2d').waitFor();
             if(await page.locator('.court-player').count()!==2)throw new Error('match viewer needs two player circles');
             if(await page.locator('.court-ball').count()!==1)throw new Error('match viewer needs one ball');
+            await page.getByRole('button',{name:'1 point'}).click();
+            await page.getByText('6 coups').waitFor();
 
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
             console.log('mobile browser smoke: OK');

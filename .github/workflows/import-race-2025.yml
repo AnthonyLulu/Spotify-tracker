@@ -1,4 +1,4 @@
-name: Build ATP Race 2025 Snapshot
+name: Diagnose ATP Race 2025 Source
 
 on:
   workflow_dispatch:
@@ -10,66 +10,51 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - uses: r-lib/actions/setup-r@v2
         with:
           r-version: "release"
 
       - name: Download Race data
         run: |
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData" \
-            -o /tmp/race.RData
+          curl --fail --location --silent --show-error             "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData"             -o /tmp/race.RData
 
-      - name: Build compact Race CSV
+      - name: Diagnose season/week mapping
         run: |
           mkdir -p court-boss/data
-          cat > /tmp/build_race.R <<'RS'
+          cat > /tmp/diag.R <<'RS'
           e <- new.env()
           loaded <- load("/tmp/race.RData", envir=e)
-          frame_name <- loaded[sapply(loaded, function(nm) is.data.frame(e[[nm]]))][1]
-          if (is.na(frame_name)) stop("No data.frame found")
+          frame_name <- loaded[sapply(loaded,function(nm)is.data.frame(e[[nm]]))][1]
           x <- e[[frame_name]]
+          cat("frame:",frame_name,"\n")
+          cat("columns:",paste(names(x),collapse=" | "),"\n")
+          cat("seasons:",paste(sort(unique(x$Season)),collapse=", "),"\n")
+          cat("weeks 2025:",paste(sort(unique(x$Week[x$Season==2025])),collapse=", "),"\n")
 
-          need <- c("Season","Week","Player_ID","Cum_Race_points","Rank")
-          missing <- setdiff(need, names(x))
-          if (length(missing)) stop(paste("Missing columns", paste(missing, collapse=",")))
+          picks <- c("Alcaraz Carlos","Sinner Jannik","Zverev Alexander","Djokovic Novak")
+          y <- x[x$Season==2025 & x$Player_ID %in% picks,
+                 intersect(c("Season","Week","Player_ID","Cum_Race_points","Rank","Date","Ranking_Date"),names(x))]
+          y <- y[order(y$Player_ID,y$Week),]
+          write.csv(y,"court-boss/data/race-2025-diagnostic.csv",row.names=FALSE)
 
-          cur <- x[x$Season == 2025 & x$Week == 49, c("Player_ID","Cum_Race_points","Rank")]
-          prv <- x[x$Season == 2025 & x$Week == 48, c("Player_ID","Rank")]
-          names(cur) <- c("name","points","rank")
-          names(prv) <- c("name","previous_rank")
-
-          cur <- cur[!is.na(cur$name) & !is.na(cur$rank),]
-          cur <- cur[order(cur$rank, -cur$points, cur$name),]
-          cur <- cur[!duplicated(cur$name),]
-          prv <- prv[!is.na(prv$name) & !is.na(prv$previous_rank),]
-          prv <- prv[order(prv$previous_rank, prv$name),]
-          prv <- prv[!duplicated(prv$name),]
-
-          out <- merge(cur, prv, by="name", all.x=TRUE, sort=FALSE)
-          out$rank_change <- ifelse(is.na(out$previous_rank), NA, out$previous_rank - out$rank)
-          out <- out[order(out$rank, out$name),]
-
-          write.csv(out, "court-boss/data/atp-race-2025-12-01.csv", row.names=FALSE, na="")
-          cat("Race rows:", nrow(out), "\n")
-          print(head(out, 15))
+          for (p in picks) {
+            z <- y[y$Player_ID==p,]
+            cat("\nPLAYER",p,"\n")
+            print(tail(z,20))
+          }
           RS
-          Rscript /tmp/build_race.R
+          Rscript /tmp/diag.R
 
-      - name: Commit Race snapshot
+      - name: Commit diagnostic
         run: |
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/atp-race-2025-12-01.csv
+          git add court-boss/data/race-2025-diagnostic.csv
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Build ATP Race snapshot for 2025-12-01"
-          git fetch origin court-boss-live
-          git rebase origin/court-boss-live
+          git commit -m "Diagnose ATP Race 2025 week mapping"
+          git pull --rebase origin court-boss-live
           git push origin HEAD:court-boss-live

@@ -116,8 +116,11 @@ async function resolvePlayerFacts(player:any,gameDate:string){
         const target=normalizeName(String(player.name)).replace(/\s+/g,"");
         const chosen=pages.find((x:any)=>{
           const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
-          return x?.pageprops?.wikibase_item&&(title.includes(target)||target.includes(title));
-        })??pages.find((x:any)=>x?.pageprops?.wikibase_item);
+          return x?.pageprops?.wikibase_item&&(
+            title===target ||
+            (title.length>=8&&target.length>=8&&(title.includes(target)||target.includes(title)))
+          );
+        });
         const found=String(chosen?.pageprops?.wikibase_item||"");
         wikiTitle=String(chosen?.title||"");
         if(/^Q\d+$/.test(found)){
@@ -349,8 +352,13 @@ async function resolvePlayerPhoto(player:any){
         const j:any=await r.json();
         const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
         const target=normalizeName(String(player.name)).replace(/\s+/g,"");
-        const chosen=pages.find((x:any)=>x?.thumbnail?.source&&normalizeName(String(x.title||"")).replace(/\s+/g,"").includes(target))
-          ??pages.find((x:any)=>x?.thumbnail?.source);
+        const chosen=pages.find((x:any)=>{
+          const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+          return x?.thumbnail?.source&&(
+            title===target ||
+            (title.length>=8&&target.length>=8&&(title.includes(target)||target.includes(title)))
+          );
+        });
         const photo=String(chosen?.thumbnail?.source||"").trim();
         if(photo){
           player.wiki_photo_url=photo;

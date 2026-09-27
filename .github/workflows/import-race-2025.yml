@@ -1,4 +1,4 @@
-name: Import 2025 ATP Race Dataset
+name: Build ATP Race 2025-12-01 Snapshot
 
 on:
   workflow_dispatch:
@@ -10,10 +10,12 @@ permissions:
   contents: write
 
 jobs:
-  convert:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -21,34 +23,72 @@ jobs:
 
       - name: Download Race RData from Tennis-Data
         run: |
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData" \
-            -o /tmp/V_RACE_RANK_2025.RData
-          ls -lh /tmp/V_RACE_RANK_2025.RData
+          curl --fail --location --silent --show-error             "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData"             -o /tmp/V_RACE_RANK_2025.RData
 
-      - name: Convert Race RData to CSV
+      - name: Build compact Race snapshot
         run: |
           mkdir -p court-boss/data
           Rscript - <<'RS'
           e <- new.env()
           loaded <- load("/tmp/V_RACE_RANK_2025.RData", envir=e)
-          cat("objects:", paste(loaded, collapse=", "), "\n")
+          x <- NULL
           for (nm in loaded) {
-            x <- e[[nm]]
-            cat(nm, class(x), nrow(x), ncol(x), "\n")
-            if (is.data.frame(x)) {
-              write.csv(x, "court-boss/data/atp-race-2025-all-weeks.csv", row.names=FALSE, na="")
-              cat("columns:", paste(names(x), collapse=", "), "\n")
-              print(tail(x, 20))
-              break
-            }
+            candidate <- e[[nm]]
+            if (is.data.frame(candidate)) { x <- candidate; break }
           }
+          if (is.null(x)) stop("No data.frame found in RData")
+
+          current <- x[x$Season == 2025 & x$Week == 49, c("Player_ID","Cum_Race_points","Rank")]
+          previous <- x[x$Season == 2025 & x$Week == 48, c("Player_ID","Rank")]
+
+          names(current) <- c("name","points","rank")
+          names(previous) <- c("name","previous_rank")
+
+          current <- current[!is.na(current$name) & !is.na(current$rank), ]
+          current <- current[order(current$rank, -current$points, current$name), ]
+          current <- current[!duplicated(current$name), ]
+
+          previous <- previous[!is.na(previous$name) & !is.na(previous$previous_rank), ]
+          previous <- previous[order(previous$previous_rank, previous$name), ]
+          previous <- previous[!duplicated(previous$name), ]
+
+          out <- merge(current, previous, by="name", all.x=TRUE, sort=FALSE)
+          out$rank_change <- ifelse(is.na(out$previous_rank), NA, out$previous_rank - out$rank)
+          out <- out[order(out$rank, out$name), ]
+
+          esc <- function(s) {
+            s <- gsub("\\", "\\\\", s, fixed=TRUE)
+            s <- gsub('"', '\\"', s, fixed=TRUE)
+            s
+          }
+
+          rows <- vapply(seq_len(nrow(out)), function(i) {
+            prev <- if (is.na(out$previous_rank[i])) "null" else as.character(as.integer(out$previous_rank[i]))
+            chg <- if (is.na(out$rank_change[i])) "null" else as.character(as.integer(out$rank_change[i]))
+            sprintf(
+              '{"rank":%d,"name":"%s","points":%d,"previous_rank":%s,"rank_change":%s}',
+              as.integer(out$rank[i]), esc(as.character(out$name[i])),
+              as.integer(out$points[i]), prev, chg
+            )
+          }, character(1))
+
+          json <- paste0(
+            '{"snapshot":"2025-12-01","previous_snapshot":"2025-11-24",',
+            '"source":"Thibaud-Meynier/Tennis-Data V_RACE_RANK_2025",',
+            '"week":49,"count":', nrow(out), ',"rows":[', paste(rows, collapse=","), ']}'
+          )
+          writeLines(json, "court-boss/data/atp-race-2025-12-01.json", useBytes=TRUE)
+          cat("rows",nrow(out),"top",paste(head(out$name,10),collapse=" | "),"
+")
           RS
 
-      - name: Commit converted Race dataset
+      - name: Commit Race snapshot
         run: |
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/atp-race-2025-all-weeks.csv
-          git diff --cached --quiet || git commit -m "Import 2025 ATP Race dataset"
-          git push
+          git add court-boss/data/atp-race-2025-12-01.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Build ATP Race snapshot for 2025-12-01"
+          git fetch origin court-boss-live
+          git rebase origin/court-boss-live
+          git push origin HEAD:court-boss-live

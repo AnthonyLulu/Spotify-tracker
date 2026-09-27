@@ -539,6 +539,9 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
     const rr=await db.rpc("reset_ranking_career_import");
     if(rr.error)throw rr.error;
   }
+  const idsRes=await db.rpc("get_court_boss_sackmann_ids");
+  if(idsRes.error)throw idsRes.error;
+  const linkedIds=new Set((idsRes.data||[]).map((x:any)=>String(x)));
   const url="https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main/atp/atp_rankings_"+decade+".csv";
   const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+historical-ranking-sync)","Accept":"text/csv"}});
   if(!res.ok||!res.body)throw new Error("Ranking archive HTTP "+res.status);
@@ -549,12 +552,12 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
   const processLine=(line:string)=>{
     if(!line)return;
     if(!headerSeen){headerSeen=true;return;}
-    const cells=cbCsvCells(line);
+    const cells=line.split(",");
     if(cells.length<3)return;
     const dateRaw=String(cells[0]||"").trim();
     const rank=Number(cells[1]||0);
     const player=String(cells[2]||"").trim();
-    if(!player||!rank||rank<1||dateRaw>"20251201")return;
+    if(!player||!linkedIds.has(player)||!rank||rank<1||dateRaw>"20251201")return;
     const iso=ymdToIso(dateRaw);
     if(!iso)return;
     let a=map.get(player);
@@ -623,7 +626,7 @@ async function syncSackmannRankingDecade(decade:string,reset=false){
     linked+=Number(r.data?.players_linked||0);
     upserted+=Number(r.data?.rows_upserted||0);
   }
-  return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",streamed:true,method:"elapsed calendar weeks; long freezes excluded"};
+  return {decade,url,lines:accepted,players:rows.length,linked_id_filter:linkedIds.size,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01",streamed:true,method:"elapsed calendar weeks; long freezes excluded"};
 }
 async function syncSackmannAtpTitles(fromYear:number,toYear:number){
   const from=Math.max(1968,Math.min(2025,fromYear));

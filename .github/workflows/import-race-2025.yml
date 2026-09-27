@@ -1,60 +1,17 @@
-name: Diagnose ATP Race 2025 Source
+name: Diagnose ATP Race Source
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["court-boss-live"]
-    paths: [".github/workflows/import-race-2025.yml"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: "release"
-
-      - name: Download Race data
-        run: |
-          curl --fail --location --silent --show-error             "https://raw.githubusercontent.com/Thibaud-Meynier/Tennis-Data/main/Scrapping%20tennis%20data/Rank/Race/V_RACE_RANK_2025.RData"             -o /tmp/race.RData
-
-      - name: Diagnose season/week mapping
-        run: |
-          mkdir -p court-boss/data
-          cat > /tmp/diag.R <<'RS'
-          e <- new.env()
-          loaded <- load("/tmp/race.RData", envir=e)
-          frame_name <- loaded[sapply(loaded,function(nm)is.data.frame(e[[nm]]))][1]
-          x <- e[[frame_name]]
-          cat("frame:",frame_name,"\n")
-          cat("columns:",paste(names(x),collapse=" | "),"\n")
-          cat("seasons:",paste(sort(unique(x$Season)),collapse=", "),"\n")
-          cat("weeks 2025:",paste(sort(unique(x$Week[x$Season==2025])),collapse=", "),"\n")
-
-          picks <- c("Alcaraz Carlos","Sinner Jannik","Zverev Alexander","Djokovic Novak")
-          y <- x[x$Season==2025 & x$Player_ID %in% picks,
-                 intersect(c("Season","Week","Player_ID","Cum_Race_points","Rank","Date","Ranking_Date"),names(x))]
-          y <- y[order(y$Player_ID,y$Week),]
-          write.csv(y,"court-boss/data/race-2025-diagnostic.csv",row.names=FALSE)
-
-          for (p in picks) {
-            z <- y[y$Player_ID==p,]
-            cat("\nPLAYER",p,"\n")
-            print(tail(z,20))
-          }
-          RS
-          Rscript /tmp/diag.R
-
-      - name: Commit diagnostic
-        run: |
-          git config user.name "Court Boss Data Bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/race-2025-diagnostic.csv
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Diagnose ATP Race 2025 week mapping"
-          git pull --rebase origin court-boss-live
-          git push origin HEAD:court-boss-live
+      - run: |
+          echo "Diagnostic only. Do not import Thibaud-Meynier V_RACE_RANK_2025 after week 26:"
+          echo "the file stops accumulating 2025 points after 2025-06-22."
+          test -f court-boss/data/race-2025-diagnostic.csv

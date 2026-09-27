@@ -247,7 +247,7 @@ Deno.serve(async(req:Request)=>{
     const gameDate=String(careerDateRes.data?.career_date||"2026-09-27");
 
     let query=db.from("players")
-      .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
+      .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(ageMax<99) query=query.lte("age",ageMax);
 
@@ -281,7 +281,7 @@ Deno.serve(async(req:Request)=>{
     // Search/browse progressively enriches missing real-world facts without inventing DOBs.
     // ATP is already complete; NCAA/ITF pages hydrate a few missing profiles on every browse.
     if(q.length>=2||["NCAA","ITF","Junior"].includes(circuit)){
-      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url)).slice(0,q.length>=2?5:3);
+      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url||!p.wikidata_id)).slice(0,q.length>=2?6:3);
       if(enrich.length){
         const enriched=await Promise.all(enrich.map((p:any)=>resolvePlayerFacts({...p},gameDate)));
         const byId=new Map(enriched.map((p:any)=>[Number(p.id),p]));
@@ -2100,7 +2100,7 @@ Deno.serve(async(req:Request)=>{
     const [
       playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,juniorTours,ncaaTours,
       ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,currentMissingDob,
-      active2025,doublesReal,raceReal,nextgenReal,juniorReal,itfMissingAge,juniorMissingAge,ncaaMissingAge
+      active2025,doublesReal,raceReal,nextgenReal,juniorReal,backhandAll,backhandVerified,itfMissingAge,juniorMissingAge,ncaaMissingAge
     ] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true),
@@ -2161,6 +2161,8 @@ Deno.serve(async(req:Request)=>{
       officialNCAA:ncaaTours.count??0,
       currentRankedMissingAge:currentMissingAge.count??0,
       currentRankedMissingDob:currentMissingDob.count??0,
+      playersWithBackhand:backhandAll.count??0,
+      verifiedBackhands:backhandVerified.count??0,
       itfMissingAge:itfMissingAge.count??0,
       juniorMissingAge:juniorMissingAge.count??0,
       ncaaMissingAge:ncaaMissingAge.count??0

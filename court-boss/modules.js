@@ -1,6 +1,9 @@
 
 let cbDoublesTournaments=[];
 let cbSeasonHistory=[];
+let cbMatchOpponents=[];
+let cbLiveSession=null;
+let cbLiveOpponent=null;
 
 async function loadCbDoublesTournaments(){
   try{
@@ -265,6 +268,12 @@ window.nav=async function(r){
     shell(doublesPageV2());
     return;
   }
+  if(r==='match'){
+    route='match';window.scrollTo({top:0,behavior:'smooth'});
+    await loadCbMatchOpponents();
+    shell(liveMatchPageV2());
+    return;
+  }
   return cbBaseNav(r);
 };
 
@@ -272,6 +281,7 @@ const cbBaseRender=window.render;
 window.render=function(){
   if(route==='season')return shell(seasonPageV2());
   if(route==='doubles'&&cbDoublesTournaments.length)return shell(doublesPageV2());
+  if(route==='match'&&cbMatchOpponents.length)return shell(liveMatchPageV2());
   return cbBaseRender();
 };
 
@@ -315,3 +325,149 @@ window.startCareerWithPlayer=async function(id,name){
     overlay.innerHTML='<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Nouvelle carrière impossible</h2><p class="muted">'+esc(e.message)+'</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>';
   }
 };
+
+async function loadCbMatchOpponents(){
+  const r=Math.max(1,Number(career().singles_rank||750));
+  const offset=Math.max(0,r-8);
+  try{
+    const d=await get('/api/rankings?kind=singles&offset='+offset+'&limit=16');
+    cbMatchOpponents=(d.rows||[]).filter(p=>p.name!==career().player_name);
+  }catch(e){
+    cbMatchOpponents=[];
+  }
+}
+
+function liveMatchPageV2(){
+  const cr=career();
+  if(!cbLiveSession){
+    return `
+      <div class="section-head">
+        <div><div class="eyebrow">Match Center</div><h1>Match live</h1><div class="muted">Choisis un adversaire puis coache jeu par jeu.</div></div>
+        <button class="ghost" onclick="nav('tactics')">Tactique</button>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <h2>Ton état</h2>
+          <div class="kpi-strip">
+            <div class="kpi"><span class="muted mini">ATP</span><b>#${cr.singles_rank}</b></div>
+            <div class="kpi"><span class="muted mini">Forme</span><b>${cr.form}</b></div>
+            <div class="kpi"><span class="muted mini">Fitness</span><b>${cr.fitness}</b></div>
+            <div class="kpi"><span class="muted mini">Fatigue</span><b>${cr.fatigue}</b></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Plan de jeu</h2>
+          <div class="list-item row between"><span>Agressivité</span><b>${local.tactics?.aggression||58}</b></div>
+          <div class="list-item row between"><span>Prise de risque</span><b>${local.tactics?.risk||52}</b></div>
+          <div class="list-item row between"><span>Jeu au filet</span><b>${local.tactics?.net||28}</b></div>
+          <div class="list-item row between"><span>Position retour</span><b>${esc(local.tactics?.returnPos||'Neutre')}</b></div>
+        </div>
+      </div>
+      <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Adversaires</div><h2>Autour de ton classement</h2></div></div>
+      <div class="grid g2">
+        ${cbMatchOpponents.map(p=>`
+          <div class="card">
+            <div class="row between">
+              <div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">ATP #${p.ranking}</div><h2>${flags[p.country]||'🏳️'} ${esc(p.name)}</h2><div class="muted mini">CA ${p.current_ability} · forme ${p.form} · fatigue ${p.fatigue}</div></div>
+              <button class="primary" onclick="startLiveMatchV2(${p.id})">Jouer</button>
+            </div>
+          </div>`).join('')||'<div class="card empty">Aucun adversaire chargé.</div>'}
+      </div>`;
+  }
+
+  const s=cbLiveSession,o=cbLiveOpponent||{};
+  const totalGames=(s.user_games||0)+(s.opponent_games||0);
+  const momentum=Math.max(-10,Math.min(10,Number(s.momentum||0)));
+  const stats=s.stats||{};
+  const done=s.status!=='live';
+
+  return `
+    <div class="section-head">
+      <div><div class="eyebrow">Match live · ${esc(s.surface||'Dur')}</div><h1>Anthony vs ${esc(o.name||'Adversaire')}</h1><div class="muted">ATP #${o.ranking||'—'} · set ${s.set_no||1}</div></div>
+      <button class="ghost" onclick="resetLiveMatchV2()">Quitter</button>
+    </div>
+
+    <div class="card live-score">
+      <div class="score-line">
+        <div><span class="muted mini">JOUEUR</span><h2>Anthony</h2></div>
+        <div class="score-pills"><span>${s.user_sets}</span><strong>${s.user_games}</strong></div>
+      </div>
+      <div class="score-line">
+        <div><span class="muted mini">ADVERSAIRE</span><h2>${esc(o.name||'Adversaire')}</h2></div>
+        <div class="score-pills"><span>${s.opponent_sets}</span><strong>${s.opponent_games}</strong></div>
+      </div>
+      <div class="muted mini" style="margin-top:8px">${s.serving_user?'🎾 Anthony au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
+    </div>
+
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card">
+        <h2>Momentum</h2>
+        <div class="momentum-track"><i style="left:${50+momentum*4.5}%"></i></div>
+        <div class="row between mini muted"><span>Adversaire</span><b>${momentum>0?'Anthony +'+momentum:momentum<0?'Adversaire '+Math.abs(momentum):'Équilibre'}</b><span>Anthony</span></div>
+      </div>
+      <div class="card">
+        <h2>Stats live</h2>
+        <div class="kpi-strip">
+          <div class="kpi"><span class="muted mini">Winners</span><b>${stats.user_winners||0}</b></div>
+          <div class="kpi"><span class="muted mini">Fautes</span><b>${stats.user_errors||0}</b></div>
+          <div class="kpi"><span class="muted mini">Aces</span><b>${stats.aces||0}</b></div>
+          <div class="kpi"><span class="muted mini">DF</span><b>${stats.double_faults||0}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Coaching tactique</h2>
+      <div class="live-slider"><span>Agressivité</span><input type="range" min="1" max="100" value="${local.tactics?.aggression||58}" oninput="setLiveTacticV2('aggression',Number(this.value));this.nextElementSibling.textContent=this.value"><b>${local.tactics?.aggression||58}</b></div>
+      <div class="live-slider"><span>Prise de risque</span><input type="range" min="1" max="100" value="${local.tactics?.risk||52}" oninput="setLiveTacticV2('risk',Number(this.value));this.nextElementSibling.textContent=this.value"><b>${local.tactics?.risk||52}</b></div>
+      <div class="live-slider"><span>Jeu au filet</span><input type="range" min="1" max="100" value="${local.tactics?.net||28}" oninput="setLiveTacticV2('net',Number(this.value));this.nextElementSibling.textContent=this.value"><b>${local.tactics?.net||28}</b></div>
+      <div class="list-item row between"><span>Position au retour</span><select class="select" style="width:auto" onchange="setLiveTacticV2('returnPos',this.value)"><option ${(local.tactics?.returnPos||'Neutre')==='Neutre'?'selected':''}>Neutre</option><option ${local.tactics?.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${local.tactics?.returnPos==='Reculée'?'selected':''}>Reculée</option></select></div>
+      ${done
+        ?`<div class="notice ${s.user_sets>s.opponent_sets?'good':'bad'}" style="margin-top:12px"><b>${s.user_sets>s.opponent_sets?'Victoire':'Défaite'} ${s.user_sets}-${s.opponent_sets}</b></div><button class="primary" style="margin-top:10px" onclick="resetLiveMatchV2()">Nouveau match</button>`
+        :`<button class="primary" style="margin-top:12px;width:100%" onclick="advanceLiveMatchV2()">Jouer le prochain jeu</button>`}
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Historique du score</h2>
+      ${(s.score_log||[]).slice(-12).reverse().map(x=>`<div class="list-item row between"><span>Set ${x.set} · ${x.user_games}-${x.opponent_games}</span><b class="${x.winner_game==='Anthony'?'good':'bad'}">${esc(x.winner_game)}</b></div>`).join('')||'<div class="empty">Le match n’a pas encore commencé.</div>'}
+    </div>`;
+}
+
+async function startLiveMatchV2(opponentId){
+  try{
+    const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({opponent_id:opponentId,surface:'Dur',tactics:local.tactics||{}})});
+    cbLiveSession=d.session;cbLiveOpponent=d.opponent;
+    shell(liveMatchPageV2());
+  }catch(e){alert(e.message)}
+}
+
+async function advanceLiveMatchV2(){
+  if(!cbLiveSession)return;
+  try{
+    const d=await get('/api/live-match/step',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
+    cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;
+    if(d.completed){
+      boot=await get('/api/bootstrap');
+      if(boot.career)local.career={...(local.career||{}),...boot.career};
+      await loadSeasonSummary();
+      persist();
+    }
+    shell(liveMatchPageV2());
+  }catch(e){alert(e.message)}
+}
+
+function setLiveTacticV2(k,v){
+  local.tactics=local.tactics||{};
+  local.tactics[k]=v;
+  persist();
+}
+
+function resetLiveMatchV2(){
+  cbLiveSession=null;cbLiveOpponent=null;
+  shell(liveMatchPageV2());
+}
+
+window.startLiveMatchV2=startLiveMatchV2;
+window.advanceLiveMatchV2=advanceLiveMatchV2;
+window.setLiveTacticV2=setLiveTacticV2;
+window.resetLiveMatchV2=resetLiveMatchV2;

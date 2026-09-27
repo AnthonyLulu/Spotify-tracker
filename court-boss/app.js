@@ -58,7 +58,7 @@ let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoadi
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
-let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
+let local={date:'2025-12-01',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
 function surfaceClass(s){const v=String(s||'');return v==='Terre'?'surface-clay':v==='Gazon'?'surface-grass':/intérieur/i.test(v)?'surface-indoor':'surface-hard'}
@@ -182,7 +182,7 @@ async function init(){
    boot=await get('/api/bootstrap');
    if(boot.save&&typeof boot.save==='object') Object.assign(local,boot.save);
    local.career={...(local.career||{}),...(boot.career||{})};
-   local.date=boot.career?.career_date||local.date||'2026-09-27';
+   local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
    local.week=boot.career?.week??local.week??1;
    localStorage.setItem('cbLocal',JSON.stringify(local));
    const [_,__,___,____,_____,______,_______,world]=await Promise.all([
@@ -229,11 +229,11 @@ async function loadHistory(){
 }
 async function loadTournaments(){
  const p=new URLSearchParams({offset:String(tourOffset),limit:'60'});
- if(!tourFilters.month&&!tourShowPast)p.set('from',local.date||'2026-09-27');
+ if(!tourFilters.month&&!tourShowPast)p.set('from',local.date||RANKING_SNAPSHOT);
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows;tourTbc=d.tbc||[];tourCount=d.count;
 }
-async function loadRankingLedger(){try{rankingLedger=await get('/api/ranking-ledger?date='+(local.date||'2026-09-27'))}catch(e){rankingLedger={total:((local.career&&local.career.points)||34),active:[],expired:[]}}}
+async function loadRankingLedger(){try{rankingLedger=await get('/api/ranking-ledger?date='+(local.date||RANKING_SNAPSHOT))}catch(e){rankingLedger={total:((local.career&&local.career.points)||34),active:[],expired:[]}}}
 async function loadSeasonSummary(){try{seasonSummary=await get('/api/season-summary')}catch(e){seasonSummary={stats:{tournaments:0,titles:0,finals:0,prize:0,matches:0,wins:0},singles:[],doubles:[],singles_points:[],doubles_points:[]}}}
 async function loadScheduleAdvice(){try{scheduleAdvice=await get('/api/schedule-advice')}catch(e){scheduleAdvice={recommended:[]}}}
 async function loadDoublesHub(){
@@ -293,9 +293,9 @@ function rankings(){
    :rankKind==='doubles'
      ?'Classement ATP Double officiel Live-Tennis · Top 1000 au '+df(snap||RANKING_SNAPSHOT)+' · '+fmt(worldStats?.indexedDoubles||rankCount)+' profils indexés pour le scouting.'
      :rankKind==='race'
-       ?'ATP Race Live-Tennis 2026 · '+df(snap||RANKING_SNAPSHOT)
+       ?'ATP Race · base 01 déc. 2025 · '+df(snap||RANKING_SNAPSHOT)
        :rankKind==='nextgen'
-         ?'ATP Next Gen Race 2026 · '+df(snap||RANKING_SNAPSHOT)+' · âge au 01/12/2025'
+         ?'ATP Next Gen Race · base 01 déc. 2025 · '+df(snap||RANKING_SNAPSHOT)+' · âge au 01/12/2025'
        :rankKind==='junior'
          ?'ITF Juniors · snapshot '+df(snap||RANKING_SNAPSHOT)
        :rankKind==='junior_doubles'
@@ -325,19 +325,19 @@ function ncaaRanking(){
  const doubleRows=ncaaDoublesRows||[];
  const modeTabs=`<div class="tabs rank-tabs" style="margin:12px 0"><button class="${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')">Simple · Top ${fmt(rankMeta?.officialCapacity||125)}</button><button class="${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')">Double · Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</button></div>`;
  const singlesTable=`
-  <div class="notice mini" style="margin-top:10px"><b>ITA NCAA Division I Simple</b> · ${fmt(rankMeta?.verifiedCurrentRanks||0)}/${fmt(rankMeta?.officialCapacity||125)} rangs officiels 2026-27 reliés · snapshot ${df(rankMeta?.rankingDate||'2026-08-25')}. Le vivier affiche ensuite les actifs, rosters historiques et alumni NCAA vérifiés, sans inventer de rang ITA.</div>
+  <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA au 01/12/2025</b> · ${fmt(rankMeta?.verifiedCurrentRanks||0)} rangs vérifiés disponibles à cette date. Aucun classement ou roster postérieur au cutoff n’est affiché.</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Âge 01/12/25</th><th>Université</th><th>Division</th><th>ATP</th><th>Statut</th></tr></thead><tbody>
    ${rows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ncaa_rank?'#'+fmt(p.ncaa_rank):'—'}</td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${rankAge(p,'ncaa')}</td><td><b>${esc(p.ncaa_school||'—')}</b></td><td>${esc(p.ncaa_division||'NCAA')}</td><td>${p.ranking_current&&p.ranking?'#'+fmt(p.ranking):'—'}</td><td><span class="badge ${(p.ncaa_current||p.ncaa_current_verified)?'good':''}">${(p.ncaa_current||p.ncaa_current_verified)?'NCAA actif':p.ncaa_status==='Alumni'?'NCAA Alumni':esc(p.ncaa_status||'NCAA historique')}</span></td></tr>`).join('')}
   </tbody></table></div>
   ${rows.length?'' : '<div class="empty">Aucun profil NCAA pour ce filtre.</div>'}
   <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>`;
  const doublesTable=`
-  <div class="notice mini" style="margin-top:10px"><b>ITA NCAA Division I Double</b> · ${fmt(ncaaDoublesMeta?.count||doubleRows.length)}/${fmt(ncaaDoublesMeta?.officialCapacity||90)} paires officielles · snapshot ${df(ncaaDoublesMeta?.rankingDate||'2026-08-25')}. Chaque joueur ouvre sa vraie fiche Court Boss.</div>
+  <div class="notice mini" style="margin-top:10px"><b>NCAA Double au 01/12/2025</b> · ${fmt(ncaaDoublesMeta?.count||doubleRows.length)} paire(s) vérifiée(s) disponible(s) au cutoff.</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Paire</th><th>Université</th><th>Référence</th></tr></thead><tbody>
    ${doubleRows.map(x=>`<tr><td class="rank-num">#${fmt(x.ita_rank)}</td><td><b><span class="click" onclick="openPlayer(${x.player_one_id})">${esc(x.player_one_name)}</span> / <span class="click" onclick="openPlayer(${x.player_two_id})">${esc(x.player_two_name)}</span></b></td><td>${esc(x.school||'—')}</td><td><span class="badge good">ITA officiel</span></td></tr>`).join('')}
   </tbody></table></div>
   ${doubleRows.length?'' : '<div class="empty">Aucune paire NCAA pour ce filtre.</div>'}`;
- return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Base NCAA profonde : Top 125 simple, Top 90 double, actifs 2026-27, rosters historiques, alumni et transferts reliés à la même base mondiale.</div></div><span class="pill">${fmt(rankCount)} profils NCAA</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Base NCAA figée au 01/12/2025 : rangs, rosters historiques, alumni et transferts disponibles avant le cutoff.</div></div><span class="pill">${fmt(rankCount)} profils NCAA</span></div>
  <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_doubles','Junior Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  ${modeTabs}
  <div class="card">
@@ -358,7 +358,7 @@ function calendar(){
  const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Moquette'];
  const officialCount=worldStats?.verifiedTournaments||0;
  const coverage=`ATP ${fmt(worldStats?.officialATP||0)} · CH ${fmt(worldStats?.officialChallenger||0)} · ITF ${fmt(worldStats?.officialITF||0)} · Junior ${fmt(worldStats?.officialJunior||0)} · NCAA ${fmt(worldStats?.officialNCAA||0)} · Davis ${fmt(worldStats?.officialFederation||0)}`;
- return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, Juniors, NCAA et Coupe Davis. Par défaut : à partir de la date de ta carrière.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button class="${tourShowPast?'primary':'ghost'}" onclick="toggleFullCalendar()">${tourShowPast?'Saison 2026 complète':'Voir toute la saison'}</button><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
+ return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, Juniors, NCAA et Coupe Davis. Par défaut : à partir de la date de ta carrière.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button class="${tourShowPast?'primary':'ghost'}" onclick="toggleFullCalendar()">${tourShowPast?'Calendrier complet':'Voir toute la saison'}</button><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
@@ -756,7 +756,7 @@ window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id
 function davisPage(){
  const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[];
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
- const today=String(local.date||'2026-09-27');
+ const today=String(local.date||RANKING_SNAPSHOT);
  const franceTies=ties.filter(t=>t.home_nation==='FRA'||t.away_nation==='FRA').sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const nextFrance=franceTies.find(t=>t.status!=='completed'&&String(t.tie_date)>=today)||null;
  const lastFrance=[...franceTies].reverse().find(t=>t.status==='completed'||String(t.tie_date)<today)||null;
@@ -771,7 +771,7 @@ function davisPage(){
    <div class="row between" style="margin-top:7px"><div class="muted mini">${esc(t.venue||'Lieu à confirmer')} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></div>${ready?'<span class="badge warn">Simuler</span>':t.status==='completed'?'<span class="badge good">Terminé</span>':'<span class="badge">En attente</span>'}</div>
  </div>`};
  return `<div class="fm-dashboard">
- <div class="fm-page-head"><div><div class="eyebrow">Équipe nationale</div><h1>Coupe Davis</h1><div class="muted">Saison 2026, sélection française et tableau mondial.</div></div><div class="fm-head-stack"><div class="fm-head-badge">FRA ${f.reputation||91}/100</div><div class="fm-head-badge subtle">${franceAlive?'Final 8':'Parcours terminé'}</div></div></div>
+ <div class="fm-page-head"><div><div class="eyebrow">Équipe nationale</div><h1>Coupe Davis</h1><div class="muted">Saison 2025, sélection française et tableau mondial au 01/12/2025.</div></div><div class="fm-head-stack"><div class="fm-head-badge">FRA ${f.reputation||91}/100</div><div class="fm-head-badge subtle">${franceAlive?'Final 8':'Parcours terminé'}</div></div></div>
 
  <div class="grid g2">
   <div class="card davis-focus">
@@ -784,15 +784,15 @@ function davisPage(){
   </div>
  </div>
 
- <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours France</div><h2>Qualifications 2026</h2></div></div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours France</div><h2>Qualifications 2025</h2></div></div>
  <div class="davis-timeline">${franceTies.map(tieCard).join('')||'<div class="card empty">Aucune rencontre France chargée.</div>'}</div>
 
  <details class="card davis-world-qualifiers" style="margin-top:16px" open>
-  <summary class="row between"><div><div class="eyebrow">Monde</div><h2>Qualifications Coupe Davis 2026</h2></div><span class="pill">${worldQualifiers.length} rencontres</span></summary>
+  <summary class="row between"><div><div class="eyebrow">Monde</div><h2>Qualifications Coupe Davis 2025</h2></div><span class="pill">${worldQualifiers.length} rencontres</span></summary>
   <div class="davis-bracket" style="margin-top:10px">${worldQualifiers.map(tieCard).join('')||'<div class="empty">Aucune rencontre mondiale chargée.</div>'}</div>
  </details>
 
- <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Bologne</div><h2>Final 8 2026</h2><div class="muted">Quarts programmés du 24 au 26 novembre, puis demi-finales et finale.</div></div><span class="badge good">Dur intérieur</span></div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Bologne</div><h2>Final 8 2025</h2><div class="muted">Parcours archivé jusqu’au 01/12/2025.</div></div><span class="badge good">Dur intérieur</span></div>
  <div class="davis-bracket">${final8.map(tieCard).join('')||'<div class="card empty">Tableau Final 8 indisponible.</div>'}</div>
 
  ${focusTie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Détail</div><h2>Rubbers de la rencontre France</h2></div></div><div class="stack">${focusTie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score||'—')}</div><span class="badge ${r.winner_nation==='FRA'?'good':'bad'}">${esc(r.winner_nation||'—')}</span></div></div></div>`).join('')}</div>`:''}
@@ -1271,9 +1271,9 @@ window.simulateWeek=async()=>{
   cr.morale=clamp((cr.morale||78)+Math.floor(Math.random()*5)-1,35,100);
   if(load>13&&Math.random()>.72){cr.injury_status='Gêne musculaire';cr.fitness=clamp(cr.fitness-9,0,100);local.feed=local.feed||[];local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
-  const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
+  const d=new Date((local.date||RANKING_SNAPSHOT)+'T12:00:00');d.setDate(d.getDate()+7);
   const nextDate=d.toISOString().slice(0,10),nextWeek=(local.week||1)+1;
-  const currentYear=Number(String(local.date||'2026-09-27').slice(0,4)),nextYear=Number(nextDate.slice(0,4));
+  const currentYear=Number(String(local.date||RANKING_SNAPSHOT).slice(0,4)),nextYear=Number(nextDate.slice(0,4));
   if(nextYear>currentYear){
     const roll=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:nextYear})});
     local.date=String(nextYear)+'-01-05';local.week=1;if(nextYear>2026)tourFilters.source='Tous';

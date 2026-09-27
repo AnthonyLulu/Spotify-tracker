@@ -49,3 +49,49 @@ jobs:
           curl --fail --silent --show-error "$API/api/rankings?kind=singles&offset=0&limit=5" -o /tmp/rankings.json
           node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
           node -e "const r=require('/tmp/rankings.json'); if(!Array.isArray(r.rows)||r.rows.length!==5) throw new Error('ranking payload invalid'); console.log(r.rows.map(x=>'#'+x.ranking+' '+x.name).join(' | '))"
+
+      - name: Mobile browser smoke test
+        env:
+          BASE: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-static-publish
+        run: |
+          cd /tmp
+          npm init -y >/dev/null 2>&1
+          npm install --silent playwright@1.55.0
+          npx playwright install --with-deps chromium >/dev/null
+          cat > mobile-smoke.cjs <<'EOF'
+          const { chromium } = require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({
+              viewport:{width:390,height:844},
+              isMobile:true,
+              hasTouch:true
+            });
+            const pageErrors=[];
+            page.on('pageerror',e=>pageErrors.push(e.message));
+            page.on('console',m=>{ if(m.type()==='error') pageErrors.push(m.text()); });
+            await page.goto(process.env.BASE+'/',{waitUntil:'networkidle',timeout:60000});
+            await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:30000});
+
+            await page.getByRole('button',{name:'Classements'}).click();
+            await page.getByRole('heading',{name:'Classements'}).waitFor();
+            const firstPlayer=page.locator('tbody tr.click').first();
+            await firstPlayer.click();
+            await page.getByText('Dossier joueur').waitFor();
+            await page.getByRole('button',{name:'Attributs'}).click();
+            await page.getByText('Technique').waitFor();
+            await page.getByRole('button',{name:'✕'}).click();
+
+            await page.getByRole('button',{name:'Plus'}).click();
+            await page.getByRole('heading',{name:'Tous les modules'}).waitFor();
+            await page.getByText('Plan de match & coaching').click();
+            await page.getByRole('heading',{name:'Tactique'}).waitFor();
+            await page.getByRole('button',{name:'Match Center'}).click();
+            await page.getByRole('heading',{name:'Match live'}).waitFor();
+
+            if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
+            console.log('mobile browser smoke: OK');
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          EOF
+          node mobile-smoke.cjs

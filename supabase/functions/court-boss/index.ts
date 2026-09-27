@@ -180,7 +180,7 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/rankings")&&req.method==="GET"){
     const kind=u.searchParams.get("kind")??"singles";
-    const offset=n(u.searchParams.get("offset"),0,0,9999), limit=n(u.searchParams.get("limit"),100,1,200);
+    const offset=n(u.searchParams.get("offset"),0,0,50000), limit=n(u.searchParams.get("limit"),100,1,200);
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
     const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
     const nextGenU=n(u.searchParams.get("u"),21,18,21);

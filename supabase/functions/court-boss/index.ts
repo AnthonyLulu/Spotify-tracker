@@ -645,7 +645,7 @@ async function syncSackmannAtpTitles(fromYear:number,toYear:number){
     const col=(n:string)=>head.indexOf(n);
     const ix={
       name:col("tourney_name"),surface:col("surface"),level:col("tourney_level"),date:col("tourney_date"),
-      winner:col("winner_id"),round:col("round")
+      winner:col("winner_id"),winnerName:col("winner_name"),winnerCountry:col("winner_ioc"),round:col("round")
     };
     let n=0;
     for(let i=1;i<lines.length;i++){
@@ -661,7 +661,10 @@ async function syncSackmannAtpTitles(fromYear:number,toYear:number){
       const titleDate=ymdToIso(dateRaw);if(!titleDate)continue;
       const level=levelRaw==="G"?"Grand Chelem":levelRaw==="M"?"Masters 1000":levelRaw==="F"?"ATP Finals":levelRaw==="O"?"Jeux olympiques":"ATP Tour";
       out.push({
-        sackmann_id:winner,tournament_name:name,title_date:titleDate,level,
+        sackmann_id:winner,
+        player_name:String(cells[ix.winnerName]||"").trim()||null,
+        country:String(cells[ix.winnerCountry]||"").trim().toUpperCase()||null,
+        tournament_name:name,title_date:titleDate,level,
         surface:String(cells[ix.surface]||"").trim()||null,event_type:"singles",source_url:url
       });
       n++;

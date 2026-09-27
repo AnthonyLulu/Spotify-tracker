@@ -531,12 +531,14 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/doubles-race")&&req.method==="GET"){
-    const latest=await db.from("doubles_race_teams").select("snapshot_date").lte("snapshot_date","2025-12-01").order("snapshot_date",{ascending:false}).limit(1).maybeSingle();
+    const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+    const referenceDate=String(career.data?.career_date||"2026-09-27");
+    const latest=await db.from("doubles_race_teams").select("snapshot_date").lte("snapshot_date",referenceDate).order("snapshot_date",{ascending:false}).limit(1).maybeSingle();
     if(latest.error)return h({error:latest.error.message},500);
-    if(!latest.data?.snapshot_date)return h({rows:[],count:0,snapshot:null,reference_date:"2025-12-01"});
+    if(!latest.data?.snapshot_date)return h({rows:[],count:0,snapshot:null,reference_date:referenceDate});
     const rows=await db.from("doubles_race_teams").select("*").eq("snapshot_date",latest.data.snapshot_date).order("rank",{ascending:true}).limit(500);
     if(rows.error)return h({error:rows.error.message},500);
-    return h({rows:rows.data??[],count:(rows.data??[]).length,snapshot:latest.data.snapshot_date,reference_date:"2025-12-01"});
+    return h({rows:rows.data??[],count:(rows.data??[]).length,snapshot:latest.data.snapshot_date,reference_date:referenceDate});
   }
 
   if(path.endsWith("/api/player")&&req.method==="GET"){

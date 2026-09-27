@@ -284,6 +284,7 @@ async function loadCbPlayerSearch(reset=false){
 function playerCircuitLabelV2(p){
   if(p.ranking_current)return 'ATP';
   if(p.ncaa_current)return 'NCAA';
+  if(p.ncaa_status==='Alumni')return 'NCAA Alumni';
   if(p.nextgen_ranking!=null)return 'Next Gen';
   if(p.junior_ranking!=null)return 'Junior';
   if(p.itf_ranking!=null)return 'ITF';
@@ -336,7 +337,7 @@ function playerDatabasePageV2(){
           <div>
             <div class="eyebrow">${playerCircuitLabelV2(p)} ${p.ranking_current?'#'+p.ranking:p.itf_ranking!=null?'#'+p.itf_ranking:p.junior_ranking!=null?'#'+p.junior_ranking:''}</div>
             <h2>${flags[p.country]||'🏳️'} ${esc(p.name)}</h2>
-            <div class="muted mini">${p.age!=null?p.age+' ans':'Âge non publié'} · ${esc(p.style||'Non renseigné')}${p.ncaa_current?' · NCAA'+(p.ncaa_school?' '+esc(p.ncaa_school):''):''}</div>
+            <div class="muted mini">${p.age!=null?p.age+' ans':'Âge non publié'} · ${esc(p.style||'Non renseigné')}${p.ncaa_current?' · NCAA'+(p.ncaa_school?' '+esc(p.ncaa_school):''):p.ncaa_status==='Alumni'?' · ancien NCAA'+(p.ncaa_last_school?' '+esc(p.ncaa_last_school):''):''}</div>
           </div>
           <span class="badge">${p.scouting_confidence||0}% scout</span>
         </div>

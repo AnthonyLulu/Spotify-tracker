@@ -295,7 +295,7 @@ function playerDatabasePageV2(){
       <h1>Base joueurs</h1>
       <div class="muted">5 000 profils · ATP, ITF, juniors et prospects. Challenger reste une catégorie de tournoi.</div>
     </div>
-    <button class="primary" onclick="nav('rankings')">Classement ATP</button>
+    <div class="row"><button class="ghost" onclick="openCustomPlayerCreatorV2()">Créer mon joueur</button><button class="primary" onclick="nav('rankings')">Classement ATP</button></div>
   </div>
 
   <div class="card">
@@ -699,3 +699,53 @@ window.runGlobalSearchV2=q=>{
   },180);
 }
 window.openGlobalSearch=window.openGlobalSearchV2;
+
+window.openCustomPlayerCreatorV2=()=>{
+  overlay.innerHTML=`
+  <div class="modal" onclick="if(event.target===this)closeOverlay()">
+    <div class="sheet">
+      <div class="sheet-head">
+        <div><div class="eyebrow">Nouvelle carrière</div><h1>Créer ton joueur</h1><div class="muted">Le profil sera ajouté à la base Court Boss puis utilisé pour une nouvelle carrière.</div></div>
+        <button class="close" onclick="closeOverlay()">✕</button>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <label class="card"><span class="muted mini">Nom</span><input id="cpName" class="input" value="Anthony" maxlength="60"></label>
+        <label class="card"><span class="muted mini">Pays</span><select id="cpCountry" class="select"><option>FRA</option><option>USA</option><option>ESP</option><option>ITA</option><option>GBR</option><option>GER</option><option>AUS</option><option>CAN</option><option>BRA</option><option>SRB</option><option>SUI</option></select></label>
+        <label class="card"><span class="muted mini">Âge</span><input id="cpAge" class="input" type="number" min="15" max="35" value="18"></label>
+        <label class="card"><span class="muted mini">Potentiel</span><input id="cpPotential" class="input" type="number" min="55" max="99" value="86"></label>
+        <label class="card"><span class="muted mini">Taille (cm)</span><input id="cpHeight" class="input" type="number" min="155" max="215" value="184"></label>
+        <label class="card"><span class="muted mini">Poids (kg)</span><input id="cpWeight" class="input" type="number" min="45" max="130" value="78"></label>
+        <label class="card"><span class="muted mini">Main</span><select id="cpHand" class="select"><option>Droitier</option><option>Gaucher</option></select></label>
+        <label class="card"><span class="muted mini">Revers</span><select id="cpBackhand" class="select"><option>2 mains</option><option>1 main</option></select></label>
+        <label class="card"><span class="muted mini">Style</span><select id="cpStyle" class="select"><option>All-court</option><option>Attaquant fond de court</option><option>Contreur</option><option>Serveur-attaquant</option><option>Spécialiste terre battue</option></select></label>
+        <label class="card"><span class="muted mini">Niveau de départ</span><select id="cpTier" class="select"><option>Débutant</option><option selected>ITF</option><option>Challenger</option><option>Espoir</option></select></label>
+      </div>
+      <div class="notice" style="margin-top:12px">Les notes 1–20 sont des évaluations de jeu Court Boss basées sur le style, le niveau de départ et le potentiel choisi.</div>
+      <button class="primary" style="margin-top:12px;width:100%" onclick="createCustomPlayerV2()">Créer et démarrer la carrière</button>
+    </div>
+  </div>`;
+}
+
+window.createCustomPlayerV2=async()=>{
+  const payload={
+    name:document.getElementById('cpName')?.value||'Anthony',
+    country:document.getElementById('cpCountry')?.value||'FRA',
+    age:Number(document.getElementById('cpAge')?.value||18),
+    potential:Number(document.getElementById('cpPotential')?.value||86),
+    height_cm:Number(document.getElementById('cpHeight')?.value||184),
+    weight_kg:Number(document.getElementById('cpWeight')?.value||78),
+    handedness:document.getElementById('cpHand')?.value||'Droitier',
+    backhand:document.getElementById('cpBackhand')?.value||'2 mains',
+    style:document.getElementById('cpStyle')?.value||'All-court',
+    tier:document.getElementById('cpTier')?.value||'ITF'
+  };
+  if(String(payload.name).trim().length<2){alert('Entre un nom valide.');return}
+  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création du joueur…</div></div></div>';
+  try{
+    const d=await managerAction('create_custom_player',0,payload);
+    closeOverlay();
+    await startCareerWithPlayer(d.player.id,d.player.name);
+  }catch(e){
+    overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Création impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`;
+  }
+}

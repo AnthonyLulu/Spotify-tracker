@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Scrape official historical ranking pages
+      - name: Parse ATP 2025-12-01 archive
         run: |
           mkdir -p court-boss/data
           cd /tmp
@@ -24,48 +24,32 @@ jobs:
           cat > scrape.cjs <<'EOF'
           const fs=require('fs');
           const {chromium}=require('playwright');
-
-          async function inspect(page,url,label){
-            const api=[];
-            page.on('response',r=>{
-              const u=r.url();
-              if(/rank|standing|tennis|player/i.test(u)&&/api|ajax|graphql|ranking|rank/i.test(u)){
-                api.push({status:r.status(),url:u,ct:r.headers()['content-type']||''});
-              }
-            });
-            await page.goto(url,{waitUntil:'domcontentloaded',timeout:90000});
-            await page.waitForTimeout(5000);
-            const body=await page.locator('body').innerText().catch(()=> '');
-            return {url:page.url(),title:await page.title(),api:api.slice(-100),sample:body.slice(0,30000)};
-          }
-
           (async()=>{
             const browser=await chromium.launch({headless:true});
-            const out={};
-            const urls={
-              singles:'https://www.atptour.com/en/rankings/singles?rankRange=0-100&region=all&dateWeek=2025-12-01',
-              doubles:'https://www.atptour.com/en/rankings/doubles?rankRange=0-100&region=all&dateWeek=2025-12-01',
-              race:'https://www.atptour.com/en/rankings/singles-race-to-turin?rankRange=0-100&region=all&dateWeek=2025-12-01',
-              doublesRace:'https://www.atptour.com/en/rankings/doubles-race-to-turin?rankRange=0-100&region=all&dateWeek=2025-12-01',
-              junior:'https://www.itftennis.com/en/rankings/world-tennis-tour-junior-rankings/'
-            };
-            for(const [label,url] of Object.entries(urls)){
-              const page=await browser.newPage({viewport:{width:1440,height:1800}});
-              out[label]=await inspect(page,url,label);
-              await page.close();
+            const page=await browser.newPage({viewport:{width:1440,height:1800}});
+            await page.goto('https://hiyun0727.blogspot.com/2025/12/atp-ranking-20251201.html?m=1',{waitUntil:'domcontentloaded',timeout:90000});
+            await page.waitForTimeout(2000);
+            const rows=await page.locator('table tr').evaluateAll(trs=>trs.map(tr=>[...tr.querySelectorAll('th,td')].map(td=>(td.textContent||'').trim().replace(/\s+/g,' '))));
+            const singles=[];
+            for(const cells of rows){
+              if(cells.length<3)continue;
+              const rank=Number(String(cells[0]).replace(/[^0-9]/g,''));
+              const name=String(cells[1]||'').trim();
+              const pts=Number(String(cells[2]||'').replace(/[^0-9]/g,''));
+              if(rank>0&&name&&pts>=0)singles.push({rank,name,points:pts});
             }
-            const archive=await browser.newPage({viewport:{width:1440,height:1800}});
-            out.singlesArchive=await inspect(archive,'https://hiyun0727.blogspot.com/2025/12/atp-ranking-20251201.html?m=1','singlesArchive');
-            await archive.close();
-            fs.writeFileSync(process.env.GITHUB_WORKSPACE+'/court-boss/data/snapshot-diagnostic.json',JSON.stringify(out,null,2));
+            const uniq=[...new Map(singles.map(x=>[x.rank,x])).values()].sort((a,b)=>a.rank-b.rank);
+            fs.writeFileSync(process.env.GITHUB_WORKSPACE+'/court-boss/data/atp-singles-2025-12-01.json',JSON.stringify({snapshot:'2025-12-01',source:'Hiyun archive mirroring ATP ranking',count:uniq.length,rows:uniq},null,2));
             await browser.close();
+            if(uniq.length<200)throw new Error('Only parsed '+uniq.length+' ranking rows');
+            console.log('parsed',uniq.length,'singles rows');
           })().catch(e=>{console.error(e);process.exit(1)});
           EOF
           node scrape.cjs
-      - name: Commit diagnostic
+      - name: Commit ranking snapshot
         run: |
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/snapshot-diagnostic.json
-          git diff --cached --quiet || git commit -m "Refresh historical tennis ranking source"
+          git add court-boss/data/atp-singles-2025-12-01.json
+          git diff --cached --quiet || git commit -m "Import ATP singles snapshot 2025-12-01"
           git push

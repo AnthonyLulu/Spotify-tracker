@@ -370,6 +370,7 @@ async function fetchCoreTennisJuniorRows(url:string){
 async function syncRealJuniorBoys(){
   const sources=[
     "https://www.coretennis.net/majic/pageServer/160101003i/en/ITF-Junior-Boys-Rankings.html",
+    "https://www.coretennis.net/majic/pageServer/130100003i/en/ITF-Junior-Boys-Rankings.html",
     "https://www.coretennis.net/majic/pageServer/0n0100005a/en/ITF-Junior-Boys-Best-Progression--Year-.html",
     "https://www.coretennis.net/majic/pageServer/170100003k/en/ITF-Junior-Boys-Best-Progression--Week-.html",
     "https://www.coretennis.net/majic/pageServer/0p0100005b/en/ITF-Junior-Boys-Biggest-Drop--Year-.html",

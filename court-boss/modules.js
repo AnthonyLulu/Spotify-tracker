@@ -1,5 +1,6 @@
 
 let cbDoublesTournaments=[];
+let cbSeasonHistory=[];
 
 async function loadCbDoublesTournaments(){
   try{
@@ -7,6 +8,15 @@ async function loadCbDoublesTournaments(){
     cbDoublesTournaments=(d.rows||[]).filter(t=>t.doubles);
   }catch(e){
     cbDoublesTournaments=[];
+  }
+}
+
+async function loadCbSeasonHistory(){
+  try{
+    const d=await get('/api/season-history');
+    cbSeasonHistory=d.rows||[];
+  }catch(e){
+    cbSeasonHistory=[];
   }
 }
 
@@ -21,7 +31,10 @@ function seasonPageV2(){
       <h1>Bilan de saison</h1>
       <div class="muted">Résultats, prize money et points 52 semaines.</div>
     </div>
-    <button class="ghost" onclick="refreshSeasonV2()">Actualiser</button>
+    <div class="row">
+      <button class="ghost" onclick="refreshSeasonV2()">Actualiser</button>
+      <button class="primary" onclick="rolloverSeasonV2()">Nouvelle saison</button>
+    </div>
   </div>
 
   <div class="kpi-strip">
@@ -48,6 +61,19 @@ function seasonPageV2(){
           <b>${p.points}</b>
         </div>`).join('')}
     </div>
+  </div>
+
+  <div class="section-head" style="margin-top:18px">
+    <div><div class="eyebrow">Historique carrière</div><h2>Saisons terminées</h2></div>
+  </div>
+  <div class="stack">
+    ${cbSeasonHistory.map(y=>`
+      <div class="card">
+        <div class="row between">
+          <div><div class="eyebrow">Saison ${y.season_year}</div><h2>ATP #${y.final_rank||'—'} · Double #${y.doubles_rank||'—'}</h2></div>
+          <div style="text-align:right"><span class="badge ${y.titles>0?'good':''}">${y.titles} titre(s)</span><div class="muted mini">${euro(y.prize_money)} · ${y.points} pts</div></div>
+        </div>
+      </div>`).join('')||'<div class="card empty">Aucune saison archivée pour l’instant.</div>'}
   </div>
 
   <div class="section-head" style="margin-top:18px">
@@ -84,8 +110,26 @@ function seasonPageV2(){
 }
 
 async function refreshSeasonV2(){
-  await Promise.all([loadSeasonSummary(),loadRankingLedger()]);
+  await Promise.all([loadSeasonSummary(),loadRankingLedger(),loadCbSeasonHistory()]);
   shell(seasonPageV2());
+}
+
+async function rolloverSeasonV2(){
+  const current=Number((boot?.career?.season_year)||String(local.date||'2026').slice(0,4)||2026);
+  const next=current+1;
+  if(!confirm('Passer à la saison '+next+' ? Les joueurs vieilliront, les points expireront normalement et la saison '+current+' sera archivée.'))return;
+  try{
+    const d=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:next})});
+    boot=await get('/api/bootstrap');
+    if(boot.career)local.career={...(local.career||{}),...boot.career};
+    local.date=boot.career?.career_date||String(next)+'-01-05';
+    local.week=1;
+    await Promise.all([loadSeasonSummary(),loadRankingLedger(),loadScheduleAdvice(),loadCbSeasonHistory(),loadManagement()]);
+    persist();
+    shell(seasonPageV2());
+  }catch(e){
+    alert(e.message);
+  }
 }
 
 function doublesPageV2(){
@@ -211,13 +255,13 @@ const cbBaseNav=window.nav;
 window.nav=async function(r){
   if(r==='season'){
     route='season';window.scrollTo({top:0,behavior:'smooth'});
-    if(!seasonSummary)await loadSeasonSummary();
+    if(!seasonSummary)await loadSeasonSummary();await loadCbSeasonHistory();
     shell(seasonPageV2());
     return;
   }
   if(r==='doubles'){
     route='doubles';window.scrollTo({top:0,behavior:'smooth'});
-    await Promise.all([loadCbDoublesTournaments(),loadSeasonSummary(),loadManagement()]);
+    await Promise.all([loadCbDoublesTournaments(),loadSeasonSummary(),loadManagement(),loadCbSeasonHistory()]);
     shell(doublesPageV2());
     return;
   }
@@ -230,3 +274,5 @@ window.render=function(){
   if(route==='doubles'&&cbDoublesTournaments.length)return shell(doublesPageV2());
   return cbBaseRender();
 };
+
+window.rolloverSeasonV2=rolloverSeasonV2;

@@ -944,6 +944,61 @@ async function parseLiveTennisDoublesRace(url:string){
 }
 
 
+
+async function resolveTournamentImage(t:any){
+  if(!t||t.image_url||!t.source_url)return t;
+  const source=String(t.source_url||"").trim();
+  if(!/^https?:\/\//i.test(source))return t;
+  if(/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source))return t;
+  let host="";
+  try{host=new URL(source).hostname.toLowerCase()}catch{return t}
+  const allowed=[
+    "atptour.com","www.atptour.com","itftennis.com","www.itftennis.com",
+    "ncaa.com","www.ncaa.com","ncaa.org","www.ncaa.org",
+    "wearecollegetennis.com","www.wearecollegetennis.com",
+    "ausopen.com","www.ausopen.com","rolandgarros.com","www.rolandgarros.com",
+    "wimbledon.com","www.wimbledon.com","usopen.org","www.usopen.org",
+    "tenniseurope.org","www.tenniseurope.org"
+  ];
+  if(!allowed.includes(host))return t;
+  try{
+    const r=await fetch(source,{
+      headers:{
+        "User-Agent":"CourtBoss/1.0 (+tournament-image-cache)",
+        "Accept":"text/html,application/xhtml+xml"
+      },
+      redirect:"follow"
+    });
+    if(!r.ok)return t;
+    const type=String(r.headers.get("content-type")||"");
+    if(!/text\/html|application\/xhtml\+xml/i.test(type))return t;
+    const html=await r.text();
+    const picks=[
+      /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
+      /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i
+    ];
+    let raw="";
+    for(const re of picks){
+      const m=html.match(re);
+      if(m?.[1]){raw=String(m[1]).replace(/&amp;/g,"&").trim();break;}
+    }
+    if(!raw)return t;
+    try{raw=new URL(raw,source).toString()}catch{}
+    if(!/^https?:\/\//i.test(raw)||/placeholder|default-avatar|favicon|sprite/i.test(raw))return t;
+    t.image_url=raw;
+    t.image_source_url=source;
+    t.image_source_label="Visuel officiel du tournoi";
+    await db.from("tournaments").update({
+      image_url:raw,
+      image_source_url:source,
+      image_source_label:t.image_source_label
+    }).eq("id",t.id);
+  }catch{}
+  return t;
+}
+
 function saveId(req:Request){const k=req.headers.get("x-save-key")??"";return /^[0-9a-f-]{36}$/i.test(k)?"browser:"+k:null}
 async function getManagedPlayer(select="*"){
   const c=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
@@ -1631,6 +1686,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(t.error||wc.error||forfeits.error) return h({error:(t.error||wc.error||forfeits.error)?.message},500);
     if(!t.data) return h({error:"Tournament not found"},404);
+    t.data=await resolveTournamentImage(t.data);
 
     const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
     const [run,doublesRun] = await Promise.all([

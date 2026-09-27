@@ -1245,6 +1245,25 @@ Deno.serve(async(req:Request)=>{
       ]);
     }
 
+    const finalUserMatch=matches.filter((m:any)=>m.user_pair===userPair.name).find((m:any)=>m.round_name==="F")||null;
+    if(userRound==="Champion"||userRound==="F"){
+      const resultLabel=userRound==="Champion"?"Champion":"Finaliste";
+      await Promise.all([
+        db.from("player_final_results").insert({
+          player_id:anthony.id,tournament_name:t.name,final_date:earned,
+          level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
+          result:resultLabel,opponent_name:finalUserMatch?.opponent_pair||null,source:"Court Boss simulation",
+          event_type:"doubles",partner_player_id:partner.id,partner_name:partner.name
+        }),
+        db.from("player_final_results").insert({
+          player_id:partner.id,tournament_name:t.name,final_date:earned,
+          level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
+          result:resultLabel,opponent_name:finalUserMatch?.opponent_pair||null,source:"Court Boss simulation",
+          event_type:"doubles",partner_player_id:anthony.id,partner_name:anthony.name
+        })
+      ]);
+    }
+
     const singlesRun=await db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle();
     const travelCost=singlesRun.data?0:(String(t.country||"")===String(c.country||"FRA")?80:260);
     const fatigueAdd=matches.filter((m:any)=>m.user_pair===userPair.name).length*4+(travelCost?3:0);
@@ -1278,8 +1297,15 @@ Deno.serve(async(req:Request)=>{
       doubles_points:dpts.data??[],
       stats:{
         tournaments:s.length,
+        singles_tournaments:s.length,
+        doubles_tournaments:d.length,
         titles:s.filter((x:any)=>x.user_round==="Champion").length,
+        singles_titles:s.filter((x:any)=>x.user_round==="Champion").length,
+        doubles_titles:d.filter((x:any)=>x.user_round==="Champion").length,
+        total_titles:s.filter((x:any)=>x.user_round==="Champion").length+d.filter((x:any)=>x.user_round==="Champion").length,
         finals:s.filter((x:any)=>x.user_round==="F").length+s.filter((x:any)=>x.user_round==="Champion").length,
+        singles_finals:s.filter((x:any)=>x.user_round==="F").length+s.filter((x:any)=>x.user_round==="Champion").length,
+        doubles_finals:d.filter((x:any)=>x.user_round==="F").length+d.filter((x:any)=>x.user_round==="Champion").length,
         prize:s.reduce((a:number,x:any)=>a+Number(x.user_prize||0),0)+d.reduce((a:number,x:any)=>a+Number(x.user_prize||0),0),
         matches:mh.length,
         wins:mh.filter((x:any)=>x.winner===String(career.data?.player_name||"Joueur")).length

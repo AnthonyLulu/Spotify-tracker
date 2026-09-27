@@ -8,7 +8,7 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});if(!r.ok)throw new Error(await r.text());return r.json()};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',month:'',q:''},management=null,worldStats=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',month:'',q:''},management=null,worldStats=null,rankingLedger=null,simulating=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
@@ -35,7 +35,7 @@ async function init(){
    if(!local.career)local.career={...(boot.career||{})};
    if(!local.date)local.date=boot.career?.career_date||'2026-09-27';
    localStorage.setItem('cbLocal',JSON.stringify(local));
-   const [_,__,___,world]=await Promise.all([loadManagement(),loadRankings(),loadTournaments(),get('/api/world').catch(()=>null)]);
+   const [_,__,___,____,world]=await Promise.all([loadManagement(),loadRankings(),loadTournaments(),loadRankingLedger(),get('/api/world').catch(()=>null)]);
    worldStats=world;
    render();
  }catch(e){shell(`<div class="card"><h2>Connexion au monde impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="location.reload()">Réessayer</button></div>`)}
@@ -51,6 +51,7 @@ async function loadTournaments(){
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows;tourCount=d.count;
 }
+async function loadRankingLedger(){try{rankingLedger=await get('/api/ranking-ledger?date='+(local.date||'2026-09-27'))}catch(e){rankingLedger={total:((local.career&&local.career.points)||34),active:[],expired:[]}}}
 function career(){
  const c={...(boot?.career||{}),...(local.career||{})};
  c.singles_rank=c.singles_rank||742;c.doubles_rank=c.doubles_rank||1284;c.points=c.points||34;c.player_name=c.player_name||'Anthony';c.country=c.country||'FRA';
@@ -87,6 +88,7 @@ function rankings(){
  const start=rankOffset+1,end=Math.min(rankOffset+rankRows.length,rankCount);
  return `<div class="section-head"><div><div class="eyebrow">Classements mondiaux</div><h1>Classements</h1><div class="muted">Challenger est une catégorie de tournoi. Les joueurs Challenger restent dans le classement ATP.</div></div><span class="pill">${rankKind==='singles'?'ATP jusqu’au #2000':'Circuit mondial'}</span></div>
  <div class="tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
+ ${rankKind==='singles'?`<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
  <div class="card">
   <div class="rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="2000" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
   ${rankKind==='singles'?'<div class="notice mini" style="margin-top:10px">Snapshot ATP 21/09/2026 pour la liste courante. Les points hors profils vérifiés servent aussi de valeur de jeu et peuvent évoluer dès que la carrière est simulée.</div>':''}
@@ -379,8 +381,8 @@ window.playTournament=async id=>{
     const d=await get('/api/play-tournament',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id})});
     local.playedTournaments=local.playedTournaments||{};local.playedTournaments[id]=d;
     boot=await get('/api/bootstrap');
-    if(boot.career)local.career={...(local.career||{}),budget:boot.career.budget,points:boot.career.points,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
-    await Promise.all([loadRankings(),loadManagement()]);
+    if(boot.career)local.career={...(local.career||{}),budget:boot.career.budget,points:boot.career.points,singles_rank:boot.career.singles_rank,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
+    await Promise.all([loadRankings(),loadManagement(),loadRankingLedger()]);
     persist();
     overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(d.tournament?.name||'Tournoi')}</div><h1>${d.user_round==='Champion'?'🏆 Champion':esc(d.user_round)}</h1><div class="muted">Champion : ${esc(d.champion?.name||'—')}</div><div class="row" style="margin-top:6px">${d.wildcard?'<span class="badge good">Wild Card</span>':''}${d.alternate?'<span class="badge warn">Alternate entré</span>':''}${d.lucky_loser?'<span class="badge warn">Lucky Loser</span>':''}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
       <div class="kpi-strip" style="margin-top:12px"><div class="kpi"><span class="muted mini">Tour atteint</span><b style="font-size:16px">${esc(d.user_round)}</b></div><div class="kpi"><span class="muted mini">Points</span><b>+${d.user_points}</b></div><div class="kpi"><span class="muted mini">Prize money</span><b>${euro(d.user_prize)}</b></div><div class="kpi"><span class="muted mini">Voyage</span><b>-${euro(d.travel_cost||0)}</b></div></div><div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted mini">Fatigue ajoutée</span><b>+${d.fatigue_added||0}</b></div><div class="kpi"><span class="muted mini">Fitness après</span><b>${d.fitness||career().fitness}%</b></div><div class="kpi"><span class="muted mini">Matchs tableau</span><b>${d.draw_matches}</b></div><div class="kpi"><span class="muted mini">Décision</span><b style="font-size:13px">${(d.fatigue_added||0)>20?'Récupération conseillée':'Charge gérable'}</b></div></div>
@@ -460,19 +462,18 @@ window.simulateWeek=async()=>{
   cr.fitness=clamp((cr.fitness||91)+(load<=10?1:-3),40,100);
   cr.form=clamp((cr.form||72)+Math.floor(Math.random()*7)-2,35,100);
   cr.morale=clamp((cr.morale||78)+Math.floor(Math.random()*5)-1,35,100);
-  const gain=Math.random()<.62;
-  if(gain){cr.singles_rank=Math.max(1,cr.singles_rank-(1+Math.floor(Math.random()*12)));cr.points=(cr.points||34)+4+Math.floor(Math.random()*17);cr.budget=(cr.budget||14800)+250+Math.floor(Math.random()*900)}
-  else cr.singles_rank+=Math.floor(Math.random()*5);
   const staffWeekly=(boot.staff||[]).reduce((sum,x)=>sum+Number(x.weekly_cost||0),0);const sponsorWeekly=(management?.sponsors||[]).filter(x=>x.status==='accepted').reduce((sum,x)=>sum+Number(x.weekly_value||0),0);cr.budget=(cr.budget||14800)-staffWeekly+sponsorWeekly;
   if(load>13&&Math.random()>.72){cr.injury_status='Gêne musculaire';cr.fitness=clamp(cr.fitness-9,0,100);local.feed=local.feed||[];local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
   const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
   local.date=d.toISOString().slice(0,10);local.week=(local.week||1)+1;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:local.week,date:local.date})});
-  local.feed=local.feed||[];local.feed.unshift(`Semaine simulée : Anthony est ATP #${cr.singles_rank}. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
-  persist();
+  if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
+  local.feed=local.feed||[];local.feed.unshift(`Semaine simulée : Anthony est ATP #${cr.singles_rank} avec ${cr.points} pts. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
+  local.career=cr;persist();
   boot=await get('/api/bootstrap');
-  await Promise.all([loadRankings(),loadTournaments(),loadManagement()]);
+  if(boot.career)local.career={...cr,singles_rank:boot.career.singles_rank,points:boot.career.points,budget:boot.career.budget,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
+  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger()]);
  }catch(e){alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }

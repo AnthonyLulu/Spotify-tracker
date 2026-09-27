@@ -840,27 +840,27 @@ Deno.serve(async(req:Request)=>{
 
     if(kind==="junior"){
       const juniorPlayerSelect="id,name,name_norm,country,is_real,game_generated,career_status,ranking,source_ranking,game_world_rank,points,ranking_snapshot_date,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified";
-      const genPage=(from:number,to:number)=>db.from("players").select(juniorPlayerSelect)
-        .eq("game_generated",true)
-        .eq("career_status","active")
-        .gte("age",13).lte("age",17)
-        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-        .order("id",{ascending:true})
-        .range(from,to);
-
-      const [officialRefs,generated0,generated1,generated2,generated3,verifiedCount] = await Promise.all([
+      const [officialRefs,generated0,generated1,verifiedCount,generatedTotal] = await Promise.all([
         db.from("junior_verified_reference")
           .select("identity_key,official_rank,snapshot_date,source_url,source_label,players!inner("+juniorPlayerSelect+")")
           .not("official_rank","is",null)
           .order("official_rank",{ascending:true})
           .limit(1000),
-        genPage(0,999),
-        genPage(1000,1999),
-        genPage(2000,2999),
-        genPage(3000,3999),
-        db.from("junior_verified_reference").select("identity_key",{count:"exact",head:true})
+        db.from("junior_generated_rank_pool")
+          .select("game_rank,snapshot_date,source_label,players!inner("+juniorPlayerSelect+")")
+          .order("game_rank",{ascending:true})
+          .range(0,999),
+        db.from("junior_generated_rank_pool")
+          .select("game_rank,snapshot_date,source_label,players!inner("+juniorPlayerSelect+")")
+          .order("game_rank",{ascending:true})
+          .range(1000,1999),
+        db.from("junior_verified_reference").select("identity_key",{count:"exact",head:true}),
+        db.from("players").select("id",{count:"exact",head:true})
+          .eq("game_generated",true).eq("career_status","active")
+          .gte("age",13).lte("age",17)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
       ]);
-      const e=officialRefs.error||generated0.error||generated1.error||generated2.error||generated3.error||verifiedCount.error;
+      const e=officialRefs.error||generated0.error||generated1.error||verifiedCount.error||generatedTotal.error;
       if(e)return h({error:e.message},500);
 
       const realById=new Map<number,any>();
@@ -880,33 +880,26 @@ Deno.serve(async(req:Request)=>{
           junior_rank_type:"official"
         });
       }
-
       const realRows=[...realById.values()].sort((a:any,b:any)=>
         Number(a.junior_official_ranking??999999)-Number(b.junior_official_ranking??999999)
         ||String(a.name||"").localeCompare(String(b.name||""))
       );
 
-      const genById=new Map<number,any>();
-      for(const p of [...(generated0.data??[]),...(generated1.data??[]),...(generated2.data??[]),...(generated3.data??[])]){
-        if(!p?.id||String(p.data_source||"").startsWith("hidden duplicate merged into "))continue;
-        const id=Number(p.id);
-        if(!genById.has(id))genById.set(id,{
+      const genRows=[...(generated0.data??[]),...(generated1.data??[])].map((x:any)=>{
+        const p=Array.isArray(x.players)?x.players[0]:x.players;
+        if(!p?.id)return null;
+        return {
           ...p,
-          junior_simulated_seed_rank:p.junior_ranking,
+          junior_simulated_seed_rank:Number(x.game_rank),
           junior_rank_type:"simulated",
-          junior_source:p.junior_source||"Court Boss simulated junior pool v8"
-        });
-      }
-      const genRows=[...genById.values()].sort((a:any,b:any)=>
-        Number(b.current_ability||0)-Number(a.current_ability||0)
-        ||Number(b.potential||0)-Number(a.potential||0)
-        ||Number(b.age||0)-Number(a.age||0)
-        ||Number(a.id)-Number(b.id)
-      ).slice(0,1200);
+          junior_snapshot_date:x.snapshot_date??p.junior_snapshot_date,
+          junior_source:x.source_label||"Court Boss simulated junior ranking v8"
+        };
+      }).filter(Boolean).sort((a:any,b:any)=>Number(a.junior_simulated_seed_rank)-Number(b.junior_simulated_seed_rank));
 
       const globalRows=[
         ...realRows.map((p:any,i:number)=>({...p,junior_ranking:i+1})),
-        ...genRows.map((p:any,i:number)=>({...p,junior_ranking:realRows.length+i+1}))
+        ...genRows.map((p:any)=>({...p,junior_ranking:realRows.length+Number(p.junior_simulated_seed_rank)}))
       ].map((p:any)=>({
         ...p,
         age:ageAt(p.birth_date,gameDate,p.age,p.age_snapshot_date),
@@ -926,7 +919,7 @@ Deno.serve(async(req:Request)=>{
         kind,offset,limit,count:filtered.length,rows:filtered.slice(offset,offset+limit),
         officialRealCount:realRows.length,
         generatedCount:genRows.length,
-        generatedReserve:Math.max(0,genById.size-genRows.length),
+        generatedReserve:Math.max(0,Number(generatedTotal.count||0)-genRows.length),
         verifiedProfiles:verifiedCount.count??realRows.length,
         eligibility:"ITF Juniors · vrais profils vérifiés + 1 200 newgens classés 13–17 + réserve dynamique",
         rankingDate:"2026-09-27"

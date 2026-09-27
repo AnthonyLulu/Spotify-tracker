@@ -53,8 +53,9 @@ const RANKING_SNAPSHOT='2025-12-01';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
+let tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
@@ -418,23 +419,48 @@ function tournamentTmRow(t){
  const dBtn=de.can?"<button class='"+(dJoined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleDoublesEntry("+t.id+")'>"+(dJoined?"D ✓":"D +")+"</button>":"<button class='ghost tm-entry-btn' disabled>D —</button>";
  return "<tr class='click "+(joined||dJoined?"tm-entered":"")+"' onclick='openTournament("+t.id+")'>"+
   "<td>"+tournamentThumb(t)+"</td>"+
-  "<td><b>"+(flags[t.country]||"🏳️")+" "+esc(t.name)+"</b><div class='muted micro'>"+esc(t.city||"")+" · "+df(t.start_date)+"–"+df(t.end_date||t.start_date)+" · <span class='badge "+circuitClass(t.circuit)+"'>"+esc(t.category||t.circuit)+"</span>"+(t.is_verified?" <span class='badge good'>Officiel</span>":"")+"</div></td>"+
+  "<td><b>"+(flags[t.country]||"🏳️")+" "+esc(t.name)+"</b><div class='muted micro'>"+esc(t.city||"")+" · "+df(t.start_date)+"–"+df(t.end_date||t.start_date)+" · <span class='badge "+circuitClass(t.circuit)+"'>"+esc(t.category||t.circuit)+"</span>"+(t.is_verified?" <span class='badge good'>Officiel</span>":" <span class='badge warn'>Fictif</span>")+"</div></td>"+
   "<td><span class='"+surfaceClass(surfaceLabel(t))+"'>"+esc(surfaceLabel(t))+"</span></td>"+
   "<td><b>S "+(t.singles_draw_size||t.draw_size||"—")+"</b><div class='muted micro'>D "+(t.doubles?(t.doubles_draw_size||"—"):"—")+" · Q "+(t.qualifying_draw_size||"—")+"</div></td>"+
   "<td><b>"+(t.winner_points!=null?fmt(t.winner_points):"—")+"</b></td>"+
   "<td><b>"+(t.prize_money!=null?euro(t.prize_money):"—")+"</b></td>"+
+  "<td>"+(t.defending_champion_name?("<div class='tm-holder' "+(t.defending_champion_player_id?"onclick='event.stopPropagation();openPlayer("+t.defending_champion_player_id+")'":"")+"><span>🏆 "+esc(t.defending_champion_name)+"</span><small>"+esc(String(t.defending_champion_year||""))+"</small></div>"):(t.defending_champion_source&&/première édition/i.test(t.defending_champion_source)?"<span class='muted mini'>Première édition</span>":"<span class='muted'>—</span>"))+"</td>"+
   "<td><span class='badge "+st.cls+"'>"+st.label+"</span><div class='muted micro "+se.cls+"'>"+esc(se.label)+(t.cut_is_projection&&t.projected_direct_cut?" · cut proj.":"")+"</div><div class='muted micro'>"+esc(de.label)+"</div></td>"+
   "<td><b>"+(deadline?df(deadline):"—")+"</b><div class='muted micro'>"+(t.doubles_entry_deadline?"D adv "+df(t.doubles_entry_deadline):"")+(t.doubles_onsite_deadline?" · site "+df(t.doubles_onsite_deadline):"")+"</div></td>"+
   "<td><div class='tm-entry-actions'>"+sBtn+dBtn+"<button class='ghost tm-entry-btn' onclick='event.stopPropagation();openTournament("+t.id+")'>›</button></div></td>"+
  "</tr>";
 }
+function tmCalendarRows(){
+ return (tourRows||[]).filter(t=>{
+  const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),wk=calWeekStart(t.start_date);
+  if(tmCalFilters.week!=="Toutes"&&wk!==tmCalFilters.week)return false;
+  if(tmCalFilters.country!=="Tous"&&String(t.country)!==tmCalFilters.country)return false;
+  if(tmCalFilters.status!=="Tous"&&st.label!==tmCalFilters.status)return false;
+  if(tmCalFilters.environment==="Indoor"&&!t.indoor)return false;
+  if(tmCalFilters.environment==="Outdoor"&&t.indoor)return false;
+  if(tmCalFilters.entry==="Simple"&&!t.singles)return false;
+  if(tmCalFilters.entry==="Double"&&!t.doubles)return false;
+  if(tmCalFilters.entry==="Simple + Double"&&!(t.singles&&t.doubles))return false;
+  if(tmCalFilters.holder==="Avec tenant"&&!t.defending_champion_name)return false;
+  if(tmCalFilters.holder==="Sans tenant"&&t.defending_champion_name)return false;
+  if(tmCalFilters.eligibility==="Éligible simple"&&!se.can)return false;
+  if(tmCalFilters.eligibility==="Éligible double"&&!de.can)return false;
+  if(tmCalFilters.eligibility==="Tableau direct"&&!/Tableau direct/.test(se.label))return false;
+  if(tmCalFilters.eligibility==="Qualifications"&&!/Qualif/.test(se.label))return false;
+  if(tmCalFilters.eligibility==="Alternate / WC"&&!/Alternate|WC/.test(se.label))return false;
+  if(tmCalFilters.eligibility==="Sélection"&&!/Sélection|université|NCAA/.test(se.label))return false;
+  return true;
+ });
+}
 function renderTournamentWeeks(){
- const groups={};(tourRows||[]).forEach(t=>{const k=calWeekStart(t.start_date);(groups[k]??=[]).push(t)});
+ const groups={};tmCalendarRows().forEach(t=>{const k=calWeekStart(t.start_date);(groups[k]??=[]).push(t)});
  return Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([week,rows])=>{
   const current=calWeekStart(local.date||"2025-12-01")===week;
-  return "<section class='tm-week "+(current?"current":"")+"'><div class='tm-week-head'><div><span class='tm-week-num'>S"+calGameWeek(week)+"</span><b>"+calShortDate(week)+" → "+calShortDate(calWeekEnd(week))+"</b>"+(current?" <span class='badge good'>Semaine actuelle</span>":"")+"</div><span class='muted mini'>"+rows.length+" tournoi"+(rows.length>1?"s":"")+"</span></div><div class='table-wrap'><table class='table tm-calendar-table'><thead><tr><th></th><th>Pays / tournoi</th><th>Surface</th><th>Tableaux</th><th>Pts</th><th>Prize money</th><th>Statut / accès</th><th>Deadline</th><th>Actions</th></tr></thead><tbody>"+rows.map(tournamentTmRow).join("")+"</tbody></table></div></section>";
+  return "<section class='tm-week "+(current?"current":"")+"'><div class='tm-week-head'><div><span class='tm-week-num'>S"+calGameWeek(week)+"</span><b>"+calShortDate(week)+" → "+calShortDate(calWeekEnd(week))+"</b>"+(current?" <span class='badge good'>Semaine actuelle</span>":"")+"</div><span class='muted mini'>"+rows.length+" tournoi"+(rows.length>1?"s":"")+"</span></div><div class='table-wrap'><table class='table tm-calendar-table'><thead><tr><th></th><th>Pays / tournoi</th><th>Surface</th><th>Tableaux</th><th>Pts</th><th>Prize money</th><th>Tenant</th><th>Statut / accès</th><th>Deadline</th><th>Actions</th></tr></thead><tbody>"+rows.map(tournamentTmRow).join("")+"</tbody></table></div></section>";
  }).join("");
 }
+window.tmCalendarFilter=(k,v)=>{tmCalFilters[k]=v;render()}
+window.resetTmCalendarFilters=()=>{tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};render()}
 
 function calendar(){
  const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','J500','J300','J200','J100','J60','J30','Junior Finals','Junior Davis Cup','NCAA DI Team Championship','NCAA DI Individual Championship','NCAA','Junior','Davis Cup'];
@@ -445,9 +471,21 @@ function calendar(){
  const partner=activeDoublesPartner(),singleEntries=(local.entries||[]).length,doubleEntries=(local.doublesEntries||[]).length;
  return `<div class="fm-page-head tm-calendar-head"><div><div class="eyebrow">Tournament registration · calendrier TM</div><h1>Calendrier mondial</h1><div class="muted">Départ de la base : <b>01/12/2025</b>. Vrais événements 2025-26, semaine par semaine, avec simple, double, qualifs et règles d’accès séparés.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(tourCount)} tournois</div><div class="fm-head-badge subtle">${fmt(officialCount)} officiels</div><div class="fm-head-badge subtle">S ${singleEntries} · D ${doubleEntries}</div></div></div>
  <div class="tm-calendar-tabs"><button class="${tourFilters.circuit==='Tous'?'active':''}" onclick="tourFilter('circuit','Tous')">Tous</button><button class="${tourFilters.circuit==='ATP'?'active':''}" onclick="tourFilter('circuit','ATP')">ATP</button><button class="${tourFilters.circuit==='Challenger'?'active':''}" onclick="tourFilter('circuit','Challenger')">Challenger</button><button class="${tourFilters.circuit==='ITF'?'active':''}" onclick="tourFilter('circuit','ITF')">ITF</button><button class="${tourFilters.circuit==='Junior'?'active':''}" onclick="tourFilter('circuit','Junior')">Junior</button><button class="${tourFilters.circuit==='NCAA'?'active':''}" onclick="tourFilter('circuit','NCAA')">NCAA</button><button class="${tourFilters.circuit==='Federation'?'active':''}" onclick="tourFilter('circuit','Federation')">Davis Cup</button><button onclick="showMyEntries()">Mes inscriptions</button></div>
- <div class="card tm-registration-summary"><div><span>Joueur</span><b>${esc(career().player_name)}</b><small>ATP #${fmt(career().singles_rank)} · Double #${fmt(career().doubles_rank)}</small></div><div><span>Partenaire double</span><b>${partner?esc(partner.name):'Aucun'}</b><small>${partner?'Double #'+fmt(partner.doubles_ranking||0):'Choisir dans le hub Double'}</small></div><div><span>Date carrière</span><b>${df(local.date||'2025-12-01')}</b><small>Semaine ${calGameWeek(local.date||'2025-12-01')}</small></div><div><span>Couverture</span><b>${coverage}</b><small>Officiel par défaut · simulations futures séparées</small></div></div>
- <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" min="2025-12" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
+ <div class="card tm-registration-summary"><div><span>Joueur</span><b>${esc(career().player_name)}</b><small>ATP #${fmt(career().singles_rank)} · Double #${fmt(career().doubles_rank)}</small></div><div><span>Partenaire double</span><b>${partner?esc(partner.name):'Aucun'}</b><small>${partner?'Double #'+fmt(partner.doubles_ranking||0):'Choisir dans le hub Double'}</small></div><div><span>Date carrière</span><b>${df(local.date||'2025-12-01')}</b><small>Semaine ${calGameWeek(local.date||'2025-12-01')}</small></div><div><span>Couverture</span><b>${coverage}</b><small>Officiels + fictifs Challenger/ITF · filtrables</small></div></div>
+ <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)"><option value="Tous" ${tourFilters.source==='Tous'?'selected':''}>Tous</option><option value="Officiel" ${tourFilters.source==='Officiel'?'selected':''}>Officiels</option><option value="Simulation" ${tourFilters.source==='Simulation'?'selected':''}>Fictifs Challenger/ITF</option></select><input class="input" type="month" min="2025-12" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span><span class="muted mini">Cut “proj.” = estimation Court Boss, pas une acceptance list officielle.</span></div>
+ <div class="card tm-advanced-filters">
+  <div class="row between"><div><div class="eyebrow">Filtres TM</div><b>Affiner le calendrier</b></div><button class="ghost" onclick="resetTmCalendarFilters()">Réinitialiser</button></div>
+  <div class="tm-filter-grid">
+   <select class="select" onchange="tmCalendarFilter('week',this.value)"><option>Toutes</option>${[...new Set((tourRows||[]).map(t=>calWeekStart(t.start_date)))].sort().map(w=>`<option value="${w}" ${tmCalFilters.week===w?'selected':''}>S${calGameWeek(w)} · ${calShortDate(w)}–${calShortDate(calWeekEnd(w))}</option>`).join('')}</select>
+   <select class="select" onchange="tmCalendarFilter('country',this.value)"><option>Tous</option>${[...new Set((tourRows||[]).map(t=>t.country).filter(Boolean))].sort().map(x=>`<option ${tmCalFilters.country===x?'selected':''}>${x}</option>`).join('')}</select>
+   <select class="select" onchange="tmCalendarFilter('status',this.value)">${['Tous','Inscriptions ouvertes','Inscriptions closes','À venir','En cours','Terminé'].map(x=>`<option ${tmCalFilters.status===x?'selected':''}>${x}</option>`).join('')}</select>
+   <select class="select" onchange="tmCalendarFilter('eligibility',this.value)">${['Tous','Éligible simple','Éligible double','Tableau direct','Qualifications','Alternate / WC','Sélection'].map(x=>`<option ${tmCalFilters.eligibility===x?'selected':''}>${x}</option>`).join('')}</select>
+   <select class="select" onchange="tmCalendarFilter('environment',this.value)">${['Tous','Indoor','Outdoor'].map(x=>`<option ${tmCalFilters.environment===x?'selected':''}>${x}</option>`).join('')}</select>
+   <select class="select" onchange="tmCalendarFilter('entry',this.value)">${['Tous','Simple','Double','Simple + Double'].map(x=>`<option ${tmCalFilters.entry===x?'selected':''}>${x}</option>`).join('')}</select>
+   <select class="select" onchange="tmCalendarFilter('holder',this.value)">${['Tous','Avec tenant','Sans tenant'].map(x=>`<option ${tmCalFilters.holder===x?'selected':''}>${x}</option>`).join('')}</select>
+  </div>
+ </div>
  <details class="card tm-calendar-advice"><summary class="row between click"><div><div class="eyebrow">Conseiller calendrier</div><b>Recommandations pour ton joueur</b></div><span class="badge">ouvrir</span></summary><div class="grid g3" style="margin-top:10px">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · ${esc(surfaceLabel(t))}</div></div>`).join('')||'<div class="empty">Aucune recommandation.</div>'}</div></details>
  <div class="tm-calendar-rulebar"><span><b>ATP Tour</b> : simple 28 j · qualifs 21 j · double 14 j</span><span><b>Challenger</b> : double 7 j + sign-in</span><span><b>M25</b> : advance + sur site</span><span><b>M15</b> : double sur site</span><span><b>NCAA</b> : roster/lineup, pas d’inscription libre</span></div>
  <div class="tm-calendar-weeks">${renderTournamentWeeks()||'<div class="card empty">Aucun tournoi daté pour ces filtres.</div>'}</div>

@@ -373,3 +373,21 @@ body{background:
  .fm-player-dot{width:36px;height:36px}
  .fm-match-stats{grid-template-columns:repeat(2,1fr)}
 }
+
+/* Scouting database + Match Engine v4 */
+.fm-db-toolbar{background:linear-gradient(145deg,rgba(183,255,67,.075),transparent 42%),#0a1711}
+.fm-db-filters{display:grid;grid-template-columns:minmax(190px,1.35fr) minmax(165px,.9fr) minmax(120px,.65fr) auto;gap:7px}
+.fm-db-table td:first-child{min-width:190px}.fm-db-table td{white-space:nowrap}
+.fm-live-match{background:linear-gradient(150deg,rgba(56,164,114,.08),transparent 38%),#0a1711}
+.fm-court{background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:24px 24px;background-color:#2a6b98}
+.fm-court.clay{background-color:#a66042}.fm-court.grass{background-color:#4f8658}
+.fm-player-dot:after{content:"";position:absolute;inset:-8px;border:1px solid rgba(255,255,255,.22);border-radius:50%;animation:fmDotPulse 1.5s ease-out infinite}
+.fm-player-dot.user:after{border-color:rgba(183,255,67,.44)}
+.fm-ball{animation:fmBallGlow .8s ease-in-out infinite alternate}
+.fm-sim-controls{grid-template-columns:1.25fr repeat(3,1fr)}
+@keyframes fmDotPulse{0%{transform:scale(.65);opacity:.8}100%{transform:scale(1.35);opacity:0}}
+@keyframes fmBallGlow{from{box-shadow:0 0 5px rgba(234,255,83,.55)}to{box-shadow:0 0 14px rgba(234,255,83,1)}}
+@media(max-width:700px){
+ .fm-db-filters{grid-template-columns:1fr 1fr}.fm-db-filters input{grid-column:1/-1}.fm-db-filters .primary{grid-column:1/-1}
+ .fm-sim-controls{grid-template-columns:repeat(2,1fr)}
+}

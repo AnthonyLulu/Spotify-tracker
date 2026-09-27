@@ -1168,6 +1168,7 @@ Deno.serve(async(req:Request)=>{
       opp_y:Math.max(12,Math.min(44,18+Math.min(12,Math.floor(rally/2))+Math.floor(Math.random()*9-4))),
       ball_x:18+Math.floor(Math.random()*64),
       ball_y:userWon?20+Math.floor(Math.random()*28):52+Math.floor(Math.random()*28),
+      zone:Math.round(net)>=70?"Pression filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
       at:new Date().toISOString()
     };
 

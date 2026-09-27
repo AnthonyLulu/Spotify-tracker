@@ -51,14 +51,15 @@ function surfaceLabel(t){
  return base==='Dur'?((t?.indoor===true||String(t?.environment||'Outdoor')==='Indoor')?'Dur intérieur':'Dur extérieur'):base;
 }
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
-function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='race'?p.race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:k==='ncaa'?p.ncaa_rank:(p.official_ranking??(p.ranking_current?p.ranking:null)??p.game_world_rank??p.world_rank??p.ranking)}
+function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='junior_doubles'?p.junior_doubles_ranking:k==='race'?p.race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:k==='ncaa'?p.ncaa_rank:(p.official_ranking??(p.ranking_current?p.ranking:null)??p.game_world_rank??p.world_rank??p.ranking)}
 function rankCell(p,k){
  const v=rankValue(p,k);
  return v==null?'<span class="muted">NR</span>':'#'+fmt(v);
 }
-function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='race'?p.race_points:k==='nextgen'?p.nextgen_points:k==='junior'?p.junior_points:k==='ncaa'?null:p.points}
+function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='junior_doubles'?p.junior_doubles_points:k==='race'?p.race_points:k==='nextgen'?p.nextgen_points:k==='junior'?p.junior_points:k==='ncaa'?null:p.points}
 function rankSnapshot(p,k){
  return k==='doubles'?p.doubles_snapshot_date||RANKING_SNAPSHOT:
+        k==='junior_doubles'?p.junior_doubles_snapshot_date||RANKING_SNAPSHOT:
         k==='race'?p.race_snapshot_date||RANKING_SNAPSHOT:
         k==='nextgen'?p.nextgen_snapshot_date||RANKING_SNAPSHOT:
         k==='junior'?p.junior_snapshot_date||RANKING_SNAPSHOT:
@@ -263,11 +264,11 @@ function home(){
  </section>`
 }
 function rankings(){
- const kinds=[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
+ const kinds=[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_doubles','Junior Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
  if(rankKind==='ncaa')return ncaaRanking();
  const startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rankRows.length,rankCount);
  const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
- const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
+ const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='junior_doubles'?'Court Boss Junior Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
  const reference=rankKind==='singles'
    ?'Classement monde Court Boss jusqu’au rang 30 000. Le rang ATP officiel reste identifié séparément quand il est disponible · snapshot '+df(snap||RANKING_SNAPSHOT)+'.'
    :rankKind==='doubles'
@@ -283,7 +284,7 @@ function rankings(){
  return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Ranking, Race, Double et Next Gen sont séparés. Le classement ATP de départ correspond au snapshot officiel du 1er décembre 2025, puis la simulation de ta carrière fait évoluer ce monde.</div></div><span class="pill">${pill}</span></div>
  <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  ${rankKind==='nextgen'? `<div class="age-filter"><span class="muted mini">Âge au 01/12/2025</span>${[18,19,20,21].map(a=>`<button class="${nextGenAge===a?'active':''}" onclick="setNextGenAge(${a})">U${a}</button>`).join('')}</div>`:''}
- ${rankKind==='junior'? `<div class="notice mini" style="margin-bottom:12px"><b>Vivier junior Court Boss</b> · <b>classement de jeu continu #1 à #2000</b> · ${fmt(rankMeta?.officialRealCount||0)} vrais vérifiés + ${fmt(rankMeta?.generatedCount||0)} newgens. Le rang ITF officiel reste conservé séparément quand il existe. À 18 ans, les newgens basculent vers NCAA ou ITF/pro.</div>`:''} ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Classement carrière simulé</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs · base initiale ${df(RANKING_SNAPSHOT)}</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
+ ${rankKind==='junior'? `<div class="notice mini" style="margin-bottom:12px"><b>Vivier junior Court Boss</b> · <b>classement de jeu continu #1 à #2000</b> · ${fmt(rankMeta?.officialRealCount||0)} vrais vérifiés + ${fmt(rankMeta?.generatedCount||0)} newgens. Le rang ITF officiel reste conservé séparément quand il existe. À 18 ans, les newgens basculent vers NCAA ou ITF/pro.</div>`:''} ${rankKind==='junior_doubles'? `<div class="notice mini" style="margin-bottom:12px"><b>Circuit Junior Double</b> · classement séparé #1 à #2000, basé sur aptitude double, volée, retour, service et niveau global. Les 87 tournois juniors actifs proposent désormais le double.</div>`:''} ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Classement carrière simulé</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs · base initiale ${df(RANKING_SNAPSHOT)}</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
  <div class="card">
   <div class="rank-tools fm-rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher dans les 30 000 joueurs…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.players)}</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
   <div class="notice mini" style="margin-top:10px"><b>${label}</b> · ${reference}. Les valeurs de simulation restent séparées des snapshots historiques.</div>
@@ -316,7 +317,7 @@ function ncaaRanking(){
   </tbody></table></div>
   ${doubleRows.length?'' : '<div class="empty">Aucune paire NCAA pour ce filtre.</div>'}`;
  return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Base NCAA profonde : Top 125 simple, Top 90 double, actifs 2026-27, rosters historiques, alumni et transferts reliés à la même base mondiale.</div></div><span class="pill">${fmt(rankCount)} profils NCAA</span></div>
- <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
+ <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_doubles','Junior Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  ${modeTabs}
  <div class="card">
   <div class="rank-tools fm-rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="${ncaaView==='doubles'?'Rechercher joueur ou université NCAA…':'Rechercher un joueur NCAA…'}" onkeydown="if(event.key==='Enter')searchRanking(this.value)">${ncaaView==='singles'? `<select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div>`:''}</div>
@@ -433,7 +434,7 @@ function playersPage(){
     <select class="select" onchange="setDbCircuit(this.value)">${circuits.map(x=>`<option ${dbCircuit===x?'selected':''}>${x}</option>`).join('')}</select>
     <button class="primary" onclick="searchPlayerDatabase(document.getElementById('dbSearch').value)">Rechercher</button>
    </div>
-   <div class="row" style="margin-top:9px;flex-wrap:wrap"><span class="badge good">ATP/ITF réels</span><span class="badge tag-ncaa">NCAA</span><span class="badge tag-junior">Junior</span><span class="badge">Double</span><span class="muted mini">Âge affiché partout : âge au 01/12/2025. Date de naissance quand disponible, sinon estimation explicitement signalée. Revers vérifié quand une source existe, sinon marqué estimé.</span></div>
+   <div class="row" style="margin-top:9px;flex-wrap:wrap"><span class="badge good">ATP/ITF réels</span><span class="badge tag-ncaa">NCAA</span><span class="badge tag-junior">Junior</span><span class="badge">Double</span><span class="muted mini">Âge affiché partout : âge au 01/12/2025. Quand une donnée manque, Court Boss génère une valeur fictive stable (DOB jour/mois, taille, poids, main, revers, style) et la marque estimée. Les vraies données sourcées restent prioritaires.</span></div>
   </div>
   <div class="card fm-panel" style="margin-top:12px">
    <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
@@ -914,6 +915,7 @@ window.openPlayer=async id=>{
   if(p.doubles_ranking!=null&&p.doubles_source)rankBits.push('Double #'+fmt(p.doubles_ranking)+(p.doubles_snapshot_date?' · '+df(p.doubles_snapshot_date):''));
   if(p.race_ranking!=null&&p.race_source)rankBits.push('Race #'+fmt(p.race_ranking)+(p.race_snapshot_date?' · '+df(p.race_snapshot_date):''));
   if(p.nextgen_ranking!=null&&p.nextgen_source)rankBits.push('Next Gen #'+fmt(p.nextgen_ranking)+(p.nextgen_snapshot_date?' · '+df(p.nextgen_snapshot_date):''));
+  if(p.junior_doubles_ranking!=null)rankBits.push('Junior Double #'+fmt(p.junior_doubles_ranking));
   if(p.junior_ranking!=null){const jx=p.junior_rank_type==='official'&&p.junior_official_ranking!=null?' · ITF officiel #'+fmt(p.junior_official_ranking):p.junior_rank_type==='verified_nr'?' · rang estimé':p.game_generated?' · simulé':'';rankBits.push('Junior #'+fmt(p.junior_ranking)+jx);}
   if(p.ncaa_current)rankBits.push('NCAA actif'+(ncaa?.ita_rank?' ITA #'+fmt(ncaa.ita_rank):p.ncaa_rank?' ITA #'+fmt(p.ncaa_rank):'')+(ncaa?.school?' · '+ncaa.school:p.ncaa_school?' · '+p.ncaa_school:''));
   else if(ncaaIsAlumni)rankBits.push('NCAA Alumni'+((ncaaCareer?.verified||p.ncaa_verified)?' certifié':'')+' · '+(ncaaCareer?.school||p.ncaa_last_school||'Université'));
@@ -936,7 +938,7 @@ window.openPlayer=async id=>{
  <div class="kpi-strip" style="margin-top:8px">
   <div class="kpi"><span class="muted mini">ATP</span><b>${p.ranking_current&&p.ranking!=null?'#'+fmt(p.ranking):'NR'}</b></div>
   <div class="kpi"><span class="muted mini">Double</span><b>${p.doubles_ranking!=null?'#'+fmt(p.doubles_ranking):'NR'}</b></div>
-  <div class="kpi"><span class="muted mini">Junior</span><b>${p.junior_ranking!=null?'#'+fmt(p.junior_ranking):'—'}</b><small class="muted micro">${p.junior_rank_type==='official'&&p.junior_official_ranking!=null?'ITF officiel #'+fmt(p.junior_official_ranking):p.junior_rank_type==='verified_nr'?'rang estimé · ITF NR':p.game_generated&&p.junior_ranking!=null?'simulé':''}</small></div>
+  <div class="kpi"><span class="muted mini">Junior</span><b>${p.junior_ranking!=null?'#'+fmt(p.junior_ranking):'—'}</b><small class="muted micro">${p.junior_rank_type==='official'&&p.junior_official_ranking!=null?'ITF officiel #'+fmt(p.junior_official_ranking):p.junior_rank_type==='verified_nr'?'rang estimé · ITF NR':p.game_generated&&p.junior_ranking!=null?'simulé':''}</small></div><div class="kpi"><span class="muted mini">Junior Double</span><b>${p.junior_doubles_ranking!=null?'#'+fmt(p.junior_doubles_ranking):'—'}</b><small class="muted micro">${p.junior_doubles_ranking!=null?'simulé':''}</small></div>
   <div class="kpi"><span class="muted mini">NCAA / ITA</span><b>${(ncaa?.ita_rank??p.ncaa_rank)!=null?'#'+fmt(ncaa?.ita_rank??p.ncaa_rank):p.ncaa_current?'Actif':'—'}</b><small class="muted micro">${esc(ncaa?.school||p.ncaa_school||'')}</small></div>
  </div>
 </div>

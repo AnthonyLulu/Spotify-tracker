@@ -38,3 +38,10 @@ h1,h2,h3,p{margin-top:0}h1{font-size:27px;margin-bottom:2px}h2{font-size:19px}h3
 @media(max-width:820px){
   .page{padding:11px}.hero,.g2,.g3,.g4,.attr-sections{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{grid-template-columns:1fr 1fr}.filters .input{grid-column:1/-1}.kpi-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.logo{font-size:15px}.top-date{display:none}.hero-name{font-size:27px}.sheet{max-height:96vh}.table{min-width:700px}
 }
+
+.range{width:100%;accent-color:var(--accent);margin-top:8px}
+input[type="range"]{height:28px}
+.table tbody tr.click:hover{background:#12251c}
+.card.click{transition:transform .12s ease,border-color .12s ease}
+.card.click:active{transform:scale(.995)}
+@media(max-width:640px){.pagination{gap:6px}.pagination .input{max-width:90px!important}.list-item .select{max-width:140px}}

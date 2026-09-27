@@ -405,10 +405,23 @@ window.playDavisTie=async id=>{
 }
 function boardPage(){const a=boot.academy||{};return `<div class="section-head"><div><div class="eyebrow">Direction</div><h1>Board</h1><div class="muted">Confiance : ${a.board_confidence||76}%</div></div></div><div class="stack">${(boot.board||[]).map(o=>`<div class="card"><div class="row between"><div><h2>${esc(o.objective)}</h2><div class="muted">${esc(o.target_value||'')} · échéance ${df(o.deadline)}</div></div><b>${o.progress}%</b></div><div class="bar"><i style="width:${o.progress}%"></i></div></div>`).join('')}</div>`}
 function worldPage(){
- const wc=worldStats?.players??rankCount;
- return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">Classement ATP unifié, circuits séparés et simulation persistante.</div></div></div>
- <div class="grid g3"><div class="card click" onclick="nav('rankings')"><div class="big">#2000</div><div class="muted">profondeur du classement ATP</div></div><div class="card click" onclick="nav('calendar')"><div class="big">${fmt(worldStats?.tournaments??tourCount)}</div><div class="muted">événements en base</div></div><div class="card"><div class="big">${fmt(wc)}</div><div class="muted">profils du snapshot courant / fallback</div></div></div>
- <div class="card" style="margin-top:12px"><h2>Circuits</h2><p class="muted mini">Le classement ATP est unique. Challenger, ATP Tour, ITF, NCAA, Junior et Coupe Davis décrivent les compétitions auxquelles les joueurs peuvent participer.</p><div class="row" style="flex-wrap:wrap">${['ATP','Challenger','ITF','NCAA','Junior','Federation'].map(x=>`<span class="badge ${circuitClass(x)}">${x}</span>`).join('')}</div></div>`
+ const w=worldStats||{};
+ return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">Base mondiale, circuits séparés et simulation persistante.</div></div><button class="ghost" onclick="get('/api/world').then(x=>{worldStats=x;render()})">Actualiser</button></div>
+ <div class="kpi-strip">
+  <div class="kpi click" onclick="nav('players')"><span class="muted mini">Profils totaux</span><b>${fmt(w.playersTotal||5000)}</b></div>
+  <div class="kpi click" onclick="setRankKind('singles');nav('rankings')"><span class="muted mini">Classés ATP</span><b>${fmt(w.atpRanked||2000)}</b></div>
+  <div class="kpi click" onclick="nav('calendar')"><span class="muted mini">Tournois</span><b>${fmt(w.tournaments||0)}</b></div>
+  <div class="kpi"><span class="muted mini">Tournois vérifiés</span><b>${fmt(w.verifiedTournaments||0)}</b></div>
+ </div>
+ <div class="menu-grid" style="margin-top:14px">
+  <div class="menu-card" onclick="setRankKind('singles');nav('rankings')"><div class="menu-icon">🎾</div><strong>ATP</strong><span class="muted">${fmt(w.atpRanked||2000)} joueurs classés</span></div>
+  <div class="menu-card" onclick="setRankKind('itf');nav('rankings')"><div class="menu-icon">🌍</div><strong>ITF WTT</strong><span class="muted">${fmt(w.itfPlayers||0)} profils avec rang ITF</span></div>
+  <div class="menu-card" onclick="setRankKind('junior');nav('rankings')"><div class="menu-icon">🌱</div><strong>Junior</strong><span class="muted">${fmt(w.juniorPlayers||0)} profils juniors</span></div>
+  <div class="menu-card" onclick="nav('university')"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaTeams||0)} équipes</span></div>
+  <div class="menu-card" onclick="nav('scouting')"><div class="menu-icon">🔎</div><strong>Newgens</strong><span class="muted">${fmt(w.gameGenerated||0)} joueurs générés par Court Boss</span></div>
+  <div class="menu-card" onclick="nav('calendar')"><div class="menu-icon">📅</div><strong>Compétitions</strong><span class="muted">ATP, Challenger, ITF, Junior, NCAA, Davis</span></div>
+ </div>
+ <div class="card" style="margin-top:14px"><h2>Comment le monde évolue</h2><p class="muted">À chaque semaine, les tournois arrivés à terme sont simulés, les points bougent, les classements sont recalculés, les joueurs vieillissent, les blessures évoluent et les palmarès se remplissent. À l'intersaison, retraites et newgens maintiennent le vivier mondial.</p></div>`
 }
 function myPlayerPage(){
  const c=career();

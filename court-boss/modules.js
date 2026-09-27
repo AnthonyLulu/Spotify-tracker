@@ -946,6 +946,9 @@ window.renderPalmaresHtml=function(d,p){
   const ncaaCareer=d?.ncaaCareer||null;
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
+  const indexedHistory=tournamentHistory.map((x,i)=>({...x,__i:i}));
+  const singlesHistory=indexedHistory.filter(x=>!x.event_type||x.event_type==='singles');
+  const doublesHistory=indexedHistory.filter(x=>x.event_type==='doubles');
   window.__cbPalmares={player:p,titles,tournamentHistory,allTitles};
 
   const slamKey=name=>{
@@ -958,19 +961,25 @@ window.renderPalmaresHtml=function(d,p){
   };
   const slamName=k=>({AO:'Australian Open',RG:'Roland-Garros',WIM:'Wimbledon',USO:'US Open'}[k]||k);
   const slamOrder=['AO','RG','WIM','USO'];
-  const historyByYear={},allHistoryByYear={};
-  tournamentHistory.forEach((x,i)=>{
+  const historyByYear={},allHistoryByYear={},doubleHistoryByYear={};
+  singlesHistory.forEach(x=>{
     const y=String(x.season||String(x.tournament_date||'').slice(0,4));
-    (allHistoryByYear[y]??=[]).push({...x,__i:i});
+    (allHistoryByYear[y]??=[]).push(x);
     if(!x.is_grand_slam)return;
     const k=slamKey(x.tournament_name);
     if(!k)return;
     historyByYear[y]=historyByYear[y]||{};
-    historyByYear[y][k]={...x,__i:i};
+    historyByYear[y][k]=x;
+  });
+  doublesHistory.forEach(x=>{
+    const y=String(x.season||String(x.tournament_date||'').slice(0,4));
+    (doubleHistoryByYear[y]??=[]).push(x);
   });
   Object.values(allHistoryByYear).forEach(rows=>rows.sort((a,b)=>String(b.tournament_date||'').localeCompare(String(a.tournament_date||''))));
+  Object.values(doubleHistoryByYear).forEach(rows=>rows.sort((a,b)=>String(b.tournament_date||'').localeCompare(String(a.tournament_date||''))));
   const slamYears=Object.keys(historyByYear).sort((a,b)=>Number(b)-Number(a));
   const historyYears=Object.keys(allHistoryByYear).sort((a,b)=>Number(b)-Number(a));
+  const doubleHistoryYears=Object.keys(doubleHistoryByYear).sort((a,b)=>Number(b)-Number(a));
   const resultClass=code=>code==='W'?'good':code==='F'?'warn':['SF','QF'].includes(code)?'info':'';
   const tourName=name=>String(name||'Tournoi').replace(/^Us Open$/i,'US Open');
 
@@ -1113,7 +1122,7 @@ window.renderPalmaresHtml=function(d,p){
     </div>
 
     <div class="card" style="margin-top:12px">
-      <div class="row between"><div><div class="eyebrow">Historique compétitions</div><h2>Tournois joués année par année</h2></div><span class="pill">${tournamentHistory.length} résultat(s)</span></div>
+      <div class="row between"><div><div class="eyebrow">Historique simple</div><h2>Tournois simple année par année</h2></div><span class="pill">${singlesHistory.length} résultat(s)</span></div>
       <div class="muted mini" style="margin-top:4px">Historique réel disponible : Grand Chelem, Masters 1000, ATP Tour, Challenger, Coupe Davis et ATP Finals. Clique sur un tournoi pour voir le dernier adversaire et le score.</div>
       ${historyYears.length?historyYears.map((y,yi)=>`
         <details class="list-item tournament-season" ${yi===0?'open':''}>
@@ -1130,6 +1139,26 @@ window.renderPalmaresHtml=function(d,p){
           </div>
         </details>`).join(''):'<div class="empty">Pas encore d’historique tournoi importé.</div>'}
     </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="row between"><div><div class="eyebrow">Historique double</div><h2>Tournois double année par année</h2></div><span class="pill">${doublesHistory.length} résultat(s)</span></div>
+      <div class="muted mini" style="margin-top:4px">Même profondeur que le simple : résultat, partenaire, paire adverse et score du dernier match connu.</div>
+      ${doubleHistoryYears.length?doubleHistoryYears.map((y,yi)=>`
+        <details class="list-item tournament-season" ${yi===0?'open':''}>
+          <summary class="row between click"><b>${y}</b><span class="badge">${doubleHistoryByYear[y].length} tournoi${doubleHistoryByYear[y].length>1?'s':''}</span></summary>
+          <div class="tournament-history-list">
+            ${doubleHistoryByYear[y].map(h=>`
+              <button class="tournament-history-item" data-tournament-history-index="${h.__i}">
+                <div>
+                  <b>${esc(tourName(h.tournament_name))}</b>
+                  <div class="muted mini">${esc(h.category||h.level||'Double')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}${h.partner_name?' · avec '+esc(h.partner_name):''}</div>
+                </div>
+                <span class="slam-result compact ${resultClass(h.result_code)}"><span>${esc(h.result_code||'—')}</span></span>
+              </button>`).join('')}
+          </div>
+        </details>`).join(''):'<div class="empty">Pas encore d’historique double importé pour ce joueur.</div>'}
+    </div>
+
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
         <div class="row between"><div><div class="eyebrow">Circuit Double</div><h2>Titres en double</h2></div><span class="badge good">${doublesTitles.length}</span></div>
@@ -1193,16 +1222,19 @@ window.openTournamentHistoryItem=function(i){
   const h=(data.tournamentHistory||[])[Number(i)];
   if(!h)return;
   const name=String(h.tournament_name||'Tournoi').replace(/^Us Open$/i,'US Open');
+  const clickName=n=>{const clean=String(n||'').trim();if(!clean)return '—';const js=clean.replace(/\\/g,'\\\\').replace(/'/g,"\\'");return `<span class="click" onclick="openPlayerByName('${esc(js)}')">${esc(clean)}</span>`;};
+  const clickPair=pair=>String(pair||'').split('/').map(x=>x.trim()).filter(Boolean).map(clickName).join(' / ')||'—';
+  const isDouble=h.event_type==='doubles';
   overlay.innerHTML=`
     <div class="modal" onclick="if(event.target===this)closeOverlay()">
       <div class="sheet">
         <div class="sheet-head">
-          <div><div class="eyebrow">Historique · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(name)} ${h.season||''}</h1><div class="muted">${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div></div>
+          <div><div class="eyebrow">${isDouble?'Historique double':'Historique simple'} · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(name)} ${h.season||''}</h1><div class="muted">${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div></div>
           <button class="close" onclick="closeOverlay()">✕</button>
         </div>
         <div class="grid g2" style="margin-top:12px">
-          <div class="card"><div class="eyebrow">Résultat</div><div class="hero-name" style="font-size:28px">${esc(h.result_code||'—')}</div><div class="muted">${esc(h.result_label||'')}</div></div>
-          <div class="card"><div class="eyebrow">Dernier match</div><h2 class="${h.last_opponent?'click':''}" ${h.last_opponent?`onclick="openPlayerByName('${esc(String(h.last_opponent).replace(/'/g,"\\'"))}')"`:''}>vs ${esc(h.last_opponent||'—')}</h2><div class="muted">${esc(h.last_score||'Score non renseigné')}</div></div>
+          <div class="card"><div class="eyebrow">Résultat</div><div class="hero-name" style="font-size:28px">${esc(h.result_code||'—')}</div><div class="muted">${esc(h.result_label||'')}</div>${isDouble&&h.partner_name?`<div class="list-item row between" style="margin-top:8px"><span>Partenaire</span><b>${h.partner_player_id?`<span class="click" onclick="openPlayer(${h.partner_player_id})">${esc(h.partner_name)}</span>`:clickName(h.partner_name)}</b></div>`:''}</div>
+          <div class="card"><div class="eyebrow">${isDouble?'Dernière paire adverse':'Dernier adversaire'}</div><h2>${isDouble?clickPair(h.last_opponent):clickName(h.last_opponent)}</h2><div class="muted">${esc(h.last_score||'Score non renseigné')}</div></div>
         </div>
         <div class="notice mini" style="margin-top:12px">Source historique : ${String(h.source||'').startsWith('http')?`<a href="${esc(h.source)}" target="_blank" rel="noopener noreferrer">ouvrir la source</a>`:esc(h.source||'archive ATP')}.</div>
       </div>

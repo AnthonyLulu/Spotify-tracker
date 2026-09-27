@@ -787,6 +787,34 @@ Deno.serve(async(req:Request)=>{
     return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:count??0,rows});
   }
 
+  if(path.endsWith("/api/scrape-real-juniors")&&req.method==="GET"){
+    try{
+      const sources=[
+        "https://www.coretennis.net/majic/pageServer/160101003i/en/ITF-Junior-Boys-Rankings.html",
+        "https://www.coretennis.net/majic/pageServer/0n0100005a/en/ITF-Junior-Boys-Best-Progression--Year-.html",
+        "https://www.coretennis.net/majic/pageServer/170100003k/en/ITF-Junior-Boys-Best-Progression--Week-.html",
+        "https://www.coretennis.net/majic/pageServer/0p0100005b/en/ITF-Junior-Boys-Biggest-Drop--Year-.html",
+        "https://www.coretennis.net/majic/pageServer/190100003l/en/ITF-Junior-Boys-Biggest-Drop--Week-.html",
+        "https://www.coretennis.net/majic/pageServer/1i010100fo/en/ITF-Junior-Boys-Biggest-Drop--6-Months-.html"
+      ];
+      const settled=await Promise.allSettled(sources.map(fetchCoreTennisJuniorRows));
+      const merged=new Map<string,any>(),stats:any[]=[];
+      let snapshot="2026-09-21";
+      for(let i=0;i<settled.length;i++){
+        const r=settled[i];
+        if(r.status==="rejected"){stats.push({url:sources[i],ok:false,error:String((r.reason as any)?.message||r.reason)});continue;}
+        stats.push({url:sources[i],ok:true,rows:r.value.length,snapshot:r.value[0]?.snapshot||null});
+        for(const p of r.value){
+          if(p.snapshot&&String(p.snapshot)>snapshot)snapshot=String(p.snapshot);
+          const key=normalizeName(p.name)+"|"+p.country;
+          const prev=merged.get(key);
+          if(!prev||p.ranking<prev.ranking)merged.set(key,p);
+        }
+      }
+      return h({snapshot,discovered:merged.size,sources:stats,rows:[...merged.values()].map((p:any)=>({name:p.name,country:p.country,ranking:p.ranking}))});
+    }catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
   if(path.endsWith("/api/sync-real-juniors")&&req.method==="GET"){
     try{return h(await syncRealJuniorBoys())}
     catch(e){return h({error:String((e as any)?.message||e)},500)}

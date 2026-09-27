@@ -615,7 +615,7 @@ Deno.serve(async(req:Request)=>{
 
     if(kind==="ncaa"){
       const playerSelect="id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division,ncaa_status,ncaa_last_school,ncaa_verified,ranking_snapshot_date";
-      const [currentReg,currentPlayers,allAmericanReg,registryPool]=await Promise.all([
+      const [currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3]=await Promise.all([
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .eq("season","2026-27").eq("status","Active")
@@ -628,9 +628,18 @@ Deno.serve(async(req:Request)=>{
           .eq("season","2025-26").eq("status","ITA All-American 2025-26").limit(500),
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
-          .order("snapshot_date",{ascending:false}).order("id",{ascending:false}).limit(5000)
+          .order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(0,999),
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(1000,1999),
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(2000,2999),
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(3000,3999)
       ]);
-      const e=currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool.error;
+      const e=currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool0.error||registryPool1.error||registryPool2.error||registryPool3.error;
       if(e)return h({error:e.message},500);
 
       const byId=new Map<number,any>();
@@ -664,8 +673,9 @@ Deno.serve(async(req:Request)=>{
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
         put(p,{...x,ita_rank:null},2);
       }
-      for(const x of registryPool.data??[]){
+      for(const x of [...(registryPool0.data??[]),...(registryPool1.data??[]),...(registryPool2.data??[]),...(registryPool3.data??[])]){
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
+        if(String(p?.data_source||"").startsWith("hidden duplicate merged into "))continue;
         put(p,x,3);
       }
 

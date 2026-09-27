@@ -1013,7 +1013,7 @@ ${p.bio_source?`<div class="muted micro" style="margin-top:6px">Bio : ${esc(p.bi
         <div class="muted mini" style="margin-top:8px">${p.doubles_source?esc(p.doubles_source):'Classement indexé Court Boss'}${p.doubles_snapshot_date?' · '+df(p.doubles_snapshot_date):''}</div>
         ${p.doubles_ranking!=null&&!isRetired?`<button class="primary" style="width:100%;margin-top:10px" onclick="choosePartner(${p.id});closeOverlay()">Choisir comme partenaire</button>`:''}
       </div>
-      <div class="card"><div class="row between"><div><div class="eyebrow">Race par équipes</div><h2>Paires 2026</h2></div><span class="badge">${(d.doublesTeams||[]).length}</span></div>
+      <div class="card"><div class="row between"><div><div class="eyebrow">Race par équipes</div><h2>Paires ${String(local.date||RANKING_SNAPSHOT).slice(0,4)}</h2></div><span class="badge">${(d.doublesTeams||[]).length}</span></div>
         ${(d.doublesTeams||[]).length?(d.doublesTeams||[]).map(x=>{const partner=x.player_one===p.name?x.player_two:x.player_one;return `<div class="list-item row between"><div><b>#${fmt(x.rank)} · ${esc(partner)}</b><div class="muted mini">${esc(x.player_one)} / ${esc(x.player_two)} · ${x.snapshot_date?df(x.snapshot_date):''}</div></div><b>${fmt(x.points)} pts</b></div>`}).join(''):'<div class="empty">Aucune paire Race actuelle trouvée pour ce joueur.</div>'}
       </div>
     </div>
@@ -1276,7 +1276,7 @@ window.simulateWeek=async()=>{
   const currentYear=Number(String(local.date||RANKING_SNAPSHOT).slice(0,4)),nextYear=Number(nextDate.slice(0,4));
   if(nextYear>currentYear){
     const roll=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:nextYear})});
-    local.date=String(nextYear)+'-01-05';local.week=1;if(nextYear>2026)tourFilters.source='Tous';
+    local.date=String(nextYear)+'-01-05';local.week=1;if(nextYear>Number(String(RANKING_SNAPSHOT).slice(0,4)))tourFilters.source='Tous';
     if(roll.userRanking){cr.singles_rank=roll.userRanking.rank;cr.points=roll.userRanking.points}
     if(roll.userDoublesRanking){cr.doubles_rank=roll.userDoublesRanking.rank;cr.doubles_points=roll.userDoublesRanking.points}
     local.feed=local.feed||[];

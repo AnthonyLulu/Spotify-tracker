@@ -939,10 +939,14 @@ window.createCustomPlayerV2=async()=>{
 
 
 window.renderPalmaresHtml=function(d,p){
-  const allTitles=d?.titles||[];
-  const titles=allTitles.filter(t=>!t.event_type||t.event_type==='singles');
-  const doublesTitles=allTitles.filter(t=>t.event_type==='doubles');
-  const collegeTitles=allTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
+  const rawTitles=d?.titles||[];
+  const hasCanonicalSingles=rawTitles.some(t=>t.origin==='sackmann_atp_canonical'&&t.event_type==='singles');
+  const titles=rawTitles.filter(t=>(!t.event_type||t.event_type==='singles')&&(!hasCanonicalSingles||t.origin==='sackmann_atp_canonical'||t.origin==='game'));
+  const doublesTitles=rawTitles.filter(t=>t.event_type==='doubles');
+  const juniorSinglesTitles=rawTitles.filter(t=>t.event_type==='junior_singles');
+  const juniorDoublesTitles=rawTitles.filter(t=>t.event_type==='junior_doubles');
+  const collegeTitles=rawTitles.filter(t=>/^ncaa_|^college_/.test(String(t.event_type||'')));
+  const allTitles=[...titles,...doublesTitles,...juniorSinglesTitles,...juniorDoublesTitles,...collegeTitles];
   const ncaaCareer=d?.ncaaCareer||null;
   const ncaaTransfers=(d?.ncaaTransfers||[]).slice().sort((a,b)=>Number(b.is_current)-Number(a.is_current)||String(b.season||'').localeCompare(String(a.season||''))||String(a.school||'').localeCompare(String(b.school||'')));
   const ncaaCurrentVerified=!!p?.ncaa_current||(d?.ncaa||[]).some(x=>String(x.season||'')==='2026-27'&&String(x.status||'')==='Active');
@@ -1047,6 +1051,8 @@ window.renderPalmaresHtml=function(d,p){
       <div class="kpi-strip" style="margin-top:10px">
         <div class="kpi"><span class="muted mini">Simple</span><b>${titles.length}</b></div>
         <div class="kpi"><span class="muted mini">Double</span><b>${doublesTitles.length}</b></div>
+        <div class="kpi"><span class="muted mini">Junior simple</span><b>${juniorSinglesTitles.length}</b></div>
+        <div class="kpi"><span class="muted mini">Junior double</span><b>${juniorDoublesTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">NCAA / College</span><b>${collegeTitles.length}</b></div>
         <div class="kpi"><span class="muted mini">Statut NCAA</span><b style="font-size:12px">${esc(ncaaCareer?.status||p.ncaa_status||'—')}</b></div>
       </div>
@@ -1167,6 +1173,15 @@ window.renderPalmaresHtml=function(d,p){
               </button>`).join('')}
           </div>
         </details>`).join(''):'<div class="empty">Pas encore d’historique double importé pour ce joueur.</div>'}
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="row between"><div><div class="eyebrow">ITF World Tennis Tour Juniors</div><h2>Palmarès junior</h2></div><span class="pill">${juniorSinglesTitles.length+juniorDoublesTitles.length} titre(s)</span></div>
+      <div class="grid g2" style="margin-top:10px">
+        <div><h3>Simple junior</h3>${juniorSinglesTitles.length?juniorSinglesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior')}</div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior simple enregistré.</div>'}</div>
+        <div><h3>Double junior</h3>${juniorDoublesTitles.length?juniorDoublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior Double')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior double enregistré.</div>'}</div>
+      </div>
+      ${(p.junior_ranking||p.junior_doubles_ranking)?`<div class="notice mini" style="margin-top:10px">Classement junior : ${p.junior_ranking?'#'+fmt(p.junior_ranking):'—'} · Double junior : ${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'}.</div>`:''}
     </div>
 
     <div class="grid g2" style="margin-top:12px">

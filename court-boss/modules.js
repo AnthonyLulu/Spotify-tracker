@@ -276,3 +276,42 @@ window.render=function(){
 };
 
 window.rolloverSeasonV2=rolloverSeasonV2;
+
+window.startCareerWithPlayer=async function(id,name){
+  if(!confirm("Démarrer une nouvelle carrière avec "+name+" ? Les résultats de la carrière actuelle seront réinitialisés."))return;
+  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création de la nouvelle carrière…</div></div></div>';
+  try{
+    const d=await managerAction('take_over_player',id,{date:local.date||'2026-09-27'});
+    Object.assign(local,{
+      date:d.career?.career_date||local.date||'2026-09-27',
+      week:1,
+      training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
+      entries:[],
+      entryMeta:{},
+      shortlist:[],
+      career:d.career||null,
+      feed:['Nouvelle carrière lancée avec '+name+'.'],
+      scoutingBoost:0,
+      partnerId:null,
+      davisRoles:{},
+      tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'},
+      playedTournaments:{},
+      practiceMatches:[],
+      facilityLevels:{}
+    });
+    persist();
+    boot=await get('/api/bootstrap');
+    if(boot.career)local.career={...boot.career};
+    rankKind='singles';rankOffset=0;rankQuery='';
+    tourOffset=0;
+    await Promise.all([
+      loadManagement(),loadRankings(),loadTournaments(),loadRankingLedger(),
+      loadSeasonSummary(),loadScheduleAdvice(),loadCbDoublesTournaments()
+    ]);
+    closeOverlay();
+    route='home';
+    shell(home());
+  }catch(e){
+    overlay.innerHTML='<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Nouvelle carrière impossible</h2><p class="muted">'+esc(e.message)+'</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>';
+  }
+};

@@ -94,7 +94,7 @@ Deno.serve(async(req:Request)=>{
       db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
       db.from("match_history").select("*").eq("user_involved",true).order("match_date",{ascending:false}).limit(10),
       db.from("players").select("id,name,country,ranking,points,doubles_ranking,itf_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,is_real").eq("ranking_current",true).lte("ranking",30).order("ranking"),
-      db.from("tournaments").select("*").gte("start_date",currentCareer.data?.career_date||"2026-09-27").order("start_date").limit(40),
+      db.from("tournaments").select("*").eq("is_active",true).gte("start_date",currentCareer.data?.career_date||"2026-09-27").order("start_date").limit(40),
       db.from("injuries").select("*,players(id,name,country,ranking)").order("started_at",{ascending:false}).limit(30),
       db.from("davis_squad").select("id,nation,role,players(id,name,country,ranking,points,doubles_ranking,form,fitness,morale,fatigue,style)").eq("nation","FRA").order("id"),
       db.from("training_plan").select("*").order("day_index"),
@@ -268,7 +268,7 @@ Deno.serve(async(req:Request)=>{
     const source=(u.searchParams.get("source")??"").trim();
     const surface=(u.searchParams.get("surface")??"").trim().slice(0,40);
     const from=(u.searchParams.get("from")??"").trim();
-    let query=db.from("tournaments").select("*",{count:"exact"});
+    let query=db.from("tournaments").select("*",{count:"exact"}).eq("is_active",true);
     if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
@@ -311,7 +311,7 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/tournament-detail")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
     const [t,wc,forfeits]=await Promise.all([
-      db.from("tournaments").select("*").eq("id",id).maybeSingle(),
+      db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",id).maybeSingle(),
       db.from("tournament_forfeits").select("id,player_id,reason,players(id,name,country,ranking,junior_ranking)").eq("tournament_id",id)
     ]);
@@ -852,7 +852,7 @@ Deno.serve(async(req:Request)=>{
     const anth=await getManagedPlayer("id,player_attributes(*)");
     if(career.error||anth.error||!career.data)return h({error:(career.error||anth.error)?.message||"Career missing"},500);
     const c:any=career.data,a:any=Array.isArray(anth.data?.player_attributes)?anth.data.player_attributes[0]:anth.data?.player_attributes||{};
-    const tours=await db.from("tournaments").select("*").gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(80);
+    const tours=await db.from("tournaments").select("*").eq("is_active",true).gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(120);
     if(tours.error)return h({error:tours.error.message},500);
     const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
     const score=(t:any)=>{
@@ -883,9 +883,9 @@ Deno.serve(async(req:Request)=>{
     const roll=await db.rpc("rollover_season",{p_new_year:newYear});
     if(roll.error)return h({error:roll.error.message},500);
 
-    const existing=await db.from("tournaments").select("id",{count:"exact",head:true}).gte("start_date",String(newYear)+"-01-01").lte("start_date",String(newYear)+"-12-31");
+    const existing=await db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).gte("start_date",String(newYear)+"-01-01").lte("start_date",String(newYear)+"-12-31");
     if(!existing.error && Number(existing.count||0)===0){
-      const prev=await db.from("tournaments").select("*").gte("start_date",String(newYear-1)+"-01-01").lte("start_date",String(newYear-1)+"-12-31").order("start_date");
+      const prev=await db.from("tournaments").select("*").eq("is_active",true).gte("start_date",String(newYear-1)+"-01-01").lte("start_date",String(newYear-1)+"-12-31").order("start_date");
       if(!prev.error && (prev.data??[]).length){
         const shifted=(prev.data??[]).map((t:any)=>{
           const shift=(s:any)=>{
@@ -903,7 +903,8 @@ Deno.serve(async(req:Request)=>{
             deadline:shift(t.deadline),
             is_verified:false,
             source_url:null,
-            source_note:"Court Boss simulated calendar based on previous-season pattern"
+            source_note:"Court Boss simulated calendar based on previous-season pattern",
+            is_active:true
           };
         });
         for(let i=0;i<shifted.length;i+=200){
@@ -1566,38 +1567,58 @@ Deno.serve(async(req:Request)=>{
         const rub=await db.from("davis_rubbers").select("*").eq("tie_id",id).order("rubber_no");
         return h({ok:true,already:true,tie:tie.data,rubbers:rub.data??[]});
       }
-      const fra=await db.from("davis_squad").select("role,players(id,name,ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity))").eq("nation","FRA");
-      const ita=await db.from("players").select("id,name,ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity)").eq("ranking_current",true).eq("country","ITA").order("ranking").limit(4);
-      if(fra.error||ita.error)return h({error:(fra.error||ita.error)?.message},500);
+      const home=String(tie.data.home_nation||"").toUpperCase(),away=String(tie.data.away_nation||"").toUpperCase();
+      if(!home||!away||home==="TBD"||away==="TBD")return h({error:"Affiche Davis pas encore déterminée."},409);
+
+      const playerSelect="id,name,country,ranking,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity,doubles)";
+      const [homeRes,awayRes,homeSquad,awaySquad]=await Promise.all([
+        db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",home).order("ranking").limit(6),
+        db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",away).order("ranking").limit(6),
+        db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",home),
+        db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",away)
+      ]);
+      const err=homeRes.error||awayRes.error||homeSquad.error||awaySquad.error;
+      if(err)return h({error:err.message},500);
       const flatten=(x:any)=>({...x,player_attributes:Array.isArray(x.player_attributes)?x.player_attributes[0]:x.player_attributes});
-      const fs=(fra.data??[]).map((x:any)=>({role:x.role,p:flatten(x.players)})).filter((x:any)=>x.p);
-      const it=(ita.data??[]).map(flatten);
-      const by=(r:string)=>fs.find((x:any)=>x.role===r)?.p;
-      const f1=by("Simple 1")||fs[0]?.p,f2=by("Simple 2")||fs[1]?.p||fs[0]?.p,fdA=by("Double A")||f1,fdB=by("Double B")||f2;
-      if(!f1||!f2||it.length<2)return h({error:"Sélection Davis incomplète"},409);
+      const squad=(rows:any[],fallback:any[])=>{
+        const assigned=(rows??[]).map((x:any)=>({role:x.role,p:flatten(Array.isArray(x.players)?x.players[0]:x.players)})).filter((x:any)=>x.p?.id);
+        const role=(r:string)=>assigned.find((x:any)=>x.role===r)?.p;
+        const base=(fallback??[]).map(flatten);
+        return {
+          s1:role("Simple 1")||base[0],
+          s2:role("Simple 2")||base[1]||base[0],
+          d1:role("Double A")||base.find((p:any)=>p.doubles_ranking)||base[0],
+          d2:role("Double B")||base.filter((p:any)=>p.doubles_ranking)[1]||base[1]||base[0]
+        };
+      };
+      const H=squad(homeSquad.data??[],homeRes.data??[]),A=squad(awaySquad.data??[],awayRes.data??[]);
+      if(!H.s1||!H.s2||!A.s1||!A.s2)return h({error:"Sélection Davis incomplète pour "+home+" ou "+away},409);
+
       const surf=String(tie.data.surface||"Dur");
       const key=surf.includes("Terre")?"clay_affinity":surf.includes("Gazon")?"grass_affinity":"hard_affinity";
       const strength=(p:any)=>Number(p.current_ability||50)+Number(p.form||70)*.18+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.12+Number(p.player_attributes?.[key]||10)*.7;
-      const one=(a:any,b:any)=>{const prob=1/(1+Math.exp(-(strength(a)-strength(b))/7));const aw=Math.random()<prob;return {winner:aw?"FRA":"ITA",score:Math.abs(strength(a)-strength(b))<7?"7-6 4-6 6-3":(aw?"6-3 6-4":"4-6 3-6")}};
-      const pairStrength=(a:any,b:any)=>strength(a)*.52+strength(b)*.48;
-      const dbl=(a:any,b:any,c:any,d:any)=>{const pa=pairStrength(a,b),pb=pairStrength(c,d),prob=1/(1+Math.exp(-(pa-pb)/8));const aw=Math.random()<prob;return {winner:aw?"FRA":"ITA",score:Math.abs(pa-pb)<7?"7-6 3-6 6-4":(aw?"6-4 6-3":"4-6 3-6")}};
+      const one=(ha:any,aa:any)=>{const prob=1/(1+Math.exp(-(strength(ha)-strength(aa))/7));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(strength(ha)-strength(aa))<7?"7-6 4-6 6-3":(hw?"6-3 6-4":"4-6 3-6")}};
+      const pair=(a:any,b:any)=>strength(a)*.46+strength(b)*.46+Number(a.player_attributes?.doubles||10)*.35+Number(b.player_attributes?.doubles||10)*.35;
+      const dbl=(ha:any,hb:any,aa:any,ab:any)=>{const ph=pair(ha,hb),pa=pair(aa,ab),prob=1/(1+Math.exp(-(ph-pa)/8));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(ph-pa)<7?"7-6 3-6 6-4":(hw?"6-4 6-3":"4-6 3-6")}};
+
       const rubs:any[]=[];
       const push=(no:number,type:string,hn:string,an:string,res:any)=>rubs.push({tie_id:id,rubber_no:no,rubber_type:type,home_names:hn,away_names:an,winner_nation:res.winner,score:res.score});
-      push(1,"Simple",f1.name,it[1].name,one(f1,it[1]));
-      push(2,"Simple",f2.name,it[0].name,one(f2,it[0]));
-      push(3,"Double",fdA.name+" / "+fdB.name,it[0].name+" / "+it[1].name,dbl(fdA,fdB,it[0],it[1]));
-      push(4,"Simple",f1.name,it[0].name,one(f1,it[0]));
-      push(5,"Simple",f2.name,it[1].name,one(f2,it[1]));
-      const hs=rubs.filter(x=>x.winner_nation==="FRA").length,as=rubs.length-hs;
+      push(1,"Simple",H.s1.name,A.s2.name,one(H.s1,A.s2));
+      push(2,"Simple",H.s2.name,A.s1.name,one(H.s2,A.s1));
+      push(3,"Double",H.d1.name+" / "+H.d2.name,A.d1.name+" / "+A.d2.name,dbl(H.d1,H.d2,A.d1,A.d2));
+      let hs=rubs.filter(x=>x.winner_nation===home).length,as=rubs.filter(x=>x.winner_nation===away).length;
+      if(hs<3&&as<3){push(4,"Simple",H.s1.name,A.s1.name,one(H.s1,A.s1));hs=rubs.filter(x=>x.winner_nation===home).length;as=rubs.filter(x=>x.winner_nation===away).length;}
+      if(hs<3&&as<3){push(5,"Simple",H.s2.name,A.s2.name,one(H.s2,A.s2));hs=rubs.filter(x=>x.winner_nation===home).length;as=rubs.filter(x=>x.winner_nation===away).length;}
+
+      const del=await db.from("davis_rubbers").delete().eq("tie_id",id);
+      if(del.error)return h({error:del.error.message},500);
       const ins=await db.from("davis_rubbers").insert(rubs);
       if(ins.error)return h({error:ins.error.message},500);
       const up=await db.from("davis_ties").update({status:"completed",home_score:hs,away_score:as}).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
-      await db.from("federation_state").update({manager_interest:Math.min(100,Number((await db.from("federation_state").select("manager_interest").eq("nation","FRA").maybeSingle()).data?.manager_interest||38)+(hs>as?8:2))}).eq("nation","FRA");
-      await db.from("inbox_items").insert({kind:"davis",title:"Résultat Coupe Davis",body:"France "+hs+"-"+as+" Italie.",action_route:"davis",is_read:false});
+      await db.from("inbox_items").insert({kind:"davis",title:"Résultat Coupe Davis",body:home+" "+hs+"-"+as+" "+away+".",action_route:"davis",is_read:false});
       return h({ok:true,tie:{...tie.data,status:"completed",home_score:hs,away_score:as},rubbers:rubs});
     }
-
 
     if(action==="set_scouting_assignment"){
       const focus=String(body?.focus||"U23 potentiel").slice(0,80);
@@ -1970,13 +1991,13 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const [playersTotal,atp,itf,junior,tours,realTours,ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
+    const [playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingDob,active2025,doublesReal,raceReal,nextgenReal,juniorReal] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01"),
-      db.from("tournaments").select("id",{count:"exact",head:true}),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_verified",true),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true),
+      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true),
       db.from("college_teams").select("id",{count:"exact",head:true}),
       db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true),
       db.from("ncaa_player_registry").select("player_id,status").limit(5000),
@@ -1984,6 +2005,7 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("birth_date",null),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
@@ -2010,7 +2032,12 @@ Deno.serve(async(req:Request)=>{
       ncaaActiveProfiles:new Set((ncaaRegistry.data??[]).filter((x:any)=>x.status==="Active").map((x:any)=>Number(x.player_id))).size,
       gameGenerated:newgens.count??0,
       tournaments:tours.count??0,
-      verifiedTournaments:realTours.count??0
+      verifiedTournaments:realTours.count??0,
+      officialATP:atpTours.count??0,
+      officialChallenger:challengerTours.count??0,
+      officialITF:itfTours.count??0,
+      officialFederation:fedTours.count??0,
+      currentRankedMissingDob:currentMissingDob.count??0
     });
   }
 

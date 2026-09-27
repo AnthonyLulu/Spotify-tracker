@@ -2034,7 +2034,7 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/world")&&req.method==="GET"){
     const [
       playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,
-      ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,
+      ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,currentMissingDob,
       active2025,doublesReal,raceReal,nextgenReal,juniorReal
     ] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
@@ -2055,6 +2055,7 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("age",null),
+      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("birth_date",null),
       db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
@@ -2087,7 +2088,7 @@ Deno.serve(async(req:Request)=>{
       officialITF:itfTours.count??0,
       officialFederation:fedTours.count??0,
       currentRankedMissingAge:currentMissingAge.count??0,
-      currentRankedMissingDob:currentMissingAge.count??0
+      currentRankedMissingDob:currentMissingDob.count??0
     });
   }
 

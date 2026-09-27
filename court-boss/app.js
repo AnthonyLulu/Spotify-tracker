@@ -200,7 +200,8 @@ function calendar(){
  const circs=['Tous','ATP','Challenger','ITF','NCAA','Junior','Federation'];
  const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Carpet'];
  const officialCount=worldStats?.verifiedTournaments||0;
- return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">Le calendrier s’ouvre sur les compétitions réelles vérifiées. Les événements de simulation restent disponibles avec le filtre Source.</div></div><div class="row"><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels en base</span></div></div>
+ const coverage=`ATP ${fmt(worldStats?.officialATP||0)} · Challenger ${fmt(worldStats?.officialChallenger||0)} · ITF ${fmt(worldStats?.officialITF||0)}`;
+ return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">Le calendrier s’ouvre sur les compétitions réelles vérifiées. Les événements de simulation restent disponibles avec le filtre Source.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
@@ -570,7 +571,7 @@ function worldPage(){
  const w=worldStats||{};
  return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">Base mondiale, circuits séparés et simulation persistante.</div></div><button class="ghost" onclick="get('/api/world').then(x=>{worldStats=x;render()})">Actualiser</button></div>
  <div class="kpi-strip">
-  <div class="kpi click" onclick="nav('players')"><span class="muted mini">Joueurs réels recherchables</span><b>${fmt(w.realPlayersTotal||w.playersTotal||10000)}</b></div>
+  <div class="kpi click" onclick="nav('players')"><span class="muted mini">Joueurs réels recherchables</span><b>${fmt(w.searchableRealPlayers||w.realPlayersTotal||w.playersTotal||10000)}</b></div>
   <div class="kpi click" onclick="setRankKind('singles');nav('rankings')"><span class="muted mini">Classés ATP</span><b>${fmt(w.atpRanked||2000)}</b></div>
   <div class="kpi click" onclick="nav('calendar')"><span class="muted mini">Tournois</span><b>${fmt(w.tournaments||0)}</b></div>
   <div class="kpi"><span class="muted mini">Tournois vérifiés</span><b>${fmt(w.verifiedTournaments||0)}</b></div>
@@ -584,6 +585,9 @@ function worldPage(){
   <div class="menu-card" onclick="nav('calendar')"><div class="menu-icon">📅</div><strong>Compétitions</strong><span class="muted">ATP, Challenger, ITF, Junior, NCAA, Davis</span></div>
   <div class="menu-card" onclick="nav('history')"><div class="menu-icon">🏛️</div><strong>Histoire & nations</strong><span class="muted">Meilleurs historiques par pays et continent</span></div>
  </div>
+ <div class="card" style="margin-top:14px"><div class="row between"><div><div class="eyebrow">Couverture réelle</div><h2>Base de données</h2></div><span class="badge good">${fmt(w.searchableRealPlayers||0)} joueurs</span></div>
+ <div class="kpi-strip" style="margin-top:10px"><div class="kpi"><span class="muted mini">DOB connues</span><b>${fmt(w.realPlayersWithAge||0)}</b></div><div class="kpi"><span class="muted mini">ATP officiel</span><b>${fmt(w.officialATP||0)}</b></div><div class="kpi"><span class="muted mini">Challenger</span><b>${fmt(w.officialChallenger||0)}</b></div><div class="kpi"><span class="muted mini">ITF M15/M25</span><b>${fmt(w.officialITF||0)}</b></div></div>
+ <div class="muted mini" style="margin-top:9px">${w.currentRankedMissingDob?fmt(w.currentRankedMissingDob)+' classés actuels restent sans date de naissance vérifiée. Court Boss les laisse N/V plutôt que d’inventer un âge.':'Toutes les dates de naissance du classement courant sont renseignées.'}</div></div>
  <div class="card" style="margin-top:14px"><h2>Comment le monde évolue</h2><p class="muted">À chaque semaine, les tournois arrivés à terme sont simulés, les points bougent, les classements sont recalculés, les joueurs vieillissent, les blessures évoluent et les palmarès se remplissent. À l'intersaison, retraites et newgens maintiennent le vivier mondial.</p></div>`
 }
 
@@ -967,21 +971,39 @@ window.simulateWeek=async()=>{
  finally{simulating=false;render()}
 }
 window.openGlobalSearch=()=>{
- overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>Joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInput" class="input" style="margin-top:12px" placeholder="Sinner, Fils, Djokovic…" oninput="runGlobalSearch(this.value)" autofocus><div id="globalSearchResults" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Base mondiale · ${fmt(worldStats?.searchableRealPlayers||10000)} joueurs</div><h1>Recherche joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div>
+ <input id="globalSearchInput" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearch(this.value)" autofocus>
+ <div class="filters" style="margin-top:8px">
+  <select id="globalSearchCountry" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}">${flags[x.country]||'🏳️'} ${esc(x.country)}</option>`).join('')}</select>
+  <select id="globalSearchCircuit" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
+   <option>Tous</option><option>ATP</option><option>Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
+  </select>
+  <select id="globalSearchAge" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
+   <option value="99">Tous âges</option><option value="18">U18</option><option value="21">U21</option><option value="23">U23</option><option value="30">30 ans max</option>
+  </select>
+ </div>
+ <div id="globalSearchResults" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères, ou choisis une nationalité/circuit.</div></div></div></div>`;
  setTimeout(()=>document.getElementById('globalSearchInput')?.focus(),20);
 }
 window.runGlobalSearch=async q=>{
  const box=document.getElementById('globalSearchResults');if(!box)return;
- if(q.trim().length<2){box.innerHTML='<div class="empty">Tape au moins 2 caractères.</div>';return}
+ const country=document.getElementById('globalSearchCountry')?.value||'';
+ const circuit=document.getElementById('globalSearchCircuit')?.value||'Tous';
+ const age=document.getElementById('globalSearchAge')?.value||'99';
+ if(q.trim().length<2&&!country&&circuit==='Tous'&&age==='99'){box.innerHTML='<div class="empty">Tape au moins 2 caractères, ou utilise un filtre.</div>';return}
  try{
-  const d=await get('/api/search-players?offset=0&limit=30&q='+encodeURIComponent(q.trim()));
-  box.innerHTML=d.rows.map(p=>{
+  const p=new URLSearchParams({offset:'0',limit:'60',q:q.trim(),country,circuit,age_max:age});
+  const d=await get('/api/search-players?'+p.toString());
+  box.innerHTML=`<div class="row between"><span class="muted mini">${fmt(d.count||0)} résultat(s)</span><span class="badge">${esc(circuit==='Tous'?'Base mondiale':circuit)}</span></div>`+
+  (d.rows.map(p=>{
    const tags=[];
    if(p.ranking)tags.push('ATP #'+fmt(p.ranking));
+   if(p.itf_ranking)tags.push('ITF #'+fmt(p.itf_ranking));
    if(p.ncaa_current)tags.push('NCAA'+(p.ncaa_rank?' #'+fmt(p.ncaa_rank):'')+(p.ncaa_school?' · '+p.ncaa_school:''));
    if(p.junior_ranking&&p.birth_date&&String(p.birth_date)>='2007-01-01')tags.push('Junior #'+fmt(p.junior_ranking));
-   return `<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><div><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${esc(tags.join(' · ')||'Joueur réel')}</div></div><span class="badge">Profil</span></div></div>`;
-  }).join('')||'<div class="empty">Aucun joueur trouvé.</div>'
+   const ageLabel=p.age!=null?p.age+' ans':'âge N/V';
+   return `<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><div><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${esc(ageLabel)} · ${esc(tags.join(' · ')||'Joueur réel')}</div></div><span class="badge">Profil</span></div></div>`;
+  }).join('')||'<div class="empty">Aucun joueur trouvé.</div>');
  }catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
 }
 

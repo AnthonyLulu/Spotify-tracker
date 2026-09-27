@@ -417,7 +417,8 @@ function doublesEligibility(t){
  return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
 function tournamentThumb(t){
- if(t.image_url)return "<img class='tm-tour-photo' src='"+esc(t.image_url)+"' alt='"+esc(t.name)+"' onerror=\"this.style.display='none';this.nextElementSibling.style.display='grid'\"><span class='tm-tour-fallback' style='display:none'>"+(flags[t.country]||"🎾")+"</span>";
+ const img=String(t.image_url||"").trim()||(t.is_verified?(API+"/api/tournament-image?id="+encodeURIComponent(t.id)):"");
+ if(img)return "<img class='tm-tour-photo' src='"+esc(img)+"' alt='"+esc(t.name)+"' loading='lazy' onerror=\"this.style.display='none';this.nextElementSibling.style.display='grid'\"><span class='tm-tour-fallback' style='display:none'>"+(flags[t.country]||"🎾")+"<small>"+esc(String(t.category||t.circuit||"").replace("Challenger ","CH"))+"</small></span>";
  return "<span class='tm-tour-fallback'>"+(flags[t.country]||"🎾")+"<small>"+esc(String(t.category||t.circuit||"").replace("Challenger ","CH"))+"</small></span>";
 }
 function tournamentTmRow(t){

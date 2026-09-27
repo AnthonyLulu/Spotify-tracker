@@ -33,7 +33,7 @@ jobs:
           LOCAL_MODULES=$(sha256sum court-boss/modules.js | awk '{print $1}')
           LOCAL_CSS=$(sha256sum court-boss/app.css | awk '{print $1}')
           for i in {1..36}; do
-            if curl --fail --silent --show-error "$BASE/app.js?v=20260927-9" -o /tmp/render-app.js               && curl --fail --silent --show-error "$BASE/modules.js?v=20260927-9" -o /tmp/render-modules.js               && curl --fail --silent --show-error "$BASE/app.css?v=20260927-9" -o /tmp/render-app.css; then
+            if curl --fail --silent --show-error "$BASE/app.js?v=20260927-10" -o /tmp/render-app.js               && curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/render-modules.js               && curl --fail --silent --show-error "$BASE/app.css?v=20260927-10" -o /tmp/render-app.css; then
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
               REMOTE_MODULES=$(sha256sum /tmp/render-modules.js | awk '{print $1}')
               REMOTE_CSS=$(sha256sum /tmp/render-app.css | awk '{print $1}')
@@ -52,9 +52,9 @@ jobs:
         env:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
-          curl --fail --silent --show-error "$BASE/app.js?v=20260927-9" -o /tmp/app.js
-          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-9" -o /tmp/tactics.js
-          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-9" -o /tmp/modules.js
+          curl --fail --silent --show-error "$BASE/app.js?v=20260927-10" -o /tmp/app.js
+          curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-10" -o /tmp/tactics.js
+          curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/modules.js
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js

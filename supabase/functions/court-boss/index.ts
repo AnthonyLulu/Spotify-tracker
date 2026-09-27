@@ -1160,17 +1160,22 @@ Deno.serve(async(req:Request)=>{
     const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
     const momentum=(Number(session.data.momentum||50)-50)*.05;
+    const indoor=surface.toLowerCase().includes("intérieur");
+    const serveBoost=surface==="Gazon"?3.0:indoor?2.8:surface.startsWith("Dur")?2.2:1.55;
+    const pace=surface==="Terre"?-2:surface==="Gazon"?2:indoor?1.5:0;
     let uStrength=uBase+balance+netBonus+retBonus+momentum;
     let oStrength=oBase;
-    if(session.data.serving_user)uStrength+=2.2;else oStrength+=2.2;
+    if(session.data.serving_user)uStrength+=serveBoost;else oStrength+=serveBoost;
 
     const prob=1/(1+Math.exp(-(uStrength-oStrength)/7.5));
     const userWon=Math.random()<prob;
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
 
-    const rally=2+Math.floor(Math.random()*(4+Math.max(1,Math.round((100-risk)/10))));
-    const shot=userWon?(Math.random()<.22?"ace":Math.random()<.54?"winner":"forced error"):(Math.random()<.2?"return winner":Math.random()<.55?"winner":"forced error");
+    const rallyBase=Math.max(2,Math.round(5-pace+(100-risk)/14));
+    const rally=2+Math.floor(Math.random()*Math.max(3,rallyBase));
+    const aceChance=Math.max(.08,Math.min(.32,.13+Number(ua.serve_power||10)*.006+(indoor?.055:surface==="Gazon"?.07:surface==="Terre"?-.035:0)));
+    const shot=userWon?(Math.random()<aceChance?"ace":Math.random()<.58?"winner":"forced error"):(Math.random()<.18?"return winner":Math.random()<.58?"winner":"forced error");
     const lastPoint={
       winner:userWon?"user":"opponent",
       rally,
@@ -1288,9 +1293,11 @@ Deno.serve(async(req:Request)=>{
     const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
     const momentum=(Number(session.data.momentum||50)-50)*.05;
+    const indoor=surface.toLowerCase().includes("intérieur");
+    const serveBoost=surface==="Gazon"?3.0:indoor?2.8:surface.startsWith("Dur")?2.1:1.55;
     let uStrength=uBase+balance+netBonus+retBonus+momentum;
     let oStrength=oBase;
-    if(session.data.serving_user)uStrength+=2.1;else oStrength+=2.1;
+    if(session.data.serving_user)uStrength+=serveBoost;else oStrength+=serveBoost;
 
     const prob=1/(1+Math.exp(-(uStrength-oStrength)/7.5));
     const userWon=Math.random()<prob;
@@ -1304,7 +1311,7 @@ Deno.serve(async(req:Request)=>{
     if(userWon){
       stats.user_winners+=1+Math.floor(Math.random()*4);
       stats.opp_errors+=Math.floor(Math.random()*3);
-      if(session.data.serving_user&&Math.random()<.17)stats.user_aces++;
+      if(session.data.serving_user&&Math.random()<(surface==="Gazon"?.24:indoor?.22:surface.startsWith("Dur")?.17:.11))stats.user_aces++;
     }else{
       stats.opp_winners+=1+Math.floor(Math.random()*4);
       stats.user_errors+=Math.floor(Math.random()*3);

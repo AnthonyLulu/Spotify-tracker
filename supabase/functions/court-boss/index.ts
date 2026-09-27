@@ -1923,10 +1923,10 @@ Deno.serve(async(req:Request)=>{
         if(activate.error)return h({error:activate.error.message},500);
       }
 
-      const currentCount=await db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",2000);
-      const overflow=Math.max(0,Number(currentCount.count||0)-2000);
+      const currentCount=await db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).lte("ranking",3000);
+      const overflow=Math.max(0,Number(currentCount.count||0)-3000);
       if(overflow>0){
-        const tail=await db.from("players").select("id").eq("ranking_current",true).neq("id",p.id).lte("ranking",2000).order("ranking",{ascending:false}).order("id",{ascending:false}).limit(overflow);
+        const tail=await db.from("players").select("id").eq("ranking_current",true).neq("id",p.id).lte("ranking",3000).order("ranking",{ascending:false}).order("id",{ascending:false}).limit(overflow);
         if(!tail.error&&(tail.data??[]).length){
           await db.from("players").update({ranking_current:false,ranking_source:"Displaced by managed-player career slot"}).in("id",(tail.data??[]).map((x:any)=>x.id));
         }

@@ -246,11 +246,25 @@ window.openCollegeTeam=id=>{
 window.commitCollege=async id=>{try{await managerAction('commit_college',id);await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id);await loadManagement();render()}catch(e){alert(e.message)}}
 function davisPage(){
- const f=boot.federation||{},sq=boot.davisSquad||[];
+ const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[];
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
- return `<div class="section-head"><div><div class="eyebrow">Fédération française</div><h1>Coupe Davis</h1><div class="muted">Réputation ${f.reputation||91}/100 · intérêt manager ${f.manager_interest||38}% · capitaine ${esc(f.captain||'À déterminer')}</div></div></div>
- <div class="grid g2"><div class="card"><h2>Prochaine rencontre</h2><div class="big" style="font-size:24px">${esc(f.next_tie||'France vs Italie')}</div><p class="muted">${esc(f.home_surface||'Dur indoor')}</p><div class="notice">Objectif : ${esc(f.objective||'Atteindre le Final 8')}</div><div class="list-item"><b>Qualifiers</b><div class="muted mini">2 simples J1 · double + reverse singles J2</div></div><div class="list-item"><b>Final 8</b><div class="muted mini">2 simples + double décisif</div></div></div>
- <div class="card"><h2>Sélection France</h2>${sq.map(s=>{const p=s.players;if(!p)return'';const role=local.davisRoles[p.id]||s.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}</div></div>`
+ const tie=ties[0]||null;
+ return `<div class="section-head"><div><div class="eyebrow">Fédération française</div><h1>Coupe Davis</h1><div class="muted">Réputation ${f.reputation||91}/100 · intérêt manager ${f.manager_interest||38}% · capitaine ${esc(f.captain||'À déterminer')}</div></div>${tie&&tie.status!=='completed'?`<button class="primary" onclick="playDavisTie(${tie.id})">Jouer le tie</button>`:''}</div>
+ <div class="grid g2"><div class="card"><h2>Prochaine rencontre</h2>${tie?`<div class="big" style="font-size:24px">${tie.home_nation} vs ${tie.away_nation}</div><p class="muted">${df(tie.tie_date)} · ${esc(tie.surface)} · ${esc(tie.stage)}</p>${tie.status==='completed'?`<div class="score-hero">${tie.home_score} - ${tie.away_score}</div><span class="badge ${tie.home_score>tie.away_score?'good':'bad'}">${tie.home_score>tie.away_score?'Victoire France':'Défaite France'}</span>`:`<div class="notice">Objectif : ${esc(f.objective||'Atteindre le Final 8')}</div>`}`:`<div class="empty">Aucun tie programmé.</div>`}
+  <div class="list-item"><b>Format</b><div class="muted mini">2 simples J1 · double + reverse singles J2</div></div></div>
+ <div class="card"><h2>Sélection France</h2>${sq.map(s=>{const p=s.players;if(!p)return'';const role=local.davisRoles[p.id]||s.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}</div></div>
+ ${tie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Résultats</div><h2>Rubbers</h2></div></div><div class="stack">${tie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score)}</div><span class="badge ${r.winner_nation==='FRA'?'good':'bad'}">${esc(r.winner_nation)}</span></div></div></div>`).join('')}</div>`:''}`
+}
+window.playDavisTie=async id=>{
+ try{
+  const d=await managerAction('play_davis_tie',id);
+  await refreshManagerState();
+  if(d.tie&&management?.davisTies){
+    const ix=management.davisTies.findIndex(x=>x.id===id);
+    if(ix>=0)management.davisTies[ix]={...d.tie,davis_rubbers:d.rubbers||[]};
+  }
+  render();
+ }catch(e){alert(e.message)}
 }
 function boardPage(){const a=boot.academy||{};return `<div class="section-head"><div><div class="eyebrow">Direction</div><h1>Board</h1><div class="muted">Confiance : ${a.board_confidence||76}%</div></div></div><div class="stack">${(boot.board||[]).map(o=>`<div class="card"><div class="row between"><div><h2>${esc(o.objective)}</h2><div class="muted">${esc(o.target_value||'')} · échéance ${df(o.deadline)}</div></div><b>${o.progress}%</b></div><div class="bar"><i style="width:${o.progress}%"></i></div></div>`).join('')}</div>`}
 function worldPage(){

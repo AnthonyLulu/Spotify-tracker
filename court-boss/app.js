@@ -573,11 +573,11 @@ function davisPage(){
  const final8=ties.filter(t=>String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const franceAlive=final8.some(t=>t.home_nation==='FRA'||t.away_nation==='FRA');
  const scoreFor=t=>t.home_score!=null&&t.away_score!=null?`${t.home_score}-${t.away_score}`:'vs';
- const tieCard=t=>`<div class="davis-tie-card ${t.status==='completed'?'completed':''} ${t.status!=='completed'?'click':''}" ${t.status!=='completed'?`onclick="playDavisTie(${t.id})"`:''}>
+ const tieCard=t=>{const ready=t.status!=='completed'&&t.home_nation!=='TBD'&&t.away_nation!=='TBD';return `<div class="davis-tie-card ${t.status==='completed'?'completed':''} ${ready?'click':''}" ${ready?`onclick="playDavisTie(${t.id})"`:''}>
    <div class="row between"><span class="badge tag-fed">${esc(t.stage||'Coupe Davis')}</span><span class="muted mini">${df(t.tie_date)}</span></div>
    <div class="davis-matchup"><b>${flags[t.home_nation]||'🏳️'} ${esc(t.home_nation)}</b><strong>${scoreFor(t)}</strong><b>${flags[t.away_nation]||'🏳️'} ${esc(t.away_nation)}</b></div>
-   <div class="muted mini">${esc(t.venue||'Lieu à confirmer')} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></div>
- </div>`;
+   <div class="row between" style="margin-top:7px"><div class="muted mini">${esc(t.venue||'Lieu à confirmer')} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></div>${ready?'<span class="badge warn">Simuler</span>':t.status==='completed'?'<span class="badge good">Terminé</span>':'<span class="badge">En attente</span>'}</div>
+ </div>`};
  return `<div class="fm-dashboard">
  <div class="fm-page-head"><div><div class="eyebrow">Équipe nationale</div><h1>Coupe Davis</h1><div class="muted">Saison 2026, sélection française et tableau mondial.</div></div><div class="fm-head-stack"><div class="fm-head-badge">FRA ${f.reputation||91}/100</div><div class="fm-head-badge subtle">${franceAlive?'Final 8':'Parcours terminé'}</div></div></div>
 

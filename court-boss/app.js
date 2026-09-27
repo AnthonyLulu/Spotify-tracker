@@ -9,7 +9,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});if(!r.ok)throw new Error(await r.text());return r.json()};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',month:'',q:''},management=null;
-let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0};
+let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
 function surfaceClass(s){return s==='Terre'?'surface-clay':s==='Gazon'?'surface-grass':'surface-hard'}
@@ -91,7 +91,7 @@ function rankings(){
   <div class="table-wrap" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Pays</th><th>Points</th><th>Âge</th><th>Niveau</th><th>Potentiel</th></tr></thead><tbody>
   ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b></td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td>${rankKind==='singles'?fmt(p.points):'—'}</td><td>${p.age||'—'}</td><td>${p.current_ability}/100</td><td>${p.potential}/100</td></tr>`).join('')}
   </tbody></table></div>
-  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
+  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button><input id="rankJump" class="input" style="max-width:110px;padding:7px 9px" type="number" min="1" max="2000" placeholder="Rang"><button onclick="jumpRank()">Aller</button></div>
  </div>`
 }
 function ncaaRanking(){
@@ -103,6 +103,7 @@ function ncaaRanking(){
 window.setRankKind=async k=>{rankKind=k;rankOffset=0;rankQuery='';if(k!=='ncaa')await loadRankings();render()}
 window.searchRanking=async q=>{rankQuery=q.trim();rankOffset=0;await loadRankings();render()}
 window.rankPage=async d=>{rankOffset=Math.max(0,rankOffset+d*100);await loadRankings();render();window.scrollTo(0,0)}
+window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump')?.value||1),1,2000);rankOffset=Math.floor((n-1)/100)*100;await loadRankings();render();window.scrollTo(0,0)}
 function calendar(){
  const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','NCAA','Junior','Davis Cup'];
  const circs=['Tous','ATP','Challenger','ITF','NCAA','Junior','Federation'];

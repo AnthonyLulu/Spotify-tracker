@@ -503,7 +503,7 @@ Deno.serve(async(req:Request)=>{
       db.from("college_offers").select("*,team:college_teams(*)").order("scholarship_pct",{ascending:false}),
       db.from("college_career_state").select("*,team:college_teams(*)").eq("id","demo").maybeSingle(),
       db.from("college_duals").select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)").order("match_date",{ascending:true}).limit(20),
-      db.from("davis_ties").select("*,davis_rubbers(*)").order("tie_date",{ascending:true}).limit(10),
+      db.from("davis_ties").select("*,davis_rubbers(*)").order("tie_date",{ascending:true}).limit(40),
       db.from("academy_members").select("*,player:players(id,name,country,ranking,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style),youth:academy_youth(id,name,country,age,current_ability,potential,style,status),progress:academy_member_progress(*)").eq("status","active").order("id"),
       db.from("academy_roster").select("*,players(id,name,country,ranking,points,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,injury_status)").eq("status","active").order("id")
     ]);
@@ -897,17 +897,37 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/live-match/start")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
-    const opponentId=n(body?.opponent_id,0,1,99999999);
-    const surface=String(body?.surface||"Dur").slice(0,20);
+    const surface=String(body?.surface||"Dur").slice(0,30);
     const tactics=body?.tactics||{};
+    const career=await db.from("career_state").select("managed_player_id,singles_rank,player_name").eq("id","demo").maybeSingle();
+    if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
+
+    let opponentId=Number(body?.opponent_id||0);
+    if(!opponentId){
+      const rank=Math.max(1,Number(career.data.singles_rank||500));
+      const lo=Math.max(1,rank-14),hi=rank+14;
+      const candidates=await db.from("players")
+        .select("id,name,country,ranking")
+        .eq("ranking_current",true)
+        .gte("ranking",lo).lte("ranking",hi)
+        .order("ranking",{ascending:true}).limit(40);
+      if(candidates.error)return h({error:candidates.error.message},500);
+      const pool=(candidates.data??[]).filter((x:any)=>Number(x.id)!==Number(career.data.managed_player_id));
+      const pick=pool.length?pool[(Number(new Date().getUTCDate())+rank)%pool.length]:null;
+      opponentId=Number(pick?.id||0);
+    }
+    if(!opponentId)return h({error:"Aucun adversaire disponible autour de ton classement."},404);
+
     const opp=await db.from("players").select("id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*)").eq("id",opponentId).maybeSingle();
     if(opp.error||!opp.data)return h({error:opp.error?.message||"Adversaire introuvable"},404);
     const ins=await db.from("live_match_sessions").insert({
-      opponent_id:opponentId,surface,status:"active",user_sets:0,opponent_sets:0,set_no:1,momentum:50,tactics,
-      stats:{user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0}
+      opponent_id:opponentId,surface,status:"active",user_sets:0,opponent_sets:0,set_no:1,
+      user_games:0,opponent_games:0,user_points:0,opponent_points:0,serving_user:true,rally_no:0,
+      momentum:50,tactics,stats:{user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0},
+      score_log:[],last_point:{}
     }).select("*").single();
     if(ins.error)return h({error:ins.error.message},500);
-    return h({ok:true,session:ins.data,opponent:opp.data});
+    return h({ok:true,session:ins.data,opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking}});
   }
 
   if(path.endsWith("/api/live-match/state")&&req.method==="GET"){
@@ -945,7 +965,7 @@ Deno.serve(async(req:Request)=>{
     const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
     const oBase=Number(opp.data.current_ability||55)+Number(opp.data.form||70)*.17+Number(opp.data.fitness||90)*.08-Number(opp.data.fatigue||20)*.12+Number(oa[key]||10)*.8;
     const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
-    const netBonus=(surface==="Gazon"?.035:surface==="Dur"?.018:.006)*net;
+    const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
     const momentum=(Number(session.data.momentum||50)-50)*.045;
     const uStrength=uBase+balance+netBonus+retBonus+momentum;
@@ -1034,7 +1054,7 @@ Deno.serve(async(req:Request)=>{
     const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
     const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.17+Number(opp.fitness||90)*.08-Number(opp.fatigue||20)*.12+Number(opp.player_attributes?.[key]||10)*.8;
     const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
-    const netBonus=(surface==="Gazon"?.035:surface==="Dur"?.018:.006)*net;
+    const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
     const momentum=(Number(session.data.momentum||50)-50)*.05;
     let uStrength=uBase+balance+netBonus+retBonus+momentum;
@@ -1159,7 +1179,7 @@ Deno.serve(async(req:Request)=>{
     const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
     const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.17+Number(opp.fitness||90)*.08-Number(opp.fatigue||20)*.12+Number(opp.player_attributes?.[key]||10)*.8;
     const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
-    const netBonus=(surface==="Gazon"?.035:surface==="Dur"?.018:.006)*net;
+    const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
     const momentum=(Number(session.data.momentum||50)-50)*.05;
     let uStrength=uBase+balance+netBonus+retBonus+momentum;

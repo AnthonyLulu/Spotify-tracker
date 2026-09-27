@@ -496,7 +496,7 @@ function worldPage(){
   <div class="menu-card" onclick="setRankKind('singles');nav('rankings')"><div class="menu-icon">🎾</div><strong>ATP</strong><span class="muted">${fmt(w.atpRanked||2000)} joueurs classés</span></div>
   <div class="menu-card" onclick="setRankKind('itf');nav('rankings')"><div class="menu-icon">🌍</div><strong>ITF WTT</strong><span class="muted">${fmt(w.itfPlayers||0)} profils avec rang ITF</span></div>
   <div class="menu-card" onclick="setRankKind('junior');nav('rankings')"><div class="menu-icon">🌱</div><strong>Junior</strong><span class="muted">${fmt(w.juniorPlayers||0)} profils juniors</span></div>
-  <div class="menu-card" onclick="setRankKind('ncaa')"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaPlayers||0)} joueurs · ${fmt(w.ncaaTeams||0)} équipes</span></div>
+  <div class="menu-card" onclick="rankKind='ncaa';rankOffset=0;rankQuery='';loadRankings().then(()=>nav('rankings'))"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaPlayers||0)} joueurs · ${fmt(w.ncaaTeams||0)} équipes</span></div>
   <div class="menu-card" onclick="nav('scouting')"><div class="menu-icon">🔎</div><strong>Newgens</strong><span class="muted">${fmt(w.gameGenerated||0)} joueurs générés par Court Boss</span></div>
   <div class="menu-card" onclick="nav('calendar')"><div class="menu-icon">📅</div><strong>Compétitions</strong><span class="muted">ATP, Challenger, ITF, Junior, NCAA, Davis</span></div>
   <div class="menu-card" onclick="nav('history')"><div class="menu-icon">🏛️</div><strong>Histoire & nations</strong><span class="muted">Meilleurs historiques par pays et continent</span></div>

@@ -941,7 +941,29 @@ window.createCustomPlayerV2=async()=>{
 window.renderPalmaresHtml=function(d,p){
   const titles=d?.titles||[];
   const cs=d?.careerStats||{};
-  window.__cbPalmares={player:p,titles};
+  const tournamentHistory=d?.tournamentHistory||[];
+  window.__cbPalmares={player:p,titles,tournamentHistory};
+
+  const slamKey=name=>{
+    const x=String(name||'');
+    if(/Australian Open/i.test(x))return 'AO';
+    if(/Roland Garros|Roland-Garros/i.test(x))return 'RG';
+    if(/Wimbledon/i.test(x))return 'WIM';
+    if(/US Open|Us Open/i.test(x))return 'USO';
+    return null;
+  };
+  const slamName=k=>({AO:'Australian Open',RG:'Roland-Garros',WIM:'Wimbledon',USO:'US Open'}[k]||k);
+  const slamOrder=['AO','RG','WIM','USO'];
+  const historyByYear={};
+  tournamentHistory.filter(x=>x.is_grand_slam).forEach((x,i)=>{
+    const y=String(x.season||String(x.tournament_date||'').slice(0,4));
+    const k=slamKey(x.tournament_name);
+    if(!k)return;
+    historyByYear[y]=historyByYear[y]||{};
+    historyByYear[y][k]={...x,__i:i};
+  });
+  const slamYears=Object.keys(historyByYear).sort((a,b)=>Number(b)-Number(a));
+  const resultClass=code=>code==='W'?'good':code==='F'?'warn':['SF','QF'].includes(code)?'info':'';
 
   const levels=titles.reduce((acc,t)=>{
     const raw=String(t.level||'ATP').trim();
@@ -1050,6 +1072,26 @@ window.renderPalmaresHtml=function(d,p){
     </div>
 
     <div class="card" style="margin-top:12px">
+      <div class="row between"><div><div class="eyebrow">Historique réel</div><h2>Grands Chelems année par année</h2></div><span class="pill">${slamYears.length} saison(s)</span></div>
+      <div class="muted mini" style="margin-top:4px">Résultat atteint dans chaque Grand Chelem. Clique sur une case pour voir l'adversaire du dernier match et le score.</div>
+      ${slamYears.length?`
+        <div class="slam-history" style="margin-top:12px">
+          <div class="slam-history-head"><span>Année</span>${slamOrder.map(k=>`<span>${k}</span>`).join('')}</div>
+          ${slamYears.map(y=>`
+            <div class="slam-history-row">
+              <b>${y}</b>
+              ${slamOrder.map(k=>{
+                const h=historyByYear[y]?.[k];
+                return h
+                  ?`<button class="slam-result ${resultClass(h.result_code)}" data-tournament-history-index="${h.__i}" aria-label="${slamName(k)} ${y} : ${esc(h.result_label)}"><span>${h.result_code}</span><small>${slamName(k)}</small></button>`
+                  :`<span class="slam-result empty-result"><span>—</span><small>${slamName(k)}</small></span>`;
+              }).join('')}
+            </div>`).join('')}
+        </div>
+      `:'<div class="empty" style="margin-top:10px">Pas encore d’historique Grand Chelem importé pour ce joueur.</div>'}
+    </div>
+
+    <div class="card" style="margin-top:12px">
       <div class="row between"><div><div class="eyebrow">Chronologie</div><h2>Palmarès année par année</h2></div><span class="pill">${yearRows.length} saison(s) titrée(s)</span></div>
       ${yearRows.length?yearRows.map(([year,rows])=>`
         <details class="list-item">
@@ -1087,10 +1129,33 @@ window.openPalmaresByName=function(name){
     </div>
   `;
 };
+window.openTournamentHistoryItem=function(i){
+  const data=window.__cbPalmares||{tournamentHistory:[],player:{}};
+  const h=(data.tournamentHistory||[])[Number(i)];
+  if(!h)return;
+  const name=String(h.tournament_name||'Tournoi').replace(/^Us Open$/i,'US Open');
+  overlay.innerHTML=`
+    <div class="modal" onclick="if(event.target===this)closeOverlay()">
+      <div class="sheet">
+        <div class="sheet-head">
+          <div><div class="eyebrow">Historique · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(name)} ${h.season||''}</h1><div class="muted">${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div></div>
+          <button class="close" onclick="closeOverlay()">✕</button>
+        </div>
+        <div class="grid g2" style="margin-top:12px">
+          <div class="card"><div class="eyebrow">Résultat</div><div class="hero-name" style="font-size:28px">${esc(h.result_code||'—')}</div><div class="muted">${esc(h.result_label||'')}</div></div>
+          <div class="card"><div class="eyebrow">Dernier match</div><h2>vs ${esc(h.last_opponent||'—')}</h2><div class="muted">${esc(h.last_score||'Score non renseigné')}</div></div>
+        </div>
+        <div class="notice mini" style="margin-top:12px">Source historique : ${esc(h.source||'archive ATP')}.</div>
+      </div>
+    </div>`;
+};
+
 
 document.addEventListener('click',e=>{
   const ix=e.target.closest?.('[data-palmares-index]');
   if(ix){window.openPalmaresTitle(Number(ix.dataset.palmaresIndex));return;}
   const nm=e.target.closest?.('[data-palmares-name]');
-  if(nm)window.openPalmaresByName(nm.dataset.palmaresName);
+  if(nm){window.openPalmaresByName(nm.dataset.palmaresName);return;}
+  const hi=e.target.closest?.('[data-tournament-history-index]');
+  if(hi)window.openTournamentHistoryItem(Number(hi.dataset.tournamentHistoryIndex));
 });

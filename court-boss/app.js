@@ -36,7 +36,7 @@ const RANKING_SNAPSHOT='2025-12-01';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
@@ -128,7 +128,7 @@ async function loadRankings(){
  const u=rankKind==='nextgen'?'&u='+nextGenAge:'';
  const c=rankCountry?'&country='+encodeURIComponent(rankCountry):'';
  const d=await get(`/api/rankings?kind=${rankKind}&offset=${rankOffset}&limit=100${q}${u}${c}`);
- rankRows=d.rows;rankCount=d.count;
+ rankRows=d.rows;rankCount=d.count;rankMeta=d;
 }
 async function loadCountries(){
  try{const d=await get('/api/countries');countryRows=d.rows||[]}catch{countryRows=[]}
@@ -242,13 +242,13 @@ window.jumpRanking=async()=>{
 }
 function ncaaRanking(){
  const rows=rankRows||[],startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rows.length,rankCount);
- return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Les joueurs NCAA font partie de la même base mondiale. Le badge NCAA reste visible sur leur profil même s’ils ont aussi un classement ATP.</div></div><span class="pill">${fmt(rankCount)} NCAA actifs</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Base NCAA profonde : classement ITA vérifié quand disponible, plus le pool universitaire chargé. Le badge NCAA reste dans la carrière après le passage pro.</div></div><span class="pill">${fmt(rankCount)} profils NCAA</span></div>
  <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  <div class="card">
   <div class="rank-tools fm-rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur NCAA…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
-  <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA</b> · couche universitaire séparée du classement ATP. Un joueur peut exister sur les deux circuits sans être dupliqué.</div>
+  <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA</b> · l’ITA publie un Top ${fmt(rankMeta?.officialCapacity||125)} en simple. ${fmt(rankMeta?.verifiedCurrentRanks||0)} rang(s) 2026-27 sont déjà reliés de façon vérifiée ; le reste du pool reste visible sans numéro inventé.</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Âge</th><th>Université</th><th>Division</th><th>ATP</th><th>Statut</th></tr></thead><tbody>
-   ${rows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ncaa_rank?'#'+fmt(p.ncaa_rank):'—'}</td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${p.age??'—'}</td><td><b>${esc(p.ncaa_school||'—')}</b></td><td>${esc(p.ncaa_division||'NCAA')}</td><td>${p.ranking&&String(p.ranking_snapshot_date||RANKING_SNAPSHOT)===RANKING_SNAPSHOT?'#'+fmt(p.ranking):'—'}</td><td><span class="badge good">NCAA</span></td></tr>`).join('')}
+   ${rows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ncaa_rank?'#'+fmt(p.ncaa_rank):'—'}</td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${p.age??'—'}</td><td><b>${esc(p.ncaa_school||'—')}</b></td><td>${esc(p.ncaa_division||'NCAA')}</td><td>${p.ranking&&String(p.ranking_snapshot_date||RANKING_SNAPSHOT)===RANKING_SNAPSHOT?'#'+fmt(p.ranking):'—'}</td><td><span class="badge ${p.ncaa_current?'good':''}">${p.ncaa_current?'NCAA actif':esc(p.ncaa_status||'NCAA')}</span></td></tr>`).join('')}
   </tbody></table></div>
   ${rows.length?'' : '<div class="empty">La structure NCAA est prête. Les joueurs sont importés par snapshot ITA, sans créer de doublons ATP.</div>'}
   <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>

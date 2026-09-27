@@ -12,6 +12,38 @@ const cors={
 const h=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
 const n=(v:unknown,d:number,min=0,max=5000)=>{const value=v==null||v===""?d:Number(v);return Math.max(min,Math.min(max,Number.isFinite(value)?value:d));};
 const normalizeName=(value:string)=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=null)=>{
+  if(!birth)return fallback;
+  const b=new Date(String(birth)+"T12:00:00Z"),d=new Date(String(at||new Date().toISOString().slice(0,10))+"T12:00:00Z");
+  if(Number.isNaN(b.getTime())||Number.isNaN(d.getTime()))return fallback;
+  let a=d.getUTCFullYear()-b.getUTCFullYear();
+  const md=(d.getUTCMonth()-b.getUTCMonth())*100+(d.getUTCDate()-b.getUTCDate());
+  if(md<0)a--;
+  return a;
+};
+async function resolvePlayerPhoto(player:any){
+  if(!player||!player.is_real||!player.name)return player;
+  if(player.photo_url)return player;
+  try{
+    const qs=new URLSearchParams({
+      action:"query",generator:"search",gsrsearch:'"'+String(player.name)+'" tennis',
+      gsrnamespace:"0",gsrlimit:"1",prop:"pageimages",piprop:"thumbnail|name",
+      pithumbsize:"640",format:"json",origin:"*"
+    });
+    const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{headers:{"User-Agent":"CourtBoss/1.0"}});
+    if(!r.ok)return player;
+    const j:any=await r.json();
+    const pages=Object.values(j?.query?.pages||{}) as any[];
+    const photo=pages?.[0]?.thumbnail?.source;
+    if(photo){
+      player.photo_url=photo;
+      player.photo_source="Wikipedia/Wikimedia";
+      await db.from("players").update({photo_url:photo,photo_source:"Wikipedia/Wikimedia",photo_updated_at:new Date().toISOString()}).eq("id",player.id);
+    }
+  }catch{}
+  return player;
+}
+
 function saveId(req:Request){const k=req.headers.get("x-save-key")??"";return /^[0-9a-f-]{36}$/i.test(k)?"browser:"+k:null}
 async function getManagedPlayer(select="*"){
   const c=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
@@ -68,9 +100,27 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/rankings")&&req.method==="GET"){
     const kind=u.searchParams.get("kind")??"singles";
-    const offset=n(u.searchParams.get("offset"),0,0,1999), limit=n(u.searchParams.get("limit"),100,1,200);
+    const offset=n(u.searchParams.get("offset"),0,0,9999), limit=n(u.searchParams.get("limit"),100,1,200);
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
     const nextGenU=n(u.searchParams.get("u"),21,18,21);
+    const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+    const gameDate=String(career.data?.career_date||"2026-09-27");
+
+    if(kind==="ncaa"){
+      let nq=db.from("ncaa_player_registry")
+        .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner(id,name,country,ranking,points,doubles_ranking,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division)",{count:"exact"})
+        .eq("status","Active");
+      if(q)nq=nq.ilike("players.name_norm",`%${normalizeName(q)}%`);
+      nq=nq.order("ita_rank",{ascending:true,nullsFirst:false}).range(offset,offset+limit-1);
+      const {data,error,count}=await nq;
+      if(error)return h({error:error.message},500);
+      const rows=(data??[]).map((x:any)=>{
+        const p=Array.isArray(x.players)?x.players[0]:x.players;
+        return {...(p||{}),ncaa_rank:x.ita_rank,ncaa_school:x.school,ncaa_division:x.division,ncaa_season:x.season,ncaa_status:x.status,ncaa_snapshot_date:x.snapshot_date,ncaa_source:x.source_label||x.source_url,age:ageAt(p?.birth_date,gameDate,p?.age)};
+      });
+      return h({kind,offset,limit,count:count??0,rows,eligibility:"NCAA / ITA · joueurs universitaires réels"});
+    }
+
     let orderCol="ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
     if(kind==="race") orderCol="race_ranking";
@@ -78,7 +128,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="itf") orderCol="itf_ranking";
     if(kind==="junior") orderCol="junior_ranking";
     let query=db.from("players")
-      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current",{count:"exact"})
+      .select("id,name,country,ranking,source_ranking,points,ranking_snapshot_date,previous_ranking,rank_change,ranking_previous,ranking_change,best_rank_2025,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,race_ranking,race_points,race_snapshot_date,race_source,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,nextgen_status,itf_ranking,junior_ranking,junior_points,junior_snapshot_date,junior_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,data_snapshot,ranking_source,ranking_current,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
       .not(orderCol,"is",null)
       .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(kind==="singles") query=query.eq("ranking_current",true).lte("ranking",2000);
@@ -89,12 +139,15 @@ Deno.serve(async(req:Request)=>{
       const birthYear=2026-nextGenU;
       query=query.not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date",birthYear+"-01-01");
     }
-    if(kind==="junior") query=query.not("junior_source","is",null);
+    if(kind==="junior"){
+      query=query.not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01");
+    }
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
-    return h({kind,offset,limit,count:count??0,rows:data??[],eligibility:kind==="nextgen"?"U"+nextGenU+" · born "+(2026-nextGenU)+" or later · 2025 Race to Jeddah":null});
+    const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age)}));
+    return h({kind,offset,limit,count:count??0,rows,eligibility:kind==="nextgen"?"U"+nextGenU+" · born "+(2026-nextGenU)+" or later · 2025 Race to Jeddah":kind==="junior"?"ITF Juniors 2025 · DOB vérifiée 2007+":null});
   }
 
 
@@ -108,7 +161,7 @@ Deno.serve(async(req:Request)=>{
     const limit=n(u.searchParams.get("limit"),60,1,120);
 
     let query=db.from("players")
-      .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id",{count:"exact"})
+      .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(ageMax<99) query=query.lte("age",ageMax);
 
@@ -120,6 +173,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date","2005-01-01");
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
     if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null);
+    if(circuit==="NCAA") query=query.eq("ncaa_current",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
     if(circuit==="ATP") query=query.order("ranking",{ascending:true});
@@ -128,6 +182,7 @@ Deno.serve(async(req:Request)=>{
     else if(circuit==="Next Gen") query=query.order("nextgen_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="ITF") query=query.order("itf_ranking",{ascending:true,nullsFirst:false});
     else if(circuit==="Junior") query=query.order("junior_ranking",{ascending:true,nullsFirst:false});
+    else if(circuit==="NCAA") query=query.order("ncaa_rank",{ascending:true,nullsFirst:false});
     else query=query.order("potential",{ascending:false}).order("current_ability",{ascending:false});
 
     query=query.range(offset,offset+limit-1);
@@ -147,7 +202,7 @@ Deno.serve(async(req:Request)=>{
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,careerDate] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -157,16 +212,22 @@ Deno.serve(async(req:Request)=>{
       db.from("player_career_stats").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_final_results").select("*").eq("player_id",id).order("final_date",{ascending:false}).limit(200),
       db.from("junior_tournament_entries").select("id,seed,result,snapshot_date,source_url,tournaments(id,name,city,country,surface,category,start_date,end_date,is_verified,source_url)").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(30),
-      db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500)
+      db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500),
+      db.from("ncaa_player_registry").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(10),
+      db.from("career_state").select("career_date").eq("id","demo").maybeSingle()
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||careerDate.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
+    if(player){
+      player.age=ageAt(player.birth_date,String(careerDate.data?.career_date||"2026-09-27"),player.age);
+      player=await resolvePlayerPhoto(player);
+    }
     return h({
       player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,
       matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[],juniorEntries:juniorEntries.data??[],
-      tournamentHistory:tournamentHistory.data??[]
+      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[]
     });
   }
 

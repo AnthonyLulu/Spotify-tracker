@@ -70,6 +70,7 @@ Deno.serve(async(req:Request)=>{
     const kind=u.searchParams.get("kind")??"singles";
     const offset=n(u.searchParams.get("offset"),0,0,1999), limit=n(u.searchParams.get("limit"),100,1,200);
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    const nextGenU=n(u.searchParams.get("u"),21,18,21);
     let orderCol="ranking";
     if(kind==="doubles") orderCol="doubles_ranking";
     if(kind==="race") orderCol="race_ranking";
@@ -84,13 +85,16 @@ Deno.serve(async(req:Request)=>{
     else query=query.eq("is_real",true);
     if(kind==="doubles") query=query.not("doubles_source","is",null);
     if(kind==="race") query=query.not("race_source","is",null);
-    if(kind==="nextgen") query=query.not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date","2005-01-01");
+    if(kind==="nextgen"){
+      const birthYear=2026-nextGenU;
+      query=query.not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date",birthYear+"-01-01");
+    }
     if(kind==="junior") query=query.not("junior_source","is",null);
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     query=query.order(orderCol,{ascending:true}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
-    return h({kind,offset,limit,count:count??0,rows:data??[],eligibility:kind==="nextgen"?"born 2005 or later · 2025 Race to Jeddah cutoff 10 Nov":null});
+    return h({kind,offset,limit,count:count??0,rows:data??[],eligibility:kind==="nextgen"?"U"+nextGenU+" · born "+(2026-nextGenU)+" or later · 2025 Race to Jeddah":null});
   }
 
 

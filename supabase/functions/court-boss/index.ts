@@ -339,6 +339,7 @@ const rowCells=(row:string)=>{
   return cells;
 };
 const isCurrentJuniorProfile=(p:any)=>{
+  if(String(p?.career_status||"active")!=="active")return false;
   const src=String(p?.junior_source||"");
   const age=Number(p?.age);
   if(p?.game_generated===true)return Number.isFinite(age)&&age>=13&&age<=17;

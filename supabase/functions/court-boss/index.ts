@@ -435,6 +435,7 @@ Deno.serve(async(req:Request)=>{
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     if(country) query=query.eq("country",country);
     if(circuit==="ATP"||circuit==="ATP classés") query=query.eq("ranking_current",true);
+    if(circuit==="ATP profond") query=query.eq("is_real",true).not("ranking","is",null);
     if(circuit==="Tous réels") query=query.eq("is_real",true);
     if(circuit==="Double") query=query.not("doubles_ranking","is",null);
     if(circuit==="Race") query=query.not("race_ranking","is",null).not("race_source","is",null);
@@ -444,7 +445,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="NCAA") query=query.eq("ncaa_current",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
-    if(circuit==="ATP"||circuit==="ATP classés") query=query.order("ranking",{ascending:true});
+    if(circuit==="ATP"||circuit==="ATP classés"||circuit==="ATP profond") query=query.order("ranking",{ascending:true,nullsFirst:false});
     else if(q&&circuit==="Tous") query=query.order("name",{ascending:true});
     else if(circuit==="Tous réels") query=query.order("name",{ascending:true});
     else if(circuit==="Double") query=query.order("doubles_ranking",{ascending:true,nullsFirst:false});
@@ -580,7 +581,11 @@ Deno.serve(async(req:Request)=>{
     if(!t.data) return h({error:"Tournament not found"},404);
 
     const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
-    const run=await db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle();
+    const [run,doublesRun] = await Promise.all([
+      db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle(),
+      db.from("doubles_runs").select("*,partner:players(id,name,country,doubles_ranking)").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle()
+    ]);
+    if(run.error||doublesRun.error)return h({error:(run.error||doublesRun.error)?.message},500);
     let completedDraw:any[]=[];
     if(run.data?.id){
       const rm=await db.from("tournament_draw_matches").select("*").eq("run_id",run.data.id).order("round_no",{ascending:true}).order("id",{ascending:true});
@@ -612,7 +617,7 @@ Deno.serve(async(req:Request)=>{
       }
       return h({
         tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
-        wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,completed_draw:completedDraw,
+        wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,doubles_run:doublesRun.data??null,completed_draw:completedDraw,
         ranking_kind:"junior"
       });
     }
@@ -631,7 +636,7 @@ Deno.serve(async(req:Request)=>{
     const qualifying=available.slice(drawSize,drawSize+Math.min(32,drawSize));
     return h({
       tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
-      run:run.data??null,completed_draw:completedDraw,ranking_kind:"singles"
+      run:run.data??null,doubles_run:doublesRun.data??null,completed_draw:completedDraw,ranking_kind:"singles"
     });
   }
 
@@ -2284,7 +2289,7 @@ Deno.serve(async(req:Request)=>{
     const [
       playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,juniorTours,ncaaTours,
       ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,currentMissingDob,
-      active2025,doublesReal,doublesIndexed,raceReal,nextgenReal,juniorReal,backhandAll,backhandVerified,itfMissingAge,juniorMissingAge,ncaaMissingAge
+      active2025,doublesReal,doublesIndexed,raceReal,nextgenReal,juniorReal,backhandAll,backhandVerified,realDobKnown,estimatedAgeReal,itfMissingAge,juniorMissingAge,ncaaMissingAge
     ] = await Promise.all([
       db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true),
@@ -2315,6 +2320,8 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null),
       db.from("players").select("id",{count:"exact",head:true}).not("backhand","is",null),
       db.from("players").select("id",{count:"exact",head:true}).eq("backhand_verified",true),
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("birth_date","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
+      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).is("birth_date",null).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
       db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null).is("age",null),
       db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null).is("age",null),
       db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true).is("age",null)
@@ -2351,6 +2358,8 @@ Deno.serve(async(req:Request)=>{
       currentRankedMissingDob:currentMissingDob.count??0,
       playersWithBackhand:backhandAll.count??0,
       verifiedBackhands:backhandVerified.count??0,
+      realPlayersWithDob:realDobKnown.count??0,
+      estimatedAgeReal:estimatedAgeReal.count??0,
       itfMissingAge:itfMissingAge.count??0,
       juniorMissingAge:juniorMissingAge.count??0,
       ncaaMissingAge:ncaaMissingAge.count??0

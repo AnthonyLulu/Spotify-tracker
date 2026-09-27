@@ -35,7 +35,17 @@ function navBar(){
  const x=[['home','Accueil'],['rankings','Classements'],['calendar','Calendrier'],['academy','Académie'],['more','Plus']];
  return `<nav class="bottom-nav">${x.map(i=>`<button class="${route===i[0]?'active':''}" onclick="nav('${i[0]}')">${i[1]}</button>`).join('')}</nav>`
 }
-function shell(body){app.innerHTML=`<div class="app-shell">${header()}<main class="page">${body}</main>${navBar()}</div>`}
+function managerStrip(){
+ const c=career(),fin=boot?.finance||{};
+ return `<div class="manager-strip">
+  <div class="manager-cell"><span>Semaine</span><b>${local.week||1}</b></div>
+  <div class="manager-cell"><span>ATP</span><b>#${fmt(c.singles_rank||0)}</b></div>
+  <div class="manager-cell"><span>Budget</span><b>${euro(c.budget??fin.balance??0)}</b></div>
+  <div class="manager-cell wide"><span>Date carrière</span><b>${df(local.date||c.career_date)}</b></div>
+  <button class="manager-world" onclick="nav('world')">Monde ▸</button>
+ </div>`
+}
+function shell(body){app.innerHTML=`<div class="app-shell">${header()}${managerStrip()}<main class="page">${body}</main>${navBar()}</div>`}
 function loading(t='Chargement du monde tennis…'){shell(`<div class="loader">${t}</div>`)}
 window.nav=async r=>{route=r;window.scrollTo({top:0,behavior:'smooth'});if(r==='history'&&!historyData)await loadHistory();await render()}
 async function init(){
@@ -69,7 +79,7 @@ async function loadHistory(){
  const p=new URLSearchParams({limit:'80'});
  if(historyCountry)p.set('country',historyCountry);
  if(historyContinent)p.set('continent',historyContinent);
- try{historyData=await get('/api/history-leaders?'+p.toString())}catch(e){historyData={rows:[],countryBest:[],continentBest:[],methodology:e.message,coverage:{players:0,countries:0}}}
+ try{historyData=await get('/api/history-hub?'+p.toString())}catch(e){historyData={rows:[],countryBest:[],continentBest:[],methodology:e.message,coverage:{players:0,countries:0}}}
 }
 async function loadTournaments(){
  const p=new URLSearchParams({offset:String(tourOffset),limit:'60'});
@@ -496,7 +506,7 @@ function worldPage(){
   <div class="menu-card" onclick="setRankKind('singles');nav('rankings')"><div class="menu-icon">🎾</div><strong>ATP</strong><span class="muted">${fmt(w.atpRanked||2000)} joueurs classés</span></div>
   <div class="menu-card" onclick="setRankKind('itf');nav('rankings')"><div class="menu-icon">🌍</div><strong>ITF WTT</strong><span class="muted">${fmt(w.itfPlayers||0)} profils avec rang ITF</span></div>
   <div class="menu-card" onclick="setRankKind('junior');nav('rankings')"><div class="menu-icon">🌱</div><strong>Junior</strong><span class="muted">${fmt(w.juniorPlayers||0)} profils juniors</span></div>
-  <div class="menu-card" onclick="rankKind='ncaa';rankOffset=0;rankQuery='';loadRankings().then(()=>nav('rankings'))"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaPlayers||0)} joueurs · ${fmt(w.ncaaTeams||0)} équipes</span></div>
+  <div class="menu-card" onclick="rankKind='ncaa';rankOffset=0;rankQuery='';loadRankings().then(()=>nav('rankings'))"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaProfilesTotal||w.ncaaPlayers||0)} profils · ${fmt(w.ncaaActiveProfiles||w.ncaaPlayers||0)} actifs</span></div>
   <div class="menu-card" onclick="nav('scouting')"><div class="menu-icon">🔎</div><strong>Newgens</strong><span class="muted">${fmt(w.gameGenerated||0)} joueurs générés par Court Boss</span></div>
   <div class="menu-card" onclick="nav('calendar')"><div class="menu-icon">📅</div><strong>Compétitions</strong><span class="muted">ATP, Challenger, ITF, Junior, NCAA, Davis</span></div>
   <div class="menu-card" onclick="nav('history')"><div class="menu-icon">🏛️</div><strong>Histoire & nations</strong><span class="muted">Meilleurs historiques par pays et continent</span></div>
@@ -505,25 +515,43 @@ function worldPage(){
 }
 
 function historyPage(){
- const d=historyData||{rows:[],countryBest:[],continentBest:[],coverage:{players:0,countries:0}};
- const rows=d.rows||[],global=rows[0]||null;
+ const d=historyData||{rows:[],countryBest:[],continentBest:[],hallOfFame:[],grandSlamRecords:[],u18:[],u21:[],coverage:{players:0,countries:0,ncaaProfiles:0}};
+ const rows=d.rows||[],global=rows[0]||null,rec=d.nationalRecords||{};
  const continents=['','Europe','North America','South America','Asia','Africa','Oceania'];
+ const recordCard=(label,x,field,suffix='')=>x?`<div class="fm-record click" onclick="openPlayer(${x.id})"><span>${label}</span><b>${flags[x.country]||'🏳️'} ${esc(x.name)}</b><strong>${fmt(x[field]||0)}${suffix}</strong></div>`:'';
+ const youth=(arr,title)=>`<div class="card fm-squad-card"><div class="row between"><div><div class="eyebrow">Prospects</div><h2>${title}</h2></div><span class="badge">${arr.length}</span></div>${arr.slice(0,12).map((p,i)=>`<div class="fm-scout-row click" onclick="openPlayer(${p.id})"><div class="fm-rank-dot">#${i+1}</div><div class="grow"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${p.age} ans · ${p.ranking?'ATP #'+fmt(p.ranking):p.junior_ranking?'Junior #'+fmt(p.junior_ranking):'Non classé'} ${p.game_generated?'· Newgen '+p.generated_year:''}</div></div><div style="text-align:right"><b>CA ${p.current_ability}</b><div class="muted mini">PA ${p.potential}</div></div></div>`).join('')||'<div class="empty">Aucun joueur.</div>'}</div>`;
  return `<div class="fm-dashboard">
-  <div class="fm-page-head"><div><div class="eyebrow">Football Manager vibes, tennis edition</div><h1>Histoire & nations</h1><div class="muted">Compare les références historiques par nationalité et continent avec une méthode transparente.</div></div><div class="fm-head-badge">${fmt(d.coverage?.countries||0)} nations couvertes</div></div>
+  <div class="fm-page-head"><div><div class="eyebrow">Data hub historique</div><h1>Histoire, records & nations</h1><div class="muted">Légendes, Hall of Fame, records de Grand Chelem et générations U18/U21 dans la même base.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(d.coverage?.countries||0)} nations</div><div class="fm-head-badge subtle">${fmt(d.coverage?.ncaaProfiles||0)} profils NCAA</div></div></div>
   <div class="fm-filterbar">
-   <select class="select" onchange="setHistoryCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${historyCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)}</option>`).join('')}</select>
+   <select class="select" onchange="setHistoryCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${historyCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.players)}</option>`).join('')}</select>
    <select class="select" onchange="setHistoryContinent(this.value)">${continents.map(x=>`<option value="${esc(x)}" ${historyContinent===x?'selected':''}>${x||'Tous continents'}</option>`).join('')}</select>
    <button class="ghost" onclick="historyCountry='';historyContinent='';loadHistory().then(render)">Réinitialiser</button>
   </div>
   ${global?`<div class="fm-history-hero card click" onclick="openPlayer(${global.id})"><div><div class="eyebrow">Référence de la sélection</div><div class="hero-name">${flags[global.country]||'🏳️'} ${esc(global.name)}</div><div class="muted">${esc(global.country)} · ${esc(global.continent)} · ${global.career_status==='retired'?'Retraité':'Actif'}</div></div><div class="fm-history-score"><span>Indice historique</span><b>${fmt(global.history_score)}</b></div><div class="fm-history-stats"><div><span>Grand Chelem</span><b>${global.grand_slams}</b></div><div><span>Titres</span><b>${global.titles}</b></div><div><span>Victoires</span><b>${fmt(global.wins)}</b></div><div><span>% victoires</span><b>${global.win_pct==null?'—':global.win_pct+'%'}</b></div></div></div>`:''}
+
+  <div class="fm-record-grid">
+   ${recordCard('Record Grand Chelem',rec.grand_slams,'grand_slams',' GC')}
+   ${recordCard('Record titres',rec.titles,'titles','')}
+   ${recordCard('Record victoires',rec.wins,'wins','')}
+   ${rec.win_pct?`<div class="fm-record click" onclick="openPlayer(${rec.win_pct.id})"><span>Meilleur % victoires</span><b>${flags[rec.win_pct.country]||'🏳️'} ${esc(rec.win_pct.name)}</b><strong>${rec.win_pct.win_pct}%</strong></div>`:''}
+  </div>
+
+  <div class="grid g2" style="margin-top:12px">
+   <div class="card"><div class="row between"><div><div class="eyebrow">Court Boss Hall of Fame</div><h2>Légendes majeures</h2></div><span class="badge">${(d.hallOfFame||[]).length}</span></div>${(d.hallOfFame||[]).slice(0,16).map((x,i)=>`<div class="fm-scout-row click" onclick="openPlayer(${x.id})"><div class="fm-rank-dot">${i+1}</div><div class="grow"><b>${flags[x.country]||'🏳️'} ${esc(x.name)}</b><div class="muted mini">${x.grand_slams} GC · ${x.titles} titres · ${fmt(x.wins)} victoires</div></div><b>${fmt(x.history_score)}</b></div>`).join('')}</div>
+   <div class="card"><div class="row between"><div><div class="eyebrow">Records majeurs</div><h2>Grand Chelem</h2></div><span class="badge">Historique</span></div>${(d.grandSlamRecords||[]).slice(0,16).map((x,i)=>`<div class="fm-scout-row click" onclick="openPlayer(${x.id})"><div class="fm-rank-dot">${i+1}</div><div class="grow"><b>${esc(x.name)}</b><div class="muted mini">${flags[x.country]||'🏳️'} ${esc(x.country)} · ${x.titles} titres</div></div><strong class="a-good">${x.grand_slams} GC</strong></div>`).join('')}</div>
+  </div>
+
+  <div class="grid g2" style="margin-top:12px">${youth(d.u18||[],'Top U18')}${youth(d.u21||[],'Top U21')}</div>
+
   <div class="grid g2" style="margin-top:12px">
    <div class="card"><div class="row between"><div><div class="eyebrow">Par continent</div><h2>Références historiques</h2></div><span class="badge">Top par zone</span></div>${(d.continentBest||[]).filter(x=>x.continent!=='Other').map(x=>`<div class="fm-scout-row click" onclick="openPlayer(${x.id})"><div class="fm-rank-dot">#1</div><div class="grow"><b>${esc(x.continent)} · ${esc(x.name)}</b><div class="muted mini">${flags[x.country]||'🏳️'} ${esc(x.country)} · ${x.grand_slams} GC · ${x.titles} titres</div></div><b>${fmt(x.history_score)}</b></div>`).join('')||'<div class="empty">Pas assez de données historiques.</div>'}</div>
-   <div class="card"><div class="row between"><div><div class="eyebrow">Par nationalité</div><h2>Meilleur de chaque pays</h2></div><span class="badge">${fmt((d.countryBest||[]).length)} pays</span></div><div class="fm-country-grid">${(d.countryBest||[]).slice(0,24).map(x=>`<button class="fm-country-tile" onclick="historyContinent='';setHistoryCountry('${esc(x.country)}')"><span>${flags[x.country]||'🏳️'} ${esc(x.country)}</span><b>${esc(x.name)}</b><small>${x.grand_slams} GC · ${x.titles} titres</small></button>`).join('')}</div></div>
+   <div class="card"><div class="row between"><div><div class="eyebrow">Par nationalité</div><h2>Meilleur de chaque pays</h2></div><span class="badge">${fmt((d.countryBest||[]).length)} pays</span></div><div class="fm-country-grid">${(d.countryBest||[]).slice(0,32).map(x=>`<button class="fm-country-tile" onclick="historyContinent='';setHistoryCountry('${esc(x.country)}')"><span>${flags[x.country]||'🏳️'} ${esc(x.country)}</span><b>${esc(x.name)}</b><small>${x.grand_slams} GC · ${x.titles} titres</small></button>`).join('')}</div></div>
   </div>
+
   <div class="card fm-panel" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Classement historique</div><h2>${historyCountry?'Nationalité '+esc(historyCountry):historyContinent?esc(historyContinent):'Monde'}</h2></div><span class="pill">${fmt(rows.length)} profils</span></div>
    <div class="table-wrap"><table class="table fm-history-table"><thead><tr><th>#</th><th>Joueur</th><th>Pays</th><th>Continent</th><th>GC</th><th>Titres</th><th>V-D</th><th>Indice</th></tr></thead><tbody>${rows.map((x,i)=>`<tr class="click" onclick="openPlayer(${x.id})"><td class="rank-num">#${i+1}</td><td><b>${esc(x.name)}</b><div class="muted micro">${x.career_status==='retired'?'Retraité':'Actif'}</div></td><td>${flags[x.country]||'🏳️'} ${esc(x.country)}</td><td>${esc(x.continent)}</td><td><b>${x.grand_slams}</b></td><td>${x.titles}</td><td>${fmt(x.wins)}-${fmt(x.losses)}</td><td class="a-good"><b>${fmt(x.history_score)}</b></td></tr>`).join('')}</tbody></table></div>
   </div>
-  <div class="notice mini" style="margin-top:12px">${esc(d.methodology||'Indice historique Court Boss calculé sur les données de carrière importées.')} Plus la base historique s’enrichit, plus les comparaisons par pays deviennent complètes.</div>
+  <div class="notice mini" style="margin-top:12px">${esc(d.methodology||'Indice historique Court Boss calculé sur les données de carrière importées.')} Le Hall of Fame est une vue du jeu, pas un classement officiel.</div>
  </div>`
 }
 window.setHistoryCountry=async c=>{historyCountry=String(c||'').toUpperCase();if(c)historyContinent='';await loadHistory();render()}
@@ -602,7 +630,12 @@ window.openPlayer=async id=>{
    <template id="attrsTpl"><div class="notice">Les attributs 1–20 décrivent le profil de scouting du jeu. Pour le top mondial, les profils sont corrigés manuellement afin d'éviter des aberrations comme Djokovic à 8/20 sur toutes les surfaces.</div><div class="attr-sections" style="margin-top:12px">${groups.map(g=>`<div class="attr-group"><h3>${g[0]}</h3>${g[1].map(x=>{const v=a[x[1]];return `<div class="attr-row"><div class="row"><span>${x[0]}</span><b class="${attrClass(v)}">${v??'—'}</b></div><div class="bar"><i style="width:${(v??0)*5}%"></i></div></div>`}).join('')}</div>`).join('')}</div></template>
    <template id="developmentTpl"><div class="grid g2"><div class="card"><h2>Développement</h2><div class="row between"><span>Capacité actuelle</span><b>${p.current_ability}/100</b></div><div class="bar"><i style="width:${p.current_ability}%"></i></div><div class="row between" style="margin-top:12px"><span>Potentiel</span><b>${p.potential}/100</b></div><div class="bar"><i style="width:${p.potential}%"></i></div><p class="muted mini" style="margin-top:10px">L'âge, le staff, les installations et la charge de travail influencent la progression.</p></div><div class="card"><h2>Axes à travailler</h2>${Object.entries(a).filter(([k,v])=>k!=='player_id'&&Number.isFinite(Number(v))).sort((x,y)=>Number(x[1])-Number(y[1])).slice(0,5).map(([k,v])=>`<div class="list-item row between"><span>${esc(k.replaceAll('_',' '))}</span><b>${v}/20</b></div>`).join('')}</div></div></template>
    <template id="matchesTpl">${(d.juniorEntries||[]).length?`<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Circuit ITF Junior</div><h2>Tournois juniors vérifiés</h2></div><span class="badge">Junior #${p.junior_ranking||'—'}</span></div>${(d.juniorEntries||[]).map(e=>{const t=Array.isArray(e.tournaments)?e.tournaments[0]:e.tournaments;return `<div class="list-item row between"><div><b>${esc(t?.name||'Tournoi junior')}</b><div class="muted mini">${t?.city?esc(t.city)+' · ':''}${t?.start_date?df(t.start_date):''} · ${esc(t?.category||'Junior')} · ${esc(t?.surface||'')}</div></div><div style="text-align:right"><b>${esc(e.result||'Engagé')}</b><div class="muted mini">${e.seed?'TDS '+esc(e.seed):''}</div></div></div>`}).join('')}</div>`:''}<div class="grid g2"><div class="card"><h2>Historique importé</h2>${realMatches?`<div class="big">${fmt(cs.wins||0)} - ${fmt(cs.losses||0)}</div><div class="muted">${realWinPct}% de victoires · ${fmt(realMatches)} matchs</div><div class="bar" style="margin-top:10px"><i style="width:${realWinPct}%"></i></div><div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="badge">Dur ${pct(cs.hard_wins,cs.hard_losses)}%</span><span class="badge clay">Terre ${pct(cs.clay_wins,cs.clay_losses)}%</span><span class="badge grass">Gazon ${pct(cs.grass_wins,cs.grass_losses)}%</span></div>`:'<div class="empty">Pas de données historiques.</div>'}</div><div class="card"><h2>Bilan dans la sauvegarde</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Matchs</span><b>${(d.matches||[]).length}</b></div><div class="kpi"><span class="muted mini">Victoires</span><b>${(d.matches||[]).filter(m=>m.winner_id===p.id).length}</b></div><div class="kpi"><span class="muted mini">Défaites</span><b>${(d.matches||[]).filter(m=>m.winner_id!==p.id).length}</b></div><div class="kpi"><span class="muted mini">% victoires</span><b>${(d.matches||[]).length?Math.round((d.matches||[]).filter(m=>m.winner_id===p.id).length/(d.matches||[]).length*100):0}%</b></div></div></div><div class="card"><h2>Forme actuelle</h2><div class="row between"><span>Forme</span><b>${p.form}/100</b></div><div class="bar"><i style="width:${p.form}%"></i></div><div class="row between" style="margin-top:10px"><span>Fitness</span><b>${p.fitness}/100</b></div><div class="bar"><i style="width:${p.fitness}%"></i></div></div></div><div class="card" style="margin-top:12px"><h2>Historique des matchs</h2>${(d.matches||[]).length?(d.matches||[]).map(m=>{const oppId=m.player_a_id===p.id?m.player_b_id:m.player_a_id;const opp=m.player_a_id===p.id?m.player_b_name:m.player_a_name;const won=m.winner_id===p.id;const tour=m.tournament_runs?.tournaments;return `<div class="list-item row between"><div class="click" onclick="openPlayer(${oppId})"><div><b class="${won?'good':'bad'}">${won?'V':'D'}</b> vs ${esc(opp)}</div><div class="muted mini">${esc(tour?.name||'Tournoi')} · ${esc(m.round_name)} · ${esc(tour?.surface||'')}</div></div><div style="text-align:right"><b>${esc(m.score)}</b><div class="muted mini">${df(tour?.start_date)}</div></div></div>`}).join(''):'<div class="empty">Aucun match simulé pour ce joueur dans cette sauvegarde.</div>'}</div></template>
-   <template id="careerTpl">${window.renderPalmaresHtml?window.renderPalmaresHtml(d,p):'<div class="card empty">Module palmarès indisponible.</div>'}</template>
+   <template id="careerTpl">
+    ${window.renderPalmaresHtml?window.renderPalmaresHtml(d,p):'<div class="card empty">Module palmarès indisponible.</div>'}
+    <div class="card fm-panel" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Carrière saison par saison</div><h2>Palmarès annuel</h2></div><span class="badge">${(d.historicalSeasons||[]).length} saisons</span></div>
+      ${(d.historicalSeasons||[]).length?`<div class="table-wrap"><table class="table"><thead><tr><th>Saison</th><th>Titres</th><th>GC</th><th>Masters</th><th>Finals</th><th>Source</th></tr></thead><tbody>${d.historicalSeasons.map(y=>`<tr><td class="rank-num">${y.season}</td><td>${y.titles==null?'—':y.titles}</td><td><b>${y.grand_slams||0}</b></td><td>${y.masters||0}</td><td>${y.tour_finals||0}</td><td class="muted mini">${esc(y.source_label||'Archive')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Pas encore de découpage annuel disponible.</div>'}
+    </div>
+   </template>
    <template id="commercialTpl"><div class="card"><h2>Sponsors vérifiés</h2>${d.sponsors.filter(s=>s.verified).length?d.sponsors.filter(s=>s.verified).map(s=>`<span class="badge good" style="margin:4px">${esc(s.sponsor)}</span>`).join(''):'<div class="empty">Non vérifié</div>'}<p class="muted mini" style="margin-top:10px">Aucune marque n'est inventée quand la donnée n'est pas vérifiée.</p></div></template>
    <template id="historyTpl"><div class="card"><h2>Historique de classement</h2>${d.history.length?d.history.map(h=>`<div class="list-item row between"><span>${df(h.snapshot_date)}</span><b>#${h.ranking} · ${fmt(h.points)} pts</b></div>`).join(''):'<div class="empty">Pas encore assez de snapshots.</div>'}</div></template>
   </div></div>`;
@@ -825,6 +858,22 @@ window.simulateWeek=async()=>{
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
   const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
   const nextDate=d.toISOString().slice(0,10),nextWeek=(local.week||1)+1;
+  const currentYear=Number(String(local.date||'2026-09-27').slice(0,4)),nextYear=Number(nextDate.slice(0,4));
+  if(nextYear>currentYear){
+    const roll=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:nextYear})});
+    local.date=String(nextYear)+'-01-05';local.week=1;
+    if(roll.userRanking){cr.singles_rank=roll.userRanking.rank;cr.points=roll.userRanking.points}
+    if(roll.userDoublesRanking){cr.doubles_rank=roll.userDoublesRanking.rank;cr.doubles_points=roll.userDoublesRanking.points}
+    local.feed=local.feed||[];
+    const ng=roll.rollover?.newgens||{};
+    local.feed.unshift(`Nouvelle saison ${nextYear} : ${roll.rollover?.retired_players||0} retraite(s), ${ng.created||0} jeunes générés, ${ng.promoted||0} promu(s) vers le circuit pro.`);
+    local.career=cr;persist();
+    boot=await get('/api/bootstrap');
+    if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
+    await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
+    if(route==='history')await loadHistory();
+    return;
+  }
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
   local.date=sim.date||nextDate;local.week=sim.week||nextWeek;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
@@ -839,7 +888,8 @@ window.simulateWeek=async()=>{
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
-  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice()]);
+  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
+  if(route==='history')await loadHistory();
  }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }

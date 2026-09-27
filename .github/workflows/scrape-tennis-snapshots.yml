@@ -1,4 +1,4 @@
-name: Import ATP Historical Snapshot
+name: Build ATP Movement Snapshot
 
 on:
   workflow_dispatch:
@@ -10,73 +10,65 @@ permissions:
   contents: write
 
 jobs:
-  import:
+  scrape:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build deep ATP snapshots from weekly raw rankings
+      - name: Scrape exact ATP archive snapshots
         run: |
-          mkdir -p court-boss/data /tmp/atp
-          curl --fail --silent --show-error             https://raw.githubusercontent.com/azhou5849/tennis-atp-sackmann-data/master/atp_rankings_20s.csv             -o /tmp/atp/rankings.csv
-          curl --fail --silent --show-error             https://raw.githubusercontent.com/azhou5849/tennis-atp-sackmann-data/master/atp_players.csv             -o /tmp/atp/players.csv
+          mkdir -p court-boss/data
+          cd /tmp
+          npm init -y >/dev/null 2>&1
+          npm install --silent playwright@1.55.0
+          npx playwright install --with-deps chromium >/dev/null
+          cat > scrape.cjs <<'EOF'
+          const fs=require('fs');
+          const {chromium}=require('playwright');
 
-          python3 <<'PY'
-          import csv,json,unicodedata,re
-          from pathlib import Path
+          async function scrape(page,url,snapshot){
+            await page.goto(url,{waitUntil:'domcontentloaded',timeout:90000});
+            await page.waitForTimeout(1500);
+            const rows=await page.locator('table tr').evaluateAll(trs=>trs.map(tr=>[...tr.querySelectorAll('th,td')].map(td=>(td.textContent||'').trim().replace(/\s+/g,' '))));
+            const out=[];
+            for(const cells of rows){
+              if(cells.length<3)continue;
+              const rank=Number(String(cells[0]).replace(/[^0-9]/g,''));
+              const name=String(cells[1]||'').trim();
+              const points=Number(String(cells[2]||'').replace(/[^0-9]/g,''));
+              if(rank>0&&name&&points>=0)out.push({rank,name,points});
+            }
+            const uniq=[...new Map(out.map(x=>[x.rank,x])).values()].sort((a,b)=>a.rank-b.rank);
+            if(uniq.length<190)throw new Error(snapshot+' parsed only '+uniq.length+' rows');
+            return {snapshot,count:uniq.length,source:url,rows:uniq};
+          }
 
-          def norm(s):
-              s=unicodedata.normalize('NFKD',s or '').encode('ascii','ignore').decode().lower()
-              return re.sub(r'[^a-z0-9]+','',s)
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:1280,height:1200}});
+            const current=await scrape(page,'https://hiyun0727.blogspot.com/2025/12/atp-ranking-20251201.html?m=1','2025-12-01');
+            const previous=await scrape(page,'https://hiyun0727.blogspot.com/2025/11/atp-ranking-20251117.html?m=1','2025-11-17');
 
-          players={}
-          with open('/tmp/atp/players.csv',encoding='utf-8',errors='ignore') as f:
-              r=csv.DictReader(f)
-              for x in r:
-                  pid=x.get('player_id')
-                  if not pid: continue
-                  name=' '.join(filter(None,[x.get('name_first','').strip(),x.get('name_last','').strip()])).strip()
-                  players[pid]={
-                      'name':name,
-                      'name_norm':norm(name),
-                      'country':(x.get('ioc') or '').strip(),
-                      'birth_date':(x.get('dob') or '').strip()
-                  }
+            const prevByName=new Map(previous.rows.map(x=>[x.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,''),x.rank]));
+            current.rows=current.rows.map(x=>{
+              const key=x.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+              const prev=prevByName.get(key)??null;
+              return {...x,previous_rank:prev,rank_change:prev==null?null:prev-x.rank};
+            });
 
-          wanted={'20251201':'2025-12-01','20251124':'2025-11-24'}
-          out={k:[] for k in wanted}
-          with open('/tmp/atp/rankings.csv',encoding='utf-8',errors='ignore') as f:
-              r=csv.DictReader(f)
-              for x in r:
-                  d=x.get('ranking_date','')
-                  if d not in wanted: continue
-                  p=players.get(x.get('player'))
-                  if not p: continue
-                  try: rank=int(x.get('rank') or 0)
-                  except: continue
-                  if rank<=0: continue
-                  try: pts=int(float(x.get('points') or 0))
-                  except: pts=0
-                  out[d].append({
-                      'rank':rank,'player_id':int(x['player']),
-                      'name':p['name'],'name_norm':p['name_norm'],
-                      'country':p['country'],'birth_date':p['birth_date'],
-                      'points':pts
-                  })
-
-          for d,label in wanted.items():
-              rows=sorted(out[d],key=lambda x:x['rank'])
-              if len(rows)<1500:
-                  raise SystemExit(f'{label}: only {len(rows)} rows')
-              payload={'snapshot':label,'count':len(rows),'source':'Sackmann-format weekly ATP rankings mirror','rows':rows}
-              Path(f'court-boss/data/atp-singles-{label}.json').write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding='utf-8')
-              print(label,len(rows),rows[0],rows[min(1999,len(rows)-1)])
-          PY
+            fs.writeFileSync(process.env.GITHUB_WORKSPACE+'/court-boss/data/atp-singles-2025-12-01.json',JSON.stringify(current,null,2));
+            fs.writeFileSync(process.env.GITHUB_WORKSPACE+'/court-boss/data/atp-singles-2025-11-17.json',JSON.stringify(previous,null,2));
+            console.log('current',current.count,'previous',previous.count);
+            console.log(current.rows.slice(0,12));
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          EOF
+          node scrape.cjs
 
       - name: Commit snapshots
         run: |
+          cd "$GITHUB_WORKSPACE"
           git config user.name "Court Boss Data Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add court-boss/data/atp-singles-2025-12-01.json court-boss/data/atp-singles-2025-11-24.json
-          git diff --cached --quiet || git commit -m "Import deep ATP rankings for 2025-12-01"
+          git add court-boss/data/atp-singles-2025-12-01.json court-boss/data/atp-singles-2025-11-17.json
+          git diff --cached --quiet || git commit -m "Add ATP rank movement for 2025-12-01"
           git push

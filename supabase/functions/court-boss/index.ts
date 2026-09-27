@@ -947,7 +947,7 @@ async function parseLiveTennisDoublesRace(url:string){
 
 async function resolveTournamentImage(t:any){
   if(!t||t.image_url||!t.source_url)return t;
-  const source=String(t.source_url||"").trim();
+  const source=String(t.image_source_url||t.source_url||"").trim();
   if(!/^https?:\/\//i.test(source))return t;
   if(/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source))return t;
   let host="";
@@ -958,6 +958,8 @@ async function resolveTournamentImage(t:any){
     "wearecollegetennis.com","www.wearecollegetennis.com",
     "ausopen.com","www.ausopen.com","rolandgarros.com","www.rolandgarros.com",
     "wimbledon.com","www.wimbledon.com","usopen.org","www.usopen.org",
+    "wtatennis.com","www.wtatennis.com",
+    "sites.google.com",
     "tenniseurope.org","www.tenniseurope.org"
   ];
   if(!allowed.includes(host))return t;

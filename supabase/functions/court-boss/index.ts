@@ -32,6 +32,65 @@ const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=n
   }
   return fallback;
 };
+async function resolveTennisTempleBio(player:any,gameDate:string){
+  if(!player?.is_real||!player?.name)return player;
+  const needsHeight=!player.height_cm||!player.height_verified;
+  const needsAge=!player.birth_date&&(/estimate|estim/i.test(String(player.age_source||""))||player.age==null);
+  const needsHand=!player.handedness;
+  const needsBackhand=!player.backhand_verified;
+  if(!needsHeight&&!needsAge&&!needsHand&&!needsBackhand)return player;
+  const slug=normalizeName(String(player.name)).replace(/\s+/g,"-");
+  const url="https://en.tennistemple.com/player/"+encodeURIComponent(slug);
+  try{
+    const r=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+player-bio-enrichment)","Accept":"text/html"}});
+    if(!r.ok)return player;
+    const html=await r.text();
+    const title=htmlText((html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)||[])[1]||"");
+    if(title&&normalizeName(title)!==normalizeName(String(player.name)))return player;
+    const text=htmlText(html);
+    const update:any={};
+    const ah=text.match(/Age\s+(\d{1,2})\s*yo\s*\/\s*(\d{3})\s*cm/i)
+      || text.match(/Age\s+(\d{1,2}).{0,30}?(\d{3})\s*cm/i);
+    if(ah){
+      const age=Number(ah[1]),height=Number(ah[2]);
+      if(needsAge&&age>=12&&age<=45){
+        player.age=age;
+        player.age_source="TennisTemple · "+gameDate;
+        player.age_snapshot_date=gameDate;
+        update.age=age;update.age_source=player.age_source;update.age_snapshot_date=gameDate;
+      }
+      if(needsHeight&&height>=145&&height<=215){
+        player.height_cm=height;
+        player.height_verified=true;
+        player.height_source="TennisTemple · "+gameDate;
+        update.height_cm=height;update.height_verified=true;update.height_source=player.height_source;
+      }
+    }
+    const play=text.match(/Forehand\s+(Right Handed|Left Handed)(?:\s*\(([^)]+)\))?/i);
+    if(play){
+      if(needsHand){
+        player.handedness=/left/i.test(play[1])?"Gaucher":"Droitier";
+        update.handedness=player.handedness;
+      }
+      if(needsBackhand&&play[2]){
+        const bh=/double|two/i.test(play[2])?"2 mains":/single|one/i.test(play[2])?"1 main":"";
+        if(bh){
+          player.backhand=bh;
+          player.backhand_verified=true;
+          player.backhand_source="TennisTemple · "+gameDate;
+          update.backhand=bh;update.backhand_verified=true;update.backhand_source=player.backhand_source;
+        }
+      }
+    }
+    if(Object.keys(update).length){
+      player.bio_source=[player.bio_source,"TennisTemple"].filter(Boolean).join(" + ");
+      update.bio_source=player.bio_source;
+      await db.from("players").update(update).eq("id",player.id);
+    }
+  }catch{}
+  return player;
+}
+
 async function resolvePlayerFacts(player:any,gameDate:string){
   if(!player||!player.is_real)return player;
   if(player.birth_date){
@@ -233,6 +292,7 @@ async function resolvePlayerFacts(player:any,gameDate:string){
 
     if(Object.keys(update).length)await db.from("players").update(update).eq("id",player.id);
   }catch{}
+  await resolveTennisTempleBio(player,gameDate);
   return player;
 }
 async function resolvePlayerPhoto(player:any){

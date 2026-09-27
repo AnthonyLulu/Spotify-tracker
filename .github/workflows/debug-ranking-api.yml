@@ -13,18 +13,13 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe weeks endpoint
+      - name: Probe exact week
         run: |
-          set +e
-          echo "=== /api/weeks ==="
-          curl -L --max-time 30 -sS -D /tmp/h1 https://atp-rankings.ishanjha.com/api/weeks -o /tmp/weeks
-          cat /tmp/h1
-          echo "--- body head ---"
-          head -c 6000 /tmp/weeks
-          echo
-          echo "=== docs root ==="
-          curl -L --max-time 30 -sS -D /tmp/h2 https://atp-rankings.ishanjha.com/api-docs -o /tmp/docs
-          cat /tmp/h2
-          echo "--- docs head ---"
-          head -c 3000 /tmp/docs
-          echo
+          set -e
+          for url in             "https://atp-rankings.ishanjha.com/api/week/2025-12-01"             "https://atp-rankings.ishanjha.com/api/week/2025-12-01?limit=2100"             "https://atp-rankings.ishanjha.com/api/week/2025-12-01?page=1&page_size=2100"; do
+            echo "=== $url ==="
+            code=$(curl -L --max-time 45 -sS -w "%{http_code}" -o /tmp/out "$url")
+            echo "HTTP $code bytes $(wc -c </tmp/out)"
+            head -c 5000 /tmp/out
+            echo
+          done

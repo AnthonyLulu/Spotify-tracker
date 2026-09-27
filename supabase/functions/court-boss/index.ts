@@ -1657,8 +1657,27 @@ Deno.serve(async(req:Request)=>{
       if(ins.error)return h({error:ins.error.message},500);
       const up=await db.from("davis_ties").update({status:"completed",home_score:hs,away_score:as}).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
+      const winnerNation=hs>as?home:away;
+      const stage=String(tie.data.stage||"");
+      if(stage==="Final 8 · Quarter-final"){
+        const semis=await db.from("davis_ties").select("*").in("stage",["Final 8 · Semi-final 1","Final 8 · Semi-final 2"]).order("tie_date");
+        if(!semis.error){
+          const s1=(semis.data??[]).find((x:any)=>x.stage==="Final 8 · Semi-final 1");
+          const s2=(semis.data??[]).find((x:any)=>x.stage==="Final 8 · Semi-final 2");
+          if(home==="CZE"&&away==="CAN"&&s1)await db.from("davis_ties").update({away_nation:winnerNation}).eq("id",s1.id);
+          if(home==="ITA"&&away==="KOR"&&s1)await db.from("davis_ties").update({home_nation:winnerNation}).eq("id",s1.id);
+          if(home==="GBR"&&away==="GER"&&s2)await db.from("davis_ties").update({home_nation:winnerNation}).eq("id",s2.id);
+          if(home==="AUT"&&away==="ESP"&&s2)await db.from("davis_ties").update({away_nation:winnerNation}).eq("id",s2.id);
+        }
+      }else if(stage==="Final 8 · Semi-final 1"||stage==="Final 8 · Semi-final 2"){
+        const fin=await db.from("davis_ties").select("*").eq("stage","Final 8 · Final").maybeSingle();
+        if(!fin.error&&fin.data){
+          const patch=stage.endsWith("1")?{home_nation:winnerNation}:{away_nation:winnerNation};
+          await db.from("davis_ties").update(patch).eq("id",fin.data.id);
+        }
+      }
       await db.from("inbox_items").insert({kind:"davis",title:"Résultat Coupe Davis",body:home+" "+hs+"-"+as+" "+away+".",action_route:"davis",is_read:false});
-      return h({ok:true,tie:{...tie.data,status:"completed",home_score:hs,away_score:as},rubbers:rubs});
+      return h({ok:true,tie:{...tie.data,status:"completed",home_score:hs,away_score:as},rubbers:rubs,winner_nation:winnerNation});
     }
 
     if(action==="set_scouting_assignment"){

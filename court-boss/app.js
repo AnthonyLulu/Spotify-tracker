@@ -205,7 +205,7 @@ function rankings(){
          :(snap?'Référence '+df(snap):'Snapshot importé');
  const pill=(rankKind==='singles'||rankKind==='doubles')?(snap?df(snap):df('2026-09-27')):rankKind==='race'?'Race · '+(snap?df(snap):'2025'):rankKind==='nextgen'?'24/11/2025':rankKind==='junior'?'Junior 2025':(snap?df(snap):label);
  return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Ranking, Race, Double et Next Gen séparés. Simple et Double utilisent le snapshot Live-Tennis 2026; la base scouting reste beaucoup plus profonde que le classement affiché.</div></div><span class="pill">${pill}</span></div>
- <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button onclick="nav('players')">Base ${fmt(worldStats?.searchableRealPlayers||20000)}+</button></div>
+ <div class="tabs rank-tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Base ${fmt(worldStats?.searchableRealPlayers||20000)}+</button></div>
  ${rankKind==='nextgen'? `<div class="age-filter"><span class="muted mini">Âge au snapshot 2025</span>${[18,19,20,21].map(a=>`<button class="${nextGenAge===a?'active':''}" onclick="setNextGenAge(${a})">U${a}</button>`).join('')}</div>`:''}
  ${rankKind==='singles'? `<div class="card" style="margin-bottom:12px"><div class="row between"><div><div class="eyebrow">Ton classement</div><div class="hero-name" style="font-size:25px">ATP #${career().singles_rank}</div><div class="muted">${fmt(career().points)} points actifs</div></div><div style="text-align:right"><div class="muted mini">Prochaine expiration</div><b>${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?df(rankingLedger.active[0].expiry_date):'—'}</b><div class="muted mini">${rankingLedger&&rankingLedger.active&&rankingLedger.active[0]?'-'+rankingLedger.active[0].points+' pts':''}</div></div></div></div>`:''}
  <div class="card">
@@ -225,7 +225,7 @@ window.jumpRanking=async()=>{
 function ncaaRanking(){
  const rows=rankRows||[],startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rows.length,rankCount);
  return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Les joueurs NCAA font partie de la même base mondiale. Le badge NCAA reste visible sur leur profil même s’ils ont aussi un classement ATP.</div></div><span class="pill">${fmt(rankCount)} NCAA actifs</span></div>
- <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button onclick="nav('players')">Base ${fmt(worldStats?.searchableRealPlayers||20000)}+</button></div>
+ <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Base ${fmt(worldStats?.searchableRealPlayers||20000)}+</button></div>
  <div class="card">
   <div class="rank-tools fm-rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur NCAA…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
   <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA</b> · couche universitaire séparée du classement ATP. Un joueur peut exister sur les deux circuits sans être dupliqué.</div>
@@ -334,10 +334,10 @@ function more(){
 }
 function playersPage(){
  if(!dbLoaded&&!dbLoading)setTimeout(()=>loadPlayerDatabase().then(()=>{if(route==='players')render()}).catch(()=>{}),0);
- const circuits=['Tous','Tous réels','ATP classés','ITF','Junior','NCAA','Double','Race','Next Gen'];
+ const circuits=['Tous','Tous réels','ATP classés','ATP profond','ITF','Junior','NCAA','Double','Race','Next Gen'];
  const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
  return `<div class="fm-dashboard">
-  <div class="fm-page-head"><div><div class="eyebrow">Scouting database · 20 000+</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche sur toute la base, y compris hors Top 2000 ATP, ITF, NCAA, juniors et historiques.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||20000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
+  <div class="fm-page-head"><div><div class="eyebrow">Scouting database · ${fmt(worldStats?.searchableRealPlayers||dbCount||20000)} profils réels</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche sans plafond Top 2000 : ATP profond, ITF, NCAA, juniors, anciens joueurs et prospects réels.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||20000)} joueurs</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithDob||0)} DOB sourcées</div><div class="fm-head-badge subtle">${fmt(worldStats?.estimatedAgeReal||0)} âges estimés</div></div></div>
   <div class="card fm-db-toolbar">
    <div class="fm-db-filters">
     <input id="dbSearch" class="input" value="${esc(dbQuery)}" placeholder="Nom du joueur…" onkeydown="if(event.key==='Enter')searchPlayerDatabase(this.value)">
@@ -1114,12 +1114,12 @@ window.simulateWeek=async()=>{
  finally{simulating=false;render()}
 }
 window.openGlobalSearch=()=>{
- overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Base mondiale · ${fmt(worldStats?.searchableRealPlayers||20000)} joueurs réels · sans limite Top 2000</div><h1>Recherche joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div>
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Base mondiale · ${fmt(worldStats?.searchableRealPlayers||20000)} joueurs réels · recherche au-delà du Top 2000</div><h1>Recherche joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div>
  <input id="globalSearchInput" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearch(this.value)" autofocus>
  <div class="filters" style="margin-top:8px">
   <select id="globalSearchCountry" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}">${flags[x.country]||'🏳️'} ${esc(x.country)}</option>`).join('')}</select>
   <select id="globalSearchCircuit" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
-   <option>Tous</option><option>Tous réels</option><option>ATP classés</option><option>Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
+   <option>Tous</option><option>Tous réels</option><option>ATP classés</option><option>ATP profond</option><option>Double</option><option>Race</option><option>Next Gen</option><option>ITF</option><option>Junior</option><option>NCAA</option>
   </select>
   <select id="globalSearchAge" class="select" onchange="runGlobalSearch(document.getElementById('globalSearchInput').value)">
    <option value="99">Tous âges</option><option value="18">U18</option><option value="21">U21</option><option value="23">U23</option><option value="30">30 ans max</option>

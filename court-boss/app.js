@@ -571,6 +571,7 @@ function davisPage(){
  const lastFrance=[...franceTies].reverse().find(t=>t.status==='completed'||String(t.tie_date)<today)||null;
  const focusTie=nextFrance||lastFrance||franceTies[0]||null;
  const final8=ties.filter(t=>String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
+ const worldQualifiers=ties.filter(t=>!String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const franceAlive=final8.some(t=>t.home_nation==='FRA'||t.away_nation==='FRA');
  const scoreFor=t=>t.home_score!=null&&t.away_score!=null?`${t.home_score}-${t.away_score}`:'vs';
  const tieCard=t=>{const ready=t.status!=='completed'&&t.home_nation!=='TBD'&&t.away_nation!=='TBD';return `<div class="davis-tie-card ${t.status==='completed'?'completed':''} ${ready?'click':''}" ${ready?`onclick="playDavisTie(${t.id})"`:''}>
@@ -594,6 +595,11 @@ function davisPage(){
 
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours France</div><h2>Qualifications 2026</h2></div></div>
  <div class="davis-timeline">${franceTies.map(tieCard).join('')||'<div class="card empty">Aucune rencontre France chargée.</div>'}</div>
+
+ <details class="card davis-world-qualifiers" style="margin-top:16px" open>
+  <summary class="row between"><div><div class="eyebrow">Monde</div><h2>Qualifications Coupe Davis 2026</h2></div><span class="pill">${worldQualifiers.length} rencontres</span></summary>
+  <div class="davis-bracket" style="margin-top:10px">${worldQualifiers.map(tieCard).join('')||'<div class="empty">Aucune rencontre mondiale chargée.</div>'}</div>
+ </details>
 
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Bologne</div><h2>Final 8 2026</h2><div class="muted">Quarts programmés du 24 au 26 novembre, puis demi-finales et finale.</div></div><span class="badge good">Dur intérieur</span></div>
  <div class="davis-bracket">${final8.map(tieCard).join('')||'<div class="card empty">Tableau Final 8 indisponible.</div>'}</div>

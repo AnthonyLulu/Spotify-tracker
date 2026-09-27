@@ -278,9 +278,11 @@ function rankings(){
      :rankKind==='race'
        ?'ATP Race Live-Tennis 2026 · '+df(snap||RANKING_SNAPSHOT)
        :rankKind==='nextgen'
-         ?'ATP Next Gen Race 2026 · '+df(snap||RANKING_SNAPSHOT)+' · âge recalculé à la date de carrière'
+         ?'ATP Next Gen Race 2026 · '+df(snap||RANKING_SNAPSHOT)+' · âge au 01/12/2025'
        :rankKind==='junior'
          ?'ITF Juniors · snapshot '+df(snap||RANKING_SNAPSHOT)
+       :rankKind==='junior_doubles'
+         ?'Court Boss Junior Double · classement simulé séparé · snapshot '+df(snap||RANKING_SNAPSHOT)
          :'ITF World Tennis Tour · snapshot '+df(snap||RANKING_SNAPSHOT);
  const pill=rankKind==='ncaa'?(snap?df(snap):'NCAA'):df(snap||RANKING_SNAPSHOT);
  return `<div class="section-head"><div><div class="eyebrow">Base mondiale</div><h1>Classements</h1><div class="muted">Ranking, Race, Double et Next Gen sont séparés. Le classement ATP de départ correspond au snapshot officiel du 1er décembre 2025, puis la simulation de ta carrière fait évoluer ce monde.</div></div><span class="pill">${pill}</span></div>

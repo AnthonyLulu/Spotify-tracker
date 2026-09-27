@@ -638,7 +638,7 @@ Deno.serve(async(req:Request)=>{
       let base=Number(p.current_ability||50)+Number(p.form||70)*.16-Number(p.fatigue||20)*.13+Number(p.player_attributes?.[surfKey]||10)*.75+Math.max(0,18-Number(p.ranking||9999)/250);
       if(p.isUser){
         const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
-        const surfaceNet=surface==="Gazon"?tacticNet*.035:surface==="Dur"?tacticNet*.018:tacticNet*.006;
+        const surfaceNet=surface==="Gazon"?tacticNet*.035:(Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor")?tacticNet*.028:surface==="Dur"?tacticNet*.018:tacticNet*.006;
         const returnBonus=returnPos==="Avancée"?1.4:returnPos==="Reculée"?.8:1.1;
         base+=balance*.025+surfaceNet+returnBonus;
         if(Number(c.fatigue||18)>45&&tacticAgg>75)base-=2.8;

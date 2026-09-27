@@ -316,6 +316,23 @@ Deno.serve(async(req:Request)=>{
     }catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
+  if(path.endsWith("/api/refresh-races")&&req.method==="GET"){
+    const snapshot=String(u.searchParams.get("date")||new Date().toISOString().slice(0,10)).slice(0,10);
+    try{
+      const [raceRows,nextRows]=await Promise.all([
+        parseLiveTennisRanking("https://live-tennis.eu/en/atp-race.html"),
+        parseLiveTennisRanking("https://live-tennis.eu/en/atp-race-next-gen.html")
+      ]);
+      const [raceApplied,nextApplied]=await Promise.all([
+        db.rpc("apply_secondary_live_ranking",{p_kind:"race",p_snapshot:snapshot,p_rows:raceRows}),
+        db.rpc("apply_secondary_live_ranking",{p_kind:"nextgen",p_snapshot:snapshot,p_rows:nextRows})
+      ]);
+      const err=raceApplied.error||nextApplied.error;
+      if(err)return h({error:err.message},500);
+      return h({ok:true,snapshot,race:{parsed:raceRows.length,applied:raceApplied.data,top:raceRows.slice(0,10)},nextgen:{parsed:nextRows.length,applied:nextApplied.data,top:nextRows.slice(0,15)}});
+    }catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();

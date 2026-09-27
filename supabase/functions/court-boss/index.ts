@@ -1296,23 +1296,23 @@ Deno.serve(async(req:Request)=>{
     const gameDate=String(careerDateRes.data?.career_date||AGE_REFERENCE_DATE);
 
     if(circuit==="Junior"){
-      let juniorPool=(await loadJuniorPoolCandidates(false))
-        .filter(isCurrentJuniorProfile)
-        .filter((p:any)=>Number(p.potential||0)>=potentialMin);
-      if(q){
-        const nq=normalizeName(q);
-        juniorPool=juniorPool.filter((p:any)=>normalizeName(String(p.name||"")).includes(nq));
-      }
-      if(country)juniorPool=juniorPool.filter((p:any)=>String(p.country||"").toUpperCase()===country);
-      if(ageMax<99)juniorPool=juniorPool.filter((p:any)=>p.age!=null&&Number(p.age)<=ageMax);
-      juniorPool.sort((a:any,b:any)=>{
-        const ar=a.junior_ranking==null?999999:Number(a.junior_ranking);
-        const br=b.junior_ranking==null?999999:Number(b.junior_ranking);
-        return ar-br||Number(b.potential||0)-Number(a.potential||0)||String(a.name||"").localeCompare(String(b.name||""));
-      });
-      const total=juniorPool.length;
-      let rows=juniorPool.slice(offset,offset+limit).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
-      return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:total,rows,verifiedJuniorPool:true});
+      let juniorQuery=db.from("junior_display_pool_view").select("*",{count:"exact"})
+        .gte("potential",potentialMin);
+      if(q)juniorQuery=juniorQuery.ilike("name_norm",`%${normalizeName(q)}%`);
+      if(country)juniorQuery=juniorQuery.eq("country",country);
+      if(ageMax<99)juniorQuery=juniorQuery.lte("age",ageMax);
+      juniorQuery=juniorQuery.order("display_order",{ascending:true}).range(offset,offset+limit-1);
+      const page=await juniorQuery;
+      if(page.error)return h({error:page.error.message},500);
+      const rows=(page.data??[]).map((p:any)=>({
+        ...p,
+        junior_ranking:p.display_rank,
+        junior_rank_type:p.rank_type,
+        junior_snapshot_date:p.junior_rank_snapshot_date,
+        junior_source:p.junior_rank_source,
+        age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)
+      }));
+      return h({q,country,circuit,age_max:ageMax,potential_min:potentialMin,offset,limit,count:page.count??0,rows,verifiedJuniorPool:true,cutoff:AGE_REFERENCE_DATE});
     }
 
     let query=db.from("players")

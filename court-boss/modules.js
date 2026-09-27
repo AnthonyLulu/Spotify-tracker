@@ -377,9 +377,9 @@ function liveMatchPageV2(){
 
   const s=cbLiveSession,o=cbLiveOpponent||{};
   const totalGames=(s.user_games||0)+(s.opponent_games||0);
-  const momentum=Math.max(-10,Math.min(10,Number(s.momentum||0)));
+  const momentum=Math.max(-40,Math.min(40,Number(s.momentum??50)-50));
   const stats=s.stats||{};
-  const done=s.status!=='live';
+  const done=s.status!=='active';
 
   return `
     <div class="section-head">
@@ -402,7 +402,7 @@ function liveMatchPageV2(){
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
         <h2>Momentum</h2>
-        <div class="momentum-track"><i style="left:${50+momentum*4.5}%"></i></div>
+        <div class="momentum-track"><i style="left:${50+momentum}%"></i></div>
         <div class="row between mini muted"><span>Adversaire</span><b>${momentum>0?'Anthony +'+momentum:momentum<0?'Adversaire '+Math.abs(momentum):'Équilibre'}</b><span>Anthony</span></div>
       </div>
       <div class="card">
@@ -410,7 +410,7 @@ function liveMatchPageV2(){
         <div class="kpi-strip">
           <div class="kpi"><span class="muted mini">Winners</span><b>${stats.user_winners||0}</b></div>
           <div class="kpi"><span class="muted mini">Fautes</span><b>${stats.user_errors||0}</b></div>
-          <div class="kpi"><span class="muted mini">Aces</span><b>${stats.aces||0}</b></div>
+          <div class="kpi"><span class="muted mini">Aces</span><b>${stats.user_aces||0}</b></div>
           <div class="kpi"><span class="muted mini">DF</span><b>${stats.double_faults||0}</b></div>
         </div>
       </div>
@@ -444,7 +444,7 @@ async function startLiveMatchV2(opponentId){
 async function advanceLiveMatchV2(){
   if(!cbLiveSession)return;
   try{
-    const d=await get('/api/live-match/step',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
+    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
     cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;
     if(d.completed){
       boot=await get('/api/bootstrap');

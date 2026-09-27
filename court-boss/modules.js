@@ -7,6 +7,8 @@ let cbMatchOpponents=[];
 let cbLiveSession=null;
 let cbLiveOpponent=null;
 let cbLiveSurface='Dur';
+let cbLiveBusy=false;
+let cbLiveRestoreError='';
 let cbFantasyData={tournaments:[],entries:[],runs:[]};
 let cbFantasySearch=[];
 
@@ -480,7 +482,7 @@ window.nav=async function(r){
   }
   if(r==='match'){
     route='match';window.scrollTo({top:0,behavior:'smooth'});
-    await loadCbMatchOpponents();
+    await Promise.all([loadCbMatchOpponents(),restoreLiveMatchV2()]);
     shell(liveMatchPageV2());
     return;
   }
@@ -503,7 +505,7 @@ const cbBaseRender=window.render;
 window.render=function(){
   if(route==='season')return shell(seasonPageV2());
   if(route==='doubles'&&cbDoublesTournaments.length)return shell(doublesPageV2());
-  if(route==='match'&&cbMatchOpponents.length)return shell(liveMatchPageV2());
+  if(route==='match')return shell(liveMatchPageV2());
   if(route==='players')return shell(playerDatabasePageV2());
   if(route==='fantasy')return shell(fantasyPageV2());
   return cbBaseRender();
@@ -542,6 +544,7 @@ window.startCareerWithPlayer=async function(id,name){
       loadManagement(),loadRankings(),loadTournaments(),loadRankingLedger(),
       loadSeasonSummary(),loadScheduleAdvice(),loadCbDoublesTournaments()
     ]);
+    delete local.liveSessionId;cbLiveSession=null;cbLiveOpponent=null;persist();
     closeOverlay();
     route='home';
     shell(home());
@@ -565,6 +568,7 @@ function liveMatchPageV2(){
   const cr=career();
   if(!cbLiveSession){
     return `
+      ${cbLiveRestoreError?`<div class="notice bad">${esc(cbLiveRestoreError)} <button class="ghost" onclick="nav('match')">Réessayer</button></div>`:''}
       <div class="section-head">
         <div><div class="eyebrow">Match Center</div><h1>Match live</h1><div class="muted">Choisis un adversaire puis coache jeu par jeu.</div></div>
         <button class="ghost" onclick="nav('tactics')">Tactique</button>
@@ -594,7 +598,7 @@ function liveMatchPageV2(){
           <div class="card">
             <div class="row between">
               <div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">ATP #${p.ranking}</div><h2>${flags[p.country]||'🏳️'} ${esc(p.name)}</h2><div class="muted mini">CA ${p.current_ability} · forme ${p.form} · fatigue ${p.fatigue}</div></div>
-              <button class="primary" onclick="startLiveMatchV2(${p.id})">Jouer</button>
+              <button class="primary" onclick="startLiveMatchV2(${p.id})" ${cbLiveBusy?'disabled':''}>${cbLiveBusy?'Préparation…':'Jouer'}</button>
             </div>
           </div>`).join('')||'<div class="card empty">Aucun adversaire chargé.</div>'}
       </div>`;
@@ -609,7 +613,7 @@ function liveMatchPageV2(){
   return `
     <div class="section-head">
       <div><div class="eyebrow">Match live · ${esc(s.surface||'Dur')}</div><h1>${esc(cr.player_name||'Joueur')} vs ${esc(o.name||'Adversaire')}</h1><div class="muted">ATP #${o.ranking||'—'} · set ${s.set_no||1}</div></div>
-      <button class="ghost" onclick="resetLiveMatchV2()">Quitter</button>
+      <button class="ghost" onclick="nav('home')">Revenir à l’accueil</button>
     </div>
 
     <div class="card live-score">
@@ -621,7 +625,7 @@ function liveMatchPageV2(){
         <div><span class="muted mini">ADVERSAIRE</span><h2>${esc(o.name||'Adversaire')}</h2></div>
         <div class="score-pills"><span>${s.opponent_sets}</span><strong>${s.opponent_games}</strong></div>
       </div>
-      <div class="muted mini" style="margin-top:8px">${s.serving_user?'🎾 '+esc(cr.player_name||'Joueur')+' au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
+      <div class="muted mini" style="margin-top:8px">${done?'Match terminé · ':''}${s.serving_user?'🎾 '+esc(cr.player_name||'Joueur')+' au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -635,7 +639,7 @@ function liveMatchPageV2(){
         <div class="court-line service top"></div><div class="court-line service bottom"></div>
         <div class="court-line center"></div><div class="court-net"></div>
         <div class="court-player opponent" style="left:${45+Math.max(-18,Math.min(18,-momentum*.28))}%">${esc((o.name||'A').slice(0,1))}</div>
-        <div class="court-player user" style="left:${55+Math.max(-18,Math.min(18,momentum*.28))}%">A</div>
+        <div class="court-player user" style="left:${55+Math.max(-18,Math.min(18,momentum*.28))}%">${esc((cr.player_name||'A').slice(0,1))}</div>
         <div class="court-ball ${s.serving_user?'serve-user':'serve-opp'}"></div>
         <div class="court-zone z1 ${(local.tactics?.returnPos||'Neutre')==='Avancée'?'active':''}"></div>
         <div class="court-zone z2 ${Number(local.tactics?.net||28)>55?'active':''}"></div>
@@ -672,7 +676,7 @@ function liveMatchPageV2(){
       <div class="list-item row between"><span>Position au retour</span><select class="select" style="width:auto" onchange="setLiveTacticV2('returnPos',this.value)"><option ${(local.tactics?.returnPos||'Neutre')==='Neutre'?'selected':''}>Neutre</option><option ${local.tactics?.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${local.tactics?.returnPos==='Reculée'?'selected':''}>Reculée</option></select></div>
       ${done
         ?`<div class="notice ${s.user_sets>s.opponent_sets?'good':'bad'}" style="margin-top:12px"><b>${s.user_sets>s.opponent_sets?'Victoire':'Défaite'} ${s.user_sets}-${s.opponent_sets}</b></div><button class="primary" style="margin-top:10px" onclick="resetLiveMatchV2()">Nouveau match</button>`
-        :`<button class="primary" style="margin-top:12px;width:100%" onclick="advanceLiveMatchV2()">Jouer le prochain jeu</button>`}
+        :`<div class="row" style="margin-top:12px"><button class="primary" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchV2()">${cbLiveBusy?'Simulation…':'Jouer le prochain jeu'}</button><button class="soft-btn" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchSetV2()">Finir le set</button></div><p class="muted mini" style="margin-top:8px">Le match est conservé quand tu changes d’écran. Tu peux reprendre ton coaching à tout moment.</p>`}
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -681,28 +685,49 @@ function liveMatchPageV2(){
     </div>`;
 }
 
+// One live match controller: the server owns the score; local state only keeps its ID.
+async function restoreLiveMatchV2(){
+  if(cbLiveSession||!local.liveSessionId)return;
+  cbLiveRestoreError='';
+  try{
+    const d=await get('/api/live-match/state?id='+encodeURIComponent(local.liveSessionId));
+    cbLiveSession=d.session;cbLiveOpponent=d.session.opponent;
+    cbLiveSurface=d.session.surface||'Dur';
+  }catch(e){cbLiveRestoreError='Reprise du match impossible : '+e.message;}
+}
 async function startLiveMatchV2(opponentId){
+  if(cbLiveBusy||local.liveSessionId)return;
+  cbLiveBusy=true;shell(liveMatchPageV2());
   try{
     const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({opponent_id:opponentId,surface:cbLiveSurface,tactics:local.tactics||{}})});
     cbLiveSession=d.session;cbLiveOpponent=d.opponent;cbLiveWinProb=50;
-    shell(liveMatchPageV2());
+    local.liveSessionId=d.session.id;persist();
   }catch(e){alert(e.message)}
+  finally{cbLiveBusy=false;if(route==='match')shell(liveMatchPageV2());}
 }
-
-async function advanceLiveMatchV2(){
-  if(!cbLiveSession)return;
+async function advanceLiveV2(wholeSet=false){
+  if(!cbLiveSession||cbLiveBusy||cbLiveSession.status!=='active')return;
+  cbLiveBusy=true;shell(liveMatchPageV2());
+  const initialSet=cbLiveSession.set_no;
   try{
-    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
-    cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;cbLiveWinProb=Number(d.win_probability||cbLiveWinProb||50);
-    if(d.completed){
-      boot=await get('/api/bootstrap');
-      if(boot.career)local.career={...(local.career||{}),...boot.career};
-      await loadSeasonSummary();
-      persist();
+    for(let i=0;i<(wholeSet?13:1);i++){
+      const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
+      cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;
+      cbLiveWinProb=Number(d.win_probability??cbLiveWinProb);
+      if(d.completed){
+        delete local.liveSessionId;
+        boot=await get('/api/bootstrap');
+        if(boot.career)local.career={...boot.career};
+        await loadSeasonSummary();persist();break;
+      }
+      if(cbLiveSession.set_no!==initialSet)break;
     }
-    shell(liveMatchPageV2());
-  }catch(e){alert(e.message)}
+  }catch(e){alert('Le score reste sauvegardé. '+e.message)}
+  finally{cbLiveBusy=false;if(route==='match')shell(liveMatchPageV2());}
 }
+async function advanceLiveMatchV2(){return advanceLiveV2(false)}
+async function advanceLiveMatchSetV2(){return advanceLiveV2(true)}
+window.advanceLiveMatchSetV2=advanceLiveMatchSetV2;
 
 function setLiveSurfaceV2(v){
   cbLiveSurface=['Dur','Terre','Gazon'].includes(v)?v:'Dur';
@@ -715,6 +740,9 @@ function setLiveTacticV2(k,v){
 }
 
 function resetLiveMatchV2(){
+  if(cbLiveBusy)return;
+  if(cbLiveSession?.status==='active'){alert('Ce match est encore en cours. Reviens à l’accueil pour le conserver.');return;}
+  delete local.liveSessionId;persist();
   cbLiveSession=null;cbLiveOpponent=null;cbLiveWinProb=50;
   shell(liveMatchPageV2());
 }
@@ -800,11 +828,13 @@ window.openCompareV2=openCompareV2;
 window.removeComparePlayerV2=removeComparePlayerV2;
 
 window.openGlobalSearchV2=()=>{
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>5 000 joueurs</h1><div class="muted">ATP, ITF, juniors et prospects.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInputV2" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearchV2(this.value)" autofocus><div id="globalSearchResultsV2" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>${fmt(worldStats?.playersTotal??5000)} joueurs</h1><div class="muted">Joueurs réels et prospects de simulation. Challenger est une catégorie de tournoi.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInputV2" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearchV2(this.value)" autofocus><div id="globalSearchResultsV2" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
   setTimeout(()=>document.getElementById('globalSearchInputV2')?.focus(),20);
 }
 let cbSearchTimer=null;
+let cbSearchVersion=0;
 window.runGlobalSearchV2=q=>{
+  const version=++cbSearchVersion;
   clearTimeout(cbSearchTimer);
   const box=document.getElementById('globalSearchResultsV2');
   if(!box)return;
@@ -812,6 +842,7 @@ window.runGlobalSearchV2=q=>{
   cbSearchTimer=setTimeout(async()=>{
     try{
       const d=await get('/api/search-players?q='+encodeURIComponent(q.trim())+'&limit=30');
+      if(version!==cbSearchVersion||!box.isConnected)return;
       box.innerHTML=(d.rows||[]).map(p=>`<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${playerCircuitLabelV2(p)} · CA ${p.current_ability} · PA ${p.potential}</div></div><button class="ghost" onclick="addComparePlayerV2(${p.id})">Comparer</button></div></div>`).join('')||'<div class="empty">Aucun joueur.</div>';
     }catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
   },180);

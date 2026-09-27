@@ -7,6 +7,8 @@ let cbMatchOpponents=[];
 let cbLiveSession=null;
 let cbLiveOpponent=null;
 let cbLiveSurface='Dur';
+let cbFantasyData={tournaments:[],entries:[],runs:[]};
+let cbFantasySearch=[];
 
 async function loadCbDoublesTournaments(){
   try{
@@ -377,6 +379,91 @@ window.applyPlayerSearchV2=applyPlayerSearchV2;
 window.resetPlayerSearchV2=resetPlayerSearchV2;
 window.playerPageV2=playerPageV2;
 
+
+async function loadFantasyV2(){
+  try{cbFantasyData=await get('/api/fantasy/list')}catch(e){cbFantasyData={tournaments:[],entries:[],runs:[]}}
+}
+function fantasyPageV2(){
+  return `
+  <div class="section-head">
+    <div><div class="eyebrow">Mode créatif</div><h1>Fantasy Court</h1><div class="muted">Crée un tournoi, choisis les joueurs et simule le tableau.</div></div>
+  </div>
+  <div class="card">
+    <h2>Nouveau tournoi</h2>
+    <div class="filters">
+      <input id="fantasyName" class="input" placeholder="Nom du tournoi" value="Court Boss Invitational">
+      <select id="fantasySurface" class="select"><option>Dur</option><option>Terre</option><option>Gazon</option></select>
+      <select id="fantasyDraw" class="select"><option value="8">8 joueurs</option><option value="16" selected>16 joueurs</option><option value="32">32 joueurs</option><option value="64">64 joueurs</option></select>
+      <select id="fantasyBest" class="select"><option value="3" selected>Meilleur des 3 sets</option><option value="5">Meilleur des 5 sets</option></select>
+    </div>
+    <button class="primary" onclick="createFantasyV2()">Créer le tournoi</button>
+  </div>
+  <div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Tes créations</div><h2>Tournois Fantasy</h2></div></div>
+  <div class="stack">
+    ${(cbFantasyData.tournaments||[]).map(t=>{
+      const entries=(cbFantasyData.entries||[]).filter(e=>e.fantasy_id===t.id);
+      const run=(cbFantasyData.runs||[]).find(r=>r.fantasy_id===t.id);
+      return `<div class="card click" onclick="openFantasyV2(${t.id})">
+        <div class="row between">
+          <div><div class="eyebrow">${esc(t.surface)} · ${t.draw_size} joueurs</div><h2>${esc(t.name)}</h2><div class="muted mini">${entries.length}/${t.draw_size} participants · ${t.best_of===5?'Best of 5':'Best of 3'}</div></div>
+          <div style="text-align:right"><span class="badge ${t.status==='completed'?'good':''}">${esc(t.status)}</span>${run?.champion?`<div class="muted mini">🏆 ${esc(run.champion.name)}</div>`:''}</div>
+        </div>
+      </div>`;
+    }).join('')||'<div class="card empty">Aucun tournoi Fantasy créé.</div>'}
+  </div>`;
+}
+async function createFantasyV2(){
+  const name=document.getElementById('fantasyName')?.value||'Court Boss Invitational';
+  const surface=document.getElementById('fantasySurface')?.value||'Dur';
+  const draw_size=Number(document.getElementById('fantasyDraw')?.value||16);
+  const best_of=Number(document.getElementById('fantasyBest')?.value||3);
+  try{
+    await get('/api/fantasy/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,surface,draw_size,best_of})});
+    await loadFantasyV2();shell(fantasyPageV2());
+  }catch(e){alert(e.message)}
+}
+async function fantasySearchV2(id,q){
+  const box=document.getElementById('fantasySearchResults');if(!box)return;
+  if(String(q||'').trim().length<2){box.innerHTML='<div class="empty">Tape au moins 2 caractères.</div>';return}
+  try{
+    const d=await get('/api/search-players?circuit=ATP&offset=0&limit=20&q='+encodeURIComponent(q.trim()));
+    cbFantasySearch=d.rows||[];
+    box.innerHTML=cbFantasySearch.map(p=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · CA ${p.current_ability} · PA ${p.potential}</div></div><button class="soft-btn" onclick="addFantasyEntryV2(${id},${p.id})">Ajouter</button></div>`).join('')||'<div class="empty">Aucun joueur.</div>';
+  }catch(e){box.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+}
+async function addFantasyEntryV2(fid,pid){
+  try{await get('/api/fantasy/entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fantasy_id:fid,player_id:pid,mode:'add'})});await loadFantasyV2();openFantasyV2(fid)}catch(e){alert(e.message)}
+}
+async function removeFantasyEntryV2(fid,pid){
+  try{await get('/api/fantasy/entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fantasy_id:fid,player_id:pid,mode:'remove'})});await loadFantasyV2();openFantasyV2(fid)}catch(e){alert(e.message)}
+}
+async function runFantasyV2(fid){
+  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Simulation du tableau Fantasy…</div></div></div>';
+  try{
+    const d=await get('/api/fantasy/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fantasy_id:fid})});
+    await loadFantasyV2();
+    const rounds=[...new Set((d.run?.matches||[]).map(m=>m.round_name))];
+    overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>🏆 ${esc(d.run?.champion?.name||'Champion')}</h1><div class="muted">Tournoi terminé</div></div><button class="close" onclick="closeOverlay()">✕</button></div>${rounds.map(r=>`<div class="card" style="margin-top:10px"><h2>${esc(r)}</h2>${(d.run.matches||[]).filter(m=>m.round_name===r).map(m=>`<div class="list-item row between"><div><b>${esc(m.player_a_name)}</b><div class="muted mini">vs ${esc(m.player_b_name)}</div></div><div style="text-align:right"><b>${esc(m.score)}</b><div class="good mini">→ ${esc(m.winner_name)}</div></div></div>`).join('')}</div>`).join('')}</div></div>`;
+  }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Simulation impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`}
+}
+async function openFantasyV2(id){
+  const t=(cbFantasyData.tournaments||[]).find(x=>x.id===id);if(!t)return;
+  const entries=(cbFantasyData.entries||[]).filter(e=>e.fantasy_id===id);
+  const run=(cbFantasyData.runs||[]).find(r=>r.fantasy_id===id);
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court · ${esc(t.surface)}</div><h1>${esc(t.name)}</h1><div class="muted">${entries.length}/${t.draw_size} joueurs · ${t.best_of===5?'Best of 5':'Best of 3'}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+  ${run?.champion?`<div class="notice good" style="margin-top:12px">Champion actuel : <b>${esc(run.champion.name)}</b></div>`:''}
+  <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Participants</h2>${entries.map((e,i)=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${e.players?.id})"><b>#${i+1} ${esc(e.players?.name||'Joueur')}</b><div class="muted mini">${e.players?.country||''} · ATP #${e.players?.ranking||'—'}</div></div>${t.status!=='completed'?`<button class="danger-btn" onclick="removeFantasyEntryV2(${id},${e.players?.id})">Retirer</button>`:''}</div>`).join('')||'<div class="empty">Aucun participant.</div>'}</div>
+  <div class="card"><h2>Ajouter un joueur</h2><input class="input" placeholder="Nom du joueur…" oninput="fantasySearchV2(${id},this.value)"><div id="fantasySearchResults" style="margin-top:8px"><div class="empty">Recherche dans les 5 000 profils.</div></div></div></div>
+  ${t.status!=='completed'?`<button class="primary" style="margin-top:12px" ${entries.length<2?'disabled':''} onclick="runFantasyV2(${id})">Simuler le tournoi</button>`:''}
+  </div></div>`;
+}
+window.createFantasyV2=createFantasyV2;
+window.fantasySearchV2=fantasySearchV2;
+window.addFantasyEntryV2=addFantasyEntryV2;
+window.removeFantasyEntryV2=removeFantasyEntryV2;
+window.runFantasyV2=runFantasyV2;
+window.openFantasyV2=openFantasyV2;
+
 const cbBaseNav=window.nav;
 window.nav=async function(r){
   if(r==='season'){
@@ -403,6 +490,12 @@ window.nav=async function(r){
     shell(playerDatabasePageV2());
     return;
   }
+  if(r==='fantasy'){
+    route='fantasy';window.scrollTo({top:0,behavior:'smooth'});
+    await loadFantasyV2();
+    shell(fantasyPageV2());
+    return;
+  }
   return cbBaseNav(r);
 };
 
@@ -412,6 +505,7 @@ window.render=function(){
   if(route==='doubles'&&cbDoublesTournaments.length)return shell(doublesPageV2());
   if(route==='match'&&cbMatchOpponents.length)return shell(liveMatchPageV2());
   if(route==='players')return shell(playerDatabasePageV2());
+  if(route==='fantasy')return shell(fantasyPageV2());
   return cbBaseRender();
 };
 

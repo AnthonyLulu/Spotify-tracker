@@ -13,7 +13,12 @@ let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
-function surfaceClass(s){return s==='Terre'?'surface-clay':s==='Gazon'?'surface-grass':'surface-hard'}
+function surfaceClass(s){const v=String(s||'');return v==='Terre'?'surface-clay':v==='Gazon'?'surface-grass':'surface-hard'}
+function surfaceLabel(t){
+ if(typeof t==='string')return t;
+ const base=String(t?.surface||'Dur');
+ return base==='Dur'?(t?.indoor?'Dur intérieur':'Dur extérieur'):base;
+}
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
 function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='race'?p.race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:k==='ncaa'?p.ncaa_rank:p.ranking}
 function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='race'?p.race_points:k==='nextgen'?p.nextgen_points:k==='junior'?p.junior_points:k==='ncaa'?null:p.points}
@@ -196,7 +201,7 @@ function calendar(){
  return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, NCAA, Junior et fédérations sont des circuits / catégories d'événements.</div></div><span class="pill">${fmt(tourCount)} événements</span></div>
  <div class="filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
- <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · ${esc(t.surface)} · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
+ <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · ${esc(surfaceLabel(t))} · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
  <div class="stack">${tourRows.map(t=>tournamentCard(t)).join('')||'<div class="card empty">Aucun tournoi pour ces filtres.</div>'}</div>
  <div class="pagination"><button ${tourOffset===0?'disabled':''} onclick="tourPage(-1)">←</button><span class="muted mini">${fmt(tourOffset+1)}–${fmt(Math.min(tourOffset+tourRows.length,tourCount))} / ${fmt(tourCount)}</span><button ${tourOffset+60>=tourCount?'disabled':''} onclick="tourPage(1)">→</button></div>`
 }
@@ -204,7 +209,7 @@ function tournamentCard(t){
  const c=career(),isJunior=String(t.circuit)==='Junior';
  const elig=isJunior?'Circuit Junior ITF':t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
  const joined=(local.entries||[]).includes(t.id);
- return `<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(t.surface)}">${esc(t.surface)}</span></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px"><button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button></div></div></div></div>`
+ return `<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</span></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px"><button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button></div></div></div></div>`
 }
 window.tourFilter=async(k,v)=>{tourFilters[k]=v;if(k==='circuit'&&v==='Junior'&&tourFilters.source==='Tous')tourFilters.source='Officiel';tourOffset=0;await loadTournaments();render()}
 window.tourPage=async d=>{tourOffset=Math.max(0,tourOffset+d*60);await loadTournaments();render();window.scrollTo(0,0)}
@@ -351,31 +356,63 @@ function pointLabel(a,b,side){
 }
 function liveMatchPanel(){
  const s=local.liveMatch;
- if(!s)return `<div class="card"><div class="row between"><div><div class="eyebrow">Coaching live</div><h2>Match point par point</h2><div class="muted">Lance une rencontre et modifie tes consignes pendant le match.</div></div><button class="primary" onclick="startLiveMatch()">Démarrer</button></div></div>`;
- const st=s.stats||{a:{},b:{}},done=s.status==='completed';
- const avgA=st.a?.rallies?Math.round((st.a.rally_shots||0)/st.a.rallies):0;
- const avgB=st.b?.rallies?Math.round((st.b.rally_shots||0)/st.b.rallies):0;
- return `<div class="card live-match-card">
-  <div class="row between"><div><div class="eyebrow">Match live · ${esc(s.surface)}</div><h2>${esc(s.player_a_name)} vs ${esc(s.player_b_name)}</h2></div><span class="badge ${done?'good':'warn'}">${done?'Terminé':'En cours'}</span></div>
-  <div class="live-score">
-    <div class="live-player"><span>${s.server_side==='A'?'●':''} ${esc(s.player_a_name)}</span><b>${s.sets_a}</b><b>${s.games_a}</b><strong>${pointLabel(s.points_a,s.points_b,'A')}</strong></div>
-    <div class="live-player"><span>${s.server_side==='B'?'●':''} ${esc(s.player_b_name)}</span><b>${s.sets_b}</b><b>${s.games_b}</b><strong>${pointLabel(s.points_a,s.points_b,'B')}</strong></div>
+ const selectedSurface=local.matchSurface||'Dur';
+ const selectedIndoor=!!local.matchIndoor;
+ if(!s)return `<div class="card fm-match-launch"><div class="row between"><div><div class="eyebrow">Match engine</div><h2>Vue tactique mobile</h2><div class="muted">Les joueurs sont représentés par des marqueurs, comme un moteur tactique de management.</div></div><span class="badge">Point par point</span></div>
+  <div class="match-surface-pills">
+   <button class="${selectedSurface==='Dur'&&!selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',false)">Dur ext.</button>
+   <button class="${selectedSurface==='Dur'&&selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',true)">Dur int.</button>
+   <button class="${selectedSurface==='Terre'?'active':''}" onclick="setMatchSurface('Terre',false)">Terre</button>
+   <button class="${selectedSurface==='Gazon'?'active':''}" onclick="setMatchSurface('Gazon',false)">Gazon</button>
   </div>
-  <div class="muted mini" style="margin-top:6px">Sets terminés : ${(s.set_history||[]).map(x=>x[0]+'-'+x[1]).join(' · ')||'aucun'}</div>
-  <div class="kpi-strip" style="margin-top:12px">
-    <div class="kpi"><span class="muted mini">Points gagnés</span><b>${st.a?.points||0} / ${st.b?.points||0}</b></div>
-    <div class="kpi"><span class="muted mini">Winners</span><b>${st.a?.winners||0} / ${st.b?.winners||0}</b></div>
-    <div class="kpi"><span class="muted mini">Fautes</span><b>${st.a?.errors||0} / ${st.b?.errors||0}</b></div>
-    <div class="kpi"><span class="muted mini">Rallye moyen</span><b>${avgA} / ${avgB}</b></div>
-  </div>
-  <div class="row" style="margin-top:12px;flex-wrap:wrap">
-    ${done?`<button class="ghost" onclick="clearLiveMatch()">Nouveau match</button>`:`
-      <button class="primary" onclick="playLivePoint()">Jouer 1 point</button>
-      <button class="soft-btn" onclick="simulateLiveGame()">Simuler le jeu</button>
-      <button class="soft-btn" onclick="simulateLiveSet()">Simuler le set</button>`}
-  </div>
-  ${done?`<div class="notice" style="margin-top:10px"><b>${s.winner_side==='A'?esc(s.player_a_name):esc(s.player_b_name)}</b> remporte le match.</div>`:''}
+  <button class="primary fm-start-match" onclick="startLiveMatch()">Lancer un match autour de mon classement</button>
  </div>`;
+
+ const c=career(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{};
+ const userName=c.player_name||'Joueur',oppName=opp.name||'Adversaire';
+ const us=Number(s.user_sets||0),os=Number(s.opponent_sets||0),ug=Number(s.user_games||0),og=Number(s.opponent_games||0);
+ const up=Number(s.user_points||0),op=Number(s.opponent_points||0);
+ const done=s.status==='completed';
+ const ux=clamp(Number(lp.user_x??(48+(Number(s.rally_no||0)%3)*6)),12,88);
+ const ox=clamp(Number(lp.opp_x??(52-(Number(s.rally_no||0)%3)*6)),12,88);
+ const bx=clamp(Number(lp.ball_x??50),10,90),by=clamp(Number(lp.ball_y??50),8,92);
+ const surface=String(s.surface||'Dur'),courtClass=surface==='Terre'?'clay':surface==='Gazon'?'grass':'hard';
+ const indoor=/intérieur/i.test(surface);
+ const uInit=esc(userName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
+ const oInit=esc(oppName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
+ const momentum=clamp(Number(s.momentum||50),10,90);
+ const pointText=(a,b,side)=>pointLabel(a,b,side);
+ return `<div class="card fm-live-match">
+  <div class="fm-match-top">
+   <div><div class="eyebrow">Live · ${esc(surface)}${indoor?' · indoor':''}</div><h2>${esc(userName)} vs ${esc(oppName)}</h2></div>
+   <span class="badge ${done?'good':'warn'}">${done?'Terminé':'Set '+(s.set_no||1)}</span>
+  </div>
+
+  <div class="fm-scoreboard">
+   <div class="fm-score-name">${s.serving_user?'● ':''}${esc(userName)} <small>${flags[c.country]||''}</small></div><b>${us}</b><b>${ug}</b><strong>${pointText(up,op,'A')}</strong>
+   <div class="fm-score-name">${!s.serving_user?'● ':''}${esc(oppName)} <small>${flags[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pointText(up,op,'B')}</strong>
+  </div>
+
+  <div class="fm-court ${courtClass} ${indoor?'indoor':''}">
+    <i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i>
+    <i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i>
+    <i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i>
+    <i class="fm-court-line service vertical"></i><i class="fm-net"></i>
+    <div class="fm-player-dot opponent" style="left:${ox}%;top:22%"><span>${oInit}</span><small>${esc(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
+    <div class="fm-player-dot user" style="left:${ux}%;top:78%"><span>${uInit}</span><small>${esc(userName.split(' ').slice(-1)[0]||'MOI')}</small></div>
+    <i class="fm-ball" style="left:${bx}%;top:${by}%"></i>
+    ${lp.shot?`<div class="fm-rally-call">${esc(lp.shot)} · ${Number(lp.rally||0)} coups</div>`:''}
+  </div>
+
+  <div class="fm-momentum"><span>${esc(oppName)}</span><div><i style="left:${momentum}%"></i></div><span>${esc(userName)}</span></div>
+  <div class="fm-match-stats">
+   <div><span>Winners</span><b>${st.user_winners||0}–${st.opp_winners||0}</b></div>
+   <div><span>Fautes</span><b>${st.user_errors||0}–${st.opp_errors||0}</b></div>
+   <div><span>Aces</span><b>${st.user_aces||0}</b></div>
+   <div><span>Rallyes</span><b>${s.rally_no||0}</b></div>
+  </div>
+  ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">1 point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button></div>`}
+ </div>`
 }
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
@@ -391,24 +428,26 @@ function matchPage(){
  <div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Historique</div><h2>Matchs analysés</h2></div></div>
  <div class="stack">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(career().player_name||'Joueur')?'good':'bad'}">${m.winner===(career().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
 }
+window.setMatchSurface=(surface,indoor=false)=>{local.matchSurface=surface;local.matchIndoor=!!indoor;persist();render()}
 window.startLiveMatch=async()=>{
  try{
-  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface:'Dur',tactics:local.tactics||{}})});
-  local.liveMatch=d.session;persist();render();
+  const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
+  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;local.liveOpponent=d.opponent||null;persist();render();
  }catch(e){alert(e.message)}
 }
 window.playLivePoint=async()=>{
  if(!local.liveMatch)return;
  try{
-  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:local.liveMatch.id,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;persist();render();
+  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveGame=async()=>{
  if(!local.liveMatch||local.liveMatch.status==='completed')return;
  const startGames=(local.liveMatch.games_a||0)+(local.liveMatch.games_b||0);
  for(let i=0;i<24;i++){
-  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:local.liveMatch.id,tactics:local.tactics||{}})});
+  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
   local.liveMatch=d.session;
   if(local.liveMatch.status==='completed'||(local.liveMatch.games_a||0)+(local.liveMatch.games_b||0)!==startGames)break;
  }
@@ -418,13 +457,13 @@ window.simulateLiveSet=async()=>{
  if(!local.liveMatch||local.liveMatch.status==='completed')return;
  const startSets=(local.liveMatch.sets_a||0)+(local.liveMatch.sets_b||0);
  for(let i=0;i<120;i++){
-  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:local.liveMatch.id,tactics:local.tactics||{}})});
+  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
   local.liveMatch=d.session;
   if(local.liveMatch.status==='completed'||(local.liveMatch.sets_a||0)+(local.liveMatch.sets_b||0)!==startSets)break;
  }
  persist();render();
 }
-window.clearLiveMatch=()=>{delete local.liveMatch;persist();render()}
+window.clearLiveMatch=()=>{delete local.liveMatch;delete local.liveOpponent;persist();render()}
 function doublesPage(){
  const c=career();
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);
@@ -472,14 +511,47 @@ window.openCollegeTeam=id=>{
 window.commitCollege=async id=>{try{await managerAction('commit_college',id);await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id);await loadManagement();render()}catch(e){alert(e.message)}}
 function davisPage(){
- const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[];
+ const f=boot.federation||{},sq=boot.davisSquad||[],allTies=[...(management?.davisTies||[])].sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
- const tie=ties[0]||null;
- return `<div class="section-head"><div><div class="eyebrow">Fédération française</div><h1>Coupe Davis</h1><div class="muted">Réputation ${f.reputation||91}/100 · intérêt manager ${f.manager_interest||38}% · capitaine ${esc(f.captain||'À déterminer')}</div></div>${tie&&tie.status!=='completed'?`<button class="primary" onclick="playDavisTie(${tie.id})">Jouer le tie</button>`:''}</div>
- <div class="grid g2"><div class="card"><h2>Prochaine rencontre</h2>${tie?`<div class="big" style="font-size:24px">${tie.home_nation} vs ${tie.away_nation}</div><p class="muted">${df(tie.tie_date)} · ${esc(tie.surface)} · ${esc(tie.stage)}</p>${tie.status==='completed'?`<div class="score-hero">${tie.home_score} - ${tie.away_score}</div><span class="badge ${tie.home_score>tie.away_score?'good':'bad'}">${tie.home_score>tie.away_score?'Victoire France':'Défaite France'}</span>`:`<div class="notice">Objectif : ${esc(f.objective||'Atteindre le Final 8')}</div>`}`:`<div class="empty">Aucun tie programmé.</div>`}
-  <div class="list-item"><b>Format</b><div class="muted mini">2 simples J1 · double + reverse singles J2</div></div></div>
- <div class="card"><h2>Sélection France</h2>${sq.map(s=>{const p=s.players;if(!p)return'';const role=local.davisRoles[p.id]||s.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}</div></div>
- ${tie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Résultats</div><h2>Rubbers</h2></div></div><div class="stack">${tie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score)}</div><span class="badge ${r.winner_nation==='FRA'?'good':'bad'}">${esc(r.winner_nation)}</span></div></div></div>`).join('')}</div>`:''}`
+ const future=allTies.filter(x=>x.status!=='completed'&&String(x.tie_date)>=String(local.date||'2026-09-27'));
+ const final8=future.filter(x=>String(x.stage||'').includes('Final 8'));
+ const france=allTies.filter(x=>x.home_nation==='FRA'||x.away_nation==='FRA');
+ const franceFuture=future.find(x=>x.home_nation==='FRA'||x.away_nation==='FRA')||null;
+ const franceInFinal8=final8.some(x=>x.home_nation==='FRA'||x.away_nation==='FRA');
+ const tieSurface=x=>x.surface==='Dur'&&x.indoor?'Dur intérieur':x.surface||'Dur';
+ return `<div class="fm-dashboard">
+  <div class="fm-page-head"><div><div class="eyebrow">Compétition par nations</div><h1>Coupe Davis 2026</h1><div class="muted">Qualifiers, Final 8, sélection nationale et rubbers dans le même module.</div></div><div class="fm-head-stack"><span class="fm-head-badge">${allTies.length} ties</span><span class="fm-head-badge subtle">Final 8 · Bologna</span></div></div>
+
+  <div class="card davis-final8">
+   <div class="row between"><div><div class="eyebrow">24–29 novembre 2026</div><h2>Final 8 · quarts de finale</h2></div><span class="badge good">Dur intérieur</span></div>
+   <div class="davis-bracket">${final8.map((t,i)=>`<div class="davis-tie-card">
+    <div class="muted mini">${df(t.tie_date)} · QF${i+1}</div>
+    <div class="davis-nation"><span>${flags[t.home_nation]||'🏳️'}</span><b>${esc(t.home_nation)}</b></div>
+    <div class="davis-vs">VS</div>
+    <div class="davis-nation"><span>${flags[t.away_nation]||'🏳️'}</span><b>${esc(t.away_nation)}</b></div>
+    <div class="muted micro">${esc(t.venue||'Bologna')} · ${esc(tieSurface(t))}</div>
+   </div>`).join('')||'<div class="empty">Final 8 non chargé.</div>'}</div>
+  </div>
+
+  <div class="grid g2" style="margin-top:12px">
+   <div class="card">
+    <div class="row between"><div><div class="eyebrow">Équipe de France</div><h2>Sélection & statut</h2></div><span class="badge">${esc(f.captain||'Capitaine à définir')}</span></div>
+    <div class="${franceInFinal8?'notice':'info'}" style="margin-bottom:10px">${franceInFinal8?'France qualifiée pour le Final 8.':'France n’est pas dans le Final 8 2026. Les ties de qualification restent consultables ci-dessous.'}</div>
+    ${sq.map(sqrow=>{const p=sqrow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqrow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🇫🇷'} ${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${p.doubles_ranking?fmt(p.doubles_ranking):'—'}</div></div><select class="select" style="width:auto;max-width:125px" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}
+    ${franceFuture?`<button class="primary" style="margin-top:10px;width:100%" onclick="playDavisTie(${franceFuture.id})">Jouer ${franceFuture.home_nation} – ${franceFuture.away_nation}</button>`:''}
+   </div>
+
+   <div class="card"><div class="row between"><div><div class="eyebrow">Parcours 2026</div><h2>Ties de la France</h2></div><span class="badge">${france.length}</span></div>
+    ${france.map(t=>`<div class="davis-history-row"><div><b>${flags[t.home_nation]||'🏳️'} ${t.home_nation} <span class="muted">vs</span> ${flags[t.away_nation]||'🏳️'} ${t.away_nation}</b><div class="muted mini">${df(t.tie_date)} · ${esc(t.stage)} · ${esc(tieSurface(t))}</div></div><span class="badge ${t.status==='completed'?'':'warn'}">${t.status==='completed'?'Terminé':'À venir'}</span></div>`).join('')||'<div class="empty">Aucun tie France.</div>'}
+   </div>
+  </div>
+
+  <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Tableau mondial</div><h2>Tous les ties 2026</h2></div><span class="pill">${allTies.length}</span></div>
+   <div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Tour</th><th>Rencontre</th><th>Surface</th><th>Statut</th></tr></thead><tbody>
+    ${allTies.map(t=>`<tr><td>${df(t.tie_date)}</td><td>${esc(t.stage)}</td><td><b>${flags[t.home_nation]||'🏳️'} ${t.home_nation} – ${flags[t.away_nation]||'🏳️'} ${t.away_nation}</b></td><td>${esc(tieSurface(t))}</td><td><span class="badge ${t.status==='completed'?'':'warn'}">${t.status==='completed'?'Terminé':'Programmé'}</span></td></tr>`).join('')}
+   </tbody></table></div>
+  </div>
+ </div>`
 }
 window.playDavisTie=async id=>{
  try{
@@ -497,7 +569,7 @@ function worldPage(){
  const w=worldStats||{};
  return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">Base mondiale, circuits séparés et simulation persistante.</div></div><button class="ghost" onclick="get('/api/world').then(x=>{worldStats=x;render()})">Actualiser</button></div>
  <div class="kpi-strip">
-  <div class="kpi click" onclick="nav('players')"><span class="muted mini">Profils totaux</span><b>${fmt(w.playersTotal||5000)}</b></div>
+  <div class="kpi click" onclick="nav('players')"><span class="muted mini">Joueurs réels recherchables</span><b>${fmt(w.realPlayersTotal||w.playersTotal||10000)}</b></div>
   <div class="kpi click" onclick="setRankKind('singles');nav('rankings')"><span class="muted mini">Classés ATP</span><b>${fmt(w.atpRanked||2000)}</b></div>
   <div class="kpi click" onclick="nav('calendar')"><span class="muted mini">Tournois</span><b>${fmt(w.tournaments||0)}</b></div>
   <div class="kpi"><span class="muted mini">Tournois vérifiés</span><b>${fmt(w.verifiedTournaments||0)}</b></div>
@@ -565,7 +637,7 @@ function myPlayerPage(){
 }
 function fantasyPage(){
  const rows=local.fantasy||[];
- return `<div class="section-head"><div><div class="eyebrow">Mode créatif</div><h1>Fantasy Court</h1><div class="muted">Crée ton propre tournoi, surface et format.</div></div><button class="primary" onclick="createFantasy()">Nouveau tournoi</button></div><div class="stack">${rows.map((t,i)=>`<div class="card click" onclick="openFantasy(${i})"><div class="row between"><div><div class="eyebrow">${esc(t.category)}</div><h2>${esc(t.name)}</h2><div class="muted">${esc(t.surface)} · ${t.draw} joueurs</div></div><button class="danger-btn" onclick="event.stopPropagation();deleteFantasy(${i})">Supprimer</button></div></div>`).join('')||'<div class="card empty">Aucun tournoi personnalisé. Crée le premier.</div>'}</div>`
+ return `<div class="section-head"><div><div class="eyebrow">Mode créatif</div><h1>Fantasy Court</h1><div class="muted">Crée ton propre tournoi, surface et format.</div></div><button class="primary" onclick="createFantasy()">Nouveau tournoi</button></div><div class="stack">${rows.map((t,i)=>`<div class="card click" onclick="openFantasy(${i})"><div class="row between"><div><div class="eyebrow">${esc(t.category)}</div><h2>${esc(t.name)}</h2><div class="muted">${esc(surfaceLabel(t))} · ${t.draw} joueurs</div></div><button class="danger-btn" onclick="event.stopPropagation();deleteFantasy(${i})">Supprimer</button></div></div>`).join('')||'<div class="card empty">Aucun tournoi personnalisé. Crée le premier.</div>'}</div>`
 }
 function inboxPage(){return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1></div></div><div class="stack">${(boot.inbox||[]).map(x=>`<div class="card click" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')"><div class="row between"><div class="eyebrow">${esc(x.kind)}</div><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div><h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p></div>`).join('')}</div>`}
 function render(){
@@ -623,8 +695,8 @@ window.openPlayer=async id=>{
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier joueur ${isRetired?'· Légende':''}</div><h1>${flags[p.country]||'🏳️'} ${esc(p.name)} ${isRetired?'<span class="badge">Retraité</span>':''}</h1><div class="muted">${esc(rankSummary)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
    <div class="tabs" style="margin-top:12px"><button class="active" data-player-tab="profile" onclick="playerSection('profile')">Profil</button><button data-player-tab="attrs" onclick="playerSection('attrs')">Attributs</button><button data-player-tab="development" onclick="playerSection('development')">Développement</button><button data-player-tab="matches" onclick="playerSection('matches')">Matchs</button><button data-player-tab="career" onclick="playerSection('career')">Palmarès</button><button data-player-tab="commercial" onclick="playerSection('commercial')">Commercial</button><button data-player-tab="history" onclick="playerSection('history')">Historique</button></div>
    <div id="playerBody">
-    <div class="card fm-player-header" style="margin-bottom:12px"><div class="row" style="align-items:center;gap:14px"><div style="width:92px;height:112px;border-radius:16px;overflow:hidden;background:#10251c;display:flex;align-items:center;justify-content:center;flex:0 0 auto">${p.photo_url?`<img src="${esc(p.photo_url)}" alt="${esc(p.name)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:28px;font-weight:900">${esc(p.name.split(' ').map(x=>x[0]).slice(0,2).join(''))}</div>`:`<div style="font-size:28px;font-weight:900">${esc(p.name.split(' ').map(x=>x[0]).slice(0,2).join(''))}</div>`}</div><div><div class="eyebrow">Identité réelle</div><h2 style="margin:2px 0 5px">${esc(p.name)}</h2><div class="muted">${p.birth_date?'Né le '+df(p.birth_date)+' · ':''}${p.age??'—'} ans</div><div class="row" style="margin-top:8px;flex-wrap:wrap">${p.photo_url?'<span class="badge">Photo joueur</span>':''}${ncaa?`<span class="badge good">NCAA · ${esc(ncaa.school)} · #${ncaa.ita_rank||'—'}</span>`:''}${Array.isArray(p.circuits_2025)&&p.circuits_2025.map(c=>`<span class="badge">${esc(c)}</span>`).join('')}</div></div></div></div>
-    <div class="grid g2"><div class="card"><h2>Profil</h2><div class="statline"><div class="statbox"><span class="muted mini">Âge</span><b>${p.age||'—'}</b></div><div class="statbox"><span class="muted mini">Taille</span><b>${p.height_cm?p.height_cm+' cm':'—'}</b></div><div class="statbox"><span class="muted mini">Main</span><b style="font-size:15px">${esc(p.handedness||'—')}</b></div><div class="statbox"><span class="muted mini">Style</span><b style="font-size:15px">${esc(p.style||'—')}</b></div></div>${Array.isArray(p.circuits_2025)&&p.circuits_2025.length?`<div class="row" style="margin-top:10px;flex-wrap:wrap">${p.circuits_2025.map(c=>`<span class="badge">${esc(c)} 2025</span>`).join('')}</div>`:''}${ncaa?`<div class="list-item row between"><span>NCAA / ITA</span><b>#${ncaa.ita_rank||'—'} · ${esc(ncaa.school)}</b></div>`:''}</div><div class="card"><h2>Données historiques</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Titres</span><b>${titleCount}</b></div><div class="kpi"><span class="muted mini">Grand Chelem</span><b>${slamCount}</b></div><div class="kpi"><span class="muted mini">Masters</span><b>${mastersCount}</b></div><div class="kpi"><span class="muted mini">Source</span><b style="font-size:11px">${esc(legend?.source_label||'Archives matchs')}</b></div></div><div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="badge">Dur ${hardTitles}</span><span class="badge clay">Terre ${clayTitles}</span><span class="badge grass">Gazon ${grassTitles}</span></div></div></div>
+    <div class="card fm-player-header" style="margin-bottom:12px"><div class="row" style="align-items:center;gap:14px"><div style="width:92px;height:112px;border-radius:16px;overflow:hidden;background:#10251c;display:flex;align-items:center;justify-content:center;flex:0 0 auto">${p.photo_url?`<img src="${esc(p.photo_url)}" alt="${esc(p.name)}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:28px;font-weight:900">${esc(p.name.split(' ').map(x=>x[0]).slice(0,2).join(''))}</div>`:`<div style="font-size:28px;font-weight:900">${esc(p.name.split(' ').map(x=>x[0]).slice(0,2).join(''))}</div>`}</div><div><div class="eyebrow">Identité réelle</div><h2 style="margin:2px 0 5px">${esc(p.name)}</h2><div class="muted">${p.birth_date?'Né le '+df(p.birth_date)+' · '+(p.age??'—')+' ans':'Date de naissance non vérifiée'}</div><div class="row" style="margin-top:8px;flex-wrap:wrap">${p.photo_url?'<span class="badge">Photo joueur</span>':''}${ncaa?`<span class="badge good">NCAA · ${esc(ncaa.school)} · #${ncaa.ita_rank||'—'}</span>`:''}${Array.isArray(p.circuits_2025)&&p.circuits_2025.map(c=>`<span class="badge">${esc(c)}</span>`).join('')}</div></div></div></div>
+    <div class="grid g2"><div class="card"><h2>Profil</h2><div class="statline"><div class="statbox"><span class="muted mini">Âge</span><b>${p.age??'N/V'}</b></div><div class="statbox"><span class="muted mini">Taille</span><b>${p.height_cm?p.height_cm+' cm':'—'}</b></div><div class="statbox"><span class="muted mini">Main</span><b style="font-size:15px">${esc(p.handedness||'—')}</b></div><div class="statbox"><span class="muted mini">Style</span><b style="font-size:15px">${esc(p.style||'—')}</b></div></div>${Array.isArray(p.circuits_2025)&&p.circuits_2025.length?`<div class="row" style="margin-top:10px;flex-wrap:wrap">${p.circuits_2025.map(c=>`<span class="badge">${esc(c)} 2025</span>`).join('')}</div>`:''}${ncaa?`<div class="list-item row between"><span>NCAA / ITA</span><b>#${ncaa.ita_rank||'—'} · ${esc(ncaa.school)}</b></div>`:''}</div><div class="card"><h2>Données historiques</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Titres</span><b>${titleCount}</b></div><div class="kpi"><span class="muted mini">Grand Chelem</span><b>${slamCount}</b></div><div class="kpi"><span class="muted mini">Masters</span><b>${mastersCount}</b></div><div class="kpi"><span class="muted mini">Source</span><b style="font-size:11px">${esc(legend?.source_label||'Archives matchs')}</b></div></div><div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="badge">Dur ${hardTitles}</span><span class="badge clay">Terre ${clayTitles}</span><span class="badge grass">Gazon ${grassTitles}</span></div></div></div>
     <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Bilan historique</h2>${realMatches?`<div class="kpi-strip"><div class="kpi"><span class="muted mini">Matchs</span><b>${fmt(realMatches)}</b></div><div class="kpi"><span class="muted mini">Victoires</span><b>${fmt(cs.wins||0)}</b></div><div class="kpi"><span class="muted mini">Défaites</span><b>${fmt(cs.losses||0)}</b></div><div class="kpi"><span class="muted mini">% victoires</span><b>${realWinPct}%</b></div></div><div class="list-item row between"><span>Dur</span><b>${cs.hard_wins==null||cs.hard_losses==null?'Non renseigné':cs.hard_wins+'-'+cs.hard_losses+' · '+surfacePct(cs.hard_wins,cs.hard_losses)}</b></div><div class="list-item row between"><span>Terre battue</span><b>${cs.clay_wins==null||cs.clay_losses==null?'Non renseigné':cs.clay_wins+'-'+cs.clay_losses+' · '+surfacePct(cs.clay_wins,cs.clay_losses)}</b></div><div class="list-item row between"><span>Gazon</span><b>${cs.grass_wins==null||cs.grass_losses==null?'Non renseigné':cs.grass_wins+'-'+cs.grass_losses+' · '+surfacePct(cs.grass_wins,cs.grass_losses)}</b></div><div class="muted mini" style="margin-top:8px">Source : ${esc(cs.source||'Archives de matchs')} · relevé du ${cs.source_snapshot?df(cs.source_snapshot):'—'}${String(cs.source||'').startsWith('https://')?' · <a href="'+esc(cs.source)+'" target="_blank" rel="noopener noreferrer">Consulter la source</a>':' · Agrégat importé, périmètre non certifié ATP'}</div>`:'<div class="empty">Historique match réel non disponible pour ce joueur.</div>'}</div><div class="card"><h2>Scouting</h2><div class="notice">Les notes 1–20 sont des évaluations de jeu, pas des statistiques officielles ATP.</div><p class="muted mini" style="margin-top:10px">Confiance : ${p.scouting_confidence}% · Source : ${esc(p.data_source||'Court Boss')} ${p.data_snapshot?'· snapshot '+df(p.data_snapshot):''}</p><div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="soft-btn" onclick="toggleShortlist(${p.id})">${(d.shortlist||(local.shortlist||[]).includes(p.id))?'Retirer de la shortlist':'Ajouter à la shortlist'}</button><button class="soft-btn" onclick="addComparePlayerV2(${p.id})">Comparer</button>${p.is_real&&!isRetired?`<button class="primary" onclick="startCareerWithPlayer(${p.id},'${esc(p.name).replaceAll("'","&#39;")}')">Gérer ce joueur</button>`:isRetired?'<span class="badge">Carrière terminée</span>':''}</div></div></div>
    </div>
    <template id="attrsTpl"><div class="notice">Les attributs 1–20 décrivent le profil de scouting du jeu. Pour le top mondial, les profils sont corrigés manuellement afin d'éviter des aberrations comme Djokovic à 8/20 sur toutes les surfaces.</div><div class="attr-sections" style="margin-top:12px">${groups.map(g=>`<div class="attr-group"><h3>${g[0]}</h3>${g[1].map(x=>{const v=a[x[1]];return `<div class="attr-row"><div class="row"><span>${x[0]}</span><b class="${attrClass(v)}">${v??'—'}</b></div><div class="bar"><i style="width:${(v??0)*5}%"></i></div></div>`}).join('')}</div>`).join('')}</div></template>
@@ -694,11 +766,11 @@ window.openTournament=async id=>{
         <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${!isJunior?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleEntry(${t.id});closeOverlay()">${joined?'Retirer l’inscription':rawElig==='Alternate'?'S’inscrire alternate':'S’inscrire'}</button>${rawElig==='Hors cut'&&!wc?`<button class="soft-btn" onclick="requestWildcard(${t.id})">Demander wild card</button>`:''}${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:''}</div>
         ${played?`<div class="notice" style="margin-top:10px"><b>Résultat :</b> ${esc(played.user_round)} · +${played.user_points} pts · +${euro(played.user_prize)}</div>`:''}
       </div>
-      <div class="card"><h2>Informations</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(t.surface)}">${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Vérifiée':'Simulation'}</b></div></div>
+      <div class="card"><h2>Informations</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Vérifiée':'Simulation'}</b></div></div>
     </div>
    </div>
 
-   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isJunior?'Circuit Junior':'Entrée'}</h2>${isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(t.surface)}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div></div></div></template>
+   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isJunior?'Circuit Junior':'Entrée'}</h2>${isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div></div></div></template>
 
    <template id="tourDrawTpl"><div class="card"><h2>${isJunior?'Engagés juniors':'Liste d’acceptation / tableau projeté'}</h2><p class="muted mini">${drawIntro}</p><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Points</th><th>${isJunior?'Seed / résultat':'Forme'}</th></tr></thead><tbody>${pairs.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking||'—'}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc([p.seed?'TDS '+p.seed:'',p.result||''].filter(Boolean).join(' · ')||'Engagé'):(p.form??'—')}</td></tr>`).join('')}</tbody></table></div></div></template>
 
@@ -840,7 +912,7 @@ window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(c
 window.editCareer=async(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render();try{await managerAction('edit_career',0,{field:k,value:v});boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};persist();render()}catch(e){alert(e.message)}}
 window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invitational');if(!name)return;const surface=prompt('Surface ? Dur / Terre / Gazon','Dur')||'Dur';const draw=Number(prompt('Taille du tableau ?','32'))||32;local.fantasy=local.fantasy||[];local.fantasy.push({name,surface,draw,category:'Fantasy'});persist();render()}
 window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
-window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
+window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
 window.facilityLevel=f=>local.facilityLevels?.[f.id]??f.level
 window.upgradeFacility=async(id,name,base)=>{try{const d=await managerAction('upgrade_facility',id);boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};local.facilityLevels=local.facilityLevels||{};local.facilityLevels[id]=d.level;persist();render()}catch(e){alert(e.message)}}
 window.openInboxItem=async(id,r)=>{try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}await nav(r)}

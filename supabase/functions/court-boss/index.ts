@@ -278,9 +278,10 @@ Deno.serve(async(req:Request)=>{
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
     let rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,gameDate,p.age)}));
-    // Targeted searches progressively enrich missing real-world facts without inventing DOBs.
-    if(q.length>=2){
-      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url)).slice(0,4);
+    // Search/browse progressively enriches missing real-world facts without inventing DOBs.
+    // ATP is already complete; NCAA/ITF pages hydrate a few missing profiles on every browse.
+    if(q.length>=2||["NCAA","ITF","Junior"].includes(circuit)){
+      const enrich=rows.filter((p:any)=>p.is_real&&(!p.birth_date||!p.photo_url)).slice(0,q.length>=2?5:3);
       if(enrich.length){
         const enriched=await Promise.all(enrich.map((p:any)=>resolvePlayerFacts({...p},gameDate)));
         const byId=new Map(enriched.map((p:any)=>[Number(p.id),p]));

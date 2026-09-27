@@ -250,7 +250,7 @@ function fantasyPage(){
  const rows=local.fantasy||[];
  return `<div class="section-head"><div><div class="eyebrow">Mode créatif</div><h1>Fantasy Court</h1><div class="muted">Crée ton propre tournoi, surface et format.</div></div><button class="primary" onclick="createFantasy()">Nouveau tournoi</button></div><div class="stack">${rows.map((t,i)=>`<div class="card click" onclick="openFantasy(${i})"><div class="row between"><div><div class="eyebrow">${esc(t.category)}</div><h2>${esc(t.name)}</h2><div class="muted">${esc(t.surface)} · ${t.draw} joueurs</div></div><button class="danger-btn" onclick="event.stopPropagation();deleteFantasy(${i})">Supprimer</button></div></div>`).join('')||'<div class="card empty">Aucun tournoi personnalisé. Crée le premier.</div>'}</div>`
 }
-function inboxPage(){return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1></div></div><div class="stack">${(boot.inbox||[]).map(x=>`<div class="card click" onclick="nav('${esc(x.action_route||'home')}')"><div class="eyebrow">${esc(x.kind)}</div><h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p></div>`).join('')}</div>`}
+function inboxPage(){return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1></div></div><div class="stack">${(boot.inbox||[]).map(x=>`<div class="card click" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')"><div class="row between"><div class="eyebrow">${esc(x.kind)}</div><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div><h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p></div>`).join('')}</div>`}
 function render(){
  if(!boot)return;
  const views={home,rankings,calendar,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage};
@@ -309,6 +309,68 @@ window.openTournament=async id=>{
  }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Erreur tournoi</h2><p>${esc(e.message)}</p></div></div>`}
 }
 window.tourSection=s=>{const m={overview:'tourOverviewTpl',draw:'tourDrawTpl',qual:'tourQualTpl'},t=document.getElementById(m[s]);if(t)document.getElementById('tourBody').innerHTML=t.innerHTML}
+
+async function managerAction(action,id,extra={}){
+  return get('/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,id,...extra})});
+}
+async function refreshManagerState(){
+  boot=await get('/api/bootstrap');
+  await loadManagement();
+  if(boot.career){
+    local.career={...(local.career||{}),budget:boot.career.budget};
+    persist();
+  }
+}
+window.openYouth=id=>{
+  const y=(boot.youth||[]).find(x=>x.id===id);if(!y)return;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Prospect académie</div><h1>${flags[y.country]||'🏳️'} ${esc(y.name)}</h1><div class="muted">${y.age} ans · ${esc(y.style||'')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+  <div class="grid g2" style="margin-top:12px"><div class="card"><div class="big">PA ${y.potential}</div><div class="muted">Potentiel estimé</div></div><div class="card"><div class="big">CA ${y.current_ability}</div><div class="muted">Niveau actuel</div></div></div>
+  <div class="card" style="margin-top:12px"><div class="list-item row between"><span>Coût académie</span><b>${euro(y.scholarship_cost)}</b></div><div class="list-item row between"><span>Statut</span><b>${esc(y.status||'prospect')}</b></div>${y.status==='signed'?'<div class="notice">Ce joueur est déjà sous contrat avec ton académie.</div>':`<button class="primary" style="margin-top:10px" onclick="signYouth(${y.id})">Signer le prospect</button>`}</div></div></div>`;
+}
+window.signYouth=async id=>{try{const d=await managerAction('sign_youth',id);if(local.career)local.career.budget=d.budget;await refreshManagerState();closeOverlay();render()}catch(e){alert(e.message)}}
+window.openStaff=id=>{
+  const s=(boot.staff||[]).find(x=>x.id===id);if(!s)return;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Staff</div><h1>${esc(s.role)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau</span><b>${s.skill}/20</b></div><div class="bar"><i style="width:${s.skill*5}%"></i></div><div class="list-item row between"><span>Coût hebdomadaire</span><b>${euro(s.weekly_cost)}</b></div></div></div></div>`;
+}
+window.hireStaff=async id=>{try{const d=await managerAction('hire_staff',id);if(local.career)local.career.budget=d.budget;await refreshManagerState();render()}catch(e){alert(e.message)}}
+window.openContract=id=>{
+  const x=(management?.contracts||[]).find(v=>v.id===id);if(!x)return;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Contrat</div><h1>${esc(x.subject_name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Rôle</span><b>${esc(x.role||x.subject_type)}</b></div><div class="list-item row between"><span>Salaire</span><b>${euro(x.weekly_salary)}/sem.</b></div><div class="list-item row between"><span>Échéance</span><b>${df(x.end_date)}</b></div><button class="primary" onclick="renewContract(${x.id});closeOverlay()">Proposer +1 an</button></div></div></div>`;
+}
+window.renewContract=async id=>{try{await managerAction('renew_contract',id);await loadManagement();render()}catch(e){alert(e.message)}}
+window.acceptSponsor=async id=>{try{const d=await managerAction('accept_sponsor',id);if(local.career)local.career.budget=d.budget;await refreshManagerState();render()}catch(e){alert(e.message)}}
+window.openInjury=id=>{
+  const i=(boot.injuries||[]).find(x=>x.id===id);if(!i)return;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier médical</div><h1>${esc(i.injury_type)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Sévérité</span><b>${esc(i.severity)}</b></div><div class="list-item row between"><span>Retour estimé</span><b>${df(i.expected_return)}</b></div><div class="list-item row between"><span>Risque aggravation</span><b>${i.aggravation_risk}%</b></div><div class="list-item"><span class="muted mini">Traitement</span><p>${esc(i.treatment||'Repos et suivi médical')}</p></div></div></div></div>`;
+}
+window.setRecovery=mode=>{if(mode==='mix')local.training=['Récupération','Repos','Récupération','Repos','Récupération','Repos','Repos'];else local.training=local.training.map(()=>mode);persist();render()}
+window.applyRecovery=()=>setRecovery('mix');
+window.setTactic=(k,v)=>{local.tactics=local.tactics||{};local.tactics[k]=['aggression','risk','net'].includes(k)?Number(v):v;persist();render()}
+window.simulatePracticeMatch=async()=>{
+  const cr=career();let opp={name:'Adversaire ATP',current_ability:55,form:70,fatigue:20};
+  try{const d=await get('/api/rankings?kind=singles&offset='+Math.max(0,(cr.singles_rank||742)-3)+'&limit=5');opp=d.rows.find(x=>x.name!==cr.player_name)||opp}catch{}
+  const strength=(cr.current_ability||56)+(cr.form||72)*.18-(cr.fatigue||18)*.12+(local.tactics?.aggression||58)*.03;
+  const other=(opp.current_ability||55)+(opp.form||70)*.18-(opp.fatigue||20)*.12;
+  const win=strength>=other+(Math.random()*12-6);
+  const score=win?(Math.random()>.5?'6-4 6-3':'7-6 3-6 6-2'):(Math.random()>.5?'4-6 3-6':'6-4 4-6 3-6');
+  const md={premieres_balles:58+Math.floor(Math.random()*16)+'%',winners:18+Math.floor(Math.random()*20),fautes_directes:12+Math.floor(Math.random()*18),rallye_moyen:3+Math.floor(Math.random()*6)};
+  local.practiceMatches=local.practiceMatches||[];local.practiceMatches.unshift({tournament_name:'Match entraînement',round:'Simulation',player_a:cr.player_name||'Anthony',player_b:opp.name,winner:win?(cr.player_name||'Anthony'):opp.name,score,surface:'Dur',match_date:local.date,match_data:md});
+  cr.fatigue=clamp((cr.fatigue||18)+10,0,100);cr.form=clamp((cr.form||72)+(win?2:-1),0,100);local.career=cr;persist();render();
+}
+window.openMatch=idx=>{
+  const all=[...(local.practiceMatches||[]),...(boot.matches||[])],m=all[idx];if(!m)return;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(m.tournament_name)}</div><h1>${esc(m.player_a)} vs ${esc(m.player_b)}</h1><div class="muted">${esc(m.score||'—')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="grid g2" style="margin-top:12px">${Object.entries(m.match_data||{}).map(([k,v])=>`<div class="card"><div class="muted mini">${esc(k.replaceAll('_',' '))}</div><div class="big">${v}</div></div>`).join('')}</div></div></div>`;
+}
+window.pairScore=(p,k)=>{const seed=(Number(p.id||1)*17+(k==='chem'?7:k==='comp'?13:19))%19;return clamp(68+seed,55,94)}
+window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
+window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
+window.editCareer=(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render()}
+window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invitational');if(!name)return;const surface=prompt('Surface ? Dur / Terre / Gazon','Dur')||'Dur';const draw=Number(prompt('Taille du tableau ?','32'))||32;local.fantasy=local.fantasy||[];local.fantasy.push({name,surface,draw,category:'Fantasy'});persist();render()}
+window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
+window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
+window.facilityLevel=f=>local.facilityLevels?.[f.id]??f.level
+window.upgradeFacility=(id,name,base)=>{local.facilityLevels=local.facilityLevels||{};const lvl=local.facilityLevels[id]??base;if(lvl>=5)return alert('Installation déjà au maximum');const cost=lvl*3500;const cr=career();if((cr.budget||0)<cost)return alert('Budget insuffisant');cr.budget-=cost;local.career=cr;local.facilityLevels[id]=lvl+1;persist();render()}
+window.openInboxItem=async(id,r)=>{try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}await nav(r)}
 window.simulateWeek=async()=>{
  if(simulating)return;
  simulating=true;render();
@@ -321,7 +383,7 @@ window.simulateWeek=async()=>{
   const gain=Math.random()<.62;
   if(gain){cr.singles_rank=Math.max(1,cr.singles_rank-(1+Math.floor(Math.random()*12)));cr.points=(cr.points||34)+4+Math.floor(Math.random()*17);cr.budget=(cr.budget||14800)+250+Math.floor(Math.random()*900)}
   else cr.singles_rank+=Math.floor(Math.random()*5);
-  cr.budget=(cr.budget||14800)-920;
+  const staffWeekly=(boot.staff||[]).reduce((sum,x)=>sum+Number(x.weekly_cost||0),0);const sponsorWeekly=(management?.sponsors||[]).filter(x=>x.status==='accepted').reduce((sum,x)=>sum+Number(x.weekly_value||0),0);cr.budget=(cr.budget||14800)-staffWeekly+sponsorWeekly;
   if(load>13&&Math.random()>.72){cr.injury_status='Gêne musculaire';cr.fitness=clamp(cr.fitness-9,0,100);local.feed=local.feed||[];local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
   const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);

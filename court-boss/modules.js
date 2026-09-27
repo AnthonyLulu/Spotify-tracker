@@ -564,6 +564,15 @@ async function loadCbMatchOpponents(){
   }
 }
 
+function cbPointLabel(a,b){
+  a=Number(a||0);b=Number(b||0);
+  if(a>=3&&b>=3){
+    if(a===b)return '40';
+    if(a===b+1)return 'Av';
+    if(b===a+1)return '40';
+  }
+  return ['0','15','30','40'][Math.min(a,3)]||'40';
+}
 function liveMatchPageV2(){
   const cr=career();
   if(!cbLiveSession){
@@ -617,13 +626,14 @@ function liveMatchPageV2(){
     </div>
 
     <div class="card live-score">
+      <div class="score-head"><span></span><span>SET</span><span>JEU</span><span>POINT</span></div>
       <div class="score-line">
         <div><span class="muted mini">JOUEUR</span><h2>${esc(cr.player_name||'Joueur')}</h2></div>
-        <div class="score-pills"><span>${s.user_sets}</span><strong>${s.user_games}</strong></div>
+        <div class="score-pills"><span>${s.user_sets}</span><strong>${s.user_games}</strong><em>${cbPointLabel(s.user_points,s.opponent_points)}</em></div>
       </div>
       <div class="score-line">
         <div><span class="muted mini">ADVERSAIRE</span><h2>${esc(o.name||'Adversaire')}</h2></div>
-        <div class="score-pills"><span>${s.opponent_sets}</span><strong>${s.opponent_games}</strong></div>
+        <div class="score-pills"><span>${s.opponent_sets}</span><strong>${s.opponent_games}</strong><em>${cbPointLabel(s.opponent_points,s.user_points)}</em></div>
       </div>
       <div class="muted mini" style="margin-top:8px">${done?'Match terminé · ':''}${s.serving_user?'🎾 '+esc(cr.player_name||'Joueur')+' au service':'🎾 '+esc(o.name||'Adversaire')+' au service'} · ${totalGames} jeu(x) dans le set</div>
     </div>
@@ -633,17 +643,28 @@ function liveMatchPageV2(){
         <div><div class="eyebrow">Vue tactique</div><h2>Terrain 2D</h2></div>
         <div style="text-align:right"><span class="muted mini">Chance prochain jeu</span><div class="big" style="font-size:22px">${Math.round(cbLiveWinProb)}%</div></div>
       </div>
-      <div class="court2d ${String(s.surface||'Dur').toLowerCase().replace('terre','clay').replace('gazon','grass')}">
-        <div class="court-line baseline top"></div><div class="court-line baseline bottom"></div>
-        <div class="court-line sideline left"></div><div class="court-line sideline right"></div>
-        <div class="court-line service top"></div><div class="court-line service bottom"></div>
-        <div class="court-line center"></div><div class="court-net"></div>
-        <div class="court-player opponent" style="left:${45+Math.max(-18,Math.min(18,-momentum*.28))}%">${esc((o.name||'A').slice(0,1))}</div>
-        <div class="court-player user" style="left:${55+Math.max(-18,Math.min(18,momentum*.28))}%">${esc((cr.player_name||'A').slice(0,1))}</div>
-        <div class="court-ball ${s.serving_user?'serve-user':'serve-opp'}"></div>
-        <div class="court-zone z1 ${(local.tactics?.returnPos||'Neutre')==='Avancée'?'active':''}"></div>
-        <div class="court-zone z2 ${Number(local.tactics?.net||28)>55?'active':''}"></div>
-      </div>
+      ${(()=>{
+        const lp=s.last_point||{};
+        const ux=Number(lp.user_x??(55+Math.max(-18,Math.min(18,momentum*.28))));
+        const ox=Number(lp.opp_x??(45+Math.max(-18,Math.min(18,-momentum*.28))));
+        const bx=Number(lp.ball_x??(s.serving_user?57:43));
+        const by=Number(lp.ball_y??(s.serving_user?70:28));
+        const rally=Number(lp.rally||0);
+        return `<div class="court2d ${String(s.surface||'Dur').toLowerCase().replace('terre','clay').replace('gazon','grass')} ${rally?'rallying':''}">
+          <div class="court-line baseline top"></div><div class="court-line baseline bottom"></div>
+          <div class="court-line sideline left"></div><div class="court-line sideline right"></div>
+          <div class="court-line service top"></div><div class="court-line service bottom"></div>
+          <div class="court-line center"></div><div class="court-net"></div>
+          <div class="court-shadow opponent" style="left:${ox}%"></div>
+          <div class="court-shadow user" style="left:${ux}%"></div>
+          <div class="court-player opponent" style="left:${ox}%"><span>${esc((o.name||'A').slice(0,1))}</span></div>
+          <div class="court-player user" style="left:${ux}%"><span>${esc((cr.player_name||'A').slice(0,1))}</span></div>
+          <div class="court-ball ${s.serving_user?'serve-user':'serve-opp'} ${rally?'ball-live':''}" style="left:${bx}%;top:${by}%"></div>
+          <div class="court-zone z1 ${(local.tactics?.returnPos||'Neutre')==='Avancée'?'active':''}"></div>
+          <div class="court-zone z2 ${Number(local.tactics?.net||28)>55?'active':''}"></div>
+          ${rally?`<div class="rally-chip">${rally} coups · ${esc(lp.shot||'échange')} · ${lp.winner==='user'?esc(cr.player_name||'Joueur'):esc(o.name||'Adversaire')}</div>`:''}
+        </div>`;
+      })()}
       <div class="grid g3" style="margin-top:10px">
         <div class="kpi"><span class="muted mini">Service ciblé</span><b style="font-size:13px">${Number(local.tactics?.risk||52)>65?'Extérieur':'Mixte'}</b></div>
         <div class="kpi"><span class="muted mini">Position retour</span><b style="font-size:13px">${esc(local.tactics?.returnPos||'Neutre')}</b></div>
@@ -676,7 +697,11 @@ function liveMatchPageV2(){
       <div class="list-item row between"><span>Position au retour</span><select class="select" style="width:auto" onchange="setLiveTacticV2('returnPos',this.value)"><option ${(local.tactics?.returnPos||'Neutre')==='Neutre'?'selected':''}>Neutre</option><option ${local.tactics?.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${local.tactics?.returnPos==='Reculée'?'selected':''}>Reculée</option></select></div>
       ${done
         ?`<div class="notice ${s.user_sets>s.opponent_sets?'good':'bad'}" style="margin-top:12px"><b>${s.user_sets>s.opponent_sets?'Victoire':'Défaite'} ${s.user_sets}-${s.opponent_sets}</b></div><button class="primary" style="margin-top:10px" onclick="resetLiveMatchV2()">Nouveau match</button>`
-        :`<div class="row" style="margin-top:12px"><button class="primary" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchV2()">${cbLiveBusy?'Simulation…':'Jouer le prochain jeu'}</button><button class="soft-btn" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchSetV2()">Finir le set</button></div><p class="muted mini" style="margin-top:8px">Le match est conservé quand tu changes d’écran. Tu peux reprendre ton coaching à tout moment.</p>`}
+        :`<div class="match-controls" style="margin-top:12px">
+          <button class="primary" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchV2()">${cbLiveBusy?'Échange…':'1 point'}</button>
+          <button class="soft-btn" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchGameV2()">Finir le jeu</button>
+          <button class="soft-btn" ${cbLiveBusy?'disabled':''} onclick="advanceLiveMatchSetV2()">Finir le set</button>
+        </div><p class="muted mini" style="margin-top:8px">Le match est sauvegardé à chaque point. Sur mobile, joue point par point pour suivre le terrain comme un match viewer.</p>`}
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -705,13 +730,15 @@ async function startLiveMatchV2(opponentId){
   }catch(e){alert(e.message)}
   finally{cbLiveBusy=false;if(route==='match')shell(liveMatchPageV2());}
 }
-async function advanceLiveV2(wholeSet=false){
+async function advanceLiveV2(target='point'){
   if(!cbLiveSession||cbLiveBusy||cbLiveSession.status!=='active')return;
   cbLiveBusy=true;shell(liveMatchPageV2());
-  const initialSet=cbLiveSession.set_no;
+  const startGames=Number(cbLiveSession.user_games||0)+Number(cbLiveSession.opponent_games||0);
+  const startSet=Number(cbLiveSession.set_no||1);
   try{
-    for(let i=0;i<(wholeSet?13:1);i++){
-      const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
+    const max=target==='set'?180:target==='game'?36:1;
+    for(let i=0;i<max;i++){
+      const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:cbLiveSession.id,tactics:local.tactics||{}})});
       cbLiveSession=d.session;cbLiveOpponent=d.opponent||cbLiveOpponent;
       cbLiveWinProb=Number(d.win_probability??cbLiveWinProb);
       if(d.completed){
@@ -720,13 +747,18 @@ async function advanceLiveV2(wholeSet=false){
         if(boot.career)local.career={...boot.career};
         await loadSeasonSummary();persist();break;
       }
-      if(cbLiveSession.set_no!==initialSet)break;
+      const games=Number(cbLiveSession.user_games||0)+Number(cbLiveSession.opponent_games||0);
+      if(target==='point')break;
+      if(target==='game'&&(games!==startGames||Number(cbLiveSession.set_no||1)!==startSet))break;
+      if(target==='set'&&Number(cbLiveSession.set_no||1)!==startSet)break;
     }
   }catch(e){alert('Le score reste sauvegardé. '+e.message)}
   finally{cbLiveBusy=false;if(route==='match')shell(liveMatchPageV2());}
 }
-async function advanceLiveMatchV2(){return advanceLiveV2(false)}
-async function advanceLiveMatchSetV2(){return advanceLiveV2(true)}
+async function advanceLiveMatchV2(){return advanceLiveV2('point')}
+async function advanceLiveMatchGameV2(){return advanceLiveV2('game')}
+async function advanceLiveMatchSetV2(){return advanceLiveV2('set')}
+window.advanceLiveMatchGameV2=advanceLiveMatchGameV2;
 window.advanceLiveMatchSetV2=advanceLiveMatchSetV2;
 
 function setLiveSurfaceV2(v){

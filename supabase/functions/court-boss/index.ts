@@ -485,7 +485,7 @@ Deno.serve(async(req:Request)=>{
     const gameDate=String(careerDateRes.data?.career_date||"2026-09-27");
 
     let query=db.from("players")
-      .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
+      .select("id,name,country,is_real,ranking,game_world_rank,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,age_source,age_snapshot_date,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,ranking_snapshot_date,ranking_source,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank,ncaa_status,ncaa_last_school,ncaa_verified",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
     if(ageMax<99) query=query.lte("age",ageMax);
 
@@ -544,7 +544,7 @@ Deno.serve(async(req:Request)=>{
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
-    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,careerDate,legend,historicalSeasons] = await Promise.all([
+    const [p,sp,titles,hist,short,matches,careerStats,finals,juniorEntries,tournamentHistory,ncaa,ncaaCareer,doublesTeams,careerDate,legend,historicalSeasons] = await Promise.all([
       db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
       db.from("player_sponsors").select("*").eq("player_id",id).order("id"),
       db.from("player_titles").select("*").eq("player_id",id).order("title_date",{ascending:false}).limit(150),
@@ -557,11 +557,12 @@ Deno.serve(async(req:Request)=>{
       db.from("player_tournament_history").select("*").eq("player_id",id).order("season",{ascending:false}).order("tournament_date",{ascending:true}).limit(500),
       db.from("ncaa_player_registry").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(10),
       db.from("ncaa_career").select("*").eq("player_id",id).maybeSingle(),
+      db.from("doubles_race_teams").select("*").or(`player_one.ilike.${encodeURIComponent("%"+String(p.data?.name||"")+"%")},player_two.ilike.${encodeURIComponent("%"+String(p.data?.name||"")+"%")}`).order("snapshot_date",{ascending:false}).order("rank",{ascending:true}).limit(20),
       db.from("career_state").select("career_date").eq("id","demo").maybeSingle(),
       db.from("historical_legend_stats").select("*").eq("player_id",id).maybeSingle(),
       db.from("historical_season_summary").select("*").eq("player_id",id).order("season",{ascending:false}).limit(80)
     ]);
-    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||careerDate.error||legend.error||historicalSeasons.error;
+    const err=p.error||sp.error||titles.error||hist.error||short.error||matches.error||careerStats.error||finals.error||juniorEntries.error||tournamentHistory.error||ncaa.error||ncaaCareer.error||doublesTeams.error||careerDate.error||legend.error||historicalSeasons.error;
     if(err) return h({error:err.message},500);
     let player:any=p.data;
     if(player&&Array.isArray(player.player_attributes)) player.player_attributes=player.player_attributes[0]??null;
@@ -575,7 +576,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       player,sponsors:sp.data??[],titles:titles.data??[],history:hist.data??[],shortlist:short.data??null,
       matches:matches.data??[],careerStats:careerStats.data??null,finals:finals.data??[],juniorEntries:juniorEntries.data??[],
-      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],ncaaCareer:ncaaCareer.data??null,legend:legend.data??null,historicalSeasons:historicalSeasons.data??[]
+      tournamentHistory:tournamentHistory.data??[],ncaa:ncaa.data??[],ncaaCareer:ncaaCareer.data??null,doublesTeams:doublesTeams.data??[],legend:legend.data??null,historicalSeasons:historicalSeasons.data??[]
     });
   }
 

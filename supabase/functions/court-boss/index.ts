@@ -342,7 +342,7 @@ const isCurrentJuniorProfile=(p:any)=>{
   if(String(p?.career_status||"active")!=="active")return false;
   const src=String(p?.junior_source||"");
   const age=Number(p?.age);
-  if(p?.game_generated===true)return Number.isFinite(age)&&age>=13&&age<=17;
+  if(p?.game_generated===true)return Number.isFinite(age)&&age>=13&&age<=17&&p?.junior_ranking!=null;
   if(p?.is_real===true&&/^CoreTennis/i.test(src))return true;
   return p?.is_real===true&&Number.isFinite(age)&&age>=13&&age<=18&&!!src;
 };

@@ -31,7 +31,7 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
@@ -125,7 +125,7 @@ async function loadHistory(){
 }
 async function loadTournaments(){
  const p=new URLSearchParams({offset:String(tourOffset),limit:'60'});
- if(!tourFilters.month)p.set('from',local.date||'2026-09-27');
+ if(!tourFilters.month&&!tourShowPast)p.set('from',local.date||'2026-09-27');
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows;tourTbc=d.tbc||[];tourCount=d.count;
 }
@@ -238,7 +238,7 @@ function calendar(){
  const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Moquette'];
  const officialCount=worldStats?.verifiedTournaments||0;
  const coverage=`ATP ${fmt(worldStats?.officialATP||0)} · CH ${fmt(worldStats?.officialChallenger||0)} · ITF ${fmt(worldStats?.officialITF||0)} · Junior ${fmt(worldStats?.officialJunior||0)} · NCAA ${fmt(worldStats?.officialNCAA||0)} · Davis ${fmt(worldStats?.officialFederation||0)}`;
- return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">Le calendrier s’ouvre sur les compétitions réelles vérifiées. Les événements de simulation restent disponibles avec le filtre Source.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
+ return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">ATP, Challenger, ITF, Juniors, NCAA et Coupe Davis. Par défaut : à partir de la date de ta carrière.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button class="${tourShowPast?'primary':'ghost'}" onclick="toggleFullCalendar()">${tourShowPast?'Saison 2026 complète':'Voir toute la saison'}</button><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
@@ -256,6 +256,7 @@ function tournamentCard(t){
  return `<div class="card click" onclick="${target}"><div class="row between"><div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span>${t.venue?' · '+esc(t.venue):''}</div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${action}</div></div></div></div>`
 }
 window.tourFilter=async(k,v)=>{tourFilters[k]=v;if(k==='circuit'&&v==='Junior'&&tourFilters.source==='Tous')tourFilters.source='Officiel';tourOffset=0;await loadTournaments();render()}
+window.toggleFullCalendar=async()=>{tourShowPast=!tourShowPast;tourOffset=0;await loadTournaments();render()}
 window.tourPage=async d=>{tourOffset=Math.max(0,tourOffset+d*60);await loadTournaments();render();window.scrollTo(0,0)}
 function datesOverlap(aStart,aEnd,bStart,bEnd){
  const a1=new Date((aStart||aEnd)+'T12:00:00'),a2=new Date((aEnd||aStart)+'T12:00:00'),b1=new Date((bStart||bEnd)+'T12:00:00'),b2=new Date((bEnd||bStart)+'T12:00:00');

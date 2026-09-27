@@ -25,20 +25,27 @@ jobs:
           node --check court-boss/tactics.js
           node --check court-boss/modules.js
 
-      - name: Publish current branch to Supabase Storage
-        run: |
-          curl --fail --silent --show-error https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-publish -o /tmp/publish.json
-          node -e "const x=require('/tmp/publish.json'); if(!x.ok) throw new Error(JSON.stringify(x)); console.log(x.results.map(f=>f.name+':'+f.bytes).join(' | '))"
-
-      - name: Check published HTML and assets
+      - name: Wait for Render static deploy
         env:
-          BASE: https://qrsvliliezbiedmaewml.supabase.co/storage/v1/object/public/court-boss-web
+          BASE: https://court-boss-tennis-manager.onrender.com
         run: |
-          curl --fail --silent --show-error "$BASE/index.html" -o /tmp/index.html
-          grep -q 'Court Boss' /tmp/index.html
-          grep -q 'app.js?v=20260927-6' /tmp/index.html
-          grep -q 'tactics.js?v=20260927-6' /tmp/index.html
-          grep -q 'modules.js?v=20260927-6' /tmp/index.html
+          for i in {1..24}; do
+            if curl --fail --silent --show-error "$BASE/index.html" -o /tmp/index.html; then
+              if grep -q 'app.js?v=20260927-6' /tmp/index.html && grep -q 'tactics.js?v=20260927-6' /tmp/index.html; then
+                echo "Render build is current"
+                exit 0
+              fi
+            fi
+            echo "Waiting for Render deploy ($i/24)"
+            sleep 5
+          done
+          echo "Render did not publish the expected build in time"
+          exit 1
+
+      - name: Check published assets
+        env:
+          BASE: https://court-boss-tennis-manager.onrender.com
+        run: |
           curl --fail --silent --show-error "$BASE/app.js?v=20260927-6" -o /tmp/app.js
           curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-6" -o /tmp/tactics.js
           curl --fail --silent --show-error "$BASE/modules.js?v=20260927-6" -o /tmp/modules.js
@@ -57,7 +64,7 @@ jobs:
 
       - name: Mobile browser smoke test
         env:
-          BASE: https://qrsvliliezbiedmaewml.supabase.co/storage/v1/object/public/court-boss-web
+          BASE: https://court-boss-tennis-manager.onrender.com
         run: |
           cd /tmp
           npm init -y >/dev/null 2>&1
@@ -77,9 +84,10 @@ jobs:
             page.on('console',m=>{ if(m.type()==='error') pageErrors.push('console: '+m.text()); });
             page.on('requestfailed',r=>pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||'')));
             page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
-            await page.goto(process.env.BASE+'/index.html',{waitUntil:'networkidle',timeout:60000});
+
+            await page.goto(process.env.BASE+'/',{waitUntil:'networkidle',timeout:60000});
             try{
-              await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:12000});
+              await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:20000});
             }catch(e){
               console.error('BODY:',(await page.locator('body').innerText()).slice(0,5000));
               console.error('ERRORS:',pageErrors);

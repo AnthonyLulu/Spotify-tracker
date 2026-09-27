@@ -8,7 +8,7 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});if(!r.ok)throw new Error(await r.text());return r.json()};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',month:'',q:''},management=null;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',tourOffset=0,tourRows=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',month:'',q:''},management=null,worldStats=null,simulating=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
@@ -17,8 +17,8 @@ function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag
 function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='itf'?p.itf_ranking:p.ranking}
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
 function header(){
- const c=local.career||boot?.career||{};
- return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||c.career_date)}</span><div class="grow"></div><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" onclick="simulateWeek()">+ 1 semaine</button></header>`
+ const cr=local.career||boot?.career||{};
+ return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||cr.career_date)}</span><div class="grow"></div><button class="ghost icon-btn" onclick="openGlobalSearch()" aria-label="Recherche">⌕</button><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" ${simulating?'disabled':''} onclick="simulateWeek()">${simulating?'Simulation…':'+ 1 semaine'}</button></header>`
 }
 function navBar(){
  const x=[['home','Accueil'],['rankings','Classements'],['calendar','Calendrier'],['academy','Académie'],['more','Plus']];
@@ -35,7 +35,8 @@ async function init(){
    if(!local.career)local.career={...(boot.career||{})};
    if(!local.date)local.date=boot.career?.career_date||'2026-09-27';
    localStorage.setItem('cbLocal',JSON.stringify(local));
-   await Promise.all([loadManagement(),loadRankings(),loadTournaments()]);
+   const [_,__,___,world]=await Promise.all([loadManagement(),loadRankings(),loadTournaments(),get('/api/world').catch(()=>null)]);
+   worldStats=world;
    render();
  }catch(e){shell(`<div class="card"><h2>Connexion au monde impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="location.reload()">Réessayer</button></div>`)}
 }
@@ -58,7 +59,7 @@ function career(){
 function home(){
  const c=career(),next=boot.upcoming?.[0],academy=boot.academy||{},fin=boot.finance||{};
  const msgs=[...(local.feed||[]),...(boot.news||[]).map(x=>x.body)].slice(0,6);
- return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">${fmt(boot?.topPlayers?.length?2000:0)} joueurs classés</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP jusqu’au #2000</span></div>
  <section class="hero">
   <div class="card click" onclick="nav('myplayer')">
    <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double #${fmt(c.doubles_rank)} · ${fmt(c.points)} pts</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
@@ -69,7 +70,7 @@ function home(){
   <div class="card click" onclick="nav('finance')"><div class="eyebrow">Académie</div><h2>${esc(academy.name||'Court Boss Academy')}</h2><div class="statline"><div class="statbox"><span class="muted mini">Budget</span><b>${euro(c.budget??academy.budget??14800)}</b></div><div class="statbox"><span class="muted mini">Board</span><b>${academy.board_confidence||76}%</b></div></div><p class="muted mini" style="margin-top:10px">${esc(academy.philosophy||'Développement complet du joueur')}</p></div>
  </section>
  <div class="quick-grid" style="margin-top:12px">
-  ${[['calendar','Calendrier','Inscrire le joueur'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Chercher des talents'],['match','Match Center','Analyser les matchs'],['tactics','Tactique','Plan de match'],['contracts','Contrats','Staff & joueurs'],['medical','Médical','Fatigue & blessures'],['davis','Fédération','Coupe Davis'],['world','Monde','2 000 joueurs']].map(x=>`<div class="quick" onclick="nav('${x[0]}')"><span class="muted mini">${x[1]}</span><strong>${x[2]}</strong></div>`).join('')}
+  ${[['calendar','Calendrier','Inscrire le joueur'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Chercher des talents'],['match','Match Center','Analyser les matchs'],['tactics','Tactique','Plan de match'],['contracts','Contrats','Staff & joueurs'],['medical','Médical','Fatigue & blessures'],['davis','Fédération','Coupe Davis'],['world','Monde','Classement jusqu’au #2000']].map(x=>`<div class="quick" onclick="nav('${x[0]}')"><span class="muted mini">${x[1]}</span><strong>${x[2]}</strong></div>`).join('')}
  </div>
  <section class="grid g2" style="margin-top:12px">
   <div class="card click" onclick="openTournament(${next?.id||0})"><div class="eyebrow">Prochain événement</div>${next?`<h2>${esc(next.name)}</h2><div class="row"><span class="badge ${circuitClass(next.circuit)}">${esc(next.category||next.level)}</span><span class="badge ${surfaceClass(next.surface)}">${esc(next.surface)}</span></div><p class="muted">${esc(next.city||'')} · ${df(next.start_date)}</p>`:'<div class="empty">Aucun événement</div>'}</div>
@@ -84,15 +85,21 @@ function rankings(){
  const kinds=[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
  if(rankKind==='ncaa')return ncaaRanking();
  const start=rankOffset+1,end=Math.min(rankOffset+rankRows.length,rankCount);
- return `<div class="section-head"><div><div class="eyebrow">Classements mondiaux</div><h1>Classements</h1><div class="muted">Challenger = catégorie de tournoi, jamais un classement.</div></div><span class="pill">${rankKind==='singles'?'Top 2000':'Circuit mondial'}</span></div>
+ return `<div class="section-head"><div><div class="eyebrow">Classements mondiaux</div><h1>Classements</h1><div class="muted">Challenger est une catégorie de tournoi. Les joueurs Challenger restent dans le classement ATP.</div></div><span class="pill">${rankKind==='singles'?'ATP jusqu’au #2000':'Circuit mondial'}</span></div>
  <div class="tabs">${kinds.map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
  <div class="card">
-  <input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)">
+  <div class="rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="Rechercher un joueur…" onkeydown="if(event.key==='Enter')searchRanking(this.value)"><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="2000" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div></div>
+  ${rankKind==='singles'?'<div class="notice mini" style="margin-top:10px">Snapshot ATP 21/09/2026 pour la liste courante. Les points hors profils vérifiés servent aussi de valeur de jeu et peuvent évoluer dès que la carrière est simulée.</div>':''}
   <div class="table-wrap" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Pays</th><th>Points</th><th>Âge</th><th>Niveau</th><th>Potentiel</th></tr></thead><tbody>
-  ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b></td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td>${rankKind==='singles'?fmt(p.points):'—'}</td><td>${p.age||'—'}</td><td>${p.current_ability}/100</td><td>${p.potential}/100</td></tr>`).join('')}
+  ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">#${fmt(rankValue(p,rankKind))}</td><td><b>${esc(p.name)}</b><div class="muted micro">${rankKind==='singles'?esc(p.ranking_source||'Court Boss'):""}</div></td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td>${rankKind==='singles'?fmt(p.points):'—'}</td><td>${p.age||'—'}</td><td>${p.current_ability}/100</td><td>${p.potential}/100</td></tr>`).join('')}
   </tbody></table></div>
-  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button><input id="rankJump" class="input" style="max-width:110px;padding:7px 9px" type="number" min="1" max="2000" placeholder="Rang"><button onclick="jumpRank()">Aller</button></div>
+  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(start)}–${fmt(end)} / ${fmt(rankCount)} · classement affiché jusqu’au #2000</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
  </div>`
+}
+window.jumpRanking=async()=>{
+ const target=clamp(Number(document.getElementById('rankJump')?.value||1),1,2000);
+ rankQuery='';rankOffset=Math.max(0,Math.min(Math.max(0,rankCount-100),target-1));
+ await loadRankings();render();
 }
 function ncaaRanking(){
  const rows=management?.college||[];
@@ -142,35 +149,13 @@ function training(){
 function trainingLoad(){return local.training.reduce((a,s)=>a+(['Endurance','Match play','Déplacements'].includes(s)?3:['Service','Retour','Coup droit','Revers','Double'].includes(s)?2:s==='Récupération'?0:-1),0)}
 window.setTraining=(i,v)=>{local.training[i]=v;persist();render()}
 function scouting(){
- return `<div class="section-head"><div><div class="eyebrow">Recrutement</div><h1>Scouting</h1><div class="muted">Affectations régionales, confiance d'observation et profils à suivre.</div></div><button class="primary" onclick="nav('players')">Chercher joueur</button></div>
+ const shortlist=management?.shortlist||[];
+ return `<div class="section-head"><div><div class="eyebrow">Recrutement</div><h1>Scouting</h1><div class="muted">Affectations régionales, confiance d'observation, shortlist et profils à suivre.</div></div><button class="primary" onclick="nav('players')">Chercher joueur</button></div>
  <div class="grid g3">${(boot.scouting||[]).map(s=>`<div class="card"><div class="eyebrow">${esc(s.region)}</div><h2>${esc(s.focus)}</h2><div class="muted">${esc(s.scout_name)}</div><div class="bar" style="margin-top:12px"><i style="width:${Math.min(100,s.progress+(local.scoutingBoost||0))}%"></i></div><div class="mini muted" style="margin-top:5px">${Math.min(100,s.progress+(local.scoutingBoost||0))}% du rapport</div></div>`).join('')}</div>
- <div class="card" style="margin-top:12px"><h2>Prospects de l'académie</h2><div class="table-wrap"><table class="table"><thead><tr><th>Joueur</th><th>Âge</th><th>Pays</th><th>CA</th><th>PA</th><th>Style</th><th>Coût</th></tr></thead><tbody>${(boot.youth||[]).map(y=>`<tr><td><b>${esc(y.name)}</b></td><td>${y.age}</td><td>${flags[y.country]||'🏳️'} ${y.country}</td><td>${y.current_ability}</td><td class="a-good"><b>${y.potential}</b></td><td>${esc(y.style||'')}</td><td>${euro(y.scholarship_cost)}</td></tr>`).join('')}</tbody></table></div></div>`
-}
-function tacticsPage(){
- const t=local.tactics;
- return `<div class="section-head"><div><div class="eyebrow">Plan de match</div><h1>Tactique</h1><div class="muted">Ajuste le style selon l'adversaire et la surface.</div></div></div>
- <div class="grid g2">
-  <div class="card"><h2>Intentions</h2>
-   <div class="attr-row"><div class="row between"><span>Agressivité</span><b>${t.aggression}</b></div><input type="range" min="0" max="100" value="${t.aggression}" oninput="setTactic('aggression',this.value)"></div>
-   <div class="attr-row"><div class="row between"><span>Montées au filet</span><b>${t.net}</b></div><input type="range" min="0" max="100" value="${t.net}" oninput="setTactic('net',this.value)"></div>
-   <div class="attr-row"><div class="row between"><span>Position retour</span><b>${t.returnPos}</b></div><input type="range" min="0" max="100" value="${t.returnPos}" oninput="setTactic('returnPos',this.value)"></div>
-  </div>
-  <div class="card"><h2>Consignes</h2>
-   <label class="muted mini">Cible au service</label><select class="select" onchange="setTactic('serveTarget',this.value)">${['Varié','Extérieur','T','Corps'].map(x=>`<option ${x===t.serveTarget?'selected':''}>${x}</option>`).join('')}</select>
-   <label class="muted mini" style="display:block;margin-top:10px">Construction des échanges</label><select class="select" onchange="setTactic('rally',this.value)">${['Équilibré','Coup droit','Revers adverse','Court croisé','Long de ligne','Variation'].map(x=>`<option ${x===t.rally?'selected':''}>${x}</option>`).join('')}</select>
-   <div class="info" style="margin-top:12px">Ces choix influencent la simulation des matchs d'exhibition et serviront ensuite de base au coaching point par point.</div>
-  </div>
- </div>`}
-window.setTactic=(k,v)=>{local.tactics[k]=['aggression','net','returnPos'].includes(k)?Number(v):v;persist();if(!['aggression','net','returnPos'].includes(k))render()}
-function fantasyPage(){
- const f=local.fantasy;
- return `<div class="section-head"><div><div class="eyebrow">Mode création</div><h1>Fantasy Court</h1><div class="muted">Crée un tournoi personnalisé avec les joueurs de la base.</div></div></div>
- <div class="grid g2"><div class="card"><h2>Nouveau tournoi</h2><input id="fantasyName" class="input" placeholder="Nom du tournoi" value="${esc(f?.name||'Court Boss Masters')}"><select id="fantasySurface" class="select" style="margin-top:8px"><option>Dur</option><option>Terre</option><option>Gazon</option></select><select id="fantasySize" class="select" style="margin-top:8px"><option value="8">8 joueurs</option><option value="16">16 joueurs</option><option value="32">32 joueurs</option></select><button class="primary" style="margin-top:10px" onclick="createFantasy()">Créer / simuler</button></div>
- <div class="card"><h2>Dernier résultat</h2>${f?`<div class="big" style="font-size:22px">${esc(f.name)}</div><p class="muted">${esc(f.surface)} · ${f.size} joueurs</p><div class="notice">Champion : <b>${esc(f.champion)}</b></div>`:'<div class="empty">Aucun tournoi créé.</div>'}</div></div>`}
-window.createFantasy=()=>{
- const n=document.getElementById('fantasyName').value.trim()||'Court Boss Masters',surf=document.getElementById('fantasySurface').value,size=Number(document.getElementById('fantasySize').value);
- const pool=(boot.topPlayers||[]).slice(0,size);const weighted=pool.map((p,i)=>({p,score:(p.current_ability||70)+(p.form||70)/10+Math.random()*12-i*.15})).sort((a,b)=>b.score-a.score);
- local.fantasy={name:n,surface:surf,size,champion:weighted[0]?.p?.name||'Anthony'};local.feed.unshift(`Fantasy Court : ${n} remporté par ${local.fantasy.champion}.`);persist();render()
+ <div class="grid g2" style="margin-top:12px">
+  <div class="card"><h2>Shortlist</h2>${shortlist.length?shortlist.map(s=>`<div class="list-item row between click" onclick="openPlayer(${s.players?.id})"><div><b>${flags[s.players?.country]||'🏳️'} ${esc(s.players?.name||'Joueur')}</b><div class="muted mini">ATP #${s.players?.ranking||'—'} · PA ${s.players?.potential||'—'}</div></div><span class="badge">${esc(s.priority||'Normal')}</span></div>`).join(''):'<div class="empty">Aucun joueur suivi. Ajoute-en depuis un profil.</div>'}</div>
+  <div class="card"><h2>Prospects académie</h2><div class="table-wrap"><table class="table"><thead><tr><th>Joueur</th><th>Âge</th><th>PA</th></tr></thead><tbody>${(boot.youth||[]).map(y=>`<tr class="click" onclick="openYouth(${y.id})"><td><b>${esc(y.name)}</b></td><td>${y.age}</td><td class="a-good"><b>${y.potential}</b></td></tr>`).join('')}</tbody></table></div></div>
+ </div>`
 }
 function more(){
  const items=[['players','Base joueurs','2 000 joueurs réels classés'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['myplayer','Mon joueur','Identité, style et carrière'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['inbox','Boîte de réception','Décisions et alertes']];
@@ -229,7 +214,12 @@ function davisPage(){
  <div class="card"><h2>Sélection France</h2>${sq.map(s=>{const p=s.players;if(!p)return'';const role=local.davisRoles[p.id]||s.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}</div></div>`
 }
 function boardPage(){const a=boot.academy||{};return `<div class="section-head"><div><div class="eyebrow">Direction</div><h1>Board</h1><div class="muted">Confiance : ${a.board_confidence||76}%</div></div></div><div class="stack">${(boot.board||[]).map(o=>`<div class="card"><div class="row between"><div><h2>${esc(o.objective)}</h2><div class="muted">${esc(o.target_value||'')} · échéance ${df(o.deadline)}</div></div><b>${o.progress}%</b></div><div class="bar"><i style="width:${o.progress}%"></i></div></div>`).join('')}</div>`}
-function worldPage(){return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">La base va jusqu'au rang ATP 2000. Les catégories de tournois sont séparées des classements.</div></div></div><div class="grid g3"><div class="card click" onclick="nav('rankings')"><div class="big">2 000</div><div class="muted">joueurs réels classés</div></div><div class="card click" onclick="nav('calendar')"><div class="big">${fmt(tourCount)}</div><div class="muted">événements en base</div></div><div class="card"><div class="big">6</div><div class="muted">familles de circuits</div></div></div><div class="card" style="margin-top:12px"><h2>Circuits</h2><div class="row" style="flex-wrap:wrap">${['ATP','Challenger','ITF','NCAA','Junior','Federation'].map(c=>`<span class="badge ${circuitClass(c)}">${c}</span>`).join('')}</div></div>`}
+function worldPage(){
+ const wc=worldStats?.players??rankCount;
+ return `<div class="section-head"><div><div class="eyebrow">Écosystème</div><h1>Monde du tennis</h1><div class="muted">Classement ATP unifié, circuits séparés et simulation persistante.</div></div></div>
+ <div class="grid g3"><div class="card click" onclick="nav('rankings')"><div class="big">#2000</div><div class="muted">profondeur du classement ATP</div></div><div class="card click" onclick="nav('calendar')"><div class="big">${fmt(worldStats?.tournaments??tourCount)}</div><div class="muted">événements en base</div></div><div class="card"><div class="big">${fmt(wc)}</div><div class="muted">profils du snapshot courant / fallback</div></div></div>
+ <div class="card" style="margin-top:12px"><h2>Circuits</h2><p class="muted mini">Le classement ATP est unique. Challenger, ATP Tour, ITF, NCAA, Junior et Coupe Davis décrivent les compétitions auxquelles les joueurs peuvent participer.</p><div class="row" style="flex-wrap:wrap">${['ATP','Challenger','ITF','NCAA','Junior','Federation'].map(x=>`<span class="badge ${circuitClass(x)}">${x}</span>`).join('')}</div></div>`
+}
 function myPlayerPage(){
  const c=career();
  return `<div class="section-head"><div><div class="eyebrow">Carrière</div><h1>Mon joueur</h1><div class="muted">Personnalise ton joueur géré et suis sa trajectoire.</div></div></div>
@@ -274,39 +264,64 @@ window.openPlayer=async id=>{
 }
 window.playerSection=s=>{const map={attrs:'attrsTpl',development:'developmentTpl',matches:'matchesTpl',career:'careerTpl',commercial:'commercialTpl',history:'historyTpl'};const t=document.getElementById(map[s]);if(t)document.getElementById('playerBody').innerHTML=t.innerHTML}
 window.closeOverlay=()=>overlay.innerHTML='';
-window.toggleShortlist=id=>{local.shortlist=local.shortlist||[];local.shortlist=local.shortlist.includes(id)?local.shortlist.filter(x=>x!==id):[...local.shortlist,id];persist();closeOverlay();render()}
-window.openTournament=id=>{
- const t=[...(tourRows||[]),...(boot.upcoming||[])].find(x=>x.id===id);if(!t)return;
- const c=career(),elig=t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
- overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="grid g2" style="margin-top:12px"><div class="card"><h2>Entrée</h2><div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div><button class="primary" style="margin-top:10px" onclick="toggleEntry(${t.id});closeOverlay()">${(local.entries||[]).includes(t.id)?'Retirer l’inscription':'S’inscrire'}</button></div><div class="card"><h2>Informations</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(t.surface)}">${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Prize money</span><b>${euro(t.prize_money)}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Vérifiée':'Simulation'}</b></div></div></div></div></div>`
+window.toggleShortlist=async id=>{
+ local.shortlist=local.shortlist||[];
+ const active=!local.shortlist.includes(id);
+ try{await get('/api/shortlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({player_id:id,active,priority:'Normal'})})}catch(e){console.warn(e)}
+ local.shortlist=active?[...new Set([...local.shortlist,id])]:local.shortlist.filter(x=>x!==id);
+ persist();await loadManagement();closeOverlay();render();
 }
-window.openInjury=id=>{const i=(boot.injuries||[]).find(x=>x.id===id);if(!i)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier médical</div><h1>${esc(i.injury_type)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Sévérité</span><b>${esc(i.severity)}</b></div><div class="list-item row between"><span>Retour estimé</span><b>${df(i.expected_return)}</b></div><div class="list-item row between"><span>Risque aggravation</span><b>${i.aggravation_risk}%</b></div><div class="list-item"><span class="muted mini">Traitement</span><p>${esc(i.treatment||'Repos et suivi médical')}</p></div></div></div></div>`}
-window.setRecovery=mode=>{if(mode==='mix')local.training=['Récupération','Repos','Récupération','Repos','Récupération','Repos','Repos'];else local.training=local.training.map(()=>mode);persist();render()}
-window.applyRecovery=()=>setRecovery('mix')
-window.setTactic=(k,v)=>{local.tactics=local.tactics||{};local.tactics[k]=['aggression','risk','net'].includes(k)?Number(v):v;persist();render()}
-window.simulatePracticeMatch=async()=>{const c=career();let opp={name:'Adversaire ATP',current_ability:55,form:70,fatigue:20};try{const d=await get('/api/rankings?kind=singles&offset='+Math.max(0,(c.singles_rank||742)-3)+'&limit=5');opp=d.rows.find(x=>x.name!=='Anthony')||opp}catch{}const strength=(c.current_ability||56)+(c.form||72)*.18-(c.fatigue||18)*.12+(local.tactics?.aggression||58)*.03;const os=(opp.current_ability||55)+(opp.form||70)*.18-(opp.fatigue||20)*.12;const win=strength>=os+(Math.random()*12-6);const score=win?(Math.random()>.5?'6-4 6-3':'7-6 3-6 6-2'):(Math.random()>.5?'4-6 3-6':'6-4 4-6 3-6');const md={first_serve:58+Math.floor(Math.random()*16)+'%',winners:18+Math.floor(Math.random()*20),unforced_errors:12+Math.floor(Math.random()*18),avg_rally:3+Math.floor(Math.random()*6)};local.practiceMatches=local.practiceMatches||[];local.practiceMatches.unshift({tournament_name:'Match entraînement',round:'Simulation',player_a:'Anthony',player_b:opp.name,winner:win?'Anthony':opp.name,score,surface:'Dur',match_date:local.date,match_data:md});c.fatigue=clamp((c.fatigue||18)+10,0,100);c.form=clamp((c.form||72)+(win?2:-1),0,100);local.career=c;persist();render()}
-window.openMatch=idx=>{const all=[...(local.practiceMatches||[]),...(boot.matches||[])],m=all[idx];if(!m)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(m.tournament_name)}</div><h1>${esc(m.player_a)} vs ${esc(m.player_b)}</h1><div class="muted">${esc(m.score||'—')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="grid g2" style="margin-top:12px">${Object.entries(m.match_data||{}).map(([k,v])=>`<div class="card"><div class="muted mini">${esc(k.replaceAll('_',' '))}</div><div class="big">${v}</div></div>`).join('')}</div></div></div>`}
-window.pairScore=(p,k)=>{const seed=(Number(p.id||1)*17+(k==='chem'?7:k==='comp'?13:19))%19;return clamp(68+seed,55,94)}
-window.choosePartner=id=>{local.partnerId=id;persist();render()}
-window.setDavisRole=(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();render()}
-window.editCareer=(k,v)=>{const c=career();c[k]=v;local.career=c;persist();render()}
-window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invitational');if(!name)return;const surface=prompt('Surface ? Dur / Terre / Gazon','Dur')||'Dur';const draw=Number(prompt('Taille du tableau ?','32'))||32;local.fantasy=local.fantasy||[];local.fantasy.push({name,surface,draw,category:'Fantasy'});persist();render()}
-window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
-window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
-window.facilityLevel=f=>local.facilityLevels?.[f.id]??f.level
-window.upgradeFacility=(id,name,base)=>{local.facilityLevels=local.facilityLevels||{};const lvl=local.facilityLevels[id]??base;if(lvl>=5)return alert('Installation déjà au niveau maximum');const cost=lvl*3500;const c=career();if((c.budget||0)<cost)return alert('Budget insuffisant');c.budget-=cost;local.career=c;local.facilityLevels[id]=lvl+1;persist();render()}
-window.openYouth=id=>{const y=(boot.youth||[]).find(x=>x.id===id);if(!y)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Prospect académie</div><h1>${flags[y.country]||'🏳️'} ${esc(y.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="grid g2" style="margin-top:12px"><div class="card"><div class="big">PA ${y.potential}</div><div class="muted">Potentiel estimé</div></div><div class="card"><div class="big">CA ${y.current_ability}</div><div class="muted">Niveau actuel</div></div></div><div class="card" style="margin-top:12px"><div class="list-item row between"><span>Âge</span><b>${y.age}</b></div><div class="list-item row between"><span>Style</span><b>${esc(y.style||'')}</b></div><div class="list-item row between"><span>Coût académie</span><b>${euro(y.scholarship_cost)}</b></div><div class="list-item row between"><span>Statut</span><b>${esc(y.status||'Prospect')}</b></div></div></div></div>`}
-window.openStaff=id=>{const s=(boot.staff||[]).find(x=>x.id===id);if(!s)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Staff</div><h1>${esc(s.role)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau</span><b>${s.skill}/20</b></div><div class="bar"><i style="width:${s.skill*5}%"></i></div><div class="list-item row between"><span>Coût hebdomadaire</span><b>${euro(s.weekly_cost)}</b></div></div></div></div>`}
-window.openContract=id=>{const x=(management?.contracts||[]).find(c=>c.id===id);if(!x)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Contrat</div><h1>${esc(x.subject_name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Rôle</span><b>${esc(x.role||x.subject_type)}</b></div><div class="list-item row between"><span>Salaire</span><b>${euro(x.weekly_salary)}/sem.</b></div><div class="list-item row between"><span>Échéance</span><b>${df(x.end_date)}</b></div></div></div></div>`}
-window.simulateWeek=()=>{
- const c=career(),load=trainingLoad();
- c.fatigue=clamp((c.fatigue||18)+Math.max(0,load-5)-Math.floor(Math.random()*6),0,100);
- c.fitness=clamp((c.fitness||91)+(load<=10?1:-3),40,100);
- c.form=clamp((c.form||72)+Math.floor(Math.random()*7)-2,35,100);
- c.morale=clamp((c.morale||78)+Math.floor(Math.random()*5)-1,35,100);
- const gain=Math.random()<.62; if(gain){c.singles_rank=Math.max(1,c.singles_rank-(1+Math.floor(Math.random()*12)));c.points=(c.points||34)+4+Math.floor(Math.random()*17);c.budget=(c.budget||14800)+250+Math.floor(Math.random()*900)}else c.singles_rank+=Math.floor(Math.random()*5);
- c.budget=(c.budget||14800)-920;
- if(load>13&&Math.random()>.72){c.injury_status='Gêne musculaire';c.fitness=clamp(c.fitness-9,0,100);local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}else if(c.injury_status&&c.injury_status!=='Fit'&&Math.random()>.45)c.injury_status='Fit';
- const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);local.date=d.toISOString().slice(0,10);local.week=(local.week||1)+1;local.career=c;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);local.feed=local.feed||[];local.feed.unshift(`Semaine simulée : Anthony est maintenant ATP #${c.singles_rank} avec ${c.points} points.`);local.feed=local.feed.slice(0,8);persist();render();
+window.openTournament=async id=>{
+ const fallback=[...(tourRows||[]),...(boot.upcoming||[])].find(x=>x.id===id);if(!fallback)return;
+ overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
+ try{
+  const d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;
+  const cr=career(),elig=t.direct_cut==null?'Règles spéciales':cr.singles_rank<=t.direct_cut?'Tableau direct':cr.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
+  const joined=(local.entries||[]).includes(t.id);
+  const pairs=(d.main||[]).slice(0,Math.min(32,t.draw_size||32));
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+   <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button><button onclick="tourSection('draw')">Tableau</button><button onclick="tourSection('qual')">Qualifs</button></div>
+   <div id="tourBody"><div class="grid g2"><div class="card"><h2>Entrée</h2><div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div><button class="${joined?'danger-btn':'primary'}" style="margin-top:10px" onclick="toggleEntry(${t.id});closeOverlay()">${joined?'Retirer l’inscription':'S’inscrire'}</button></div><div class="card"><h2>Informations</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(t.surface)}">${esc(t.surface)}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Prize money</span><b>${euro(t.prize_money)}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Vérifiée':'Simulation'}</b></div></div></div></div>
+   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>Entrée</h2><div class="list-item row between"><span>Cut tableau</span><b>${t.direct_cut?'#'+t.direct_cut:'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${t.qual_cut?'#'+t.qual_cut:'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div></div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau</span><b>${t.draw_size||32}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(t.surface)}</b></div></div></div></template>
+   <template id="tourDrawTpl"><div class="card"><h2>Liste d’acceptation / tableau projeté</h2><p class="muted mini">Avant le tirage officiel, Court Boss affiche une projection à partir du classement et du cut.</p><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Pts</th><th>Forme</th></tr></thead><tbody>${pairs.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${fmt(p.points)}</td><td>${p.form}</td></tr>`).join('')}</tbody></table></div></div></template>
+   <template id="tourQualTpl"><div class="card"><h2>Qualifications</h2><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Condition</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.fitness}% / fatigue ${p.fatigue}%</td></tr>`).join('')}</tbody></table></div></div></template>
+  </div></div>`;
+ }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Erreur tournoi</h2><p>${esc(e.message)}</p></div></div>`}
 }
+window.tourSection=s=>{const m={overview:'tourOverviewTpl',draw:'tourDrawTpl',qual:'tourQualTpl'},t=document.getElementById(m[s]);if(t)document.getElementById('tourBody').innerHTML=t.innerHTML}
+window.simulateWeek=async()=>{
+ if(simulating)return;
+ simulating=true;render();
+ try{
+  const cr=career(),load=trainingLoad();
+  cr.fatigue=clamp((cr.fatigue||18)+Math.max(0,load-5)-Math.floor(Math.random()*6),0,100);
+  cr.fitness=clamp((cr.fitness||91)+(load<=10?1:-3),40,100);
+  cr.form=clamp((cr.form||72)+Math.floor(Math.random()*7)-2,35,100);
+  cr.morale=clamp((cr.morale||78)+Math.floor(Math.random()*5)-1,35,100);
+  const gain=Math.random()<.62;
+  if(gain){cr.singles_rank=Math.max(1,cr.singles_rank-(1+Math.floor(Math.random()*12)));cr.points=(cr.points||34)+4+Math.floor(Math.random()*17);cr.budget=(cr.budget||14800)+250+Math.floor(Math.random()*900)}
+  else cr.singles_rank+=Math.floor(Math.random()*5);
+  cr.budget=(cr.budget||14800)-920;
+  if(load>13&&Math.random()>.72){cr.injury_status='Gêne musculaire';cr.fitness=clamp(cr.fitness-9,0,100);local.feed=local.feed||[];local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}
+  else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
+  const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
+  local.date=d.toISOString().slice(0,10);local.week=(local.week||1)+1;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
+  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:local.week,date:local.date})});
+  local.feed=local.feed||[];local.feed.unshift(`Semaine simulée : Anthony est ATP #${cr.singles_rank}. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
+  persist();
+  boot=await get('/api/bootstrap');
+  await Promise.all([loadRankings(),loadTournaments(),loadManagement()]);
+ }catch(e){alert('Simulation incomplète : '+e.message)}
+ finally{simulating=false;render()}
+}
+window.openGlobalSearch=()=>{
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Recherche globale</div><h1>Joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><input id="globalSearchInput" class="input" style="margin-top:12px" placeholder="Sinner, Fils, Djokovic…" oninput="runGlobalSearch(this.value)" autofocus><div id="globalSearchResults" class="stack" style="margin-top:12px"><div class="empty">Tape au moins 2 caractères.</div></div></div></div>`;
+ setTimeout(()=>document.getElementById('globalSearchInput')?.focus(),20);
+}
+window.runGlobalSearch=async q=>{
+ const box=document.getElementById('globalSearchResults');if(!box)return;
+ if(q.trim().length<2){box.innerHTML='<div class="empty">Tape au moins 2 caractères.</div>';return}
+ try{const d=await get('/api/rankings?kind=singles&offset=0&limit=30&q='+encodeURIComponent(q.trim()));box.innerHTML=d.rows.map(p=>`<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><div><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · ${fmt(p.points)} pts</div></div><span class="badge">Profil</span></div></div>`).join('')||'<div class="empty">Aucun joueur trouvé.</div>'}catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+}
+
 init();

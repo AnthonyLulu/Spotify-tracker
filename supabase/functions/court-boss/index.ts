@@ -252,8 +252,9 @@ Deno.serve(async(req:Request)=>{
     if(kind==="doubles") query=query.not("doubles_source","is",null);
     if(kind==="race") query=query.not("race_source","is",null);
     if(kind==="nextgen"){
-      const birthYear=2026-nextGenU;
-      query=query.not("nextgen_source","is",null).not("birth_date","is",null).gte("birth_date",birthYear+"-01-01");
+      const gd=new Date(gameDate+"T12:00:00Z");
+      const cutoff=new Date(gd);cutoff.setUTCFullYear(cutoff.getUTCFullYear()-(nextGenU+1));
+      query=query.not("nextgen_source","is",null).not("birth_date","is",null).gt("birth_date",cutoff.toISOString().slice(0,10));
     }
     if(kind==="junior"){
       query=query.not("junior_source","is",null).not("birth_date","is",null).gte("birth_date","2007-01-01");
@@ -282,7 +283,11 @@ Deno.serve(async(req:Request)=>{
     let query=db.from("players")
       .select("id,name,country,is_real,ranking,points,doubles_ranking,doubles_points,race_ranking,race_points,nextgen_ranking,nextgen_points,itf_ranking,junior_ranking,junior_points,age,birth_date,birth_date_source,height_cm,handedness,backhand,backhand_source,backhand_verified,current_ability,potential,form,fitness,morale,fatigue,style,scouting_confidence,ranking_current,data_source,circuits_2025,sackmann_id,wikidata_id,photo_url,ncaa_current,ncaa_school,ncaa_division,ncaa_rank",{count:"exact"})
       .gte("potential",potentialMin).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
-    if(ageMax<99) query=query.lte("age",ageMax);
+    if(ageMax<99){
+      const gd=new Date(gameDate+"T12:00:00Z");
+      const cutoff=new Date(gd);cutoff.setUTCFullYear(cutoff.getUTCFullYear()-(ageMax+1));
+      query=query.gt("birth_date",cutoff.toISOString().slice(0,10));
+    }
 
     if(q) query=query.ilike("name_norm",`%${normalizeName(q)}%`);
     if(country) query=query.eq("country",country);

@@ -68,10 +68,18 @@ jobs:
               hasTouch:true
             });
             const pageErrors=[];
-            page.on('pageerror',e=>pageErrors.push(e.message));
-            page.on('console',m=>{ if(m.type()==='error') pageErrors.push(m.text()); });
+            page.on('pageerror',e=>pageErrors.push('pageerror: '+e.message));
+            page.on('console',m=>{ if(m.type()==='error') pageErrors.push('console: '+m.text()); });
+            page.on('requestfailed',r=>pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||'')));
+            page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
             await page.goto(process.env.BASE+'/',{waitUntil:'networkidle',timeout:60000});
-            await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:30000});
+            try{
+              await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:12000});
+            }catch(e){
+              console.error('BODY:',(await page.locator('body').innerText()).slice(0,5000));
+              console.error('ERRORS:',pageErrors);
+              throw e;
+            }
 
             await page.getByRole('button',{name:'Classements'}).click();
             await page.getByRole('heading',{name:'Classements'}).waitFor();

@@ -379,12 +379,14 @@ async function syncRealJuniorBoys(){
   const settled=await Promise.allSettled(sources.map(fetchCoreTennisJuniorRows));
   const merged=new Map<string,any>();
   const sourceStats:any[]=[];
+  let snapshot="2026-09-21";
   for(let i=0;i<settled.length;i++){
     const r=settled[i];
     if(r.status==="rejected"){
       sourceStats.push({url:sources[i],ok:false,error:String((r.reason as any)?.message||r.reason)});
       continue;
     }
+    if(r.value[0]?.snapshot&&String(r.value[0].snapshot)>snapshot)snapshot=String(r.value[0].snapshot);
     sourceStats.push({url:sources[i],ok:true,rows:r.value.length,snapshot:r.value[0]?.snapshot||null});
     for(const p of r.value){
       const key=normalizeName(p.name)+"|"+p.country;
@@ -392,43 +394,18 @@ async function syncRealJuniorBoys(){
       if(!prev||p.ranking<prev.ranking)merged.set(key,p);
     }
   }
-  let inserted=0,updated=0,failed=0;
-  for(const p of merged.values()){
-    const norm=normalizeName(p.name);
-    const existing=await db.from("players")
-      .select("id,is_real,data_source")
-      .eq("country",p.country).eq("name_norm",norm)
-      .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-      .order("is_real",{ascending:false}).order("id",{ascending:true}).limit(1);
-    if(existing.error){failed++;continue;}
-    const sourceLabel="CoreTennis ITF Junior Boys · "+p.snapshot;
-    if((existing.data??[]).length){
-      const id=Number(existing.data![0].id);
-      const up=await db.from("players").update({
-        is_real:true,junior_ranking:p.ranking,junior_snapshot_date:p.snapshot,
-        junior_source:sourceLabel,data_snapshot:p.snapshot,career_status:"active"
-      }).eq("id",id);
-      if(up.error)failed++;else updated++;
-    }else{
-      const slugBase=norm.replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,45)||"junior";
-      const ins=await db.from("players").insert({
-        slug:"real-junior-"+p.country.toLowerCase()+"-"+slugBase+"-"+crypto.randomUUID().slice(0,8),
-        name:p.name,name_norm:norm,country:p.country,is_real:true,game_generated:false,
-        junior_ranking:p.ranking,junior_snapshot_date:p.snapshot,junior_source:sourceLabel,
-        data_source:"CoreTennis current ITF Junior Boys ranking import",
-        data_snapshot:p.snapshot,ranking_current:false,career_status:"active"
-      });
-      if(ins.error)failed++;else inserted++;
-    }
-  }
-  const trim=await db.rpc("trim_junior_world_pool",{p_target:2000});
+  const rows=[...merged.values()].map((p:any)=>({name:p.name,country:p.country,ranking:p.ranking}));
+  const sourceLabel="CoreTennis ITF Junior Boys · "+snapshot;
+  const bulk=await db.rpc("import_real_junior_rankings",{p_rows:rows,p_source:sourceLabel,p_snapshot:snapshot});
+  if(bulk.error)throw bulk.error;
   const totals=await db.from("players")
     .select("id,is_real,game_generated,age,junior_ranking,junior_source")
     .not("junior_ranking","is",null).not("junior_source","is",null).range(0,4999);
   const active=(totals.data??[]).filter(isCurrentJuniorProfile);
   return {
-    sources:sourceStats,discovered:merged.size,inserted,updated,failed,
-    trimmed:Number(trim.data||0),
+    sources:sourceStats,
+    discovered:merged.size,
+    import:bulk.data,
     activeJuniorProfiles:active.length,
     realJuniorProfiles:active.filter((x:any)=>x.is_real).length,
     generatedJuniorProfiles:active.filter((x:any)=>x.game_generated).length

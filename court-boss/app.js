@@ -551,6 +551,7 @@ window.openPlayer=async id=>{
   if(p.race_ranking!=null&&p.race_source)rankBits.push('Race #'+fmt(p.race_ranking)+(p.race_snapshot_date?' · '+df(p.race_snapshot_date):''));
   if(p.nextgen_ranking!=null&&p.nextgen_source)rankBits.push('Next Gen #'+fmt(p.nextgen_ranking)+(p.nextgen_snapshot_date?' · '+df(p.nextgen_snapshot_date):''));
   if(p.junior_ranking!=null&&p.junior_source)rankBits.push('Junior #'+fmt(p.junior_ranking)+(p.junior_snapshot_date?' · '+df(p.junior_snapshot_date):''));
+  if(p.ncaa_current||ncaa)rankBits.push('NCAA'+(ncaa?.ita_rank?' ITA #'+fmt(ncaa.ita_rank):'')+(ncaa?.school?' · '+ncaa.school:''));
   const isRetired=String(p.career_status||'active')==='retired';
   const rankSummary=isRetired?'Retraité · historique carrière':(rankBits.length?rankBits.join(' · '):'Non classé actuellement');
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier joueur ${isRetired?'· Légende':''}</div><h1>${flags[p.country]||'🏳️'} ${esc(p.name)} ${isRetired?'<span class="badge">Retraité</span>':''}</h1><div class="muted">${esc(rankSummary)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
@@ -787,7 +788,7 @@ window.simulateWeek=async()=>{
   const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
   const nextDate=d.toISOString().slice(0,10),nextWeek=(local.week||1)+1;
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
-  local.date=nextDate;local.week=nextWeek;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
+  local.date=sim.date||nextDate;local.week=sim.week||nextWeek;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
   if(sim.userDoublesRanking){cr.doubles_rank=sim.userDoublesRanking.rank;cr.doubles_points=sim.userDoublesRanking.points}
   if(sim.training?.current_ability)cr.current_ability=sim.training.current_ability;
@@ -799,9 +800,9 @@ window.simulateWeek=async()=>{
   local.feed=local.feed||[];if(sim.medical){local.feed.unshift(sim.medical.recovered?'Centre médical : retour à 100%, le joueur est déclaré apte.':`Centre médical : ${sim.medical.protocol}, risque ${sim.medical.risk_delta>=0?'+':''}${sim.medical.risk_delta}, retour gagné ${sim.medical.return_days_gained||0} jour(s).`)}if(sim.weeklyFinance)local.feed.unshift(`Finances semaine : sponsors +${euro(sim.weeklyFinance.sponsors||0)}, staff -${euro(sim.weeklyFinance.staff||0)}, joueurs -${euro(sim.weeklyFinance.players||0)}, médical -${euro(sim.weeklyFinance.medical||0)} · net ${sim.weeklyFinance.net>=0?'+':''}${euro(sim.weeklyFinance.net||0)}.`);if((sim.weeklyFinance?.expired_contracts||0)>0)local.feed.unshift(`${sim.weeklyFinance.expired_contracts} contrat(s) joueur arrivé(s) à échéance.`);if((sim.academyDevelopment?.ability_progressions||0)>0)local.feed.unshift(`Académie : ${sim.academyDevelopment.ability_progressions} jeune(s) ont progressé en niveau global, ${sim.academyDevelopment.attribute_improvements||0} attribut(s) amélioré(s).`);if((sim.injuries?.new_injuries||0)>0)local.feed.unshift(`${sim.injuries.new_injuries} nouvelle(s) blessure(s) dans le monde cette semaine.`);if((sim.forfeits?.forfeits||0)>0)local.feed.unshift(`${sim.forfeits.forfeits} place(s) libérée(s) par forfait sur les tournois à venir.`);local.feed.unshift(`Semaine simulée : ${cr.player_name||'Joueur'} est ATP #${cr.singles_rank} avec ${cr.points} pts. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
-  if(boot.career)local.career={...cr,...boot.career};
+  if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice()]);
- }catch(e){alert('Simulation incomplète : '+e.message)}
+ }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }
 window.openGlobalSearch=()=>{
@@ -811,7 +812,16 @@ window.openGlobalSearch=()=>{
 window.runGlobalSearch=async q=>{
  const box=document.getElementById('globalSearchResults');if(!box)return;
  if(q.trim().length<2){box.innerHTML='<div class="empty">Tape au moins 2 caractères.</div>';return}
- try{const d=await get('/api/rankings?kind=singles&offset=0&limit=30&q='+encodeURIComponent(q.trim()));box.innerHTML=d.rows.map(p=>`<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><div><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking} · ${fmt(p.points)} pts</div></div><span class="badge">Profil</span></div></div>`).join('')||'<div class="empty">Aucun joueur trouvé.</div>'}catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+ try{
+  const d=await get('/api/search-players?offset=0&limit=30&q='+encodeURIComponent(q.trim()));
+  box.innerHTML=d.rows.map(p=>{
+   const tags=[];
+   if(p.ranking)tags.push('ATP #'+fmt(p.ranking));
+   if(p.ncaa_current)tags.push('NCAA'+(p.ncaa_rank?' #'+fmt(p.ncaa_rank):'')+(p.ncaa_school?' · '+p.ncaa_school:''));
+   if(p.junior_ranking&&p.birth_date&&String(p.birth_date)>='2007-01-01')tags.push('Junior #'+fmt(p.junior_ranking));
+   return `<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><div><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${esc(tags.join(' · ')||'Joueur réel')}</div></div><span class="badge">Profil</span></div></div>`;
+  }).join('')||'<div class="empty">Aucun joueur trouvé.</div>'
+ }catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
 }
 
 init();

@@ -140,25 +140,74 @@ async function resolvePlayerFacts(player:any,gameDate:string){
       update.photo_updated_at=new Date().toISOString();update.photo_checked_at=new Date().toISOString();
     }
 
-    if(!player.backhand_verified&&wikiTitle){
+    if((!player.backhand_verified||!player.birthplace||!player.coaches||!player.turned_pro_year||!player.weight_kg||!player.bio_verified)&&wikiTitle){
       try{
         const wq=new URLSearchParams({action:"query",prop:"revisions",rvprop:"content",rvslots:"main",titles:wikiTitle,format:"json",formatversion:"2",origin:"*"});
         const wr=await fetch("https://en.wikipedia.org/w/api.php?"+wq.toString(),{headers:{"User-Agent":"CourtBoss/1.0"}});
         if(wr.ok){
           const wj:any=await wr.json();
           const wt=String(wj?.query?.pages?.[0]?.revisions?.[0]?.slots?.main?.content||"");
-          const pm=wt.match(/\|\s*plays\s*=\s*([^\n\r]+)/i);
-          const plays=String(pm?.[1]||"").replace(/\{\{[^}]+\}\}/g," ").replace(/\[\[|\]\]/g," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+          const cleanWiki=(v:any)=>String(v||"")
+            .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi," ")
+            .replace(/<ref[^>]*\/>/gi," ")
+            .replace(/\{\{(?:convert|height|nowrap)[^}]*\}\}/gi," ")
+            .replace(/\{\{[^}]+\}\}/g," ")
+            .replace(/\[\[(?:[^\]|]+\|)?([^\]]+)\]\]/g,"$1")
+            .replace(/<[^>]+>/g," ")
+            .replace(/'{2,}/g,"")
+            .replace(/&nbsp;/gi," ")
+            .replace(/\s+/g," ").trim();
+          const field=(...names:string[])=>{
+            for(const name of names){
+              const m=wt.match(new RegExp("\\\|\\\\s*"+name+"\\\\s*=\\\\s*([^\\\\n\\\\r]+)","i"));
+              if(m?.[1])return cleanWiki(m[1]);
+            }
+            return "";
+          };
+
+          const plays=field("plays");
           let bh="";
           if(/two[- ]handed\s+backhand|double[- ]handed\s+backhand|two[- ]handed/i.test(plays))bh="2 mains";
           else if(/one[- ]handed\s+backhand|single[- ]handed\s+backhand|one[- ]handed/i.test(plays))bh="1 main";
-          if(bh){
+          if(bh&&!player.backhand_verified){
             player.backhand=bh;player.backhand_verified=true;player.backhand_source="Wikipedia · "+wikiTitle;
             update.backhand=bh;update.backhand_verified=true;update.backhand_source=player.backhand_source;
           }
           if((!player.handedness||player.handedness==="Inconnue")&&plays){
             if(/left[- ]handed/i.test(plays)){player.handedness="Gaucher";update.handedness="Gaucher";}
             else if(/right[- ]handed/i.test(plays)){player.handedness="Droitier";update.handedness="Droitier";}
+          }
+
+          const birthplace=field("birth_place","birthplace");
+          if(!player.birthplace&&birthplace){
+            player.birthplace=birthplace.slice(0,180);update.birthplace=player.birthplace;
+          }
+
+          const coaches=field("coach","coaches");
+          if(!player.coaches&&coaches){
+            player.coaches=coaches.slice(0,220);update.coaches=player.coaches;
+          }
+
+          const turnedProRaw=field("turnedpro","turned_pro","turned pro");
+          const proYear=Number((turnedProRaw.match(/\b(19|20)\d{2}\b/)||[])[0]||0);
+          if(!player.turned_pro_year&&proYear>=1950&&proYear<=new Date().getUTCFullYear()+1){
+            player.turned_pro_year=proYear;update.turned_pro_year=proYear;
+          }
+
+          const weightRaw=field("weight");
+          if(!player.weight_kg&&weightRaw){
+            let kg=0;
+            const kgm=weightRaw.match(/(\d{2,3}(?:\.\d+)?)\s*kg/i);
+            const lbm=weightRaw.match(/(\d{2,3}(?:\.\d+)?)\s*(?:lb|lbs|pounds?)/i);
+            if(kgm)kg=Math.round(Number(kgm[1]));
+            else if(lbm)kg=Math.round(Number(lbm[1])*.45359237);
+            if(kg>=45&&kg<=150){player.weight_kg=kg;update.weight_kg=kg;}
+          }
+
+          if(birthplace||coaches||proYear||weightRaw){
+            player.bio_source="Wikipedia · "+wikiTitle;
+            player.bio_verified=true;
+            update.bio_source=player.bio_source;update.bio_verified=true;
           }
         }
       }catch{}
@@ -316,7 +365,7 @@ Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
 
-  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:9});
+  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:10});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -1935,14 +1984,52 @@ Deno.serve(async(req:Request)=>{
     if(action==="commit_college"){
       const offer=await db.from("college_offers").select("*,team:college_teams(*)").eq("id",id).maybeSingle();
       if(offer.error||!offer.data)return h({error:offer.error?.message||"Offer not found"},404);
+      const managedId=Number(career.data.managed_player_id||0);
+      if(!managedId)return h({error:"Joueur géré introuvable"},409);
       await db.from("college_offers").update({status:"declined"}).neq("id",id).eq("status","available");
-      const [o,s]=await Promise.all([
+      const today=String(career.data.career_date||new Date().toISOString().slice(0,10));
+      const season=String(new Date(today+"T12:00:00Z").getUTCFullYear());
+      const [o,stateUp,playerUp,ncaaUp]=await Promise.all([
         db.from("college_offers").update({status:"accepted"}).eq("id",id),
-        db.from("college_career_state").update({chosen_team_id:offer.data.team_id,scholarship_pct:offer.data.scholarship_pct,status:"committed",lineup_position:6,coach_trust:62}).eq("id","demo")
+        db.from("college_career_state").update({chosen_team_id:offer.data.team_id,scholarship_pct:offer.data.scholarship_pct,status:"committed",lineup_position:6,coach_trust:62}).eq("id","demo"),
+        db.from("players").update({
+          ncaa_current:true,ncaa_status:"Active",ncaa_last_school:String(offer.data.team.name||"Université"),
+          ncaa_verified:true,ncaa_school:String(offer.data.team.name||"Université"),ncaa_division:"NCAA Division I"
+        }).eq("id",managedId),
+        db.from("ncaa_career").upsert({
+          player_id:managedId,school:String(offer.data.team.name||"Université"),division:"NCAA Division I",
+          start_season:season,status:"Active",verified:true,source_label:"Court Boss save · engagement NCAA enregistré",
+          last_verified_at:new Date().toISOString()
+        },{onConflict:"player_id"})
       ]);
-      const err=o.error||s.error;if(err)return h({error:err.message},500);
+      const err=o.error||stateUp.error||playerUp.error||ncaaUp.error;if(err)return h({error:err.message},500);
       await db.from("inbox_items").insert({kind:"college",title:"Engagement NCAA",body:String(career.data.player_name||"Le joueur")+" s’engage avec "+offer.data.team.name+" ("+offer.data.scholarship_pct+"% de bourse).",action_route:"university",is_read:false});
-      return h({ok:true,team:offer.data.team,status:"committed"});
+      return h({ok:true,team:offer.data.team,status:"committed",ncaa_status:"Active"});
+    }
+
+    if(action==="turn_pro_college"){
+      const managedId=Number(career.data.managed_player_id||0);
+      if(!managedId)return h({error:"Joueur géré introuvable"},409);
+      const cs=await db.from("college_career_state").select("*,team:college_teams(*)").eq("id","demo").maybeSingle();
+      if(cs.error||!cs.data)return h({error:cs.error?.message||"Carrière NCAA introuvable"},404);
+      if(!["committed","active"].includes(String(cs.data.status||"")))return h({error:"Le joueur n’est pas actuellement engagé en NCAA."},409);
+      const today=String(career.data.career_date||new Date().toISOString().slice(0,10));
+      const endSeason=String(new Date(today+"T12:00:00Z").getUTCFullYear());
+      const school=String(cs.data.team?.name||"Université");
+      const [stateUp,playerUp,ncaaUp]=await Promise.all([
+        db.from("college_career_state").update({status:"pro"}).eq("id","demo"),
+        db.from("players").update({
+          ncaa_current:false,ncaa_status:"Alumni",ncaa_last_school:school,ncaa_verified:true,ncaa_school:null,ncaa_rank:null
+        }).eq("id",managedId),
+        db.from("ncaa_career").upsert({
+          player_id:managedId,school,division:"NCAA Division I",end_season:endSeason,status:"Alumni",
+          departure_date:today,verified:true,source_label:"Court Boss save · passage pro enregistré",
+          last_verified_at:new Date().toISOString()
+        },{onConflict:"player_id"})
+      ]);
+      const err=stateUp.error||playerUp.error||ncaaUp.error;if(err)return h({error:err.message},500);
+      await db.from("inbox_items").insert({kind:"college",title:"Passage professionnel",body:String(career.data.player_name||"Le joueur")+" quitte "+school+" pour passer professionnel. Son historique NCAA reste archivé.",action_route:"university",is_read:false});
+      return h({ok:true,status:"pro",ncaa_status:"Alumni",school,departure_date:today});
     }
 
     if(action==="play_college_dual"){

@@ -182,3 +182,23 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[r
   .age-filter .mini{flex:0 0 auto}
   .age-filter button{flex:0 0 auto;min-height:40px}
 }
+
+/* TM-style tournament history */
+.slam-history{display:grid;gap:6px}
+.slam-history-head,.slam-history-row{display:grid;grid-template-columns:64px repeat(4,minmax(72px,1fr));gap:6px;align-items:center}
+.slam-history-head{padding:0 4px;color:var(--muted);font-size:10px;font-weight:800;text-align:center}
+.slam-history-head span:first-child{text-align:left}
+.slam-history-row{padding:7px 0;border-top:1px solid rgba(255,255,255,.06)}
+.slam-result{min-height:48px;border:1px solid rgba(255,255,255,.10);border-radius:10px;background:rgba(255,255,255,.035);display:grid;place-items:center;padding:4px;cursor:pointer}
+.slam-result span{font-size:15px;font-weight:950;line-height:1}
+.slam-result small{display:none}
+.slam-result.good{background:rgba(65,220,150,.12);border-color:rgba(65,220,150,.35)}
+.slam-result.warn{background:rgba(255,195,75,.11);border-color:rgba(255,195,75,.32)}
+.slam-result.info{background:rgba(91,160,255,.10);border-color:rgba(91,160,255,.28)}
+.slam-result.empty-result{opacity:.32;cursor:default}
+@media(max-width:640px){
+  .slam-history{overflow-x:auto;padding-bottom:4px}
+  .slam-history-head,.slam-history-row{min-width:360px;grid-template-columns:52px repeat(4,1fr)}
+  .slam-result{min-height:44px;padding:3px}
+  .slam-result span{font-size:14px}
+}

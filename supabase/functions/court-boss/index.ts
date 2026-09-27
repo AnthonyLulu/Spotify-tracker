@@ -598,7 +598,7 @@ Deno.serve(async(req:Request)=>{
         if(!p?.id)return;
         const id=Number(p.id);
         const old=byId.get(id);
-        if(old&&Number(old.__priority||99)<=priority)return;
+        if(old&&Number(old.__priority??99)<=priority)return;
         const metaHasRank=!!meta&&Object.prototype.hasOwnProperty.call(meta,"ita_rank");
         byId.set(id,{
           ...p,

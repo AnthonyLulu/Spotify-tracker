@@ -37,7 +37,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
-let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
+let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
@@ -223,11 +223,13 @@ async function loadDoublesHub(){
  if(doublesHubLoading)return;
  doublesHubLoading=true;
  try{
-  const [r,t]=await Promise.all([
+  const [r,j,t]=await Promise.all([
     get('/api/rankings?kind=doubles&offset=0&limit=200'),
+    get('/api/rankings?kind=junior_doubles&offset=0&limit=200'),
     get('/api/doubles-race')
   ]);
   doublesHubRows=r.rows||[];
+  juniorDoublesHubRows=j.rows||[];
   doublesRaceRows=t.rows||[];
  }catch(e){console.warn('Double hub',e)}
  finally{doublesHubLoading=false;if(route==='doubles')render()}
@@ -677,13 +679,14 @@ function doublesPage(){
  const c=career();
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);
  const pool=doublesHubRows;
- const partner=pool.find(p=>p.id===local.partnerId)
+ const juniorPool=juniorDoublesHubRows;
+ const partner=pool.find(p=>p.id===local.partnerId)||juniorPool.find(p=>p.id===local.partnerId)
    ||(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean)
    ||null;
  const candidates=pool.filter(p=>p.name!==c.player_name).slice(0,30);
  const exact=pool.filter(p=>p.doubles_source).length;
  return `<div class="section-head"><div><div class="eyebrow">Circuit Double</div><h1>Double & partenariats</h1><div class="muted">Classement individuel officiel jusqu’au Top 1000, index scouting double profond, Race par équipes et gestion du partenaire. La base double étendue contient ${fmt(worldStats?.indexedDoubles||rankCount||0)} profils.</div></div><span class="pill">${fmt(worldStats?.sourcedDoubles||exact)} officiels · ${fmt(worldStats?.indexedDoubles||0)} indexés</span></div>
- <div class="tabs rank-tabs"><button class="active">Partenariat</button><button onclick="setRankKind('doubles');nav('rankings')">Classement Double</button><button onclick="dbCircuit='Double';dbOffset=0;dbQuery='';loadPlayerDatabase().then(()=>nav('players'))">Base double complète</button><button onclick="document.getElementById('dblRace').scrollIntoView({behavior:'smooth'})">Race équipes</button></div>
+ <div class="tabs rank-tabs"><button class="active">Partenariat</button><button onclick="setRankKind('doubles');nav('rankings')">Classement Double</button><button onclick="setRankKind('junior_doubles');nav('rankings')">Junior Double</button><button onclick="dbCircuit='Double';dbOffset=0;dbQuery='';loadPlayerDatabase().then(()=>nav('players'))">Base double complète</button><button onclick="document.getElementById('dblRace').scrollIntoView({behavior:'smooth'})">Race équipes</button></div>
  <div class="grid g2" style="margin-top:10px">
   <div class="card"><div class="row between"><h2>Partenaire actuel</h2><span class="badge">Ton rang #${fmt(c.doubles_rank)}</span></div>
    ${partner?`<div class="row between click" onclick="openPlayer(${partner.id})"><div><h2>${flags[partner.country]||'🏳️'} ${esc(partner.name)}</h2><div class="muted">Double #${fmt(partner.doubles_ranking)} ${partner.ranking?'· ATP #'+partner.ranking:''}</div><div class="muted mini">${partner.doubles_snapshot_date?'réf. '+df(partner.doubles_snapshot_date):''}</div></div><span class="badge good">Sélectionné</span></div><div class="kpi-strip" style="margin-top:12px"><div class="kpi"><span class="muted mini">Chimie</span><b>${pairScore(partner,'chem')}%</b></div><div class="kpi"><span class="muted mini">Compatibilité</span><b>${pairScore(partner,'comp')}%</b></div><div class="kpi"><span class="muted mini">Force paire</span><b>${pairScore(partner,'power')}%</b></div></div>`:'<div class="empty">Choisis un spécialiste dans le classement Double.</div>'}
@@ -692,6 +695,10 @@ function doublesPage(){
    ${pool.slice(0,12).map(p=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>#${p.doubles_ranking} ${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${p.doubles_points==null?'points non publiés dans ce snapshot':fmt(p.doubles_points)+' pts'} · ${df(p.doubles_snapshot_date)}</div></div><button class="soft-btn" onclick="choosePartner(${p.id})">Choisir</button></div>`).join('')||'<div class="loader">Chargement du classement double…</div>'}
   </div>
  </div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Circuit Junior</div><h2>Top Junior Double</h2><div class="muted">Classement individuel séparé #1–#2000. Les joueurs peuvent former une paire et jouer le double dans les tournois juniors.</div></div><button class="ghost" onclick="setRankKind('junior_doubles');nav('rankings')">Voir les 2000</button></div>
+ <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Âge 01/12/25</th><th>Pts</th><th></th></tr></thead><tbody>
+ ${juniorPool.slice(0,20).map(p=>`<tr><td class="rank-num">#${fmt(p.junior_doubles_ranking)}</td><td class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted micro">Junior simple #${p.junior_ranking||'—'}</div></td><td>${rankAge(p,'junior_doubles')}</td><td>${fmt(p.junior_doubles_points||0)}</td><td><button class="soft-btn" onclick="choosePartner(${p.id})">Associer</button></td></tr>`).join('')}
+ </tbody></table></div></div>
  <div id="dblRace" class="section-head" style="margin-top:18px"><div><div class="eyebrow">ATP Finals</div><h2>Race double par équipes</h2><div class="muted">Race double · ${doublesRaceRows[0]?.snapshot_date?df(doublesRaceRows[0].snapshot_date):"snapshot courant"} · ${fmt(doublesRaceRows.length)} équipes chargées.</div></div></div>
  <div class="card"><div class="row between" style="margin-bottom:8px"><span class="muted mini">Historique équipes importé : ${fmt(doublesRaceRows.length)} équipes</span><button class="ghost" onclick="setRankKind(\'doubles\');nav(\'rankings\')">Classement individuel</button></div><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Équipe</th><th>Points</th><th>Référence</th></tr></thead><tbody>
  ${doublesRaceRows.map(x=>`<tr><td class="rank-num">#${x.rank}</td><td><b><span class="click" onclick="openPlayerByName('${esc(String(x.player_one||'').replace(/'/g,"\\'"))}')">${esc(x.player_one)}</span> / <span class="click" onclick="openPlayerByName('${esc(String(x.player_two||'').replace(/'/g,"\\'"))}')">${esc(x.player_two)}</span></b></td><td>${fmt(x.points)}</td><td>${df(x.snapshot_date)}</td></tr>`).join('')}
@@ -1046,7 +1053,7 @@ window.openTournament=async id=>{
 
    <template id="tourDoubleTpl">
     <div class="grid g2"><div class="card"><div class="eyebrow">Partenariat</div><h2>${activePartner?flags[activePartner.country]||'🏳️':''} ${activePartner?esc(activePartner.name):'Aucun partenaire'}</h2><div class="list-item row between"><span>Ton classement</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)}</b></div><div class="list-item row between"><span>Chimie</span><b>${pairScore(activePartner,'chem')}%</b></div>`:''}</div><div class="card"><div class="eyebrow">Tournoi</div><h2>${esc(t.name)} · Double</h2><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div>${doublesRun?`<div class="notice good"><b>Résultat :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts</div>`:activePartner?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler le double</button>`:`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="closeOverlay();nav('doubles')">Choisir un partenaire</button>`}</div></div>
-    <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Projection tableau</div><h2>Paires de double</h2></div><span class="badge">${doublesProjection.length} équipes</span></div><div class="table-wrap"><table class="table"><thead><tr><th>TDS</th><th>Équipe</th><th>Rangs double</th><th>Source</th></tr></thead><tbody>${doublesProjection.slice(0,32).map(x=>`<tr><td>#${x.seed}</td><td><b>${flags[x.player_a?.country]||'🏳️'} ${esc(x.player_a?.name)} / ${flags[x.player_b?.country]||'🏳️'} ${esc(x.player_b?.name)}</b></td><td>#${fmt(x.player_a?.doubles_ranking||0)} / #${fmt(x.player_b?.doubles_ranking||0)}</td><td><span class="badge ${x.source==='official'?'good':''}">${x.source==='official'?'Officiel':'Index DB'}</span></td></tr>`).join('')}</tbody></table></div>${!doublesProjection.length?'<div class="empty">Aucune projection double disponible.</div>':''}</div>
+    <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Projection tableau</div><h2>Paires de double</h2></div><span class="badge">${doublesProjection.length} équipes</span></div><div class="table-wrap"><table class="table"><thead><tr><th>TDS</th><th>Équipe</th><th>Rangs double</th><th>Source</th></tr></thead><tbody>${doublesProjection.slice(0,32).map(x=>`<tr><td>#${x.seed}</td><td><b>${flags[x.player_a?.country]||'🏳️'} ${esc(x.player_a?.name)} / ${flags[x.player_b?.country]||'🏳️'} ${esc(x.player_b?.name)}</b></td><td>#${fmt(x.player_a?.doubles_ranking||0)} / #${fmt(x.player_b?.doubles_ranking||0)}</td><td><span class="badge ${x.source==='official'?'good':''}">${x.source==='official'?'Officiel':x.source==='junior-simulated'?'Junior Double':'Index DB'}</span></td></tr>`).join('')}</tbody></table></div>${!doublesProjection.length?'<div class="empty">Aucune projection double disponible.</div>':''}</div>
     ${doublesCompleted.length?`<div class="card" style="margin-top:12px"><div class="eyebrow">Ton parcours double</div><h2>Résultats</h2>${doublesCompleted.map(m=>`<div class="list-item"><div class="row between"><b>${esc(m.round_name)}</b><b>${esc(m.score)}</b></div><div>${esc(m.user_pair)} vs ${esc(m.opponent_pair)}</div><div class="muted mini">Vainqueurs : ${esc(m.winner_pair)}</div></div>`).join('')}</div>`:''}
    </template>
 

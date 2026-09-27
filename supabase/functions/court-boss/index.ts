@@ -514,6 +514,133 @@ async function loadJuniorPoolCandidates(rankedOnly=false){
   }
   return all;
 }
+function cbCsvCells(line:string){
+  const out:string[]=[];let cur="";let quoted=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quoted&&line[i+1]==='"'){cur+='"';i++}
+      else quoted=!quoted;
+    }else if(ch===','&&!quoted){out.push(cur);cur=""}
+    else cur+=ch;
+  }
+  out.push(cur);
+  return out;
+}
+function ymdToIso(v:string){
+  const s=String(v||"").replace(/[^0-9]/g,"");
+  if(s.length!==8)return null;
+  return s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8);
+}
+async function syncSackmannRankingDecade(decade:string,reset=false){
+  const allowed=new Set(["70s","80s","90s","00s","10s","20s"]);
+  if(!allowed.has(decade))throw new Error("Décennie invalide");
+  if(reset){
+    const rr=await db.rpc("reset_ranking_career_import");
+    if(rr.error)throw rr.error;
+  }
+  const url="https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main/atp/atp_rankings_"+decade+".csv";
+  const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+historical-ranking-sync)","Accept":"text/csv"}});
+  if(!res.ok)throw new Error("Ranking archive HTTP "+res.status);
+  const text=await res.text();
+  const lines=text.split(/\r?\n/);
+  const map=new Map<string,any>();
+  let accepted=0;
+  for(let i=1;i<lines.length;i++){
+    const line=lines[i];
+    if(!line)continue;
+    const cells=cbCsvCells(line);
+    if(cells.length<3)continue;
+    const dateRaw=String(cells[0]||"").trim();
+    const rank=Number(cells[1]||0);
+    const player=String(cells[2]||"").trim();
+    if(!player||!rank||rank<1||dateRaw>"20251201")continue;
+    const iso=ymdToIso(dateRaw);
+    if(!iso)continue;
+    let a=map.get(player);
+    if(!a){
+      a={sackmann_id:player,career_high_rank:rank,career_high_rank_date:iso,weeks_at_no1:0,weeks_top10:0,weeks_top100:0,ranking_history_weeks:0};
+      map.set(player,a);
+    }
+    if(rank<a.career_high_rank){
+      a.career_high_rank=rank;a.career_high_rank_date=iso;
+    }else if(rank===a.career_high_rank&&iso<a.career_high_rank_date){
+      a.career_high_rank_date=iso;
+    }
+    if(rank===1)a.weeks_at_no1++;
+    if(rank<=10)a.weeks_top10++;
+    if(rank<=100)a.weeks_top100++;
+    a.ranking_history_weeks++;
+    accepted++;
+  }
+  const rows=[...map.values()];
+  let linked=0,upserted=0;
+  for(let i=0;i<rows.length;i+=600){
+    const chunk=rows.slice(i,i+600);
+    const r=await db.rpc("apply_ranking_career_aggregates",{
+      p_rows:chunk,
+      p_source:"Jeff Sackmann / Tennis Abstract weekly rankings archive",
+      p_cutoff:"2025-12-01"
+    });
+    if(r.error)throw r.error;
+    linked+=Number(r.data?.players_linked||0);
+    upserted+=Number(r.data?.aggregates_upserted||0);
+  }
+  return {decade,url,lines:accepted,players:rows.length,aggregates_upserted:upserted,players_linked:linked,cutoff:"2025-12-01"};
+}
+async function syncSackmannAtpTitles(fromYear:number,toYear:number){
+  const from=Math.max(1968,Math.min(2025,fromYear));
+  const to=Math.max(from,Math.min(2025,toYear));
+  const out:any[]=[];
+  const stats:any[]=[];
+  const teamRe=/Davis Cup|United Cup|ATP Cup|Laver Cup|World Team Cup|Hopman/i;
+  for(let year=from;year<=to;year++){
+    const url="https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main/atp/atp_matches_"+year+".csv";
+    const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+historical-title-sync)","Accept":"text/csv"}});
+    if(!res.ok){stats.push({year,ok:false,status:res.status});continue}
+    const text=await res.text();
+    const lines=text.split(/\r?\n/);
+    if(!lines.length)continue;
+    const head=cbCsvCells(lines[0]);
+    const col=(n:string)=>head.indexOf(n);
+    const ix={
+      name:col("tourney_name"),surface:col("surface"),level:col("tourney_level"),date:col("tourney_date"),
+      winner:col("winner_id"),round:col("round")
+    };
+    let n=0;
+    for(let i=1;i<lines.length;i++){
+      const cells=cbCsvCells(lines[i]);
+      if(cells.length<head.length-2)continue;
+      const round=String(cells[ix.round]||"").trim();
+      const name=String(cells[ix.name]||"").trim();
+      const levelRaw=String(cells[ix.level]||"").trim();
+      const winner=String(cells[ix.winner]||"").trim();
+      const dateRaw=String(cells[ix.date]||"").trim();
+      if(round!=="F"||!winner||!name||dateRaw>"20251201"||teamRe.test(name))continue;
+      if(!["G","M","A","F","O"].includes(levelRaw))continue;
+      const titleDate=ymdToIso(dateRaw);if(!titleDate)continue;
+      const level=levelRaw==="G"?"Grand Chelem":levelRaw==="M"?"Masters 1000":levelRaw==="F"?"ATP Finals":levelRaw==="O"?"Jeux olympiques":"ATP Tour";
+      out.push({
+        sackmann_id:winner,tournament_name:name,title_date:titleDate,level,
+        surface:String(cells[ix.surface]||"").trim()||null,event_type:"singles",source_url:url
+      });
+      n++;
+    }
+    stats.push({year,ok:true,titles:n});
+  }
+  const uniq=[...new Map(out.map((x:any)=>[x.sackmann_id+"|"+x.tournament_name.toLowerCase().replace(/[^a-z0-9]+/g," ")+"|"+x.title_date,x])).values()];
+  let imported=0;
+  for(let i=0;i<uniq.length;i+=500){
+    const r=await db.rpc("import_canonical_atp_titles",{
+      p_rows:uniq.slice(i,i+500),
+      p_source:"Jeff Sackmann / Tennis Abstract archive · cutoff 2025-12-01"
+    });
+    if(r.error)throw r.error;
+    imported+=Number(r.data?.titles_upserted||0);
+  }
+  return {from,to,discovered:uniq.length,imported,stats};
+}
+
 async function fetchCoreTennisJuniorRows(url:string){
   const res=await fetch(url,{headers:{"User-Agent":"CourtBoss/1.0 (+junior-database-sync)","Accept":"text/html"}});
   if(!res.ok)throw new Error("CoreTennis HTTP "+res.status);
@@ -1230,6 +1357,21 @@ Deno.serve(async(req:Request)=>{
         if(up.error)throw up.error;
       }
       return h({snapshot,discovered:merged.size,staged:stageRows.length,sources:stats,rows:[...merged.values()].map((p:any)=>({name:p.name,country:p.country,ranking:p.ranking}))});
+    }catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
+  if(path.endsWith("/api/sync-career-ranking-history")&&req.method==="GET"){
+    try{
+      const decade=String(u.searchParams.get("decade")||"20s");
+      const reset=u.searchParams.get("reset")==="1";
+      return h(await syncSackmannRankingDecade(decade,reset));
+    }catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+  if(path.endsWith("/api/sync-atp-career-titles")&&req.method==="GET"){
+    try{
+      const from=n(u.searchParams.get("from"),2020,1968,2025);
+      const to=n(u.searchParams.get("to"),2025,from,2025);
+      return h(await syncSackmannAtpTitles(from,to));
     }catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 

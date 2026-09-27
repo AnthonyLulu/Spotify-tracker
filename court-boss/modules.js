@@ -14,7 +14,7 @@ let cbFantasySearch=[];
 
 async function loadCbDoublesTournaments(){
   try{
-    const d=await get('/api/tournaments?offset=0&limit=60&from='+encodeURIComponent(local.date||'2026-09-27'));
+    const d=await get('/api/tournaments?offset=0&limit=60&from='+encodeURIComponent(local.date||RANKING_SNAPSHOT));
     cbDoublesTournaments=(d.rows||[]).filter(t=>t.doubles);
   }catch(e){
     cbDoublesTournaments=[];
@@ -37,7 +37,7 @@ function seasonPageV2(){
   return `
   <div class="section-head">
     <div>
-      <div class="eyebrow">Saison ${String(local.date||'2026').slice(0,4)}</div>
+      <div class="eyebrow">Saison ${String(local.date||RANKING_SNAPSHOT).slice(0,4)}</div>
       <h1>Bilan de saison</h1>
       <div class="muted">Résultats, prize money et points 52 semaines.</div>
     </div>
@@ -125,7 +125,7 @@ async function refreshSeasonV2(){
 }
 
 async function rolloverSeasonV2(){
-  const current=Number((boot?.career?.season_year)||String(local.date||'2026').slice(0,4)||2026);
+  const current=Number((boot?.career?.season_year)||String(local.date||RANKING_SNAPSHOT).slice(0,4)||2026);
   const next=current+1;
   if(!confirm('Passer à la saison '+next+' ? Les joueurs vieilliront, les points expireront normalement et la saison '+current+' sera archivée.'))return;
   try{
@@ -514,9 +514,9 @@ window.startCareerWithPlayer=async function(id,name){
   if(!confirm("Démarrer une nouvelle carrière avec "+name+" ? Les résultats de la carrière actuelle seront réinitialisés."))return;
   overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création de la nouvelle carrière…</div></div></div>';
   try{
-    const d=await managerAction('take_over_player',id,{date:local.date||'2026-09-27'});
+    const d=await managerAction('take_over_player',id,{date:local.date||RANKING_SNAPSHOT});
     Object.assign(local,{
-      date:d.career?.career_date||local.date||'2026-09-27',
+      date:d.career?.career_date||local.date||RANKING_SNAPSHOT,
       week:1,
       training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
       entries:[],
@@ -939,7 +939,8 @@ window.createCustomPlayerV2=async()=>{
 
 
 window.renderPalmaresHtml=function(d,p){
-  const rawTitles=(d?.titles||[]).filter(t=>t.origin==='game'||!t.title_date||String(t.title_date)<='2025-12-01');
+  const palmaresCutoff=String(local.date||RANKING_SNAPSHOT).slice(0,10);
+  const rawTitles=(d?.titles||[]).filter(t=>!t.title_date||String(t.title_date).slice(0,10)<=palmaresCutoff);
   const hasCanonicalSingles=rawTitles.some(t=>t.origin==='sackmann_atp_canonical'&&t.event_type==='singles');
   const titles=rawTitles.filter(t=>(!t.event_type||t.event_type==='singles')&&(!hasCanonicalSingles||t.origin==='sackmann_atp_canonical'||t.origin==='game'));
   const dedupeTitleRows=rows=>[...new Map(rows.map(t=>[[String(t.event_type||''),String(t.tournament_name||'').toLowerCase().replace(/[^a-z0-9]+/g,' '),String(t.title_date||'').slice(0,4)].join('|'),t])).values()].sort((a,b)=>String(b.title_date||'').localeCompare(String(a.title_date||'')));
@@ -951,7 +952,7 @@ window.renderPalmaresHtml=function(d,p){
   const allTitles=[...titles,...doublesTitles,...juniorSinglesTitles,...juniorDoublesTitles,...nextGenTitles,...collegeTitles];
   const ncaaCareer=d?.ncaaCareer||null;
   const ncaaTransfers=(d?.ncaaTransfers||[]).slice().sort((a,b)=>Number(b.is_current)-Number(a.is_current)||String(b.season||'').localeCompare(String(a.season||''))||String(a.school||'').localeCompare(String(b.school||'')));
-  const ncaaCurrentVerified=!!p?.ncaa_current||(d?.ncaa||[]).some(x=>String(x.season||'')==='2026-27'&&String(x.status||'')==='Active');
+  const ncaaCurrentVerified=(d?.ncaa||[]).some(x=>String(x.snapshot_date||'').slice(0,10)<=String(local.date||RANKING_SNAPSHOT).slice(0,10)&&String(x.status||'')==='Active');
   const cs=d?.careerStats||{};
   const tournamentHistory=d?.tournamentHistory||[];
   const indexedHistory=tournamentHistory.map((x,i)=>({...x,__i:i}));
@@ -1079,9 +1080,9 @@ window.renderPalmaresHtml=function(d,p){
     ${ncaaTransfers.length?`
     <div class="card" style="margin-bottom:12px">
       <div class="row between"><div><div class="eyebrow">Parcours universitaire</div><h2>Écoles & transferts NCAA</h2></div><span class="pill">${ncaaTransfers.length} étape${ncaaTransfers.length>1?'s':''}</span></div>
-      <div class="muted mini" style="margin-top:4px">Les rosters successifs restent attachés à une seule fiche joueur. Le badge Actuel n'est utilisé que lorsque la source 2026-27 est vérifiée.</div>
+      <div class="muted mini" style="margin-top:4px">Les rosters successifs restent attachés à une seule fiche joueur. Le badge Actuel n'est utilisé que pour une source antérieure ou égale au 01/12/2025.</div>
       <div style="margin-top:10px">
-        ${ncaaTransfers.map(x=>`<div class="list-item row between"><div><b>${esc(x.school||'Université')}</b><div class="muted mini">${esc(x.class_standing||x.season||'NCAA')} · ${esc(x.conference||'NCAA Division I')}${x.hometown_raw?' · '+esc(x.hometown_raw):''}</div></div><div style="text-align:right">${x.is_current?(ncaaCurrentVerified?'<span class="badge good">Actuel 2026-27</span>':'<span class="badge">Dernière école connue</span>'):'<span class="badge">Précédent</span>'}${x.source_url?`<div style="margin-top:5px"><a class="soft-btn" href="${esc(x.source_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Source roster</a></div>`:''}</div></div>`).join('')}
+        ${ncaaTransfers.map(x=>`<div class="list-item row between"><div><b>${esc(x.school||'Université')}</b><div class="muted mini">${esc(x.class_standing||x.season||'NCAA')} · ${esc(x.conference||'NCAA Division I')}${x.hometown_raw?' · '+esc(x.hometown_raw):''}</div></div><div style="text-align:right">${x.is_current?(ncaaCurrentVerified?'<span class="badge good">Actuel au 01/12/2025</span>':'<span class="badge">Dernière école connue</span>'):'<span class="badge">Précédent</span>'}${x.source_url?`<div style="margin-top:5px"><a class="soft-btn" href="${esc(x.source_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Source roster</a></div>`:''}</div></div>`).join('')}
       </div>
     </div>`:''}
     <div class="grid g2">

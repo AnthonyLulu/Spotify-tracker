@@ -14,7 +14,7 @@ try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
 function surfaceClass(s){return s==='Terre'?'surface-clay':s==='Gazon'?'surface-grass':'surface-hard'}
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
-function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='itf'?p.itf_ranking:p.ranking}
+function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:p.ranking}
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
 function header(){
  const cr=local.career||boot?.career||{};
@@ -89,7 +89,7 @@ function home(){
  </section>`
 }
 function rankings(){
- const kinds=[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
+ const kinds=[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['junior','Junior'],['ncaa','NCAA / ITA']];
  if(rankKind==='ncaa')return ncaaRanking();
  const start=rankOffset+1,end=Math.min(rankOffset+rankRows.length,rankCount);
  return `<div class="section-head"><div><div class="eyebrow">Classements mondiaux</div><h1>Classements</h1><div class="muted">Challenger est une catégorie de tournoi. Les joueurs Challenger restent dans le classement ATP.</div></div><span class="pill">${rankKind==='singles'?'ATP jusqu’au #2000':'Circuit mondial'}</span></div>
@@ -112,7 +112,7 @@ window.jumpRanking=async()=>{
 function ncaaRanking(){
  const rows=management?.college||[];
  return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Classement universitaire</h1><div class="muted">Vue équipe actuellement disponible.</div></div></div>
- <div class="tabs">${[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
+ <div class="tabs">${[['singles','ATP Simple'],['doubles','ATP Double'],['itf','ITF WTT'],['junior','Junior'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}</div>
  <div class="card"><table class="table" style="min-width:0"><thead><tr><th>#</th><th>Université</th><th>Bilan</th></tr></thead><tbody>${rows.map(x=>`<tr><td class="rank-num">#${x.ita_rank}</td><td><b>${esc(x.name)}</b></td><td>${esc(x.record)}</td></tr>`).join('')}</tbody></table></div>`
 }
 window.setRankKind=async k=>{rankKind=k;rankOffset=0;rankQuery='';if(k!=='ncaa')await loadRankings();render()}

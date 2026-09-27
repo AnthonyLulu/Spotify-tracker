@@ -17,7 +17,7 @@ function surfaceClass(s){const v=String(s||'');return v==='Terre'?'surface-clay'
 function surfaceLabel(t){
  if(typeof t==='string')return t;
  const base=String(t?.surface||'Dur');
- return base==='Dur'?(t?.indoor?'Dur intérieur':'Dur extérieur'):base;
+ return base==='Dur'?(String(t?.environment||'Outdoor')==='Indoor'?'Dur intérieur':'Dur extérieur'):base;
 }
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
 function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='race'?p.race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:k==='ncaa'?p.ncaa_rank:p.ranking}
@@ -198,14 +198,14 @@ window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump
 function calendar(){
  const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','J500','J300','J200','J100','J60','J30','Junior Finals','NCAA','Junior','Davis Cup'];
  const circs=['Tous','ATP','Challenger','ITF','NCAA','Junior','Federation'];
- const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Carpet'];
+ const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon','Moquette'];
  const officialCount=worldStats?.verifiedTournaments||0;
  const coverage=`ATP ${fmt(worldStats?.officialATP||0)} · Challenger ${fmt(worldStats?.officialChallenger||0)} · ITF ${fmt(worldStats?.officialITF||0)}`;
  return `<div class="section-head"><div><div class="eyebrow">Planification</div><h1>Calendrier mondial</h1><div class="muted">Le calendrier s’ouvre sur les compétitions réelles vérifiées. Les événements de simulation restent disponibles avec le filtre Source.</div></div><div class="row" style="flex-wrap:wrap;justify-content:flex-end"><span class="pill">${fmt(tourCount)} affichés</span><span class="badge good">${fmt(officialCount)} officiels</span><span class="badge">${coverage}</span></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)">${['Tous','Officiel','Simulation'].map(x=>`<option ${x===tourFilters.source?'selected':''}>${x}</option>`).join('')}</select><input class="input" type="month" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span></div>
  <div class="section-head" style="margin-top:14px"><div><div class="eyebrow">Conseiller calendrier</div><h2>Recommandé pour ton joueur</h2><div class="muted">Score basé sur cut, fatigue, voyage, surface et niveau.</div></div><button class="ghost" onclick="loadScheduleAdvice().then(render)">Actualiser</button></div>
- <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${t.indoor?'surface-indoor':surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</span> · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
+ <div class="grid g3">${(scheduleAdvice?.recommended||[]).slice(0,6).map(t=>`<div class="card click" onclick="openTournament(${t.id})"><div class="row between"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span><b>${t.recommendation_score}/100</b></div><h3>${esc(t.name)}</h3><div class="muted mini">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${String(t.environment||'')==='Indoor'?'surface-indoor':surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</span> · ${t.is_verified?'Officiel':'Simulation'}</div><div class="bar" style="margin-top:9px"><i style="width:${t.recommendation_score}%"></i></div></div>`).join('')||'<div class="card empty">Aucune recommandation.</div>'}</div>
  <div class="stack">${tourRows.map(t=>tournamentCard(t)).join('')||'<div class="card empty">Aucun tournoi daté pour ces filtres.</div>'}</div>
  ${tourTbc.length?`<div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Date à confirmer</div><h2>Événements officiels TBC</h2></div></div><div class="stack">${tourTbc.map(t=>`<div class="card"><div class="row between"><div><span class="badge good">Officiel · TBC</span><h2 style="margin:8px 0 4px">${esc(t.name)}</h2><div class="muted">${esc(t.city||'TBC')} · date à confirmer · <span class="surface-indoor">${esc(surfaceLabel(t))}</span></div></div><span class="badge">${esc(t.category||'ATP')}</span></div></div>`).join('')}</div>`:''}
  <div class="pagination"><button ${tourOffset===0?'disabled':''} onclick="tourPage(-1)">←</button><span class="muted mini">${tourCount?fmt(tourOffset+1):0}–${fmt(Math.min(tourOffset+tourRows.length,tourCount))} / ${fmt(tourCount)}</span><button ${tourOffset+60>=tourCount?'disabled':''} onclick="tourPage(1)">→</button></div>`
@@ -214,7 +214,7 @@ function tournamentCard(t){
  const c=career(),isJunior=String(t.circuit)==='Junior',isFederation=String(t.circuit)==='Federation';
  const elig=isFederation?'Par sélection nationale':isJunior?'Circuit Junior ITF':t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
  const joined=(local.entries||[]).includes(t.id);
- return `<div class="card click" onclick="${isFederation?"nav('davis')":'openTournament('+t.id+')'}"><div class="row between"><div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${t.indoor?'surface-indoor':surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</span></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`}</div></div></div></div>`
+ return `<div class="card click" onclick="${isFederation?"nav('davis')":'openTournament('+t.id+')'}"><div class="row between"><div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${String(t.environment||'')==='Indoor'?'surface-indoor':surfaceClass(t.surface)}">${esc(surfaceLabel(t))}</span></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`}</div></div></div></div>`
 }
 window.tourFilter=async(k,v)=>{tourFilters[k]=v;if(k==='circuit'&&v==='Junior'&&tourFilters.source==='Tous')tourFilters.source='Officiel';tourOffset=0;await loadTournaments();render()}
 window.tourPage=async d=>{tourOffset=Math.max(0,tourOffset+d*60);await loadTournaments();render();window.scrollTo(0,0)}
@@ -363,7 +363,7 @@ function liveMatchPanel(){
  const s=local.liveMatch;
  const selectedSurface=local.matchSurface||'Dur';
  const selectedIndoor=!!local.matchIndoor;
- if(!s)return `<div class="card fm-match-launch"><div class="row between"><div><div class="eyebrow">Match engine</div><h2>Vue tactique mobile</h2><div class="muted">Les joueurs sont représentés par des marqueurs, comme un moteur tactique de management.</div></div><span class="badge">Point par point</span></div>
+ if(!s)return `<div class="card fm-match-launch"><div class="row between"><div><div class="eyebrow">Match engine</div><h2>Vue tactique mobile</h2><div class="muted">Vue tactique type manager : pions ronds mobiles, trajectoire de balle, momentum, score et coaching en direct.</div></div><span class="badge">Point par point</span></div>
   <div class="match-surface-pills">
    <button class="${selectedSurface==='Dur'&&!selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',false)">Dur ext.</button>
    <button class="${selectedSurface==='Dur'&&selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',true)">Dur int.</button>
@@ -379,7 +379,9 @@ function liveMatchPanel(){
  const up=Number(s.user_points||0),op=Number(s.opponent_points||0);
  const done=s.status==='completed';
  const ux=clamp(Number(lp.user_x??(48+(Number(s.rally_no||0)%3)*6)),12,88);
+ const uy=clamp(Number(lp.user_y??78),55,90);
  const ox=clamp(Number(lp.opp_x??(52-(Number(s.rally_no||0)%3)*6)),12,88);
+ const oy=clamp(Number(lp.opp_y??22),10,45);
  const bx=clamp(Number(lp.ball_x??50),10,90),by=clamp(Number(lp.ball_y??50),8,92);
  const surface=String(s.surface||'Dur'),courtClass=surface==='Terre'?'clay':surface==='Gazon'?'grass':'hard';
  const indoor=/intérieur/i.test(surface);
@@ -403,8 +405,8 @@ function liveMatchPanel(){
     <i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i>
     <i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i>
     <i class="fm-court-line service vertical"></i><i class="fm-net"></i>
-    <div class="fm-player-dot opponent" style="left:${ox}%;top:22%"><span>${oInit}</span><small>${esc(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
-    <div class="fm-player-dot user" style="left:${ux}%;top:78%"><span>${uInit}</span><small>${esc(userName.split(' ').slice(-1)[0]||'MOI')}</small></div>
+    <div class="fm-player-dot opponent" style="left:${ox}%;top:${oy}%"><span>${oInit}</span><small>${esc(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
+    <div class="fm-player-dot user" style="left:${ux}%;top:${uy}%"><span>${uInit}</span><small>${esc(userName.split(' ').slice(-1)[0]||'MOI')}</small></div>
     <i class="fm-ball" style="left:${bx}%;top:${by}%"></i>
     ${lp.shot?`<div class="fm-rally-call">${esc(lp.shot)} · ${Number(lp.rally||0)} coups</div>`:''}
   </div>
@@ -450,23 +452,17 @@ window.playLivePoint=async()=>{
 }
 window.simulateLiveGame=async()=>{
  if(!local.liveMatch||local.liveMatch.status==='completed')return;
- const startGames=(local.liveMatch.games_a||0)+(local.liveMatch.games_b||0);
- for(let i=0;i<24;i++){
-  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;
-  if(local.liveMatch.status==='completed'||(local.liveMatch.games_a||0)+(local.liveMatch.games_b||0)!==startGames)break;
- }
- persist();render();
+ try{
+  const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+ }catch(e){alert(e.message)}
 }
 window.simulateLiveSet=async()=>{
  if(!local.liveMatch||local.liveMatch.status==='completed')return;
- const startSets=(local.liveMatch.sets_a||0)+(local.liveMatch.sets_b||0);
- for(let i=0;i<120;i++){
-  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;
-  if(local.liveMatch.status==='completed'||(local.liveMatch.sets_a||0)+(local.liveMatch.sets_b||0)!==startSets)break;
- }
- persist();render();
+ try{
+  const d=await get('/api/live-match/advance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+ }catch(e){alert(e.message)}
 }
 window.clearLiveMatch=()=>{delete local.liveMatch;delete local.liveOpponent;persist();render()}
 function doublesPage(){
@@ -526,7 +522,7 @@ function davisPage(){
  const final8=ties.filter(t=>String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const franceAlive=final8.some(t=>t.home_nation==='FRA'||t.away_nation==='FRA');
  const scoreFor=t=>t.home_score!=null&&t.away_score!=null?`${t.home_score}-${t.away_score}`:'vs';
- const tieCard=t=>`<div class="davis-tie-card ${t.status==='completed'?'completed':''}">
+ const tieCard=t=>`<div class="davis-tie-card ${t.status==='completed'?'completed':''} ${t.status!=='completed'?'click':''}" ${t.status!=='completed'?`onclick="playDavisTie(${t.id})"`:''}>
    <div class="row between"><span class="badge tag-fed">${esc(t.stage||'Coupe Davis')}</span><span class="muted mini">${df(t.tie_date)}</span></div>
    <div class="davis-matchup"><b>${flags[t.home_nation]||'🏳️'} ${esc(t.home_nation)}</b><strong>${scoreFor(t)}</strong><b>${flags[t.away_nation]||'🏳️'} ${esc(t.away_nation)}</b></div>
    <div class="muted mini">${esc(t.venue||'Lieu à confirmer')} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></div>

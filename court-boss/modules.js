@@ -954,16 +954,21 @@ window.renderPalmaresHtml=function(d,p){
   };
   const slamName=k=>({AO:'Australian Open',RG:'Roland-Garros',WIM:'Wimbledon',USO:'US Open'}[k]||k);
   const slamOrder=['AO','RG','WIM','USO'];
-  const historyByYear={};
-  tournamentHistory.filter(x=>x.is_grand_slam).forEach((x,i)=>{
+  const historyByYear={},allHistoryByYear={};
+  tournamentHistory.forEach((x,i)=>{
     const y=String(x.season||String(x.tournament_date||'').slice(0,4));
+    (allHistoryByYear[y]??=[]).push({...x,__i:i});
+    if(!x.is_grand_slam)return;
     const k=slamKey(x.tournament_name);
     if(!k)return;
     historyByYear[y]=historyByYear[y]||{};
     historyByYear[y][k]={...x,__i:i};
   });
+  Object.values(allHistoryByYear).forEach(rows=>rows.sort((a,b)=>String(b.tournament_date||'').localeCompare(String(a.tournament_date||''))));
   const slamYears=Object.keys(historyByYear).sort((a,b)=>Number(b)-Number(a));
+  const historyYears=Object.keys(allHistoryByYear).sort((a,b)=>Number(b)-Number(a));
   const resultClass=code=>code==='W'?'good':code==='F'?'warn':['SF','QF'].includes(code)?'info':'';
+  const tourName=name=>String(name||'Tournoi').replace(/^Us Open$/i,'US Open');
 
   const levels=titles.reduce((acc,t)=>{
     const raw=String(t.level||'ATP').trim();

@@ -418,7 +418,7 @@ function liveMatchPanel(){
    <div><span>Aces</span><b>${st.user_aces||0}</b></div>
    <div><span>Rallyes</span><b>${s.rally_no||0}</b></div>
   </div>
-  ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">1 point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button></div>`}
+  ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>`}
  </div>`
 }
 function matchPage(){
@@ -462,6 +462,17 @@ window.simulateLiveSet=async()=>{
  try{
   const d=await get('/api/live-match/advance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
   local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+ }catch(e){alert(e.message)}
+}
+window.simulateLiveMatch=async()=>{
+ if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ try{
+  for(let i=0;i<5;i++){
+   const d=await get('/api/live-match/advance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+   local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;
+   if(local.liveMatch.status==='completed')break;
+  }
+  persist();render();
  }catch(e){alert(e.message)}
 }
 window.clearLiveMatch=()=>{delete local.liveMatch;delete local.liveOpponent;persist();render()}

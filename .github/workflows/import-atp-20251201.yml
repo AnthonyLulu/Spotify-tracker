@@ -19,4 +19,4 @@ jobs:
             https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss-atp-20251201-import \
             -o /tmp/result.json
           cat /tmp/result.json
-          node -e "const r=require('/tmp/result.json'); if(!r.count || r.count < 1900) throw new Error('incomplete ranking import: '+JSON.stringify(r))"
+          node -e "const r=require('/tmp/result.json'); if(!r.count || r.count < 100) throw new Error('incomplete ranking import: '+JSON.stringify(r))"

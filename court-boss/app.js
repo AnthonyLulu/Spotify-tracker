@@ -474,12 +474,19 @@ window.simulateWeek=async()=>{
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
   const d=new Date((local.date||'2026-09-27')+'T12:00:00');d.setDate(d.getDate()+7);
   local.date=d.toISOString().slice(0,10);local.week=(local.week||1)+1;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
-  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:local.week,date:local.date,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status}})});
+  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:local.week,date:local.date,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
+  if(sim.userDoublesRanking){cr.doubles_rank=sim.userDoublesRanking.rank;cr.doubles_points=sim.userDoublesRanking.points}
+  if(sim.training?.current_ability)cr.current_ability=sim.training.current_ability;
+  if(sim.training?.improvements?.length){
+    const labels={serve_power:'Puissance service',serve_precision:'Précision service',forehand:'Coup droit',backhand:'Revers',return_game:'Retour',volley:'Volée',touch:'Toucher',movement:'Déplacements',speed:'Vitesse',stamina:'Endurance',strength:'Force',anticipation:'Anticipation',concentration:'Concentration',composure:'Sang-froid',fighting_spirit:'Combativité',tactics:'Tactique',doubles:'Double'};
+    local.feed=local.feed||[];
+    local.feed.unshift('Progression entraînement : '+sim.training.improvements.map(x=>(labels[x.attribute]||x.attribute)+' '+x.from+'→'+x.to).join(', '));
+  }
   local.feed=local.feed||[];local.feed.unshift(`Semaine simulée : Anthony est ATP #${cr.singles_rank} avec ${cr.points} pts. Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
-  if(boot.career)local.career={...cr,singles_rank:boot.career.singles_rank,points:boot.career.points,budget:boot.career.budget,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
+  if(boot.career)local.career={...cr,...boot.career};
   await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice()]);
  }catch(e){alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}

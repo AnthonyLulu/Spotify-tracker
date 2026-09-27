@@ -470,6 +470,14 @@ Deno.serve(async(req:Request)=>{
       const url=type==="singles"
         ?"https://live-tennis.eu/en/official-atp-ranking.html"
         :"https://live-tennis.eu/en/official-atp-doubles-ranking.html";
+      if(type==="singles"&&snapshot!=="2025-12-01"){
+        return {
+          url,
+          locked:true,
+          snapshot:"2025-12-01",
+          reason:"Le classement ATP simple de départ est figé au 1er décembre 2025; la carrière le fait ensuite évoluer."
+        };
+      }
       const parsed=await parseLiveTennisRanking(url);
       const applied=await db.rpc("apply_live_rankings",{p_kind:type,p_snapshot:snapshot,p_rows:parsed});
       if(applied.error)throw applied.error;

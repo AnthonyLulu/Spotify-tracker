@@ -10,6 +10,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Officiel',month:'',q:''},management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let doublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
+let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous',dbLoaded=false,dbLoading=false;
 let local={date:'2026-09-27',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey},body:JSON.stringify(local)}).catch(()=>{})}
@@ -80,6 +81,18 @@ async function loadRankings(){
 async function loadCountries(){
  try{const d=await get('/api/countries');countryRows=d.rows||[]}catch{countryRows=[]}
 }
+async function loadPlayerDatabase(){
+ if(dbLoading)return;
+ dbLoading=true;
+ try{
+  const p=new URLSearchParams({offset:String(dbOffset),limit:'100',circuit:dbCircuit||'Tous'});
+  if(dbQuery)p.set('q',dbQuery);
+  if(dbCountry)p.set('country',dbCountry);
+  const d=await get('/api/search-players?'+p.toString());
+  dbRows=d.rows||[];dbCount=d.count||0;dbLoaded=true;
+ }finally{dbLoading=false}
+}
+
 async function loadHistory(){
  const p=new URLSearchParams({limit:'80'});
  if(historyCountry)p.set('country',historyCountry);
@@ -283,11 +296,33 @@ function more(){
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
- rankKind='singles';
- return `<div class="section-head"><div><div class="eyebrow">Database</div><h1>Base joueurs</h1><div class="muted">Clique sur n'importe quel joueur pour ouvrir son dossier.</div></div><button class="primary" onclick="nav('rankings')">Classement ATP</button></div>
- <div class="card"><input class="input" placeholder="Recherche globale…" value="${esc(rankQuery)}" onkeydown="if(event.key==='Enter'){rankKind='singles';searchRanking(this.value);nav('rankings')}"><p class="muted mini" style="margin-top:9px">Base mondiale : plus de 10 000 joueurs réels, ATP jusqu’au #2000, Challenger, ITF, juniors et NCAA / ITA. Les âges vérifiés viennent de la date de naissance et avancent avec la sauvegarde. Un âge non sourcé reste marqué N/V au lieu d’être inventé.</p><div class="row" style="margin-top:10px;flex-wrap:wrap"><select class="select" style="max-width:230px" onchange="rankKind='singles';setRankCountry(this.value);nav('rankings')"><option value="">Filtrer par nationalité</option>${countryRows.map(x=>`<option value="${esc(x.country)}">${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.players)}</option>`).join('')}</select><button class="soft-btn" onclick="rankCountry='';rankKind='singles';nav('rankings')">ATP</button><button class="soft-btn" onclick="rankKind='junior';loadRankings().then(()=>nav('rankings'))">Juniors</button><button class="soft-btn" onclick="rankKind='ncaa';loadRankings().then(()=>nav('rankings'))">NCAA / ITA</button></div></div>
- <div class="grid g3" style="margin-top:12px">${(boot.topPlayers||[]).slice(0,18).map(p=>`<div class="card click" onclick="openPlayer(${p.id})"><div class="row between"><b>#${p.ranking}</b><span>${flags[p.country]||'🏳️'}</span></div><h2>${esc(p.name)}</h2><div class="muted">${fmt(p.points)} pts · CA ${p.current_ability} · PA ${p.potential}</div></div>`).join('')}</div>`
+ if(!dbLoaded&&!dbLoading)setTimeout(()=>loadPlayerDatabase().then(()=>{if(route==='players')render()}).catch(()=>{}),0);
+ const circuits=['Tous','ATP','ITF','Junior','NCAA','Double','Race','Next Gen'];
+ const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
+ return `<div class="fm-dashboard">
+  <div class="fm-page-head"><div><div class="eyebrow">Scouting database</div><h1>Base joueurs mondiale</h1><div class="muted">Recherche dans toute la base, pas seulement dans les 2 000 classés ATP.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(worldStats?.searchableRealPlayers||dbCount||10000)} joueurs réels</div><div class="fm-head-badge subtle">${fmt(worldStats?.realPlayersWithAge||0)} âges connus</div></div></div>
+  <div class="card fm-db-toolbar">
+   <div class="fm-db-filters">
+    <input id="dbSearch" class="input" value="${esc(dbQuery)}" placeholder="Nom du joueur…" onkeydown="if(event.key==='Enter')searchPlayerDatabase(this.value)">
+    <select class="select" onchange="setDbCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${dbCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.players)}</option>`).join('')}</select>
+    <select class="select" onchange="setDbCircuit(this.value)">${circuits.map(x=>`<option ${dbCircuit===x?'selected':''}>${x}</option>`).join('')}</select>
+    <button class="primary" onclick="searchPlayerDatabase(document.getElementById('dbSearch').value)">Rechercher</button>
+   </div>
+   <div class="row" style="margin-top:9px;flex-wrap:wrap"><span class="badge good">ATP/ITF réels</span><span class="badge tag-ncaa">NCAA</span><span class="badge tag-junior">Junior</span><span class="muted mini">Les âges non sourcés restent N/V au lieu d’être inventés.</span></div>
+  </div>
+  <div class="card fm-panel" style="margin-top:12px">
+   <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
+   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge</th><th>Pays</th><th>ATP</th><th>ITF</th><th>NCAA</th><th>CA</th><th>PA</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${p.age??'<span class="muted">N/V</span>'}</td><td>${flags[p.country]||'🏳️'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+(p.ncaa_rank?'#'+fmt(p.ncaa_rank):'NCAA')+'</span>':'—'}</td><td><b>${p.current_ability??'—'}</b></td><td>${p.potential??'—'}</td></tr>`).join('')}</tbody></table></div>`}
+   ${!dbLoading&&!dbRows.length?'<div class="empty">Aucun joueur trouvé avec ces filtres.</div>':''}
+   <div class="pagination"><button ${dbOffset===0?'disabled':''} onclick="dbPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(dbCount)}</span><button ${dbOffset+100>=dbCount?'disabled':''} onclick="dbPage(1)">→</button></div>
+  </div>
+ </div>`
 }
+window.searchPlayerDatabase=async q=>{dbQuery=String(q||'').trim();dbOffset=0;await loadPlayerDatabase();render()}
+window.setDbCountry=async c=>{dbCountry=String(c||'').toUpperCase();dbOffset=0;await loadPlayerDatabase();render()}
+window.setDbCircuit=async c=>{dbCircuit=String(c||'Tous');dbOffset=0;await loadPlayerDatabase();render()}
+window.dbPage=async d=>{dbOffset=Math.max(0,dbOffset+d*100);await loadPlayerDatabase();render();window.scrollTo(0,0)}
+
 function staffPage(){
  const cand=management?.candidates||[];
  return `<div class="section-head"><div><div class="eyebrow">Équipe</div><h1>Staff</h1><div class="muted">Compétences, coûts et recrutement.</div></div></div>

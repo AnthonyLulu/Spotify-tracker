@@ -1877,7 +1877,8 @@ Deno.serve(async(req:Request)=>{
     if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
-    if(source==="Simulation"||source==="Fictif") query=query.eq("is_verified",false);
+    if(source==="Simulation") query=query.eq("is_verified",false);
+    if(source==="Fictif") query=query.eq("is_verified",false).in("circuit",["Challenger","ITF"]);
     if(surface==="Dur intérieur") query=query.eq("surface","Dur").eq("indoor",true);
     else if(surface==="Dur extérieur"||surface==="Dur") query=query.eq("surface","Dur").eq("indoor",false);
     else if(surface&&surface!=="Toutes") query=query.eq("surface",surface);

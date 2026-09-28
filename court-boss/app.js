@@ -483,11 +483,50 @@ function doublesEligibility(t){
  const combined=(myRank>=99999||partnerRank>=99999)?null:myRank+partnerRank;
  return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
-function tournamentThumb(t){
- const img=String(t.image_url||"").trim()||(t.is_verified?(API+"/api/tournament-image?id="+encodeURIComponent(t.id)):"");
- if(img)return "<img class='tm-tour-photo' src='"+esc(img)+"' alt='"+esc(t.name)+"' loading='lazy' onerror=\"this.style.display='none';this.nextElementSibling.style.display='grid'\"><span class='tm-tour-fallback' style='display:none'>"+(flags[t.country]||"🎾")+"<small>"+esc(String(t.category||t.circuit||"").replace("Challenger ","CH"))+"</small></span>";
- return "<span class='tm-tour-fallback'>"+(flags[t.country]||"🎾")+"<small>"+esc(String(t.category||t.circuit||"").replace("Challenger ","CH"))+"</small></span>";
+const MAJOR_TOURNAMENT_LOGOS=[
+ {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO"},
+ {re:/Roland[ -]?Garros/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/RG-Logo.png",label:"RG"},
+ {re:/Wimbledon/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/WB-Logo.png",label:"WIM"},
+ {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO"}
+];
+function tournamentLogoMeta(t={}){
+ const name=String(t.name||t.tournament_name||"");
+ const explicit=String(t.logo_url||"").trim();
+ const major=MAJOR_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
+ if(explicit)return {url:explicit,label:major?.label||String(t.category||t.circuit||"TOUR"),cls:"logo-official"};
+ if(major)return {url:major.url,label:major.label,cls:"logo-official"};
+ const category=String(t.category||t.level||"").trim();
+ const circuit=String(t.circuit||"").trim();
+ if(/Grand Chelem|Grand Slam/i.test(category))return {url:null,label:"GRAND SLAM",sub:"GS",cls:"logo-gs"};
+ if(/Masters 1000/i.test(category))return {url:null,label:"ATP 1000",sub:"M1000",cls:"logo-atp"};
+ if(/ATP 500|^500$/i.test(category))return {url:null,label:"ATP 500",sub:"500",cls:"logo-atp"};
+ if(/ATP 250|^250$/i.test(category))return {url:null,label:"ATP 250",sub:"250",cls:"logo-atp"};
+ if(/ATP Finals|Finals/i.test(category)&&circuit==="ATP")return {url:null,label:"ATP FINALS",sub:"FINALS",cls:"logo-finals"};
+ if(/Challenger/i.test(category)||circuit==="Challenger")return {url:null,label:"ATP CH",sub:category.replace(/Challenger\\s*/i,"")||"CH",cls:"logo-challenger"};
+ if(/Junior Grand Slam/i.test(category))return {url:null,label:"JUNIOR GS",sub:"JGS",cls:"logo-junior"};
+ if(/^J\\d+/i.test(category)||circuit==="Junior")return {url:null,label:"ITF JUNIOR",sub:category||"J",cls:"logo-junior"};
+ if(/^M\\d+|^W\\d+/i.test(category)||circuit==="ITF")return {url:null,label:"ITF",sub:category||"WTT",cls:"logo-itf"};
+ if(circuit==="NCAA")return {url:null,label:"NCAA",sub:"COLLEGE",cls:"logo-ncaa"};
+ if(circuit==="Federation"||/Davis/i.test(name+category))return {url:null,label:"DAVIS CUP",sub:"TEAM",cls:"logo-davis"};
+ return {url:null,label:circuit||category||"TENNIS",sub:category&&category!==circuit?category:"TOUR",cls:"logo-generic"};
 }
+function tournamentLogoHtml(t,extraClass=""){
+ const m=tournamentLogoMeta(t);
+ const fallback="<span class='tm-tour-logo-fallback "+esc(m.cls)+" "+esc(extraClass)+"'><b>"+esc(m.label)+"</b><small>"+esc(m.sub||"")+"</small></span>";
+ if(!m.url)return fallback;
+ return "<span class='tm-tour-logo-shell "+esc(extraClass)+"'><img class='tm-tour-logo' src='"+esc(m.url)+"' alt='Logo "+esc(t.name||t.tournament_name||m.label)+"' loading='lazy' onerror=\"this.style.display='none';this.parentElement.nextElementSibling.style.display='grid'\"></span>"+fallback.replace("class='tm-tour-logo-fallback","style='display:none' class='tm-tour-logo-fallback");
+}
+function tournamentLogoByName(name,level="",extraClass=""){
+ return tournamentLogoHtml({name,tournament_name:name,category:level,level,circuit:/Challenger/i.test(level)?"Challenger":/^M\\d+|^W\\d+|ITF/i.test(level)?"ITF":""},extraClass);
+}
+function slamLogoHtml(keyOrName,extraClass=""){
+ const names={AO:"Australian Open",RG:"Roland-Garros",WIM:"Wimbledon",USO:"US Open"};
+ return tournamentLogoByName(names[keyOrName]||keyOrName,"Grand Chelem",extraClass);
+}
+window.tournamentLogoHtml=tournamentLogoHtml;
+window.tournamentLogoByName=tournamentLogoByName;
+window.slamLogoHtml=slamLogoHtml;
+function tournamentThumb(t){return tournamentLogoHtml(t,"tm-list-logo")}
 function tournamentTmRow(t){
  const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
  const deadline=t.singles_entry_deadline||t.deadline;
@@ -707,11 +746,12 @@ window.openCompetition=async id=>{
  try{
   const d=await get('/api/competition?id='+id),t=d.tournament,h=d.history||[],records=d.records||[];
   const image=t.image_url||API+'/api/tournament-image?id='+t.id;
+  const photoLabel=t.image_source_label||'Photo du tournoi';
   const holder=t.defending_champion_name||h[0]?.winner_name||null;
   const holderId=t.defending_champion_player_id||h[0]?.winner_player_id||null;
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet competition-sheet">
-   <div class="sheet-head"><div><div class="eyebrow">Fiche compétition · ${esc(t.circuit||'Tour')}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${esc(t.category||'')} · ${esc(surfaceLabel(t))}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
-   <div class="competition-hero" style="margin-top:12px"><div class="competition-cover"><img src="${esc(image)}" alt="${esc(t.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tm-tour-fallback competition-fallback" style="display:none">${flags[t.country]||'🎾'}</div></div><div class="competition-main"><div class="row between"><div><div class="eyebrow">Prestige</div><div class="competition-stars big-stars">${'★'.repeat(competitionPrestige(t.prestige))}${'☆'.repeat(5-competitionPrestige(t.prestige))}</div></div><span class="badge ${t.is_verified?'good':''}">${t.is_verified?'Compétition officielle':'Compétition fictive'}</span></div><div class="kpi-strip" style="margin-top:10px"><div class="kpi"><span class="muted mini">Tenant</span><b class="${holderId?'click':''}" ${holderId?`onclick="openPlayer(${holderId})"`:''}>${holder?esc(holder):'—'}</b></div><div class="kpi"><span class="muted mini">Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="kpi"><span class="muted mini">Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="kpi"><span class="muted mini">Historique</span><b>${d.historyStart&&d.historyEnd?d.historyStart+'–'+d.historyEnd:'—'}</b></div></div></div></div>
+   <div class="sheet-head"><div class="tm-title-with-logo">${tournamentLogoHtml(t,'tm-detail-logo')}<div><div class="eyebrow">Fiche compétition · ${esc(t.circuit||'Tour')}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${esc(t.category||'')} · ${esc(surfaceLabel(t))}</div></div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+   <div class="competition-hero" style="margin-top:12px"><div class="competition-cover"><img src="${esc(image)}" alt="${esc(t.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tm-tour-fallback competition-fallback" style="display:none">${flags[t.country]||'🎾'}<small>${esc(t.city||'')}</small></div><span class="tm-photo-label">${esc(photoLabel)}</span></div><div class="competition-main"><div class="row between"><div><div class="eyebrow">Prestige</div><div class="competition-stars big-stars">${'★'.repeat(competitionPrestige(t.prestige))}${'☆'.repeat(5-competitionPrestige(t.prestige))}</div></div><span class="badge ${t.is_verified?'good':''}">${t.is_verified?'Compétition officielle':'Compétition fictive'}</span></div><div class="kpi-strip" style="margin-top:10px"><div class="kpi"><span class="muted mini">Tenant</span><b class="${holderId?'click':''}" ${holderId?`onclick="openPlayer(${holderId})"`:''}>${holder?esc(holder):'—'}</b></div><div class="kpi"><span class="muted mini">Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="kpi"><span class="muted mini">Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="kpi"><span class="muted mini">Historique</span><b>${d.historyStart&&d.historyEnd?d.historyStart+'–'+d.historyEnd:'—'}</b></div></div></div></div>
    <div class="tabs" style="margin-top:12px"><button class="active" data-comp-tab="overview" onclick="competitionSection('overview')">Vue d'ensemble</button><button data-comp-tab="history" onclick="competitionSection('history')">Palmarès</button><button data-comp-tab="records" onclick="competitionSection('records')">Records</button><button data-comp-tab="editions" onclick="competitionSection('editions')">Éditions</button></div>
    <div id="competitionBody">
     <section data-comp-section="overview"><div class="grid g2"><div class="card"><h2>Identité</h2><div class="list-item row between"><span>Niveau</span><b>${esc(t.category||t.level||'—')}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Lieu</span><b>${esc(t.city||'—')}, ${esc(t.country||'')}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Double</span><b>${t.doubles?t.doubles_draw_size||'Oui':'Non'}</b></div></div><div class="card"><h2>Édition ${String(t.start_date||'').slice(0,4)}</h2><div class="list-item row between"><span>Dates</span><b>${df(t.start_date)} → ${df(t.end_date||t.start_date)}</b></div><div class="list-item row between"><span>Tenant simple</span><b>${holder?esc(holder):'—'}</b></div><div class="list-item row between"><span>Tenant double</span><b>${t.defending_doubles_champion_name?esc(t.defending_doubles_champion_name)+(t.defending_doubles_partner_name?' / '+esc(t.defending_doubles_partner_name):''):'—'}</b></div><div class="list-item row between"><span>Source</span><b>${t.source_url?'<a href="'+esc(t.source_url)+'" target="_blank" rel="noopener">Officielle ↗</a>':'Simulation Court Boss'}</b></div></div></div></section>
@@ -1437,14 +1477,16 @@ window.openTournament=async id=>{
     ?((d.junior_entries||[]).length?'Engagés/résultats vérifiés pour ce tournoi junior.':'Projection à partir du classement junior vérifié.')
     :'Avant le tirage officiel, Court Boss affiche une projection à partir du classement et du cut.';
   const sourceLink=t.source_url?'<a class="soft-btn" href="'+esc(t.source_url)+'" target="_blank" rel="noopener noreferrer">Source officielle</a>':'';
+  const detailPhoto=String(t.image_url||"").trim()||(t.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):'');
+  const detailPhotoLabel=t.image_source_label||'Photo du tournoi';
 
   const juniorResults=(d.junior_entries||[]).map(e=>{
     const p=Array.isArray(e.players)?e.players[0]:e.players;
     return p?`<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">Junior #${p.junior_ranking||'—'} ${e.seed?'· TDS '+esc(e.seed):''}</div></div><b>${esc(e.result||'Engagé')}</b></div>`:'';
   }).join('');
 
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
-   ${t.image_url?`<div class="tm-tour-hero"><img src="${esc(t.image_url)}" alt="${esc(t.name)}" onerror="this.parentElement.style.display='none'"><div class="tm-tour-hero-overlay"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span><span class="badge good">Visuel officiel</span></div></div>`:''}
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div class="tm-title-with-logo">${tournamentLogoHtml(t,'tm-detail-logo')}<div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+   ${detailPhoto?`<div class="tm-tour-hero"><img src="${esc(detailPhoto)}" alt="${esc(t.name)}" onerror="this.parentElement.style.display='none'"><div class="tm-tour-hero-overlay"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span><span class="badge good">${esc(detailPhotoLabel)}</span></div></div>`:''}
    <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button>${editionHistory.length?'<button onclick="tourSection(\'history\')">Histoire '+editionHistory.length+'</button>':''}${isNcaa?`<button onclick="tourSection('ncaa')">NCAA / ITA</button>`:`<button onclick="tourSection('draw')">${isJunior?'Engagés':'Tableau'}</button>${!isJunior?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}`}</div>
    <div id="tourBody">
     <div class="grid g2">

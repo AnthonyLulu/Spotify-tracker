@@ -2663,6 +2663,7 @@ Deno.serve(async(req:Request)=>{
         if(pairs.error){
           doublesPairRefresh={error:pairs.error.message};
         }else{
+          const partnerReview=await db.rpc("review_doubles_primary_partners",{p_date:date});
           const primaryPairs=await db.rpc("ensure_doubles_only_primary_partners",{p_date:date});
           const norm=await db.rpc("normalize_world_doubles_race",{
             p_year:Number(date.slice(0,4)),
@@ -2675,6 +2676,7 @@ Deno.serve(async(req:Request)=>{
           ]);
           doublesPairRefresh={
             ...(pairs.data||{}),
+            partnerReview:partnerReview.error?{error:partnerReview.error.message}:partnerReview.data,
             primaryCommitments:primaryPairs.error?{error:primaryPairs.error.message}:primaryPairs.data,
             normalization:norm.error?{error:norm.error.message}:norm.data,
             playerRankings:playerDoublesRankings.error?{error:playerDoublesRankings.error.message}:playerDoublesRankings.data,

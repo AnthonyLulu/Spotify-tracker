@@ -4267,85 +4267,11 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const [
-      playersTotal,atp,itf,junior,tours,realTours,atpTours,challengerTours,itfTours,fedTours,juniorTours,ncaaTours,
-      ncaaTeams,ncaaPlayers,ncaaRegistry,newgens,realPlayers,searchableReal,ageKnownReal,currentMissingAge,currentMissingDob,
-      active2025,doublesReal,doublesIndexed,raceReal,nextgenReal,juniorReal,backhandAll,backhandVerified,realDobKnown,estimatedAgeReal,itfMissingAge,juniorMissingAge,ncaaMissingAge
-    ] = await Promise.all([
-      db.from("players").select("id",{count:"exact",head:true}).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true),
-      db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_ranking","is",null).not("junior_source","is",null).gte("age",13).lte("age",18),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","ATP"),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Challenger"),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","ITF"),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Federation"),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","Junior"),
-      db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).eq("is_verified",true).eq("circuit","NCAA"),
-      db.from("college_teams").select("id",{count:"exact",head:true}),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true),
-      db.from("ncaa_player_registry").select("player_id,status").limit(5000),
-      db.from("players").select("id",{count:"exact",head:true}).eq("game_generated",true),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("age",null),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ranking_current",true).is("birth_date",null),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("circuits_2025","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("doubles_source","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("doubles_ranking","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).not("race_source","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("nextgen_source","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null).gte("age",13).lte("age",18),
-      db.from("players").select("id",{count:"exact",head:true}).not("backhand","is",null),
-      db.from("players").select("id",{count:"exact",head:true}).eq("backhand_verified",true),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).not("birth_date","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).eq("is_real",true).is("birth_date",null).not("age","is",null).or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*"),
-      db.from("players").select("id",{count:"exact",head:true}).not("itf_ranking","is",null).is("age",null),
-      db.from("players").select("id",{count:"exact",head:true}).not("junior_source","is",null).is("age",null),
-      db.from("players").select("id",{count:"exact",head:true}).eq("ncaa_current",true).is("age",null)
-    ]);
-    return h({
+    const world=await db.rpc("court_boss_world_stats");
+    if(world.error)return h({error:world.error.message},500);
+    return h(world.data??{
       rankingReferenceDate:"2025-12-01",
-      players:atp.count??0,
-      playersTotal:playersTotal.count??0,
-      realPlayersTotal:realPlayers.count??0,
-      searchableRealPlayers:searchableReal.count??0,
-      worldRankingCapacity:30000,
-      realPlayersWithAge:ageKnownReal.count??0,
-      activeRealPlayers2025:active2025.count??0,
-      atpRanked:atp.count??0,
-      sourcedDoubles:doublesReal.count??0,
-      indexedDoubles:doublesIndexed.count??0,
-      sourcedRace:raceReal.count??0,
-      sourcedNextGen:nextgenReal.count??0,
-      sourcedJuniors:juniorReal.count??0,
-      itfPlayers:itf.count??0,
-      juniorPlayers:junior.count??0,
-      ncaaTeams:ncaaTeams.count??0,
-      ncaaPlayers:ncaaPlayers.count??0,
-      ncaaProfilesTotal:new Set((ncaaRegistry.data??[]).map((x:any)=>Number(x.player_id))).size,
-      ncaaActiveProfiles:new Set((ncaaRegistry.data??[]).filter((x:any)=>x.status==="Active").map((x:any)=>Number(x.player_id))).size,
-      gameGenerated:newgens.count??0,
-      tournaments:tours.count??0,
-      verifiedTournaments:realTours.count??0,
-      officialATP:atpTours.count??0,
-      officialChallenger:challengerTours.count??0,
-      officialITF:itfTours.count??0,
-      officialFederation:fedTours.count??0,
-      officialJunior:juniorTours.count??0,
-      officialNCAA:ncaaTours.count??0,
-      currentRankedMissingAge:currentMissingAge.count??0,
-      currentRankedMissingDob:currentMissingDob.count??0,
-      playersWithBackhand:backhandAll.count??0,
-      verifiedBackhands:backhandVerified.count??0,
-      realPlayersWithDob:realDobKnown.count??0,
-      estimatedAgeReal:estimatedAgeReal.count??0,
-      itfMissingAge:itfMissingAge.count??0,
-      juniorMissingAge:juniorMissingAge.count??0,
-      ncaaMissingAge:ncaaMissingAge.count??0
+      worldRankingCapacity:30000
     });
   }
 

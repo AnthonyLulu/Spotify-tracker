@@ -533,6 +533,13 @@ const MAJOR_TOURNAMENT_LOGOS=[
  {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
 ];
 const CURATED_TOURNAMENT_LOGOS=[
+ {re:/Bank of China Hong Kong Tennis Open|Hong Kong Tennis Open/i,url:"https://static.hkmenstennisopen.com/wp-content/themes/hkto_2023/template/frontend/images/overview/2025/boc_hkto_logo_long.svg",label:"HKG"},
+ {re:/Open Occitanie|Open Sud de France/i,url:"https://trouverlogo.fr/logos/open-occitanie.svg",label:"OCC"},
+ {re:/ABN AMRO Open|ABN Amro World Tennis Tournament/i,url:"https://assets.stickpng.com/images/62ba413db3914fd78a171683.png",label:"RTM"},
+ {re:/Abierto Mexicano Telcel|Abierto Mexicano de Tenis|Acapulco/i,url:"https://assets.stickpng.com/images/6266539d1e92f9aac65b5b98.png",label:"ACA"},
+ {re:/Fayez Sarofim|U\\.S\\. Men'?s Clay Court|Houston/i,url:"https://assets.stickpng.com/images/626696c52c88722059d58707.png",label:"HOU"},
+ {re:/Grand Prix Hassan II/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Grand_Prix_Hassan_II_logo.png",label:"MAR"},
+ {re:/Tiriac Open|Țiriac Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Tiriac_Open.png",label:"BUC"},
  {re:/BNP Paribas Open|Indian Wells/i,url:"https://assets.stickpng.com/images/626658031e92f9aac65b5bb3.png",label:"IW"},
  {re:/Nexo Dallas Open|Dallas Open/i,url:"https://assets.stickpng.com/images/62665b9e1e92f9aac65b5bcb.png",label:"DAL"},
  {re:/Delray Beach Open/i,url:"https://assets.stickpng.com/images/62665c261e92f9aac65b5bd0.png",label:"DBO"},
@@ -542,7 +549,8 @@ const CURATED_TOURNAMENT_LOGOS=[
  {re:/Bitpanda Hamburg Open|Hamburg (?:European )?Open/i,url:"https://assets.stickpng.com/images/62665eb81e92f9aac65b5bdd.png",label:"HAM"},
  {re:/Libema Open|Libéma Open/i,url:"https://assets.stickpng.com/images/62668a2f2c88722059d586d2.png",label:"LIB"},
  {re:/Mallorca Championships/i,url:"https://assets.stickpng.com/images/62668bb32c88722059d586da.png",label:"MAL"},
- {re:/EFG Swiss Open Gstaad|Swiss Open Gstaad/i,url:"https://assets.stickpng.com/images/62668e752c88722059d586e7.png",label:"GST"},
+ {re:/EFG Swiss Open Gstaad|Swiss Open Gstaad/i,url:"https://assets.stickpng.com/images/626693472c88722059d586fb.png",label:"GST"},
+ {re:/Nordea Open|B[aå]stad/i,url:"https://assets.stickpng.com/images/62668e752c88722059d586e7.png",label:"NOR"},
  {re:/Qatar ExxonMobil Open|Qatar Open/i,url:"https://assets.stickpng.com/images/6266906e2c88722059d586ee.png",label:"DOH"},
  {re:/Rio Open/i,url:"https://assets.stickpng.com/images/626691042c88722059d586f1.png",label:"RIO"},
  {re:/National Bank Open|Canada Masters|Toronto Masters|Montreal Masters/i,url:"https://assets.stickpng.com/images/62668e322c88722059d586e5.png",label:"CAN"},

@@ -65,6 +65,7 @@ let tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
+let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
 let local={date:'2025-12-01',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
@@ -211,6 +212,10 @@ window.nav=async r=>{
    loading('Chargement des compétitions…');
    await loadCompetitions();
   }
+  if(r==='staff'&&!staffWorldData){
+   loading('Chargement de la base mondiale du staff…');
+   await loadStaffWorld();
+  }
  }catch(e){
   console.warn('Court Boss route load failed',r,e);
   shell(`<div class="card"><h2>Chargement impossible</h2><p class="muted">${esc(e.message)}</p><div class="row"><button class="primary" onclick="nav('${esc(r)}')">Réessayer</button><button class="ghost" onclick="nav('home')">Accueil</button></div></div>`);
@@ -244,6 +249,20 @@ async function init(){
  }
 }
 async function loadManagement(){try{management=await get('/api/management')}catch{management={contracts:[],college:[],shortlist:[]}}}
+async function loadStaffWorld(){
+ if(staffWorldLoading)return;
+ staffWorldLoading=true;
+ try{
+  const p=new URLSearchParams({offset:String(staffWorldOffset),limit:'50'});
+  const f=staffWorldFilters||{};
+  if(f.q)p.set('q',f.q);
+  if(f.role)p.set('role',f.role);
+  if(f.country)p.set('country',f.country);
+  if(f.former)p.set('former',f.former);
+  if(f.status)p.set('status',f.status);
+  staffWorldData=await get('/api/staff-world?'+p.toString());
+ }finally{staffWorldLoading=false}
+}
 async function loadRankings(){
  const q=rankQuery?'&q='+encodeURIComponent(rankQuery):'';
  const u=rankKind==='nextgen'?'&u='+nextGenAge:'';
@@ -918,6 +937,35 @@ function staffRatingGrid(p){
  ].filter(x=>x[1]!=null);
  return `<div class="kpi-strip staff-rating-grid">${rows.map(x=>`<div class="kpi"><span class="muted micro">${esc(x[0])}</span><b>${x[1]}/20</b><div class="bar"><i style="width:${Number(x[1])*5}%"></i></div></div>`).join('')}</div>`;
 }
+
+function staffWorldSection(){
+ const d=staffWorldData||null;
+ const rows=d?.rows||[],roles=d?.roles||[],countries=d?.countries||[];
+ if(!d)return `<div class="card loader" style="margin-top:14px">Chargement de la base mondiale du staff…</div>`;
+ return `<div class="section-head" style="margin-top:22px"><div><div class="eyebrow">Base mondiale</div><h2>Staff mondial</h2><div class="muted mini">Base complète paginée : coachs, kinés, préparateurs, recruteurs, agents et anciens joueurs reconvertis.</div></div><span class="pill">${fmt(d.total||0)} profils</span></div>
+ <div class="card staff-world-filter"><div class="row" style="gap:8px;flex-wrap:wrap">
+  <input id="staffWorldQ" value="${esc(staffWorldFilters.q||'')}" placeholder="Nom, spécialité, style…" style="flex:1;min-width:200px">
+  <select id="staffWorldRole"><option value="">Tous les rôles</option>${roles.map(x=>`<option value="${esc(x.role)}" ${staffWorldFilters.role===x.role?'selected':''}>${esc(x.role)} (${fmt(x.count)})</option>`).join('')}</select>
+  <select id="staffWorldCountry"><option value="">Tous les pays</option>${countries.map(x=>`<option value="${esc(x.country)}" ${staffWorldFilters.country===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} (${fmt(x.count)})</option>`).join('')}</select>
+  <select id="staffWorldFormer"><option value="Tous">Tous parcours</option><option value="Oui" ${staffWorldFilters.former==='Oui'?'selected':''}>Anciens joueurs</option><option value="Non" ${staffWorldFilters.former==='Non'?'selected':''}>Spécialistes staff</option></select>
+  <select id="staffWorldStatus"><option value="Tous">Tous statuts</option><option value="available" ${staffWorldFilters.status==='available'?'selected':''}>Disponibles</option><option value="contracted" ${staffWorldFilters.status==='contracted'?'selected':''}>Sous contrat</option><option value="user_staff" ${staffWorldFilters.status==='user_staff'?'selected':''}>Ton staff</option></select>
+  <button class="primary" onclick="applyStaffWorldFilters()">Rechercher</button>
+ </div></div>
+ <div class="grid g3" style="margin-top:10px">
+  <div class="card"><div class="eyebrow">Agences majeures</div>${(d.agencies||[]).slice(0,5).map(x=>`<div class="list-item"><div class="row between"><b>${esc(x.name)}</b><span class="badge">${x.reputation}/20</span></div><div class="muted micro">${flags[x.country]||'🏳️'} ${esc(x.specialty||'')} · ${fmt(x.members)} membres · réseau ${x.network_strength}/20</div></div>`).join('')}</div>
+  <div class="card"><div class="eyebrow">Académies de coachs</div>${(d.academies||[]).slice(0,5).map(x=>`<div class="list-item"><div class="row between"><b>${esc(x.name)}</b><span class="badge">${x.prestige}/20</span></div><div class="muted micro">${flags[x.country]||'🏳️'} ${esc(x.specialty||'')} · ${fmt(x.members)} membres</div></div>`).join('')}</div>
+  <div class="card"><div class="eyebrow">Instituts de formation</div>${(d.training_centers||[]).slice(0,5).map(x=>`<div class="list-item"><div class="row between"><b>${esc(x.name)}</b><span class="badge">${x.reputation}/20</span></div><div class="muted micro">${esc(x.specialty||'')} · ${fmt(x.active_enrollments)}/${fmt(x.capacity)} places actives</div></div>`).join('')}</div>
+ </div>
+ <div class="grid g2" style="margin-top:10px">${rows.map(x=>`<div class="card">
+   <div class="row between"><div class="click" onclick="openStaffProfile(${x.id})"><div class="eyebrow">${esc(x.primary_role)}</div><h2>${flags[x.nationality]||'🏳️'} ${esc(x.name)}</h2><div class="muted mini">${esc(x.specialty||'')} · réputation ${x.reputation}/20</div></div><div class="progress-ring" style="--p:${Number(x.managed_fit||0)}"><b>${x.managed_fit??'—'}</b></div></div>
+   <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><span class="badge">${esc(staffFormerLabel(x))}</span><span class="badge">${esc(x.market_status||'')}</span>${x.top_license?`<span class="badge">${esc(x.top_license)}</span>`:''}</div>
+   <div class="row between muted mini" style="margin-top:8px"><span>${esc(x.coaching_style||x.staff_personality||'Profil complet')}</span><span>${x.current_clients||0}/${x.max_clients||1} client(s)</span></div>
+   ${x.agency_name?`<div class="muted micro" style="margin-top:5px">Agence : ${esc(x.agency_name)}</div>`:''}
+   ${x.academy_name?`<div class="muted micro">Formation : ${esc(x.academy_name)}</div>`:''}
+   <div class="row" style="gap:7px;margin-top:9px;flex-wrap:wrap"><button class="ghost" onclick="openStaffProfile(${x.id})">Dossier</button>${x.market_status==='available'?`<button class="primary" onclick="approachStaffProfile(${x.id})">Approcher</button>`:'<button class="ghost" disabled>Sous contrat</button>'}</div>
+  </div>`).join('')||'<div class="card empty">Aucun profil ne correspond à ces filtres.</div>'}</div>
+ <div class="row between" style="margin-top:10px"><button class="ghost" ${staffWorldOffset<=0?'disabled':''} onclick="staffWorldPage(-1)">← Précédent</button><span class="muted mini">${fmt(staffWorldOffset+1)}–${fmt(Math.min(staffWorldOffset+50,d.total||0))} / ${fmt(d.total||0)}</span><button class="ghost" ${staffWorldOffset+50>=Number(d.total||0)?'disabled':''} onclick="staffWorldPage(1)">Suivant →</button></div>`;
+}
 function staffPage(){
  const cand=management?.candidates||[];
  const roles=[...new Set(cand.map(x=>String(x.role||'')).filter(Boolean))].sort();
@@ -950,7 +998,7 @@ function staffPage(){
     <div class="row" style="gap:6px;flex-wrap:wrap;margin:7px 0">${done?`<span class="badge good">Intérêt ${x.interest??'—'}/100</span>`:rejected?'<span class="badge bad">Entretien refusé</span>':'<span class="badge">Entretien requis</span>'}</div>
     <div class="row between"><span class="mini muted">Prime ${euro(done?(x.requested_signing||x.signing_cost):x.signing_cost)}</span><div class="row" style="gap:6px">${available&&!done&&!rejected?`<button class="primary" onclick="event.stopPropagation();interviewStaff(${x.id})">Entretien</button>`:''}${available&&done?`<button class="primary" onclick="event.stopPropagation();hireStaff(${x.id})">Recruter</button>`:''}${rejected?'<button class="ghost" disabled>Refus</button>':''}${x.status==='hired'?'<button class="ghost" disabled>Recruté</button>':''}${!available&&x.status!=='hired'?'<button class="ghost" disabled>Indisponible</button>':''}</div></div>
    </div>`;
- }).join('')}</div>`
+ }).join('')}</div>${staffWorldSection()}`
 }
 function contractsPage(){
  const rows=management?.contracts||[];
@@ -1869,6 +1917,35 @@ window.counterStaffOffer=async id=>{
   if(d.status==='counter')alert('Le candidat fait une contre-proposition.');
   if(d.status==='accepted')alert('Accord de principe trouvé.');
  }catch(e){alert(e.message)}
+}
+window.applyStaffWorldFilters=async()=>{
+ staffWorldFilters={
+  q:String(document.getElementById('staffWorldQ')?.value||'').trim(),
+  role:String(document.getElementById('staffWorldRole')?.value||''),
+  country:String(document.getElementById('staffWorldCountry')?.value||''),
+  former:String(document.getElementById('staffWorldFormer')?.value||'Tous'),
+  status:String(document.getElementById('staffWorldStatus')?.value||'Tous')
+ };
+ staffWorldOffset=0;
+ await loadStaffWorld();
+ render();
+}
+window.staffWorldPage=async dir=>{
+ const total=Number(staffWorldData?.total||0);
+ staffWorldOffset=Math.max(0,Math.min(Math.max(0,total-1),staffWorldOffset+Number(dir||0)*50));
+ await loadStaffWorld();
+ render();
+ const el=document.querySelector('.staff-world-filter');
+ if(el)window.scrollTo({top:el.getBoundingClientRect().top+window.scrollY-90,behavior:'smooth'});
+}
+window.approachStaffProfile=async profileId=>{
+ try{
+  const d=await managerAction('approach_staff',profileId);
+  await loadManagement();
+  await loadStaffWorld();
+  render();
+  if(d?.candidate_id)openStaffCandidate(d.candidate_id);
+ }catch(err){alert(err.message)}
 }
 window.interviewStaff=async id=>{
  try{

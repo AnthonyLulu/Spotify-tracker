@@ -279,26 +279,48 @@ async function loadHistory(){
  try{historyData=await get('/api/history-hub?'+p.toString())}catch(e){historyData={rows:[],countryBest:[],continentBest:[],methodology:e.message,coverage:{players:0,countries:0}}}
 }
 async function loadTournaments(){
- const p=new URLSearchParams({offset:String(tourOffset),limit:'150'});
- if(!tourFilters.month)p.set('from','2025-12-01');
- Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
- const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows||[];tourTbc=d.tbc||[];tourCount=d.count||0;
+ const buildParams=(circuitOverride="")=>{
+  const p=new URLSearchParams({offset:circuitOverride?"0":String(tourOffset),limit:"150"});
+  if(!tourFilters.month)p.set("from","2025-12-01");
+  if(circuitOverride)p.set("circuit",circuitOverride);
+  Object.entries(tourFilters).forEach(([k,v])=>{
+   if(!v||v==="Tous"||v==="Toutes"||(circuitOverride&&k==="circuit"))return;
+   if(k==="source"&&v==="Fictif"&&(circuitOverride==="Junior"||(!circuitOverride&&tourFilters.circuit==="Junior"))){
+    p.set("source","Simulation");
+   }else{
+    p.set(k,String(v));
+   }
+  });
+  return p;
+ };
 
- const logoRetryMs=30*24*60*60*1000;
- const missing=(tourRows||[])
-  .filter(t=>t.circuit==='ATP'&&!t.logo_url&&(!t.logo_checked_at||Date.now()-Date.parse(String(t.logo_checked_at))>logoRetryMs))
-  .slice(0,12).map(t=>t.id);
- if(missing.length&&!window.__courtBossLogoResolveBusy){
-  window.__courtBossLogoResolveBusy=true;
-  get('/api/tournament-logos?ids='+missing.join(','))
-   .then(x=>{
-    const byId=new Map((x.rows||[]).map(r=>[Number(r.id),r]));
-    tourRows=(tourRows||[]).map(t=>byId.has(Number(t.id))?{...t,...byId.get(Number(t.id))}:t);
-    if(route==='calendar')render();
-   })
-   .catch(()=>{})
-   .finally(()=>{window.__courtBossLogoResolveBusy=false});
+ const base=await get("/api/tournaments?"+buildParams().toString());
+ let rows=base.rows||[];
+ let tbc=[...(base.tbc||[])];
+
+ const overview=!tourFilters.circuit||tourFilters.circuit==="Tous";
+ if(tourOffset===0&&overview){
+  const priorityCircuits=["ATP","Junior","Federation"];
+  const extra=await Promise.all(priorityCircuits.map(async circuit=>{
+   try{return await get("/api/tournaments?"+buildParams(circuit).toString())}
+   catch{return {rows:[],tbc:[]}}
+  }));
+  extra.forEach(x=>{
+   rows.push(...(x.rows||[]));
+   tbc.push(...(x.tbc||[]));
+  });
  }
+
+ const byId=new Map();
+ rows.forEach(t=>byId.set(Number(t.id),t));
+ tourRows=[...byId.values()].sort((a,b)=>
+  String(a.start_date||"").localeCompare(String(b.start_date||""))||
+  Number(Boolean(b.is_verified))-Number(Boolean(a.is_verified))||
+  String(a.name||"").localeCompare(String(b.name||""))
+ );
+ const tbcKey=x=>[x.id||"",x.name||"",x.start_date||"",x.circuit||""].join("|");
+ tourTbc=[...new Map(tbc.map(x=>[tbcKey(x),x])).values()];
+ tourCount=base.count||tourRows.length;
 }
 async function loadCompetitions(){
  competitionLoading=true;
@@ -505,38 +527,57 @@ function doublesEligibility(t){
  return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
 const MAJOR_TOURNAMENT_LOGOS=[
- {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/AO26_logo.svg",label:"AO",cls:"logo-ao"},
+ {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO",cls:"logo-ao"},
  {re:/Roland[ -]?Garros/i,url:"https://static.cdnlogo.com/logos/r/52/roland-garros.svg",label:"RG",cls:"logo-rg"},
  {re:/Wimbledon/i,url:"https://static.cdnlogo.com/logos/w/73/wimbledon.svg",label:"WIM",cls:"logo-wim"},
- {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
+ {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
 ];
+const CURATED_TOURNAMENT_LOGOS=[
+ {re:/BNP Paribas Open|Indian Wells/i,url:"https://assets.stickpng.com/images/626658031e92f9aac65b5bb3.png",label:"IW"},
+ {re:/Nexo Dallas Open|Dallas Open/i,url:"https://assets.stickpng.com/images/62665b9e1e92f9aac65b5bcb.png",label:"DAL"},
+ {re:/Delray Beach Open/i,url:"https://assets.stickpng.com/images/62665c261e92f9aac65b5bd0.png",label:"DBO"},
+ {re:/Dubai Duty Free Tennis Championships|Dubai Tennis Championships/i,url:"https://assets.stickpng.com/images/62665ca61e92f9aac65b5bd4.png",label:"DUB"},
+ {re:/Bci Seguros Chile Open|Chile Open/i,url:"https://assets.stickpng.com/images/6266595e1e92f9aac65b5bbb.png",label:"CHI"},
+ {re:/Gonet Geneva Open|Geneva Open/i,url:"https://assets.stickpng.com/images/62665d641e92f9aac65b5bd9.png",label:"GVA"},
+ {re:/Bitpanda Hamburg Open|Hamburg (?:European )?Open/i,url:"https://assets.stickpng.com/images/62665eb81e92f9aac65b5bdd.png",label:"HAM"},
+ {re:/Libema Open|Libéma Open/i,url:"https://assets.stickpng.com/images/62668a2f2c88722059d586d2.png",label:"LIB"},
+ {re:/Mallorca Championships/i,url:"https://assets.stickpng.com/images/62668bb32c88722059d586da.png",label:"MAL"},
+ {re:/EFG Swiss Open Gstaad|Swiss Open Gstaad/i,url:"https://assets.stickpng.com/images/62668e752c88722059d586e7.png",label:"GST"},
+ {re:/Qatar ExxonMobil Open|Qatar Open/i,url:"https://assets.stickpng.com/images/6266906e2c88722059d586ee.png",label:"DOH"},
+ {re:/Rio Open/i,url:"https://assets.stickpng.com/images/626691042c88722059d586f1.png",label:"RIO"},
+ {re:/National Bank Open|Canada Masters|Toronto Masters|Montreal Masters/i,url:"https://assets.stickpng.com/images/62668e322c88722059d586e5.png",label:"CAN"},
+ {re:/Cincinnati Open|Western & Southern Open/i,url:"https://en.wikipedia.org/wiki/Special:Redirect/file/Cincinnati_Open_logo.svg",label:"CIN"},
+ {re:/Mubadala Citi DC Open|Citi DC Open|Citi Open|Washington Open/i,url:"https://assets.stickpng.com/images/62665a531e92f9aac65b5bc2.png",label:"WAS"},
+ {re:/Kinoshita Group Japan Open|Japan Open|Tokyo Open/i,url:"https://assets.stickpng.com/images/626688682c88722059d586c7.png",label:"TOK"},
+ {re:/Rolex Shanghai Masters|Shanghai Masters/i,url:"https://assets.stickpng.com/images/626692962c88722059d586f6.png",label:"SHA"},
+ {re:/Rolex Paris Masters|Paris Masters/i,url:"https://assets.stickpng.com/images/626691792c88722059d586f4.png",label:"PAR"},
+ {re:/Chengdu Open/i,url:"https://assets.stickpng.com/images/6356d0b733e1449e66ee5a2e.png",label:"CHE"},
+ {re:/BNP Paribas Nordic Open|Stockholm Open/i,url:"https://assets.stickpng.com/images/6356fa1633e1449e66ee9f4c.png",label:"STO"},
+ {re:/Kitzb[uü]hel|Generali Open/i,url:"https://assets.stickpng.com/images/626688b02c88722059d586c9.png",label:"KIT"},
+ {re:/Barcelona Open Banc Sabadell|Barcelona Open/i,url:"https://assets.stickpng.com/images/63566131636d1187068c0368.png",label:"BCN"},
+ {re:/BMW Open/i,url:"https://assets.stickpng.com/images/626657a81e92f9aac65b5bb0.png",label:"MUN"},
+ {re:/Davis Cup/i,url:"https://assets.stickpng.com/images/62665bd01e92f9aac65b5bcd.png",label:"DAVIS"}
+];
+
 function tournamentLogoMeta(t={}){
  const name=String(t.name||t.tournament_name||"");
  const explicit=String(t.logo_url||"").trim();
  const major=MAJOR_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
+ const curated=CURATED_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
  const category=String(t.category||t.level||"").trim();
  const circuit=String(t.circuit||"").trim();
- // Curated Grand Slam assets win over older DB logo URLs so no baked-in
- // white/colour rectangle can leak back into the TM-style UI.
  if(major)return {url:major.url,label:major.label,cls:"logo-official "+(major.cls||"")};
+ if(curated)return {url:curated.url,label:curated.label,cls:"logo-official logo-curated"};
  if(explicit)return {url:explicit,label:String(category||circuit||"TOUR"),cls:"logo-official"};
- if(t.id&&t.is_verified&&circuit==="ATP"){
-   return {
-     url:API+"/api/tournament-logo?id="+encodeURIComponent(t.id),
-     label:category||"ATP",
-     sub:"",
-     cls:"logo-official logo-auto"
-   };
- }
  if(/Grand Chelem|Grand Slam/i.test(category))return {url:null,label:"GRAND SLAM",sub:"GS",cls:"logo-gs"};
  if(/Masters 1000/i.test(category))return {url:null,label:"ATP 1000",sub:"M1000",cls:"logo-atp"};
  if(/ATP 500|^500$/i.test(category))return {url:null,label:"ATP 500",sub:"500",cls:"logo-atp"};
  if(/ATP 250|^250$/i.test(category))return {url:null,label:"ATP 250",sub:"250",cls:"logo-atp"};
  if(/ATP Finals|Finals/i.test(category)&&circuit==="ATP")return {url:null,label:"ATP FINALS",sub:"FINALS",cls:"logo-finals"};
- if(/Challenger/i.test(category)||circuit==="Challenger")return {url:null,label:"ATP CH",sub:category.replace(/Challenger\s*/i,"")||"CH",cls:"logo-challenger"};
+ if(/Challenger/i.test(category)||circuit==="Challenger")return {url:null,label:"ATP CH",sub:category.replace(/Challenger\\s*/i,"")||"CH",cls:"logo-challenger"};
  if(/Junior Grand Slam/i.test(category))return {url:null,label:"JUNIOR GS",sub:"JGS",cls:"logo-junior"};
  if(/^J\\d+/i.test(category)||circuit==="Junior")return {url:null,label:"ITF JUNIOR",sub:category||"J",cls:"logo-junior"};
- if(/^M\d+|^W\d+/i.test(category)||circuit==="ITF")return {url:null,label:"ITF",sub:category||"WTT",cls:"logo-itf"};
+ if(/^M\\d+|^W\\d+/i.test(category)||circuit==="ITF")return {url:null,label:"ITF",sub:category||"WTT",cls:"logo-itf"};
  if(circuit==="NCAA")return {url:null,label:"NCAA",sub:"COLLEGE",cls:"logo-ncaa"};
  if(circuit==="Federation"||/Davis/i.test(name+category))return {url:null,label:"DAVIS CUP",sub:"TEAM",cls:"logo-davis"};
  return {url:null,label:circuit||category||"TENNIS",sub:category&&category!==circuit?category:"TOUR",cls:"logo-generic"};

@@ -1851,10 +1851,13 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
-    const [developmentProfile,developmentHistory,scoutingReport]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
-      db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle()
+      db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
+      db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_elo_ratings").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20)
     ]);
 
     return h({
@@ -1872,7 +1875,10 @@ Deno.serve(async(req:Request)=>{
       doublesPartnerHistory:doublesPartnerHistory.error?[]:(doublesPartnerHistory.data??[]),
       developmentProfile:developmentProfile.error?null:developmentProfile.data,
       developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[]),
-      scoutingReport:scoutingReport.error?null:scoutingReport.data
+      scoutingReport:scoutingReport.error?null:scoutingReport.data,
+      advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
+      eloRating:eloRating.error?null:eloRating.data,
+      styleHistory:styleHistory.error?[]:(styleHistory.data??[])
     });
   }
 
@@ -4073,57 +4079,145 @@ Deno.serve(async(req:Request)=>{
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
 
-    const attrEdge=(x:any)=>{
-      const avg=(keys:string[])=>keys.reduce((s,k)=>s+Number(x?.[k]??10),0)/Math.max(1,keys.length);
-      return (avg(["decision_making","shot_selection","consistency","big_points","killer_instinct"])-10)*.34
-        +(avg(["first_serve_quality","second_serve_quality","forehand_accuracy","backhand_accuracy","return_consistency"])-10)*.18
-        +(avg(["acceleration","agility","balance","natural_fitness","recovery"])-10)*.10;
-    };
-    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.14+Number(managed.data.fitness||90)*.06-Number(managed.data.fatigue||20)*.11+Number(ua[key]||10)*.62+attrEdge(ua);
-    const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.14+Number(opp.fitness||90)*.06-Number(opp.fatigue||20)*.11+Number(opp.player_attributes?.[key]||10)*.62+attrEdge(opp.player_attributes||{});
-    const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
-    const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
-    const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
-    const momentum=(Number(session.data.momentum||50)-50)*.05;
-    const indoor=surface.toLowerCase().includes("intérieur");
-    const serveBoost=surface==="Gazon"?3.0:indoor?2.8:surface.startsWith("Dur")?2.2:1.55;
-    const pace=surface==="Terre"?-2:surface==="Gazon"?2:indoor?1.5:0;
-    let uStrength=uBase+balance+netBonus+retBonus+momentum;
-    let oStrength=oBase;
-    if(session.data.serving_user)uStrength+=serveBoost;else oStrength+=serveBoost;
+    const pressure=(Math.max(Number(session.data.user_points||0),Number(session.data.opponent_points||0))>=3
+      &&Math.abs(Number(session.data.user_points||0)-Number(session.data.opponent_points||0))<=1)?1:0;
+    const serverIsUser=Boolean(session.data.serving_user);
+    const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
+    const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
+    const matchup=await db.rpc("tennis_abstract_matchup_model",{
+      p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:pressure
+    });
+    const tm:any=matchup.error?{}:(matchup.data||{});
+    const indoor=surface.toLowerCase().includes("intérieur")||surface.toLowerCase().includes("indoor");
+    const clay=surface==="Terre"||surface.toLowerCase().includes("clay");
+    const grass=surface==="Gazon"||surface.toLowerCase().includes("grass");
+    const userMomentum=(Number(session.data.momentum||50)-50)*.0009;
 
-    const prob=1/(1+Math.exp(-(uStrength-oStrength)/7.5));
-    const userWon=Math.random()<prob;
+    let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
+      -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)));
+    const firstServeIn=Math.random()<firstIn;
+    const dfBase=Number(tm.double_fault_pct||4)/100;
+    const doubleFault=!firstServeIn&&Math.random()<Math.max(.006,Math.min(.12,
+      dfBase*(serverIsUser?(1+Math.max(-20,risk-50)*.005):1)
+    ));
+
+    let serverWinProb=Number(firstServeIn?tm.first_serve_point_win_prob:tm.second_serve_point_win_prob);
+    if(!Number.isFinite(serverWinProb))serverWinProb=firstServeIn?.64:.51;
+    if(serverIsUser){
+      serverWinProb+=(ag-58)*.0008+(risk-52)*.00035+Math.min(70,net)*.00007+userMomentum;
+    }else{
+      serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
+    }
+    serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
+
+    const serverWon=!doubleFault&&Math.random()<serverWinProb;
+    const userWon=serverIsUser?serverWon:!serverWon;
+
+    const dirRoll=Math.random()*100;
+    const wide=Number(tm.serve_wide_pct||38),body=Number(tm.serve_body_pct||14);
+    const serveDirection=dirRoll<wide?"large":dirRoll<wide+body?"corps":"T";
+    const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
+    const aceChance=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100*aceSurface
+      *(serverIsUser?(1+Math.max(-20,risk-50)*.004):1)));
+    const ace=firstServeIn&&serverWon&&Math.random()<aceChance;
+    const unreturned=!ace&&!doubleFault&&serverWon&&Math.random()<Math.max(.02,Math.min(.45,
+      Number(tm.unreturned_serve_pct||22)/100*(firstServeIn?1:.52)
+    ));
+
+    const rallyMean=Math.max(2.0,Math.min(10.5,
+      Number(tm.avg_rally_shots||5)+(clay?.9:grass?-.7:indoor?-.35:0)
+      +(serverIsUser?(55-risk)*.012:0)
+    ));
+    const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(18,
+      2+Math.floor(-Math.log(Math.max(.001,1-Math.random()))*Math.max(1,rallyMean-2))
+    ));
+    const rallyBand=rally<=4?"0-4":rally<=8?"5-8":"9+";
+
+    const winnerMetric=serverWon?Number(tm.server_winner_rate_pct||14):Number(tm.returner_winner_rate_pct||14);
+    const forcedMetric=serverWon?Number(tm.server_forced_error_pct||12):Number(tm.returner_forced_error_pct||12);
+    const loserUe=serverWon?Number(tm.returner_ue_pct||15):Number(tm.server_ue_pct||15);
+    let ending="rally_winner";
+    if(doubleFault)ending="double_fault";
+    else if(ace)ending="ace";
+    else if(unreturned)ending="unreturned_serve";
+    else{
+      const total=Math.max(1,winnerMetric+forcedMetric+loserUe);
+      const z=Math.random()*total;
+      ending=z<winnerMetric?"winner":z<winnerMetric+forcedMetric?"forced_error":"unforced_error";
+      if(!serverWon&&ending==="winner"&&rally<=3)ending="return_winner";
+    }
+
+    const returnDepthRoll=Math.random()*100;
+    const returnDepthScore=Number(tm.return_depth_score||60);
+    const returnDepth=returnDepthRoll<Math.max(15,returnDepthScore*.62)?"profond"
+      :returnDepthRoll<Math.max(45,returnDepthScore*.62+28)?"moyen":"court";
+    const netChance=Math.max(0,Math.min(.65,
+      Number(serverWon?tm.server_net_approach_pct:tm.returner_net_approach_pct||10)/100+
+      (serverIsUser?net*.002:0)
+    ));
+    const atNet=!ace&&!doubleFault&&!unreturned&&Math.random()<netChance;
+
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
 
-    const rallyBase=Math.max(2,Math.round(5-pace+(100-risk)/14));
-    const rally=2+Math.floor(Math.random()*Math.max(3,rallyBase));
-    const aceChance=Math.max(.08,Math.min(.32,.13+Number(ua.serve_power||10)*.006+(indoor?.055:surface==="Gazon"?.07:surface==="Terre"?-.035:0)));
-    const shot=userWon?(Math.random()<aceChance?"ace":Math.random()<.58?"winner":"forced error"):(Math.random()<.18?"return winner":Math.random()<.58?"winner":"forced error");
     const lastPoint={
       winner:userWon?"user":"opponent",
-      rally,
-      shot,
+      rally,rally_band:rallyBand,shot:ending,ending,
+      serve_number:firstServeIn?1:2,first_serve_in:firstServeIn,
+      double_fault:doubleFault,ace,unreturned_serve:unreturned,
+      serve_direction:serveDirection,return_depth:returnDepth,at_net:atNet,
+      server:serverIsUser?"user":"opponent",
+      server_win_probability:Math.round(serverWinProb*1000)/10,
+      server_surface_elo:Number(tm.server_surface_elo||0),
+      returner_surface_elo:Number(tm.returner_surface_elo||0),
+      model:"Court Boss TA/MCP-inspired point engine",
       user_x:18+Math.floor(Math.random()*64),
       user_y:Math.max(56,Math.min(88,82-Math.round(net*.18)-Math.min(8,Math.floor(rally/2))+Math.floor(Math.random()*7-3))),
       opp_x:18+Math.floor(Math.random()*64),
       opp_y:Math.max(12,Math.min(44,18+Math.min(12,Math.floor(rally/2))+Math.floor(Math.random()*9-4))),
       ball_x:18+Math.floor(Math.random()*64),
       ball_y:userWon?20+Math.floor(Math.random()*28):52+Math.floor(Math.random()*28),
-      zone:Math.round(net)>=70?"Pression filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
+      zone:atNet?"Filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
       at:new Date().toISOString()
     };
 
-    const stats:any={user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,double_faults:0,...(session.data.stats||{})};
-    if(userWon){
-      if(shot==="ace")stats.user_aces++;
-      else if(shot==="winner")stats.user_winners++;
-      else stats.opp_errors++;
+    const stats:any={
+      user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
+      user_double_faults:0,opp_double_faults:0,
+      user_first_serves:0,user_first_serves_in:0,opp_first_serves:0,opp_first_serves_in:0,
+      user_unreturned_serves:0,opp_unreturned_serves:0,
+      user_net_points:0,user_net_points_won:0,opp_net_points:0,opp_net_points_won:0,
+      user_short_rallies_won:0,user_medium_rallies_won:0,user_long_rallies_won:0,
+      opp_short_rallies_won:0,opp_medium_rallies_won:0,opp_long_rallies_won:0,
+      ...(session.data.stats||{})
+    };
+    if(serverIsUser){
+      stats.user_first_serves++;
+      if(firstServeIn)stats.user_first_serves_in++;
+      if(doubleFault)stats.user_double_faults++;
+      if(ace)stats.user_aces++;
+      if(unreturned)stats.user_unreturned_serves++;
     }else{
-      if(shot==="winner"||shot==="return winner")stats.opp_winners++;
-      else stats.user_errors++;
+      stats.opp_first_serves++;
+      if(firstServeIn)stats.opp_first_serves_in++;
+      if(doubleFault)stats.opp_double_faults++;
+      if(unreturned)stats.opp_unreturned_serves++;
     }
+    if(atNet){
+      const prefix=serverIsUser?"user":"opp";
+      stats[prefix+"_net_points"]=(stats[prefix+"_net_points"]||0)+1;
+      if(serverWon)stats[prefix+"_net_points_won"]=(stats[prefix+"_net_points_won"]||0)+1;
+    }
+    if(!ace&&!doubleFault&&!unreturned){
+      if(ending==="winner"||ending==="return_winner"){
+        if(userWon)stats.user_winners++;else stats.opp_winners++;
+      }else{
+        if(userWon)stats.opp_errors++;else stats.user_errors++;
+      }
+    }
+    const bandKey=rallyBand==="0-4"?"short":rallyBand==="5-8"?"medium":"long";
+    if(userWon)stats["user_"+bandKey+"_rallies_won"]=(stats["user_"+bandKey+"_rallies_won"]||0)+1;
+    else stats["opp_"+bandKey+"_rallies_won"]=(stats["opp_"+bandKey+"_rallies_won"]||0)+1;
 
     let ug=Number(session.data.user_games||0),og=Number(session.data.opponent_games||0);
     let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
@@ -4180,6 +4274,13 @@ Deno.serve(async(req:Request)=>{
         form:Math.max(35,Math.min(100,Number(career.data.form||72)+(won?2:-1))),
         updated_at:new Date().toISOString()
       }).eq("id","demo");
+      await db.rpc("update_player_elo_after_match",{
+        p_winner_id:won?Number(managed.data.id):Number(opp.id),
+        p_loser_id:won?Number(opp.id):Number(managed.data.id),
+        p_surface:surface,
+        p_match_date:String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10),
+        p_doubles:false,p_weight:1
+      });
     }
 
     return h({

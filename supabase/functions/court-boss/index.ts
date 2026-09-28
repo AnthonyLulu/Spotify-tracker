@@ -1855,7 +1855,7 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,trainingLoad,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       managedIdForMatchup===id
@@ -1874,6 +1874,7 @@ Deno.serve(async(req:Request)=>{
       db.from("player_tactical_preferences").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_tactical_traits").select("trait_code,trait_name,intensity,source_label").eq("player_id",id).eq("active",true).order("intensity",{ascending:false}).limit(8),
       db.from("player_season_plans").select("*").eq("player_id",id).lte("season",Number(referenceDate.slice(0,4))+1).order("season",{ascending:false}).limit(1).maybeSingle(),
+      db.from("player_training_load_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_surface_preferences").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_context_traits").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_psychology_state").select("*").eq("player_id",id).maybeSingle(),
@@ -1918,6 +1919,13 @@ Deno.serve(async(req:Request)=>{
       tacticalProfile:tacticalProfile.error?null:tacticalProfile.data,
       tacticalTraits:tacticalTraits.error?[]:(tacticalTraits.data??[]),
       seasonPlan:seasonPlan.error?null:seasonPlan.data,
+      trainingLoad:trainingLoad.error?null:(
+        managedIdForMatchup===id
+          ?null
+          :Number(scoutingReport.data?.confidence||0)>=75
+            ?trainingLoad.data
+            :trainingLoad.data?{phase:trainingLoad.data.phase,as_of_date:trainingLoad.data.as_of_date}:null
+      ),
       surfacePreference:surfacePreference.error?null:surfacePreference.data,
       contextProfile:contextProfile.error?null:contextProfile.data,
       psychologyState:psychologyState.error?null:(

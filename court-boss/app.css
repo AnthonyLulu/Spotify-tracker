@@ -567,3 +567,9 @@ body{background:
   .career-focus-grid{grid-template-columns:1fr}
   .career-focus-card{min-height:auto}
 }
+
+.player-star-rating{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.player-star-glyph{letter-spacing:1px;font-size:15px}
+.attr-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.attr-group{min-width:0}
+@media(max-width:720px){.attr-sections{grid-template-columns:1fr}}

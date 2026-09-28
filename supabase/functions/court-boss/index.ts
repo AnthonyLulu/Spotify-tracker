@@ -2820,6 +2820,8 @@ Deno.serve(async(req:Request)=>{
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const month=Number(date.slice(5,7));
         const quarterly=month===1||month===4||month===7||month===10;
+        const physicalMaturation=await db.rpc("progress_player_physical_maturation",{p_date:date});
+        const coachingEnvironmentRefresh=await db.rpc("refresh_player_coaching_environment",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
@@ -2833,6 +2835,15 @@ Deno.serve(async(req:Request)=>{
         const contextualStars=quarterly
           ?await db.rpc("refresh_player_contextual_stars",{p_date:date})
           :{data:null,error:null};
+        const surfacePreferences=quarterly
+          ?await db.rpc("refresh_player_surface_preferences",{p_date:date})
+          :{data:null,error:null};
+        const reputationProfiles=quarterly
+          ?await db.rpc("refresh_player_reputation_profiles",{p_date:date})
+          :{data:null,error:null};
+        const eloBaseline=quarterly
+          ?await db.rpc("refresh_player_elo_baseline",{p_date:date})
+          :{data:null,error:null};
         const analyticsBase=quarterly
           ?await db.rpc("refresh_player_advanced_metrics",{p_date:date})
           :{data:null,error:null};
@@ -2844,6 +2855,8 @@ Deno.serve(async(req:Request)=>{
           :{data:null,error:null};
         developmentSupply={
           ...(developmentSupply||{}),
+          physicalMaturation:physicalMaturation.error?{error:physicalMaturation.error.message}:physicalMaturation.data,
+          coachingEnvironmentRefresh:coachingEnvironmentRefresh.error?{error:coachingEnvironmentRefresh.error.message}:coachingEnvironmentRefresh.data,
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
@@ -2855,6 +2868,9 @@ Deno.serve(async(req:Request)=>{
           roleSuitability:roleSuitability.error?{error:roleSuitability.error.message}:roleSuitability.data,
           tacticalTraits:tacticalTraits.error?{error:tacticalTraits.error.message}:tacticalTraits.data,
           contextualStars:contextualStars.error?{error:contextualStars.error.message}:contextualStars.data,
+          surfacePreferences:surfacePreferences.error?{error:surfacePreferences.error.message}:surfacePreferences.data,
+          reputationProfiles:reputationProfiles.error?{error:reputationProfiles.error.message}:reputationProfiles.data,
+          eloBaseline:eloBaseline.error?{error:eloBaseline.error.message}:eloBaseline.data,
           analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,
           analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data,
           contextTraits:contextTraits.error?{error:contextTraits.error.message}:contextTraits.data

@@ -5331,12 +5331,24 @@ Deno.serve(async(req:Request)=>{
       if(result.error)return h({error:result.error.message},500);
       const labels:any={singles_priority:"Simple prioritaire",mixed:"Simple + double",doubles_only:"Double exclusivement"};
       let needsPartner=false;
+      let davisRole:any=null;
       if(focus==="doubles_only"){
         const managedId=Number(career.data.managed_player_id||0);
         const pair=managedId
           ?await db.from("doubles_partnerships").select("id,player_b_id").eq("player_a_id",managedId).order("id",{ascending:false}).limit(1).maybeSingle()
           :{data:null,error:null};
         needsPartner=!pair.data;
+
+        if(managedId){
+          const nation=String(career.data.selected_federation_nation||career.data.federation_nation||career.data.country||"FRA").toUpperCase();
+          const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",managedId).eq("nation",nation).maybeSingle();
+          if(!ownDavis.error&&ownDavis.data&&/^Simple/i.test(String(ownDavis.data.role||""))){
+            const taken=await db.from("davis_squad").select("role,player_id").eq("nation",nation).in("role",["Double A","Double B"]);
+            const used=new Set((taken.data??[]).filter((x:any)=>Number(x.player_id)!==managedId).map((x:any)=>String(x.role)));
+            davisRole=!used.has("Double A")?"Double A":!used.has("Double B")?"Double B":"Réserve";
+            await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
+          }
+        }
       }
       await db.from("inbox_items").insert({
         kind:"career",title:"Orientation de carrière modifiée",
@@ -5348,7 +5360,7 @@ Deno.serve(async(req:Request)=>{
         db.rpc("refresh_sponsor_offer_eligibility",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)})
       ]);
       return h({
-        ok:true,...(result.data||{}),label:labels[focus],needs_partner:needsPartner,
+        ok:true,...(result.data||{}),label:labels[focus],needs_partner:needsPartner,davis_role:davisRole,
         board:boardRefresh.error?{error:boardRefresh.error.message}:boardRefresh.data,
         sponsor_visibility:sponsorRefresh.error?{error:sponsorRefresh.error.message}:sponsorRefresh.data
       });

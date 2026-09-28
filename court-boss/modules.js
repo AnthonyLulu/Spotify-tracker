@@ -144,7 +144,8 @@ async function rolloverSeasonV2(){
 
 function doublesPageV2(){
   const cr=career();
-  const pool=[...(boot.davisSquad||[]).map(x=>x.players).filter(Boolean),...(boot.topPlayers||[]).filter(p=>p.country==='FRA')];
+  const fedNation=String(boot.selectedFederation||boot.federation?.nation||cr.country||'FRA').toUpperCase();
+  const pool=[...(boot.davisSquad||[]).map(x=>x.players).filter(Boolean),...(boot.topPlayers||[]).filter(p=>p.country===fedNation)];
   const uniq=[...new Map(pool.map(p=>[p.id,p])).values()].filter(p=>p.name!==cr.player_name).slice(0,14);
   const stored=management?.partnerships?.[0]?.player_b||null;
   const partner=uniq.find(p=>p.id===local.partnerId)||stored;

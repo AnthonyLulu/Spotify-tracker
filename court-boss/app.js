@@ -1186,7 +1186,7 @@ function doublesPage(){
  <div class="grid g2">${candidates.slice(0,20).map(p=>`<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">Double #${p.doubles_ranking}</div><h3>${flags[p.country]||'🏳️'} ${esc(p.name)}</h3><div class="muted mini">${p.ranking?'ATP #'+p.ranking+' · ':''}CA ${p.current_ability} · PA ${p.potential}</div></div><button class="primary" onclick="choosePartner(${p.id})">Associer</button></div></div>`).join('')}</div>`
 }
 function universityPage(){
- const teams=management?.college||[],offers=management?.collegeOffers||[],state=management?.collegeState||{},duals=management?.collegeDuals||[];
+ const teams=management?.college||[],offers=management?.collegeOffers||[],state=management?.collegeState||{},duals=management?.collegeDuals||[],collegeStaff=management?.collegeTeamStaff||[];
  const committed=state.status==='committed',alumni=state.status==='pro';
  return `<div class="section-head"><div><div class="eyebrow">Circuit universitaire</div><h1>NCAA / ITA</h1><div class="muted">Recrutement, bourses, team duals, simple/double, progression académique et passage pro. Le dossier NCAA reste attaché au joueur après son départ.</div></div><span class="pill">${committed?'NCAA actif':alumni?'NCAA Alumni':'Recrutement ouvert'}</span></div>
  <div class="grid g2">
@@ -1208,16 +1208,20 @@ window.openPlayerByName=async name=>{
 window.openCollegeTeam=id=>{
  const t=(management?.college||[]).find(x=>x.id===id);if(!t)return;
  const offers=(management?.collegeOffers||[]).filter(x=>x.team_id===id);
- overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Programme NCAA</div><h1>#${t.ita_rank} ${esc(t.name)}</h1><div class="muted">Bilan ${esc(t.record)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><h2>Recrutement</h2>${offers.length?offers.map(o=>`<div class="list-item"><div class="row between"><span>Bourse</span><b>${o.scholarship_pct}%</b></div><div class="muted mini">${esc(o.role)} · fit sportif ${o.development_fit}/100</div></div>`).join(''):'<div class="empty">Pas d’offre active.</div>'}</div></div></div>`;
+ const staff=(management?.collegeTeamStaff||[]).filter(x=>Number(x.team_id)===Number(id));
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Programme NCAA</div><h1>#${t.ita_rank} ${esc(t.name)}</h1><div class="muted">Bilan ${esc(t.record)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+ <div class="card"><div class="row between"><h2>Staff du programme</h2><span class="badge">${staff.length}</span></div>${staff.length?staff.map(x=>{const sp=x.staff||{};return `<div class="list-item click" onclick="openStaffProfile(${sp.id})"><div class="row between"><div><b>${esc(sp.name||x.role)}</b><div class="muted mini">${esc(x.role)} · ${esc(sp.coaching_style||sp.primary_role||'')}</div></div><div style="text-align:right"><b>${sp.reputation??'—'}/20</b><div class="muted micro">réputation</div></div></div><div class="row between muted micro"><span>Coach ${sp.coach_rating??'—'}</span><span>Tact ${sp.tactical_rating??'—'}</span><span>Jeunes ${sp.youth_rating??'—'}</span><span>Physique ${sp.fitness_rating??'—'}</span></div></div>`}).join(''):'<div class="empty">Staff en cours de génération.</div>'}</div>
+ <div class="card" style="margin-top:10px"><h2>Recrutement</h2>${offers.length?offers.map(o=>`<div class="list-item"><div class="row between"><span>Bourse</span><b>${o.scholarship_pct}%</b></div><div class="muted mini">${esc(o.role)} · fit sportif ${o.development_fit}/100</div></div>`).join(''):'<div class="empty">Pas d’offre active.</div>'}</div></div></div>`;
 }
 window.commitCollege=async id=>{try{await managerAction('commit_college',id);await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.turnProCollege=async()=>{try{if(!confirm('Passer professionnel et quitter la NCAA ? Le dossier universitaire restera archivé.'))return;await managerAction('turn_pro_college',1);await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id);await loadManagement();render()}catch(e){alert(e.message)}}
 function davisPage(){
- const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[],history=management?.davisHistory||[];
+ const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[],history=management?.davisHistory||[],allDavisStaff=management?.davisTeamStaff||[];
  const federations=boot.federations||[];
  const nation=String(boot.selectedFederation||f.nation||career().country||'FRA').toUpperCase();
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
+ const nationStaff=allDavisStaff.filter(x=>String(x.nation||'').toUpperCase()===nation);
  const today=String(local.date||RANKING_SNAPSHOT);
  const nationTies=ties.filter(t=>t.home_nation===nation||t.away_nation===nation).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const nextTie=nationTies.find(t=>t.status!=='completed'&&String(t.tie_date)>=today)||null;
@@ -1248,6 +1252,10 @@ function davisPage(){
   <div class="card"><div class="row between"><div><div class="eyebrow">Sélection</div><h2>${flags[nation]||'🏳️'} ${nation}</h2></div><span class="pill">${sq.length} joueurs</span></div>
    ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné. La sélection sera générée depuis les meilleurs joueurs du pays.</div>'}
   </div>
+ </div>
+
+ <div class="card" style="margin-top:14px"><div class="row between"><div><div class="eyebrow">Encadrement national</div><h2>Staff Coupe Davis</h2></div><span class="pill">${nationStaff.length} membres</span></div>
+  <div class="grid g2" style="margin-top:8px">${nationStaff.map(x=>{const sp=x.staff||{};return `<div class="list-item click" onclick="openStaffProfile(${sp.id})"><div class="row between"><div><b>${esc(sp.name||x.role)}</b><div class="muted mini">${esc(x.role)}${x.part_time?' · temps partiel':''}</div></div><span class="badge">${sp.reputation??'—'}/20</span></div><div class="row between muted micro"><span>Tact ${sp.tactical_rating??'—'}</span><span>Mental ${sp.mental_rating??'—'}</span><span>Physique ${sp.fitness_rating??'—'}</span><span>Médical ${sp.medical_rating??'—'}</span></div></div>`}).join('')||'<div class="empty">Staff fédéral en cours de génération.</div>'}</div>
  </div>
 
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours ${nation}</div><h2>Rencontres de la fédération</h2></div></div>

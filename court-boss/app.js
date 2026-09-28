@@ -1788,7 +1788,7 @@ window.hireStaff=async id=>{try{const d=await managerAction('hire_staff',id);if(
 window.openStaffProfile=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier staff…</div></div></div>';
  try{
-  const d=await get('/api/staff-profile?id='+id),p=d.profile||{},active=d.activeAssignments||[],hist=d.history||[],events=d.events||[];
+  const d=await get('/api/staff-profile?id='+id),p=d.profile||{},active=d.activeAssignments||[],hist=d.history||[],events=d.events||[],agency=d.agency?.agency||null,licenses=d.licenses||[],pref=d.preferences||null,scope=d.scopeReputation||[],peers=d.peers||[],recs=d.recommendations||{from:[],to:[]},college=d.collegeStaff||[],davis=d.davisStaff||[],training=d.training||[];
   const playerLink=x=>x?.player?.id?`<span class="click" onclick="openPlayer(${x.player.id})"><b>${esc(x.player.name)}</b></span>`:'—';
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet">
    <div class="sheet-head"><div><div class="eyebrow">${esc(p.primary_role||'Staff')}</div><h1>${esc(p.name||'Profil staff')}</h1><div class="muted">${esc(p.specialty||'')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>

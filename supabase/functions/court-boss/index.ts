@@ -2111,37 +2111,69 @@ Deno.serve(async(req:Request)=>{
             }));
         }
       }else{
-        let dpool:any;
-        if(isJuniorDouble){
-          dpool=await db.from("players")
-            .select("id,name,country,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,current_ability,potential")
-            .not("junior_doubles_ranking","is",null)
-            .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-            .order("junior_doubles_ranking",{ascending:true})
-            .limit(Math.min(128,Math.max(16,drawSize*2)));
-        }else{
-          dpool=await db.from("players")
-            .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
-            .eq("is_real",true)
-            .not("doubles_ranking","is",null)
-            .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-            .order("doubles_ranking",{ascending:true})
-            .limit(Math.min(128,Math.max(16,drawSize*2)));
+        if(!isJuniorDouble){
+          const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+          const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
+          const refYear=Number(refDate.slice(0,4));
+          if(refYear>2025){
+            const wp=await db.from("world_doubles_partnerships")
+              .select("race_rank,race_points,chemistry,compatibility,pair_strength,affinity_score,player_a:players!world_doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,current_ability,potential),player_b:players!world_doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,potential)")
+              .eq("season",refYear)
+              .eq("active",true)
+              .order("race_rank",{ascending:true})
+              .limit(Math.min(64,Math.max(16,drawSize)));
+            if(!wp.error){
+              doublesMain=(wp.data??[]).slice(0,Math.min(32,drawSize)).map((x:any,i:number)=>({
+                seed:i+1,
+                player_a:x.player_a,
+                player_b:x.player_b,
+                team_name:String(x.player_a?.name||"")+" / "+String(x.player_b?.name||""),
+                combined_rank:Number(x.player_a?.doubles_ranking||9999)+Number(x.player_b?.doubles_ranking||9999),
+                race_rank:x.race_rank,
+                race_points:x.race_points,
+                chemistry:x.chemistry,
+                compatibility:x.compatibility,
+                pair_strength:x.pair_strength,
+                affinity_score:x.affinity_score,
+                source:"affinity-pair"
+              }));
+            }
+          }
         }
-        if(!dpool.error){
-          const arr=dpool.data??[];
-          for(let i=0;i+1<arr.length&&doublesMain.length<Math.min(32,drawSize);i+=2){
-            const a:any=arr[i],b:any=arr[i+1];
-            const ar=isJuniorDouble?a.junior_doubles_ranking:a.doubles_ranking;
-            const br=isJuniorDouble?b.junior_doubles_ranking:b.doubles_ranking;
-            doublesMain.push({
-              seed:doublesMain.length+1,
-              player_a:{...a,doubles_ranking:ar},
-              player_b:{...b,doubles_ranking:br},
-              team_name:String(a.name)+" / "+String(b.name),
-              combined_rank:Number(ar||9999)+Number(br||9999),
-              source:isJuniorDouble?"junior-simulated":((a.doubles_source&&b.doubles_source)?"official":"indexed")
-            });
+
+        if(!doublesMain.length){
+          let dpool:any;
+          if(isJuniorDouble){
+            dpool=await db.from("players")
+              .select("id,name,country,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,current_ability,potential")
+              .not("junior_doubles_ranking","is",null)
+              .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+              .order("junior_doubles_ranking",{ascending:true})
+              .limit(Math.min(128,Math.max(16,drawSize*2)));
+          }else{
+            dpool=await db.from("players")
+              .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
+              .eq("is_real",true)
+              .not("doubles_ranking","is",null)
+              .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+              .order("doubles_ranking",{ascending:true})
+              .limit(Math.min(128,Math.max(16,drawSize*2)));
+          }
+          if(!dpool.error){
+            const arr=dpool.data??[];
+            for(let i=0;i+1<arr.length&&doublesMain.length<Math.min(32,drawSize);i+=2){
+              const a:any=arr[i],b:any=arr[i+1];
+              const ar=isJuniorDouble?a.junior_doubles_ranking:a.doubles_ranking;
+              const br=isJuniorDouble?b.junior_doubles_ranking:b.doubles_ranking;
+              doublesMain.push({
+                seed:doublesMain.length+1,
+                player_a:{...a,doubles_ranking:ar},
+                player_b:{...b,doubles_ranking:br},
+                team_name:String(a.name)+" / "+String(b.name),
+                combined_rank:Number(ar||9999)+Number(br||9999),
+                source:isJuniorDouble?"junior-simulated":((a.doubles_source&&b.doubles_source)?"official":"indexed")
+              });
+            }
           }
         }
       }
@@ -2418,6 +2450,7 @@ Deno.serve(async(req:Request)=>{
     // Maintain the development pyramids monthly instead of every click/week.
     // This keeps NCAA / ITF / Junior fields full without hammering Disk IO.
     let developmentSupply:any=null;
+    let doublesPairRefresh:any=null;
     if(week%4===0 || previousDate.slice(0,7)!==date.slice(0,7)){
       const supply=await db.rpc("maintain_development_circuit_supply",{
         p_date:date,
@@ -2426,6 +2459,14 @@ Deno.serve(async(req:Request)=>{
         p_ncaa_target:900
       });
       developmentSupply=supply.error?{error:supply.error.message}:supply.data;
+
+      if(Number(date.slice(0,4))>2025){
+        const pairs=await db.rpc("refresh_world_doubles_partnerships",{
+          p_date:date,
+          p_target_pairs:2000
+        });
+        doublesPairRefresh=pairs.error?{error:pairs.error.message}:pairs.data;
+      }
     }
 
     const academyDev=await db.rpc("simulate_academy_roster_week",{p_week:week,p_date:date});
@@ -2452,7 +2493,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,doublesPairRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/management")&&req.method==="GET"){
@@ -3823,11 +3864,30 @@ Deno.serve(async(req:Request)=>{
       const anth=await getManagedPlayer("id");
       const partner=await db.from("players").select("id,name,current_ability,doubles_ranking").eq("id",id).maybeSingle();
       if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
+      if(Number(anth.data.id)===Number(id))return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
+
+      const metric=await db.rpc("doubles_pair_metrics",{
+        p_a:Number(anth.data.id),
+        p_b:Number(id),
+        p_date:String(career.data?.career_date||AGE_REFERENCE_DATE)
+      });
+      if(metric.error)return h({error:metric.error.message},500);
+      const m:any=(metric.data??[])[0]||{};
+      const chemistry=Number(m.chemistry||60);
+      const compatibility=Number(m.compatibility||60);
+      const pair_strength=Number(m.pair_strength||60);
+
       await db.from("doubles_partnerships").delete().eq("player_a_id",anth.data.id);
-      const chemistry=65+((id*7)%29),compatibility=68+((id*11)%27),pair_strength=Math.min(96,Math.round((Number(partner.data.current_ability||50)+56)/2));
-      const ins=await db.from("doubles_partnerships").insert({player_a_id:anth.data.id,player_b_id:id,chemistry,compatibility,pair_strength});
+      const ins=await db.from("doubles_partnerships").insert({
+        player_a_id:anth.data.id,
+        player_b_id:id,
+        chemistry,compatibility,pair_strength
+      });
       if(ins.error)return h({error:ins.error.message},500);
-      return h({ok:true,chemistry,compatibility,pair_strength});
+      return h({
+        ok:true,chemistry,compatibility,pair_strength,
+        affinity_score:Number(m.affinity_score||0)
+      });
     }
 
     if(action==="davis_role"){

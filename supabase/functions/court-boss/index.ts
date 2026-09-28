@@ -2598,6 +2598,7 @@ Deno.serve(async(req:Request)=>{
         const workload=await db.rpc("refresh_staff_workload",{p_date:date});
         const doublesStaff=await db.rpc("refresh_doubles_staff_assignments",{p_date:date});
         const achievements=await db.rpc("refresh_staff_achievements",{p_date:date});
+        const achievementReputation=await db.rpc("apply_staff_achievement_reputation",{p_date:date});
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
           meta:meta.error?{error:meta.error.message}:meta.data,
@@ -2615,7 +2616,8 @@ Deno.serve(async(req:Request)=>{
           ownStaffOffers:ownStaffOffers.error?{error:ownStaffOffers.error.message}:ownStaffOffers.data,
           workload:workload.error?{error:workload.error.message}:workload.data,
           doublesStaff:doublesStaff.error?{error:doublesStaff.error.message}:doublesStaff.data,
-          achievements:achievements.error?{error:achievements.error.message}:achievements.data
+          achievements:achievements.error?{error:achievements.error.message}:achievements.data,
+          achievementReputation:achievementReputation.error?{error:achievementReputation.error.message}:achievementReputation.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,

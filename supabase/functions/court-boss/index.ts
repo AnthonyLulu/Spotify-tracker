@@ -1797,6 +1797,98 @@ Deno.serve(async(req:Request)=>{
     return new Response(null,{status:302,headers:{...cors,"Location":String(t.image_url),"Cache-Control":"public, max-age=86400"}});
   }
 
+
+  if(path.endsWith("/api/competitions")&&req.method==="GET"){
+    const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    const circuit=(u.searchParams.get("circuit")??"Tous").trim().slice(0,30);
+    const category=(u.searchParams.get("category")??"Toutes").trim().slice(0,40);
+    const surface=(u.searchParams.get("surface")??"Toutes").trim().slice(0,40);
+    const country=(u.searchParams.get("country")??"").trim().slice(0,12);
+    const source=(u.searchParams.get("source")??"Tous").trim().slice(0,20);
+    const offset=n(u.searchParams.get("offset"),0,0,10000),limit=n(u.searchParams.get("limit"),100,1,200);
+
+    let tq=db.from("tournaments").select("*").eq("is_active",true).gte("start_date","2025-12-01").order("start_date",{ascending:true}).limit(5000);
+    if(circuit!=="Tous")tq=tq.eq("circuit",circuit);
+    if(category!=="Toutes")tq=tq.eq("category",category);
+    if(country)tq=tq.eq("country",country);
+    if(source==="Officiel")tq=tq.eq("is_verified",true);
+    if(source==="Fictif")tq=tq.eq("is_verified",false).in("circuit",["Challenger","ITF"]);
+    if(q)tq=tq.ilike("name",`%${q}%`);
+    const {data,error}=await tq;
+    if(error)return h({error:error.message},500);
+
+    const byKey=new Map<string,any>();
+    for(const t of data??[]){
+      const surf=String(t.surface||"");
+      const label=surf==="Dur"?(t.indoor?"Dur intérieur":"Dur extérieur"):surf;
+      if(surface!=="Toutes"&&label!==surface)continue;
+      const key=String(t.competition_key||("id:"+t.id));
+      const old=byKey.get(key);
+      if(!old||String(t.start_date)<String(old.start_date))byKey.set(key,t);
+    }
+    let rows=[...byKey.values()];
+    const keys=rows.map((x:any)=>x.competition_key).filter(Boolean);
+    const histCounts=new Map<string,number>(),latestHist=new Map<string,any>();
+    for(let i=0;i<keys.length;i+=200){
+      const hr=await db.from("competition_history")
+        .select("competition_key,season,winner_name,winner_player_id,runner_up_name,event_date")
+        .in("competition_key",keys.slice(i,i+200))
+        .order("season",{ascending:false});
+      if(!hr.error){
+        for(const x of hr.data??[]){
+          histCounts.set(x.competition_key,(histCounts.get(x.competition_key)||0)+1);
+          if(!latestHist.has(x.competition_key))latestHist.set(x.competition_key,x);
+        }
+      }
+    }
+    rows=rows.map((t:any)=>({...t,history_count:histCounts.get(t.competition_key)||0,latest_history:latestHist.get(t.competition_key)||null}))
+      .sort((a:any,b:any)=>Number(b.prestige||0)-Number(a.prestige||0)||String(a.start_date).localeCompare(String(b.start_date))||String(a.name).localeCompare(String(b.name)));
+    return h({offset,limit,count:rows.length,rows:rows.slice(offset,offset+limit)});
+  }
+
+  if(path.endsWith("/api/competition")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const tr=await db.from("tournaments").select("*").eq("id",id).maybeSingle();
+    if(tr.error)return h({error:tr.error.message},500);
+    if(!tr.data)return h({error:"competition not found"},404);
+    const t:any=tr.data,key=String(t.competition_key||"");
+    let history:any[]=[];
+    if(key){
+      const x=await db.from("competition_history").select("*").eq("competition_key",key).order("season",{ascending:false}).limit(250);
+      if(!x.error)history=x.data??[];
+    }
+    if(!history.length&&t.city){
+      const x=await db.from("competition_history").select("*").ilike("tournament_name",`%${String(t.city)}%`).order("season",{ascending:false}).limit(250);
+      if(!x.error){
+        history=(x.data??[]).filter((r:any)=>{
+          if(t.category==="Grand Chelem")return r.level==="Grand Chelem";
+          if(t.circuit==="Challenger")return /Challenger|ATP Tour/.test(String(r.level||""));
+          return true;
+        });
+      }
+    }
+
+    const editions=key
+      ?await db.from("tournaments").select("id,name,start_date,end_date,city,country,surface,indoor,category,circuit,is_verified,defending_champion_name,image_url").eq("competition_key",key).order("start_date",{ascending:false}).limit(20)
+      :{data:[t],error:null};
+
+    const rec=new Map<string,{name:string,player_id:number|null,wins:number,finals:number}>();
+    for(const r of history){
+      const wk=String(r.winner_player_id||r.winner_name);
+      const w=rec.get(wk)||{name:r.winner_name,player_id:r.winner_player_id||null,wins:0,finals:0};
+      w.wins++;w.finals++;rec.set(wk,w);
+      const rk=String(r.runner_up_player_id||r.runner_up_name);
+      const ru=rec.get(rk)||{name:r.runner_up_name,player_id:r.runner_up_player_id||null,wins:0,finals:0};
+      ru.finals++;rec.set(rk,ru);
+    }
+    const records=[...rec.values()].sort((a,b)=>b.wins-a.wins||b.finals-a.finals||a.name.localeCompare(b.name)).slice(0,25);
+    return h({
+      tournament:t,history,editions:editions.data??[],records,
+      historyStart:history.length?Math.min(...history.map((x:any)=>Number(x.season)||9999)):null,
+      historyEnd:history.length?Math.max(...history.map((x:any)=>Number(x.season)||0)):null
+    });
+  }
+
   if(path.endsWith("/api/tournaments")&&req.method==="GET"){
     const offset=n(u.searchParams.get("offset"),0,0,10000), limit=n(u.searchParams.get("limit"),60,1,150);
     const circuit=(u.searchParams.get("circuit")??"").trim().slice(0,30);

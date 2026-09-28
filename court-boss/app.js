@@ -489,7 +489,7 @@ function doublesEligibility(t){
  return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
 const MAJOR_TOURNAMENT_LOGOS=[
- {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO",cls:"logo-ao"},
+ {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/AO26_logo.svg",label:"AO",cls:"logo-ao"},
  {re:/Roland[ -]?Garros/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/RG-Logo.png",label:"RG",cls:"logo-rg"},
  {re:/Wimbledon/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/WB-Logo.png",label:"WIM",cls:"logo-wim"},
  {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO",cls:"logo-uso"}
@@ -1132,8 +1132,8 @@ function davisPage(){
  <div class="davis-bracket">${final8.map(tieCard).join('')||'<div class="card empty">Tableau Final 8 indisponible.</div>'}</div>
 
  <div class="grid g2" style="margin-top:18px">
-  <details class="card" open><summary><div class="eyebrow">Palmarès officiel</div><h2>Coupe Davis senior · 2000–2025</h2></summary><div class="stack" style="margin-top:10px">${historyRows(seniorHistory)}</div></details>
-  <details class="card" open><summary><div class="eyebrow">Palmarès U16</div><h2>Junior Davis Cup · 2000–2025</h2></summary><div class="stack" style="margin-top:10px">${historyRows(juniorHistory)}</div></details>
+  <details class="card" open><summary><div class="eyebrow">Palmarès officiel</div><h2>Coupe Davis senior · 1900–2025</h2></summary><div class="stack" style="margin-top:10px">${historyRows(seniorHistory)}</div></details>
+  <details class="card" open><summary><div class="eyebrow">Palmarès U16</div><h2>Junior Davis Cup · 1985–2025</h2></summary><div class="stack" style="margin-top:10px">${historyRows(juniorHistory)}</div></details>
  </div>
 
  ${focusTie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Détail</div><h2>Rubbers de la rencontre ${nation}</h2></div></div><div class="stack">${focusTie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score||'—')}</div><span class="badge ${r.winner_nation===nation?'good':'bad'}">${esc(r.winner_nation||'—')}</span></div></div></div>`).join('')}</div>`:''}

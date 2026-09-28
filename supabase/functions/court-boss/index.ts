@@ -2632,7 +2632,10 @@ Deno.serve(async(req:Request)=>{
     const scouts=await db.from("scouting_assignments").select("id,progress,status");
     if(!scouts.error){
       const staffProfiles=(staffRows.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
-      const bestScout=staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p.scouting_rating||0))):10;
+      const scoutEfficiency=(p:any)=>Math.max(.68,Math.min(1.06,
+        1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018-Math.max(0,Number(p?.workload||20)-75)*.0015+Math.max(0,Number(p?.professionalism||10)-14)*.006
+      ));
+      const bestScout=staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p.scouting_rating||0)*scoutEfficiency(p))):10;
       const scoutStep=Math.max(8,Math.min(18,Math.round(7+bestScout*.55)));
       for(const s of scouts.data??[]){
         if(s.status==="active"){
@@ -4661,10 +4664,13 @@ Deno.serve(async(req:Request)=>{
       if(offer.data.status!=="available")return h({error:"Offre indisponible"},409);
 
       const agent=await db.from("staff")
-        .select("profile:staff_profiles(negotiation_rating,reputation)")
+        .select("profile:staff_profiles(negotiation_rating,reputation,professionalism,workload,burnout,travel_fatigue)")
         .ilike("role","%Agent%").limit(1).maybeSingle();
       const ap:any=Array.isArray(agent.data?.profile)?agent.data.profile[0]:agent.data?.profile||{};
-      const negotiation=Number(ap.negotiation_rating||10),agentRep=Number(ap.reputation||10);
+      const agentEfficiency=Math.max(.68,Math.min(1.06,
+        1-Number(ap.burnout||0)*.0032-Number(ap.travel_fatigue||0)*.0018-Math.max(0,Number(ap.workload||20)-75)*.0015+Math.max(0,Number(ap.professionalism||10)-14)*.006
+      ));
+      const negotiation=Number(ap.negotiation_rating||10)*agentEfficiency,agentRep=Number(ap.reputation||10);
       const negotiationMult=Math.min(1.18,1+Math.max(0,negotiation-10)*.012+Math.max(0,agentRep-10)*.004);
       const negotiatedWeekly=Math.round(Number(offer.data.weekly_value||0)*negotiationMult);
       const negotiatedBonus=Math.round(Number(offer.data.signing_bonus||0)*negotiationMult);
@@ -4826,8 +4832,8 @@ Deno.serve(async(req:Request)=>{
       if(dual.data.status==="completed")return h({ok:true,home_score:dual.data.home_score,away_score:dual.data.away_score,already:true});
 
       const [homeStaff,awayStaff]=await Promise.all([
-        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation)").eq("team_id",dual.data.home_team_id).eq("active",true),
-        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation)").eq("team_id",dual.data.away_team_id).eq("active",true)
+        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation,professionalism,workload,burnout,travel_fatigue)").eq("team_id",dual.data.home_team_id).eq("active",true),
+        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation,professionalism,workload,burnout,travel_fatigue)").eq("team_id",dual.data.away_team_id).eq("active",true)
       ]);
       if(homeStaff.error||awayStaff.error)return h({error:(homeStaff.error||awayStaff.error)?.message},500);
 
@@ -4836,10 +4842,13 @@ Deno.serve(async(req:Request)=>{
         const vals=rows.map((x:any)=>{
           const p:any=Array.isArray(x.staff)?x.staff[0]:x.staff||{};
           const role=String(x.role||"");
-          if(/Head Coach/i.test(role))return Number(p.coach_rating||10)*.34+Number(p.tactical_rating||10)*.24+Number(p.mental_rating||10)*.15+Number(p.youth_rating||10)*.15+Number(p.communication_rating||10)*.12;
-          if(/Assistant/i.test(role))return Number(p.technical_rating||10)*.35+Number(p.tactical_rating||10)*.30+Number(p.youth_rating||10)*.20+Number(p.communication_rating||10)*.15;
-          if(/Trainer/i.test(role))return Number(p.fitness_rating||10)*.45+Number(p.medical_rating||10)*.35+Number(p.communication_rating||10)*.20;
-          return Number(p.scouting_rating||10)*.45+Number(p.youth_rating||10)*.30+Number(p.reputation||10)*.25;
+          const eff=Math.max(.68,Math.min(1.06,1-Number(p.burnout||0)*.0032-Number(p.travel_fatigue||0)*.0018-Math.max(0,Number(p.workload||20)-75)*.0015+Math.max(0,Number(p.professionalism||10)-14)*.006));
+          let val=10;
+          if(/Head Coach/i.test(role))val=Number(p.coach_rating||10)*.34+Number(p.tactical_rating||10)*.24+Number(p.mental_rating||10)*.15+Number(p.youth_rating||10)*.15+Number(p.communication_rating||10)*.12;
+          else if(/Assistant/i.test(role))val=Number(p.technical_rating||10)*.35+Number(p.tactical_rating||10)*.30+Number(p.youth_rating||10)*.20+Number(p.communication_rating||10)*.15;
+          else if(/Trainer/i.test(role))val=Number(p.fitness_rating||10)*.45+Number(p.medical_rating||10)*.35+Number(p.communication_rating||10)*.20;
+          else val=Number(p.scouting_rating||10)*.45+Number(p.youth_rating||10)*.30+Number(p.reputation||10)*.25;
+          return val*eff;
         });
         return vals.reduce((s:number,v:number)=>s+v,0)/vals.length;
       };
@@ -4885,8 +4894,8 @@ Deno.serve(async(req:Request)=>{
         db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",away).order("ranking").limit(6),
         db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",home),
         db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",away),
-        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation)").eq("nation",home).eq("active",true),
-        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation)").eq("nation",away).eq("active",true)
+        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation,professionalism,workload,burnout,travel_fatigue)").eq("nation",home).eq("active",true),
+        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation,professionalism,workload,burnout,travel_fatigue)").eq("nation",away).eq("active",true)
       ]);
       const err=homeRes.error||awayRes.error||homeSquad.error||awaySquad.error||homeTeamStaff.error||awayTeamStaff.error;
       if(err)return h({error:err.message},500);
@@ -4912,9 +4921,12 @@ Deno.serve(async(req:Request)=>{
         const vals=rows.map((x:any)=>{
           const p:any=Array.isArray(x.staff)?x.staff[0]:x.staff||{};
           const role=String(x.role||"");
-          if(/Captain/i.test(role))return Number(p.tactical_rating||10)*.30+Number(p.mental_rating||10)*.23+Number(p.communication_rating||10)*.20+Number(p.pressure_handling||10)*.17+Number(p.reputation||10)*.10;
-          if(/Physio/i.test(role))return Number(p.medical_rating||10)*.55+Number(p.fitness_rating||10)*.30+Number(p.communication_rating||10)*.15;
-          return Number(p.coach_rating||10)*.28+Number(p.tactical_rating||10)*.24+Number(p.fitness_rating||10)*.18+Number(p.mental_rating||10)*.18+Number(p.communication_rating||10)*.12;
+          const eff=Math.max(.68,Math.min(1.06,1-Number(p.burnout||0)*.0032-Number(p.travel_fatigue||0)*.0018-Math.max(0,Number(p.workload||20)-75)*.0015+Math.max(0,Number(p.professionalism||10)-14)*.006));
+          let val=10;
+          if(/Captain/i.test(role))val=Number(p.tactical_rating||10)*.30+Number(p.mental_rating||10)*.23+Number(p.communication_rating||10)*.20+Number(p.pressure_handling||10)*.17+Number(p.reputation||10)*.10;
+          else if(/Physio/i.test(role))val=Number(p.medical_rating||10)*.55+Number(p.fitness_rating||10)*.30+Number(p.communication_rating||10)*.15;
+          else val=Number(p.coach_rating||10)*.28+Number(p.tactical_rating||10)*.24+Number(p.fitness_rating||10)*.18+Number(p.mental_rating||10)*.18+Number(p.communication_rating||10)*.12;
+          return val*eff;
         });
         return vals.reduce((s:number,v:number)=>s+v,0)/vals.length;
       };

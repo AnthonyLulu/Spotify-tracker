@@ -3076,7 +3076,7 @@ Deno.serve(async(req:Request)=>{
       db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
-      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(*)"),
+      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)"),
       db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy,operational_status,rest_until)")
     ]);
     if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
@@ -3179,12 +3179,12 @@ Deno.serve(async(req:Request)=>{
       const ids=finalsRaceRows.map((x:any)=>Number(x.id)).filter(Boolean);
       playersRes=ids.length
         ?await db.from("players")
-          .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(*)")
+          .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
           .in("id",ids)
         :{data:[],error:null};
     }else{
       playersRes=await db.from("players")
-        .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(*)")
+        .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
         .eq("ranking_current",true)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
         .order("ranking",{ascending:true}).limit(Math.min(200,Math.max(drawSize+40,80)));
@@ -3206,25 +3206,31 @@ Deno.serve(async(req:Request)=>{
     const courtSpeed=Number(t.court_speed||(isClay?.68:isGrass?1.15:isCarpet?(indoor?1.22:1.10):indoor?1.18:1.0));
     const bestOf=String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?5:3;
     const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
-    const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),player_attributes:managedAttrs,isUser:true};
+    const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),morale:Number(c.morale||managedPlayer.data.morale||72),handedness:String(managedPlayer.data.handedness||""),career_focus:String(c.career_focus||managedPlayer.data.career_focus||"mixed"),player_attributes:managedAttrs,isUser:true};
 
     const participantIds=[...new Set([managedId,...pool.map((p:any)=>Number(p.id)).filter(Boolean)])];
-    const [dynamicRows,eloRows,advancedRows,surfaceRows,h2hRows]=await Promise.all([
+    const [dynamicRows,eloRows,advancedRows,surfaceRows,contextRows,tacticalRows,developmentRows,h2hRows]=await Promise.all([
       db.from("player_dynamic_ratings").select("*").in("player_id",participantIds),
       db.from("player_elo_ratings").select("*").in("player_id",participantIds),
       db.from("player_advanced_metrics").select("*").in("player_id",participantIds),
       db.from("player_surface_preferences").select("*").in("player_id",participantIds),
+      db.from("player_context_traits").select("*").in("player_id",participantIds),
+      db.from("player_tactical_preferences").select("*").in("player_id",participantIds),
+      db.from("player_development_profiles").select("*").in("player_id",participantIds),
       participantIds.length>1
         ?db.from("player_h2h_records").select("*").in("player_a_id",participantIds).in("player_b_id",participantIds).limit(5000)
         :Promise.resolve({data:[],error:null})
     ]);
-    const analyticsError=dynamicRows.error||eloRows.error||advancedRows.error||surfaceRows.error||h2hRows.error;
+    const analyticsError=dynamicRows.error||eloRows.error||advancedRows.error||surfaceRows.error||contextRows.error||tacticalRows.error||developmentRows.error||h2hRows.error;
     if(analyticsError)return h({error:analyticsError.message},500);
 
     const dynBy=new Map((dynamicRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
     const eloBy=new Map((eloRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
     const advBy=new Map((advancedRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
     const surfaceBy=new Map((surfaceRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const contextBy=new Map((contextRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const tacticalBy=new Map((tacticalRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const developmentBy=new Map((developmentRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
     const h2hBy=new Map((h2hRows.data??[]).map((x:any)=>[Math.min(Number(x.player_a_id),Number(x.player_b_id))+"|"+Math.max(Number(x.player_a_id),Number(x.player_b_id)),x]));
     const participantById=new Map<number,any>([[Number(user.id),user],...pool.map((p:any)=>[Number(p.id),p] as [number,any])]);
 
@@ -3248,6 +3254,11 @@ Deno.serve(async(req:Request)=>{
       const ea:any=eloBy.get(aid)||{},eb:any=eloBy.get(bid)||{};
       const ma:any=advBy.get(aid)||{},mb:any=advBy.get(bid)||{};
       const sa:any=surfaceBy.get(aid)||{},sb:any=surfaceBy.get(bid)||{};
+      const ca:any=contextBy.get(aid)||{},cb:any=contextBy.get(bid)||{};
+      const dpa:any=developmentBy.get(aid)||{},dpb:any=developmentBy.get(bid)||{};
+      const storedTa:any=tacticalBy.get(aid)||{},storedTb:any=tacticalBy.get(bid)||{};
+      const ta:any=a.isUser?{...storedTa,aggression_bias:Math.max(1,Math.min(20,Math.round(tacticAgg/5))),risk_tolerance:Math.max(1,Math.min(20,Math.round(tacticRisk/5))),net_frequency:Math.max(1,Math.min(20,Math.round(tacticNet/5))),return_position:returnPos}:storedTa;
+      const tb:any=b.isUser?{...storedTb,aggression_bias:Math.max(1,Math.min(20,Math.round(tacticAgg/5))),risk_tolerance:Math.max(1,Math.min(20,Math.round(tacticRisk/5))),net_frequency:Math.max(1,Math.min(20,Math.round(tacticNet/5))),return_position:returnPos}:storedTb;
       const hrow:any=h2hBy.get(Math.min(aid,bid)+"|"+Math.max(aid,bid));
 
       const surfaceElo=(d:any,er:any)=>{
@@ -3260,21 +3271,63 @@ Deno.serve(async(req:Request)=>{
       };
       const aElo=surfaceElo(da,ea),bElo=surfaceElo(dbb,eb);
       const eloProb=1/(1+Math.pow(10,(bElo-aElo)/400));
-      const serviceReturn=((Number(da.service_rating||50)-Number(dbb.return_rating||50))-(Number(dbb.service_rating||50)-Number(da.return_rating||50)))/100;
-      const mental=((Number(da.pressure_rating||50)+Number(da.tactical_rating||50))-(Number(dbb.pressure_rating||50)+Number(dbb.tactical_rating||50)))/200;
-      const physical=((Number(da.athletic_rating||50)+Number(a.fitness||90)-Number(a.fatigue||20)*.55)-(Number(dbb.athletic_rating||50)+Number(b.fitness||90)-Number(b.fatigue||20)*.55))/200;
+
+      const serviceReturn=
+        ((Number(da.service_rating||50)-Number(dbb.return_rating||50))-(Number(dbb.service_rating||50)-Number(da.return_rating||50)))/100+
+        ((Number(aa.first_serve_quality??aa.serve_precision??10)+Number(aa.second_serve_quality??aa.serve_precision??10)+Number(aa.serve_plus_one??aa.forehand??10))-
+         (Number(ab.first_serve_quality??ab.serve_precision??10)+Number(ab.second_serve_quality??ab.serve_precision??10)+Number(ab.serve_plus_one??ab.forehand??10)))/180+
+        ((Number(aa.return_consistency??aa.return_game??10)+Number(aa.return_aggression??aa.return_game??10))-
+         (Number(ab.return_consistency??ab.return_game??10)+Number(ab.return_aggression??ab.return_game??10)))/150;
+
+      const mental=
+        ((Number(da.pressure_rating||50)+Number(da.tactical_rating||50))-(Number(dbb.pressure_rating||50)+Number(dbb.tactical_rating||50)))/200+
+        ((Number(aa.decision_making??aa.tactics??10)+Number(aa.shot_selection??aa.tactics??10)+Number(aa.consistency??aa.concentration??10)+Number(aa.big_points??aa.composure??10))-
+         (Number(ab.decision_making??ab.tactics??10)+Number(ab.shot_selection??ab.tactics??10)+Number(ab.consistency??ab.concentration??10)+Number(ab.big_points??ab.composure??10)))/240;
+
+      const physical=
+        ((Number(da.athletic_rating||50)+Number(a.fitness||90)-Number(a.fatigue||20)*.55+Number(aa.natural_fitness??aa.stamina??10)*1.4+Number(aa.recovery||10)*.8+Number(aa.rally_tolerance??aa.stamina??10)*.8)-
+         (Number(dbb.athletic_rating||50)+Number(b.fitness||90)-Number(b.fatigue||20)*.55+Number(ab.natural_fitness??ab.stamina??10)*1.4+Number(ab.recovery||10)*.8+Number(ab.rally_tolerance??ab.stamina??10)*.8))/230;
+
       const surfaceFit=(Number(aa?.[surfKey]||10)-Number(ab?.[surfKey]||10))/20;
       const paceFit=(-Math.abs(courtSpeed-Number(sa.preferred_court_speed||1))/Math.max(.12,Number(sa.pace_tolerance||.25))
         +Math.abs(courtSpeed-Number(sb.preferred_court_speed||1))/Math.max(.12,Number(sb.pace_tolerance||.25)))*.11;
+
       const handed=String(a.handedness||"").toLowerCase()!==String(b.handedness||"").toLowerCase()
-        ?((Number(aa.adaptability||10)+Number(aa.backhand_accuracy||10)+Number(aa.return_consistency||10))
-          -(Number(ab.adaptability||10)+Number(ab.backhand_accuracy||10)+Number(ab.return_consistency||10)))/300
+        ?((Number(ca.lefty_handling||10)+Number(aa.adaptability||10)+Number(aa.backhand_accuracy||10)+Number(aa.return_consistency||10))
+          -(Number(cb.lefty_handling||10)+Number(ab.adaptability||10)+Number(ab.backhand_accuracy||10)+Number(ab.return_consistency||10)))/360
         :0;
+
       const styleMatch=handed+
-        (Number(ma.rally_1_3_win_pct??ma.rally_0_4_win_pct??50)-Number(mb.rally_1_3_win_pct??mb.rally_0_4_win_pct??50))*.004+
+        (Number(ma.rally_1_3_win_pct??ma.rally_0_4_win_pct??50)-Number(mb.rally_1_3_win_pct??mb.rally_0_4_win_pct??50))*.0035+
         (Number(ma.rally_10plus_win_pct??ma.rally_9plus_win_pct??50)-Number(mb.rally_10plus_win_pct??mb.rally_9plus_win_pct??50))*.002+
-        (Number(ma.return_depth_score||60)-Number(mb.return_depth_score||60))*.0015+
-        (Number(ma.serve_impact||0)-Number(mb.serve_impact||0))*.002;
+        (Number(ma.return_depth_score||60)-Number(mb.return_depth_score||60))*.0013+
+        (Number(ma.serve_impact||0)-Number(mb.serve_impact||0))*.0018;
+
+      const tacticalFit=
+        ((Number(ta.net_frequency||10)-10)*(Number(aa.volley||10)+Number(aa.net_positioning||10)-Number(ab.passing_shot??ab.return_game??10)-Number(ab.reaction??ab.anticipation??10))/520+
+         (Number(ta.aggression_bias||10)-Number(tb.defense_to_attack_bias||10))*(Number(aa.forehand_power??aa.forehand??10)+Number(aa.serve_plus_one??aa.forehand??10)-20)/600+
+         (Number(ta.rally_length_preference||10)-10)*(Number(aa.rally_tolerance??aa.stamina??10)+Number(aa.consistency??aa.concentration??10)-Number(ab.rally_tolerance??ab.stamina??10)-Number(ab.consistency??ab.concentration??10))/520+
+         (Number(ta.drop_shot_frequency||10)-10)*(Number(aa.drop_shot??aa.touch??10)+Number(aa.decision_making??aa.tactics??10)-Number(ab.reaction??ab.anticipation??10)-Number(ab.movement||10))/650+
+         (Number(ta.defense_to_attack_bias||10)-Number(tb.aggression_bias||10))*(Number(aa.defense_to_attack??aa.tactics??10)+Number(aa.passing_shot??aa.return_game??10)-20)/620)
+        -
+        ((Number(tb.net_frequency||10)-10)*(Number(ab.volley||10)+Number(ab.net_positioning||10)-Number(aa.passing_shot??aa.return_game??10)-Number(aa.reaction??aa.anticipation??10))/520+
+         (Number(tb.aggression_bias||10)-Number(ta.defense_to_attack_bias||10))*(Number(ab.forehand_power??ab.forehand??10)+Number(ab.serve_plus_one??ab.forehand??10)-20)/600);
+
+      let contextFit=((Number(ca.tiebreak_skill||10)+Number(ca.deciding_set_skill||10)+Number(ca.comeback_mentality||10)+Number(ca.front_runner||10))-
+        (Number(cb.tiebreak_skill||10)+Number(cb.deciding_set_skill||10)+Number(cb.comeback_mentality||10)+Number(cb.front_runner||10)))/320;
+      if(indoor)contextFit+=(Number(ca.indoor_affinity||10)-Number(cb.indoor_affinity||10))/100;
+
+      const bigMatchFit=((Number(ca.big_stage||10)+Number(dpa.important_matches||10)+Number(dpa.pressure||10))-
+        (Number(cb.big_stage||10)+Number(dpb.important_matches||10)+Number(dpb.pressure||10)))/220;
+
+      const bo5Fit=bestOf>=5
+        ?((Number(ca.best_of_five||10)+Number(aa.stamina||10)+Number(aa.recovery||10)+Number(dpa.resilience||10)+Number(dpa.important_matches||10))-
+          (Number(cb.best_of_five||10)+Number(ab.stamina||10)+Number(ab.recovery||10)+Number(dpb.resilience||10)+Number(dpb.important_matches||10)))/360
+        :0;
+
+      const confidenceFit=(Number(a.morale||70)-Number(b.morale||70))*.0032+
+        (Number(aa.confidence||10)-Number(ab.confidence||10))*.010+
+        (Number(dpa.temperament||10)-Number(dpb.temperament||10))*.006;
 
       let h2h=0,h2hSummary:any=null;
       if(hrow){
@@ -3306,20 +3359,23 @@ Deno.serve(async(req:Request)=>{
         let bonus=balance*.025+netFit+ret+staffMatchBonus;
         if(Number(c.fatigue||18)>45&&tacticAgg>75)bonus-=2.8;
         if(tacticRisk>80)bonus-=1.8;
-        userTactics=sign*bonus/22;
+        userTactics=sign*bonus/24;
       }
 
+      const formDelta=(Number(a.form||70)-Number(b.form||70))*.0052;
       const baseLogit=Math.log(Math.max(.01,Math.min(.99,eloProb))/Math.max(.01,1-Math.min(.99,eloProb)));
-      let logit=baseLogit+serviceReturn*.62+mental*.24+physical*.18+surfaceFit*.22+
-        styleMatch*.55+paceFit+h2h+(Number(a.form||70)-Number(b.form||70))*.006+userTactics;
-      if(bestOf>=5)logit*=1.18;
+      let logit=baseLogit+serviceReturn*.54+mental*.20+physical*.16+surfaceFit*.20+
+        styleMatch*.38+tacticalFit*.42+contextFit*.18+bigMatchFit*.16+bo5Fit*.22+
+        confidenceFit+paceFit+h2h+formDelta+userTactics;
+      if(bestOf>=5)logit*=1.10;
       let probA=1/(1+Math.exp(-logit));
-      probA=Math.max(.025,Math.min(.975,probA));
+      probA=Math.max(.035,Math.min(.965,probA));
       return {probA,components:{
         elo_probability:eloProb,surface_elo_a:aElo,surface_elo_b:bElo,
         service_return:serviceReturn,mental,physical,surface_fit:surfaceFit,pace_fit:paceFit,
-        style_matchup:styleMatch,h2h,form_delta:(Number(a.form||70)-Number(b.form||70))*.006,
-        user_tactics:userTactics,h2h_summary:h2hSummary
+        style_matchup:styleMatch,tactical_matchup:tacticalFit,context_skill:contextFit,
+        big_match:bigMatchFit,best_of_five:bo5Fit,confidence:confidenceFit,
+        h2h,form_delta:formDelta,user_tactics:userTactics,h2h_summary:h2hSummary
       }};
     };
 
@@ -3536,11 +3592,31 @@ Deno.serve(async(req:Request)=>{
       const dfPct=Math.max(.5,Math.min(12,Number(userAnalytics.double_fault_pct||4)+Math.max(0,risk-65)*.035+jitter(.8)));
       const winnerRate=Math.max(4,Math.min(35,Number(userAnalytics.winner_rate_pct||14)+(aggression-50)*.045+jitter(2)));
       const ueRate=Math.max(4,Math.min(32,Number(userAnalytics.unforced_error_pct||15)+(risk-50)*.055+jitter(2)));
+      const rawComp=m.matchup_components||{};
+      const sign=userIsA?1:-1;
+      const userComponents:any={
+        elo_probability:userProb==null?null:Number(userProb.toFixed(4)),
+        service_return:Number(rawComp.service_return||0)*sign,
+        mental:Number(rawComp.mental||0)*sign,
+        physical:Number(rawComp.physical||0)*sign,
+        surface_fit:Number(rawComp.surface_fit||0)*sign,
+        pace_fit:Number(rawComp.pace_fit||0)*sign,
+        style_matchup:Number(rawComp.style_matchup||0)*sign,
+        tactical_matchup:Number(rawComp.tactical_matchup||0)*sign,
+        context_skill:Number(rawComp.context_skill||0)*sign,
+        big_match:Number(rawComp.big_match||0)*sign,
+        best_of_five:Number(rawComp.best_of_five||0)*sign,
+        confidence:Number(rawComp.confidence||0)*sign,
+        h2h:Number(rawComp.h2h||0)*sign,
+        form_delta:Number(rawComp.form_delta||0)*sign,
+        user_tactics:Number(rawComp.user_tactics||0)*sign
+      };
       const stats={
         expected_win_probability:userProb==null?null:Number(userProb.toFixed(4)),
-        model_version:m.model_version,
+        model_version:"TA-H2H-v3-context",
         court_speed:m.court_speed,
         matchup_components:m.matchup_components||{},
+        matchup_components_user:userComponents,
         first_serve_pct:Number(firstServe.toFixed(1)),
         ace_pct:Number(acePct.toFixed(1)),
         double_fault_pct:Number(dfPct.toFixed(1)),

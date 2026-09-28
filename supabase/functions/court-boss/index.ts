@@ -2657,18 +2657,27 @@ Deno.serve(async(req:Request)=>{
     const tactics=body?.tactics||{};
     const tacticAgg=n(tactics.aggression,58,1,100),tacticRisk=n(tactics.risk,52,1,100),tacticNet=n(tactics.net,28,1,100);
     const returnPos=String(tactics.returnPos||"Neutre");
-    const [tour,career,oldRun,wc,forfeits,managedPlayer]=await Promise.all([
+    const [tour,career,oldRun,wc,forfeits,managedPlayer,userStaff]=await Promise.all([
       db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
       db.from("career_state").select("*").eq("id","demo").maybeSingle(),
       db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
-      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)"),
+      db.from("staff").select("role,profile:staff_profiles(tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating)")
     ]);
-    if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error)?.message},500);
+    if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
+    const staffProfiles=(userStaff.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
+    const bestStaff=(key:string)=>staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p?.[key]||0))):10;
+    const staffMatchBonus=Math.min(2.4,
+      Math.max(0,bestStaff("tactical_rating")-10)*.085
+      +Math.max(0,bestStaff("mental_rating")-10)*.045
+      +Math.max(0,bestStaff("pressure_handling")-10)*.035
+      +Math.max(0,bestStaff("scouting_rating")-10)*.025
+    );
     const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const isJuniorSingles=String(t.circuit||"")==="Junior";
     const isJuniorFinals=isJuniorSingles&&/Junior Finals/i.test(String(t.category||""))&&!/Double/i.test(String(t.category||""));
@@ -2749,7 +2758,7 @@ Deno.serve(async(req:Request)=>{
         const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
         const surfaceNet=surface==="Gazon"?tacticNet*.035:(Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor")?tacticNet*.028:surface==="Dur"?tacticNet*.018:tacticNet*.006;
         const returnBonus=returnPos==="Avancée"?1.4:returnPos==="Reculée"?.8:1.1;
-        base+=balance*.025+surfaceNet+returnBonus;
+        base+=balance*.025+surfaceNet+returnBonus+staffMatchBonus;
         if(Number(c.fatigue||18)>45&&tacticAgg>75)base-=2.8;
         if(tacticRisk>80)base-=1.8;
       }
@@ -4079,24 +4088,60 @@ Deno.serve(async(req:Request)=>{
       const offer=await db.from("sponsor_offers").select("*").eq("id",id).maybeSingle();
       if(offer.error||!offer.data)return h({error:offer.error?.message||"Offer not found"},404);
       if(offer.data.status!=="available")return h({error:"Offre indisponible"},409);
-      budget+=Number(offer.data.signing_bonus||0);
+
+      const agent=await db.from("staff")
+        .select("profile:staff_profiles(negotiation_rating,reputation)")
+        .ilike("role","%Agent%").limit(1).maybeSingle();
+      const ap:any=Array.isArray(agent.data?.profile)?agent.data.profile[0]:agent.data?.profile||{};
+      const negotiation=Number(ap.negotiation_rating||10),agentRep=Number(ap.reputation||10);
+      const negotiationMult=Math.min(1.18,1+Math.max(0,negotiation-10)*.012+Math.max(0,agentRep-10)*.004);
+      const negotiatedWeekly=Math.round(Number(offer.data.weekly_value||0)*negotiationMult);
+      const negotiatedBonus=Math.round(Number(offer.data.signing_bonus||0)*negotiationMult);
+
+      budget+=negotiatedBonus;
       const [up,car]=await Promise.all([
-        db.from("sponsor_offers").update({status:"accepted"}).eq("id",id),
+        db.from("sponsor_offers").update({
+          status:"accepted",weekly_value:negotiatedWeekly,signing_bonus:negotiatedBonus
+        }).eq("id",id),
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
       ]);
       if(up.error||car.error)return h({error:(up.error||car.error)?.message},500);
-      await db.from("inbox_items").insert({kind:"commercial",title:"Sponsor signé",body:"Accord signé avec "+offer.data.brand+". Bonus : "+offer.data.signing_bonus+" €.",action_route:"finance",is_read:false});
-      return h({ok:true,budget,status:"accepted"});
+      await db.from("inbox_items").insert({
+        kind:"commercial",title:"Sponsor signé",
+        body:"Accord signé avec "+offer.data.brand+". Ton agent négocie "+negotiatedBonus+" € de bonus et "+negotiatedWeekly+" €/sem.",
+        action_route:"finance",is_read:false
+      });
+      return h({ok:true,budget,status:"accepted",weekly_value:negotiatedWeekly,signing_bonus:negotiatedBonus,agent_bonus_pct:Math.round((negotiationMult-1)*100)});
     }
 
     if(action==="renew_contract"){
       const con=await db.from("contracts").select("*").eq("id",id).maybeSingle();
       if(con.error||!con.data)return h({error:con.error?.message||"Contract not found"},404);
       const d=new Date((con.data.end_date||"2025-12-31")+"T12:00:00Z");d.setUTCFullYear(d.getUTCFullYear()+1);
-      const salary=Math.round(Number(con.data.weekly_salary||0)*1.08);
+
+      let factor=1.08;
+      if(String(con.data.subject_type||"")==="staff"){
+        const sm=await db.from("staff")
+          .select("profile:staff_profiles(ambition,loyalty,negotiation_rating,reputation)")
+          .eq("name",con.data.subject_name).maybeSingle();
+        const p:any=Array.isArray(sm.data?.profile)?sm.data.profile[0]:sm.data?.profile||{};
+        factor=Math.max(1.03,Math.min(1.25,
+          1.04
+          +Number(p.ambition||10)*.005
+          +Number(p.negotiation_rating||10)*.004
+          +Number(p.reputation||10)*.003
+          -Number(p.loyalty||10)*.003
+        ));
+      }
+
+      const salary=Math.round(Number(con.data.weekly_salary||0)*factor);
       const up=await db.from("contracts").update({end_date:d.toISOString().slice(0,10),weekly_salary:salary,status:"active"}).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
-      return h({ok:true,end_date:d.toISOString().slice(0,10),weekly_salary:salary});
+
+      if(String(con.data.subject_type||"")==="staff"){
+        await db.from("staff").update({weekly_cost:salary}).eq("name",con.data.subject_name);
+      }
+      return h({ok:true,end_date:d.toISOString().slice(0,10),weekly_salary:salary,raise_pct:Math.round((factor-1)*100)});
     }
 
     if(action==="choose_partner"){

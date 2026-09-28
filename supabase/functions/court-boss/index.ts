@@ -1168,127 +1168,55 @@ Deno.serve(async(req:Request)=>{
 
 
     if(kind==="doubles_race"){
-      const latest=await db.from("doubles_race_teams").select("snapshot_date")
-        .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).limit(1).maybeSingle();
+      const latest=await db.from("doubles_race_view").select("doubles_race_snapshot_date")
+        .lte("doubles_race_snapshot_date",gameDate)
+        .order("doubles_race_snapshot_date",{ascending:false}).limit(1).maybeSingle();
       if(latest.error)return h({error:latest.error.message},500);
-      if(!latest.data?.snapshot_date)return h({
+      if(!latest.data?.doubles_race_snapshot_date)return h({
         kind,offset,limit,count:0,rows:[],rankingDate:gameDate,
-        finalsName:"ATP Finals · Double",qualificationPlaces:8,raceType:"team"
+        finalsName:"Nitto ATP Finals · Double",qualificationPlaces:8,raceType:"team"
       });
-      const teamRes=await db.from("doubles_race_teams").select("*")
-        .eq("snapshot_date",latest.data.snapshot_date).order("rank",{ascending:true}).limit(300);
-      if(teamRes.error)return h({error:teamRes.error.message},500);
-      const teams=teamRes.data??[];
-      const names=[...new Set(teams.flatMap((x:any)=>[String(x.player_one||""),String(x.player_two||"")]).filter(Boolean))];
-      const playerRows:any[]=[];
-      for(let s=0;s<names.length;s+=80){
-        const pr=await db.from("players").select("id,name,country").in("name",names.slice(s,s+80))
-          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*");
-        if(pr.error)return h({error:pr.error.message},500);
-        playerRows.push(...(pr.data??[]));
-      }
-      const byName=new Map(playerRows.map((p:any)=>[normalizeName(String(p.name||"")),p]));
-      let rows=teams.map((x:any)=>{
-        const a=byName.get(normalizeName(String(x.player_one||"")));
-        const b=byName.get(normalizeName(String(x.player_two||"")));
-        const sameCountry=a?.country&&a.country===b?.country?a.country:null;
-        return {
-          id:a?.id??b?.id??0,
-          player_one_id:a?.id??null,player_two_id:b?.id??null,
-          player_one:x.player_one,player_two:x.player_two,
-          name:String(x.player_one||"")+" / "+String(x.player_two||""),
-          country:sameCountry??"MIX",is_team:true,
-          doubles_race_ranking:Number(x.rank),doubles_race_points:Number(x.points||0),
-          doubles_race_snapshot_date:x.snapshot_date,
-          finals_status:Number(x.rank)<=8?"qualified":Number(x.rank)===9?"alternate":"race",
-          source:x.source
-        };
-      });
-      if(q){const nq=normalizeName(q);rows=rows.filter((x:any)=>normalizeName(x.name).includes(nq));}
-      if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
-      const total=rows.length;rows=rows.slice(offset,offset+limit);
+      let query=db.from("doubles_race_view").select("*",{count:"exact"})
+        .eq("doubles_race_snapshot_date",latest.data.doubles_race_snapshot_date);
+      if(q)query=query.ilike("name",`%${q}%`);
+      if(country)query=query.eq("country",country);
+      query=query.order("doubles_race_ranking",{ascending:true}).range(offset,offset+limit-1);
+      const {data,error,count}=await query;
+      if(error)return h({error:error.message},500);
       return h({
-        kind,offset,limit,count:total,rows,rankingDate:latest.data.snapshot_date,
+        kind,offset,limit,count:count??0,rows:data??[],
+        rankingDate:latest.data.doubles_race_snapshot_date,
         finalsName:"Nitto ATP Finals · Double",qualificationPlaces:8,raceType:"team",
         source:"ATP doubles team race · final 2025 standings"
       });
     }
 
     if(kind==="junior_race"){
-      const pages=await Promise.all([
-        db.from("junior_display_pool_view").select("*").range(0,999),
-        db.from("junior_display_pool_view").select("*").range(1000,1999)
-      ]);
-      const pe=pages.find((x:any)=>x.error)?.error;
-      if(pe)return h({error:pe.message},500);
-      let all=pages.flatMap((x:any)=>x.data??[]).map((p:any)=>({
-        ...p,
-        junior_race_points:Number(p.junior_points||0)+Number(p.junior_game_points||0)
-      }));
-      all.sort((a:any,b:any)=>Number(b.junior_race_points)-Number(a.junior_race_points)||Number(a.display_rank||99999)-Number(b.display_rank||99999)||String(a.name||"").localeCompare(String(b.name||"")));
-      all=all.map((p:any,ix:number)=>({
-        ...p,
-        junior_race_ranking:ix+1,
-        junior_race_snapshot_date:gameDate,
-        finals_status:ix<8?"qualified":ix===8?"alternate":"race",
-        age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)
-      }));
-      if(q){const nq=normalizeName(q);all=all.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));}
-      if(country)all=all.filter((x:any)=>String(x.country||"").toUpperCase()===country);
-      const total=all.length;const rows=all.slice(offset,offset+limit);
+      let query=db.from("junior_race_view").select("*",{count:"exact"});
+      if(q)query=query.ilike("name_norm",`%${normalizeName(q)}%`);
+      if(country)query=query.eq("country",country);
+      query=query.order("junior_race_ranking",{ascending:true}).range(offset,offset+limit-1);
+      const {data,error,count}=await query;
+      if(error)return h({error:error.message},500);
+      const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
       return h({
-        kind,offset,limit,count:total,rows,rankingDate:gameDate,
+        kind,offset,limit,count:count??0,rows,rankingDate:gameDate,
         finalsName:"ITF World Tennis Tour Junior Finals",qualificationPlaces:8,
         raceType:"player",qualificationWindow:"12 derniers mois",finalsPoints:1000,
-        source:"Court Boss qualification race basée sur les points Junior au cutoff"
+        source:"Court Boss qualification race basée sur les points Junior"
       });
     }
 
     if(kind==="junior_doubles_race"){
-      const pr=await db.from("players")
-        .select("id,name,country,birth_date,age,age_snapshot_date,junior_ranking,junior_doubles_ranking,junior_doubles_points,junior_doubles_game_points,junior_doubles_snapshot_date,current_ability,potential")
-        .not("junior_doubles_ranking","is",null)
-        .or("junior_doubles_snapshot_date.is.null,junior_doubles_snapshot_date.lte."+gameDate)
-        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-        .order("junior_doubles_ranking",{ascending:true}).limit(160);
-      if(pr.error)return h({error:pr.error.message},500);
-      const pool=(pr.data??[]).slice();
-      const used=new Set<number>(),pairs:any[]=[];
-      for(let aIx=0;aIx<pool.length&&pairs.length<64;aIx++){
-        const a:any=pool[aIx];if(used.has(Number(a.id)))continue;
-        let bIx=-1;
-        for(let j=aIx+1;j<Math.min(pool.length,aIx+25);j++){
-          const b:any=pool[j];
-          if(!used.has(Number(b.id))&&b.country===a.country){bIx=j;break;}
-        }
-        if(bIx<0){
-          for(let j=aIx+1;j<pool.length;j++){if(!used.has(Number(pool[j].id))){bIx=j;break;}}
-        }
-        if(bIx<0)break;
-        const b:any=pool[bIx];used.add(Number(a.id));used.add(Number(b.id));
-        const ap=Number(a.junior_doubles_points||0)+Number(a.junior_doubles_game_points||0);
-        const bp=Number(b.junior_doubles_points||0)+Number(b.junior_doubles_game_points||0);
-        pairs.push({
-          id:a.id,player_one_id:a.id,player_two_id:b.id,
-          player_one:a.name,player_two:b.name,name:a.name+" / "+b.name,
-          country:a.country===b.country?a.country:"MIX",is_team:true,
-          junior_doubles_race_points:Math.round((ap+bp)/2),
-          pair_seed:Number(a.junior_doubles_ranking||99999)+Number(b.junior_doubles_ranking||99999),
-          junior_doubles_race_snapshot_date:gameDate,
-          current_ability:Math.round((Number(a.current_ability||50)+Number(b.current_ability||50))/2),
-          potential:Math.round((Number(a.potential||50)+Number(b.potential||50))/2)
-        });
-      }
-      pairs.sort((a:any,b:any)=>Number(b.junior_doubles_race_points)-Number(a.junior_doubles_race_points)||Number(a.pair_seed)-Number(b.pair_seed)||String(a.name).localeCompare(String(b.name)));
-      let rows=pairs.map((p:any,ix:number)=>({
-        ...p,junior_doubles_race_ranking:ix+1,
-        finals_status:ix<8?"qualified":ix===8?"alternate":"race"
-      }));
-      if(q){const nq=normalizeName(q);rows=rows.filter((x:any)=>normalizeName(x.name).includes(nq));}
-      if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
-      const total=rows.length;rows=rows.slice(offset,offset+limit);
+      let query=db.from("junior_doubles_race_view").select("*",{count:"exact"})
+        .or(`junior_doubles_race_snapshot_date.is.null,junior_doubles_race_snapshot_date.lte.${gameDate}`);
+      if(q)query=query.ilike("name_norm",`%${normalizeName(q)}%`);
+      if(country)query=query.eq("country",country);
+      query=query.order("junior_doubles_race_ranking",{ascending:true}).range(offset,offset+limit-1);
+      const {data,error,count}=await query;
+      if(error)return h({error:error.message},500);
       return h({
-        kind,offset,limit,count:total,rows,rankingDate:gameDate,
+        kind,offset,limit,count:count??0,rows:data??[],rankingDate:gameDate,
         finalsName:"Court Boss Junior Doubles Finals",qualificationPlaces:8,
         raceType:"team",simulated:true,
         source:"Court Boss · course de qualification Junior Double"

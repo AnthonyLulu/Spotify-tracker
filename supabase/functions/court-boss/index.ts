@@ -2406,6 +2406,10 @@ Deno.serve(async(req:Request)=>{
     serverNext.setUTCDate(serverNext.getUTCDate()+7);
     const date=serverNext.toISOString().slice(0,10);
     const week=Math.max(1,Number(current.data.week||0)+1);
+    await db.from("staff_profiles")
+      .update({operational_status:"active",rest_until:null})
+      .eq("operational_status","rest")
+      .lt("rest_until",date);
     const cs=body?.career_state||{};
     const [staffRows,sponsorRows,rosterRows]=await Promise.all([
       db.from("staff").select("weekly_cost,skill,role,profile:staff_profiles(*)"),
@@ -2480,6 +2484,7 @@ Deno.serve(async(req:Request)=>{
       const avgFacility=(facilityRows.data??[]).length?(facilityRows.data??[]).reduce((sum:number,x:any)=>sum+Number(x.level||1),0)/(facilityRows.data??[]).length:1;
       const profileRows=staffList.map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
       const staffEfficiency=(p:any)=>{
+        if(String(p?.operational_status||"active")==="rest"&&String(p?.rest_until||"9999-12-31")>=date)return .42;
         const burnout=Number(p?.burnout||0),travel=Number(p?.travel_fatigue||0),workload=Number(p?.workload||20),pro=Number(p?.professionalism||10);
         return Math.max(.68,Math.min(1.06,1-burnout*.0032-travel*.0018-Math.max(0,workload-75)*.0015+Math.max(0,pro-14)*.006));
       };
@@ -2693,8 +2698,8 @@ Deno.serve(async(req:Request)=>{
       db.from("staff_scope_reputation").select("*").eq("staff_profile_id",id).order("rating",{ascending:false}),
       db.from("staff_peer_relationships").select("*,other:staff_profiles!staff_peer_relationships_staff_b_id_fkey(id,name,primary_role,nationality,reputation)").eq("staff_a_id",id).eq("active",true).order("affinity",{ascending:false}).limit(20),
       db.from("staff_peer_relationships").select("*,other:staff_profiles!staff_peer_relationships_staff_a_id_fkey(id,name,primary_role,nationality,reputation)").eq("staff_b_id",id).eq("active",true).order("affinity",{ascending:false}).limit(20),
-      db.from("staff_recommendations").select("*,other:staff_profiles!staff_recommendations_to_staff_id_fkey(id,name,primary_role,nationality,reputation)").eq("from_staff_id",id).eq("active",true).order("strength",{ascending:false}).limit(20),
-      db.from("staff_recommendations").select("*,other:staff_profiles!staff_recommendations_from_staff_id_fkey(id,name,primary_role,nationality,reputation)").eq("to_staff_id",id).eq("active",true).order("strength",{ascending:false}).limit(20),
+      db.from("staff_recommendations").select("*,other:staff_profiles!staff_recommendations_to_staff_id_fkey(id,name,primary_role,nationality,reputation,market_status,specialty,asking_weekly_cost)").eq("from_staff_id",id).eq("active",true).order("strength",{ascending:false}).limit(20),
+      db.from("staff_recommendations").select("*,other:staff_profiles!staff_recommendations_from_staff_id_fkey(id,name,primary_role,nationality,reputation,market_status,specialty,asking_weekly_cost)").eq("to_staff_id",id).eq("active",true).order("strength",{ascending:false}).limit(20),
       db.from("college_team_staff").select("*,team:college_teams(*)").eq("staff_profile_id",id).eq("active",true).limit(10),
       db.from("davis_team_staff").select("*").eq("staff_profile_id",id).eq("active",true).limit(10),
       db.from("staff_training_enrollments").select("*,center:staff_training_centers(*)").eq("staff_profile_id",id).order("start_date",{ascending:false}).limit(10),
@@ -2830,7 +2835,7 @@ Deno.serve(async(req:Request)=>{
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
       getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)"),
-      db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy)")
+      db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy,operational_status,rest_until)")
     ]);
     if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
@@ -2838,9 +2843,12 @@ Deno.serve(async(req:Request)=>{
     const t:any=tour.data,c:any=career.data;
     const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const staffProfiles=(userStaff.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
-    const matchStaffEfficiency=(p:any)=>Math.max(.68,Math.min(1.06,
-      1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018-Math.max(0,Number(p?.workload||20)-75)*.0015+Math.max(0,Number(p?.professionalism||10)-14)*.006
-    ));
+    const matchStaffEfficiency=(p:any)=>{
+      if(String(p?.operational_status||"active")==="rest"&&String(p?.rest_until||"9999-12-31")>=String(c.career_date||AGE_REFERENCE_DATE))return .42;
+      return Math.max(.68,Math.min(1.06,
+        1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018-Math.max(0,Number(p?.workload||20)-75)*.0015+Math.max(0,Number(p?.professionalism||10)-14)*.006
+      ));
+    };
     const bestStaff=(key:string)=>staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p?.[key]||0)*matchStaffEfficiency(p))):10;
 
     const staffLinks=await db.from("player_staff_assignments")
@@ -4571,6 +4579,87 @@ Deno.serve(async(req:Request)=>{
         await db.from("inbox_items").insert({kind:"commercial",title:"Représentation à revoir",body:"Ton agent a quitté l'équipe. Tu peux recruter un nouvel agent depuis le marché du staff.",action_route:"staff",is_read:false});
       }
       return h({ok:true,budget,severance,agent_representation:agentSync.error?{error:agentSync.error.message}:agentSync.data});
+    }
+
+    if(action==="mediate_staff_conflict"){
+      const aId=n(body?.staff_a_id,0,1,99999999),bId=n(body?.staff_b_id,0,1,99999999);
+      if(!aId||!bId||aId===bId)return h({error:"Relation staff invalide."},400);
+      const lo=Math.min(aId,bId),hi=Math.max(aId,bId);
+      const own=await db.from("staff").select("profile_id").in("profile_id",[lo,hi]);
+      if(own.error)return h({error:own.error.message},500);
+      if((own.data??[]).length<2)return h({error:"La médiation concerne uniquement les membres de ton staff."},409);
+      const rel=await db.from("staff_peer_relationships").select("*").eq("staff_a_id",lo).eq("staff_b_id",hi).maybeSingle();
+      if(rel.error||!rel.data)return h({error:rel.error?.message||"Relation staff introuvable."},404);
+      const profiles=await db.from("staff_profiles").select("id,name,communication_rating,professionalism,adaptability_rating").in("id",[lo,hi]);
+      if(profiles.error)return h({error:profiles.error.message},500);
+      const ps=profiles.data??[];
+      const avgCom=ps.length?ps.reduce((s:number,x:any)=>s+Number(x.communication_rating||10)+Number(x.adaptability_rating||10),0)/(ps.length*2):10;
+      const reduction=Math.max(14,Math.min(34,Math.round(10+avgCom*.9)));
+      const newConflict=Math.max(0,Number(rel.data.conflict_score||0)-reduction);
+      const newAffinity=Math.min(100,Number(rel.data.affinity||50)+Math.round(reduction*.45));
+      const newTrust=Math.min(100,Number(rel.data.trust||50)+Math.round(reduction*.35));
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const relUp=await db.from("staff_peer_relationships").update({
+        conflict_score:newConflict,
+        rivalry:Math.max(0,Number(rel.data.rivalry||0)-Math.round(reduction*.30)),
+        affinity:newAffinity,trust:newTrust,
+        relation_type:newConflict>=60?"Tension":newConflict>=30?"Collègues":"Bonne entente",
+        last_update:today
+      }).eq("staff_a_id",lo).eq("staff_b_id",hi);
+      if(relUp.error)return h({error:relUp.error.message},500);
+      const managedId=Number(career.data.managed_player_id||0);
+      if(managedId){
+        const links=await db.from("player_staff_assignments")
+          .select("id,satisfaction,team_chemistry,trust,affinity")
+          .eq("player_id",managedId).eq("active",true).in("staff_profile_id",[lo,hi]);
+        if(!links.error){
+          for(const x of links.data??[]){
+            await db.from("player_staff_assignments").update({
+              satisfaction:Math.min(100,Number(x.satisfaction||70)+8),
+              team_chemistry:Math.min(100,Number(x.team_chemistry||70)+12),
+              trust:Math.min(100,Number(x.trust||70)+5),
+              affinity:Math.min(100,Number(x.affinity||70)+4),
+              last_review_date:today
+            }).eq("id",x.id);
+          }
+        }
+      }
+      for(const sp of ps){
+        await db.from("staff_career_events").insert({
+          staff_profile_id:sp.id,event_date:today,event_type:"conflict_mediated",
+          player_id:managedId||null,
+          description:"Médiation interne : conflit réduit de "+reduction+" points."
+        });
+      }
+      await db.from("inbox_items").insert({kind:"staff",title:"Médiation du staff",body:"La tension interne baisse à "+newConflict+"/100.",action_route:"staff",is_read:false});
+      return h({ok:true,conflict_score:newConflict,reduction,affinity:newAffinity,trust:newTrust});
+    }
+
+    if(action==="rest_staff"){
+      const member=await db.from("staff").select("id,name,role,profile_id").eq("id",id).maybeSingle();
+      if(member.error||!member.data)return h({error:member.error?.message||"Membre du staff introuvable"},404);
+      if(!member.data.profile_id)return h({error:"Ce membre n'a pas de profil staff complet."},409);
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const until=new Date(today+"T12:00:00Z");until.setUTCDate(until.getUTCDate()+14);
+      const profile=await db.from("staff_profiles").select("burnout,travel_fatigue,energy,operational_status,rest_until").eq("id",member.data.profile_id).maybeSingle();
+      if(profile.error||!profile.data)return h({error:profile.error?.message||"Profil introuvable"},404);
+      if(String(profile.data.operational_status||"active")==="rest"&&String(profile.data.rest_until||"")>=today)return h({error:"Ce membre est déjà au repos."},409);
+      const up=await db.from("staff_profiles").update({
+        operational_status:"rest",
+        rest_until:until.toISOString().slice(0,10),
+        burnout:Math.max(0,Number(profile.data.burnout||0)-18),
+        travel_fatigue:Math.max(0,Number(profile.data.travel_fatigue||0)-22),
+        energy:Math.min(100,Number(profile.data.energy||70)+24),
+        updated_at:new Date().toISOString()
+      }).eq("id",member.data.profile_id);
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("staff_career_events").insert({
+        staff_profile_id:member.data.profile_id,event_date:today,event_type:"rest_period",
+        player_id:career.data.managed_player_id||null,role:member.data.role,
+        description:"Deux semaines de récupération pour réduire fatigue professionnelle et surcharge."
+      });
+      await db.from("inbox_items").insert({kind:"staff",title:"Repos du staff",body:(member.data.name||member.data.role)+" est mis au repos jusqu'au "+until.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
+      return h({ok:true,rest_until:until.toISOString().slice(0,10)});
     }
 
     if(action==="match_staff_offer"){

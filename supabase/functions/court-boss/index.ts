@@ -2479,7 +2479,13 @@ Deno.serve(async(req:Request)=>{
       const avgStaff=staffList.length?staffList.reduce((sum:number,x:any)=>sum+Number(x.skill||10),0)/staffList.length:10;
       const avgFacility=(facilityRows.data??[]).length?(facilityRows.data??[]).reduce((sum:number,x:any)=>sum+Number(x.level||1),0)/(facilityRows.data??[]).length:1;
       const profileRows=staffList.map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
-      const best=(key:string,fallback=avgStaff)=>profileRows.length?Math.max(fallback,...profileRows.map((p:any)=>Number(p?.[key]||0))):fallback;
+      const staffEfficiency=(p:any)=>{
+        const burnout=Number(p?.burnout||0),travel=Number(p?.travel_fatigue||0),workload=Number(p?.workload||20),pro=Number(p?.professionalism||10);
+        return Math.max(.68,Math.min(1.06,1-burnout*.0032-travel*.0018-Math.max(0,workload-75)*.0015+Math.max(0,pro-14)*.006));
+      };
+      const best=(key:string,fallback=avgStaff)=>profileRows.length
+        ?Math.max(fallback,...profileRows.map((p:any)=>Number(p?.[key]||0)*staffEfficiency(p)))
+        :fallback;
       const sessionStaff=(session:string)=>{
         if(session==="Service"||session==="Coup droit"||session==="Revers")return (best("technical_rating")+best("coach_rating"))/2;
         if(session==="Retour"||session==="Match play"||session==="Double")return (best("tactical_rating")+best("coach_rating"))/2;
@@ -2576,6 +2582,7 @@ Deno.serve(async(req:Request)=>{
         const dynamics=await db.rpc("simulate_staff_team_dynamics",{p_date:date});
         const competition=await db.rpc("refresh_staff_recruitment_competition",{p_date:date});
         const ownStaffOffers=await db.rpc("refresh_user_staff_external_offers",{p_date:date});
+        const workload=await db.rpc("refresh_staff_workload",{p_date:date});
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
           meta:meta.error?{error:meta.error.message}:meta.data,
@@ -2589,7 +2596,8 @@ Deno.serve(async(req:Request)=>{
           evolution:evolution.error?{error:evolution.error.message}:evolution.data,
           dynamics:dynamics.error?{error:dynamics.error.message}:dynamics.data,
           competition:competition.error?{error:competition.error.message}:competition.data,
-          ownStaffOffers:ownStaffOffers.error?{error:ownStaffOffers.error.message}:ownStaffOffers.data
+          ownStaffOffers:ownStaffOffers.error?{error:ownStaffOffers.error.message}:ownStaffOffers.data,
+          workload:workload.error?{error:workload.error.message}:workload.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
@@ -2747,6 +2755,11 @@ Deno.serve(async(req:Request)=>{
     const staffTrainingCenters=await db.from("staff_training_centers")
       .select("*").eq("active",true)
       .order("reputation",{ascending:false}).order("name");
+    const userStaffTraining=await db.from("staff_training_enrollments")
+      .select("id,staff_profile_id,start_date,expected_end,focus,progress,status,cost,user_managed,center:staff_training_centers(id,name,country,specialty,reputation)")
+      .eq("user_managed",true)
+      .order("start_date",{ascending:false})
+      .limit(30);
 
     const careerNow=await db.from("career_state").select("managed_player_id,career_date").eq("id","demo").maybeSingle();
     const managedId=Number(careerNow.data?.managed_player_id||0);
@@ -2781,6 +2794,7 @@ Deno.serve(async(req:Request)=>{
       academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],
       collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
       staffTrainingCenters:staffTrainingCenters.error?[]:(staffTrainingCenters.data??[]),
+      userStaffTraining:userStaffTraining.error?[]:(userStaffTraining.data??[]),
       managedAgency:managedAgency.error?null:managedAgency.data,
       agencyNetwork:agencyNetwork.error?[]:(agencyNetwork.data??[]),
       ownStaffRelations,
@@ -2813,7 +2827,7 @@ Deno.serve(async(req:Request)=>{
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
       getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)"),
-      db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating)")
+      db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy)")
     ]);
     if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
@@ -2821,7 +2835,10 @@ Deno.serve(async(req:Request)=>{
     const t:any=tour.data,c:any=career.data;
     const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const staffProfiles=(userStaff.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
-    const bestStaff=(key:string)=>staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p?.[key]||0))):10;
+    const matchStaffEfficiency=(p:any)=>Math.max(.68,Math.min(1.06,
+      1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018-Math.max(0,Number(p?.workload||20)-75)*.0015+Math.max(0,Number(p?.professionalism||10)-14)*.006
+    ));
+    const bestStaff=(key:string)=>staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p?.[key]||0)*matchStaffEfficiency(p))):10;
 
     const staffLinks=await db.from("player_staff_assignments")
       .select("staff_profile_id,role_fit,satisfaction,team_chemistry")

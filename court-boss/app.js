@@ -889,7 +889,11 @@ window.dbPage=async d=>{dbOffset=Math.max(0,dbOffset+d*100);await loadPlayerData
 
 function staffFormerLabel(p){
  if(!p)return '';
- if(p.former_player_status==='yes')return 'Ancien joueur pro';
+ if(p.former_player_status==='yes'){
+   if(p.verified)return 'Ancien joueur pro · sourcé';
+   if(String(p.source_label||'').includes('reconversion dynamique'))return 'Ancien joueur Court Boss reconverti';
+   return 'Ancien joueur probable · base simulée';
+ }
  if(p.former_player_status==='no')return 'Spécialiste staff';
  return 'Parcours joueur non confirmé';
 }
@@ -913,7 +917,7 @@ function staffPage(){
 }
 function contractsPage(){
  const rows=management?.contracts||[];
- return `<div class="section-head"><div><div class="eyebrow">Négociations</div><h1>Contrats</h1><div class="muted">Échéances, salaires et renouvellements.</div></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Personne</th><th>Rôle</th><th>Salaire/sem.</th><th>Fin</th><th>Statut</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td class="click" onclick="openContract(${x.id})"><b>${esc(x.subject_name)}</b></td><td>${esc(x.role||x.subject_type)}</td><td>${euro(x.weekly_salary)}</td><td>${df(x.end_date)}</td><td><span class="badge good">${esc(x.status)}</span></td><td><button class="soft-btn" onclick="renewContract(${x.id})">+ 1 an</button></td></tr>`).join('')}</tbody></table></div></div>`
+ return `<div class="section-head"><div><div class="eyebrow">Négociations</div><h1>Contrats</h1><div class="muted">Échéances, salaires et renouvellements.</div></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Personne</th><th>Rôle</th><th>Salaire/sem.</th><th>Fin</th><th>Statut</th><th></th></tr></thead><tbody>${rows.map(x=>{const active=x.status==='active';return `<tr><td class="click" onclick="openContract(${x.id})"><b>${esc(x.subject_name)}</b></td><td>${esc(x.role||x.subject_type)}</td><td>${euro(x.weekly_salary)}</td><td>${df(x.end_date)}</td><td><span class="badge ${active?'good':'muted'}">${esc(x.status)}</span></td><td>${active?`<button class="soft-btn" onclick="renewContract(${x.id})">+ 1 an</button>`:''}</td></tr>`}).join('')}</tbody></table></div></div>`
 }
 function financePage(){
  const cr=career(),f=boot.finance||{},offers=management?.sponsors||[];

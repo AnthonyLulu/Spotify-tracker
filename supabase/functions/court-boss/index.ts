@@ -2589,6 +2589,7 @@ Deno.serve(async(req:Request)=>{
 
       if(Number(date.slice(0,4))>2025){
         const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
+        const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const month=Number(date.slice(5,7));
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})
@@ -2640,7 +2641,8 @@ Deno.serve(async(req:Request)=>{
           achievements:achievements.error?{error:achievements.error.message}:achievements.data,
           achievementReputation:achievementReputation.error?{error:achievementReputation.error.message}:achievementReputation.data,
           staffWorldNews:staffWorldNews.error?{error:staffWorldNews.error.message}:staffWorldNews.data,
-          careerFocus:careerFocus.error?{error:careerFocus.error.message}:careerFocus.data
+          careerFocus:careerFocus.error?{error:careerFocus.error.message}:careerFocus.data,
+          careerLifecycle:careerLifecycle.error?{error:careerLifecycle.error.message}:careerLifecycle.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
@@ -5325,12 +5327,20 @@ Deno.serve(async(req:Request)=>{
       });
       if(result.error)return h({error:result.error.message},500);
       const labels:any={singles_priority:"Simple prioritaire",mixed:"Simple + double",doubles_only:"Double exclusivement"};
+      let needsPartner=false;
+      if(focus==="doubles_only"){
+        const managedId=Number(career.data.managed_player_id||0);
+        const pair=managedId
+          ?await db.from("doubles_partnerships").select("id,player_b_id").eq("player_a_id",managedId).order("id",{ascending:false}).limit(1).maybeSingle()
+          :{data:null,error:null};
+        needsPartner=!pair.data;
+      }
       await db.from("inbox_items").insert({
         kind:"career",title:"Orientation de carrière modifiée",
-        body:"Nouvelle orientation : "+labels[focus]+".",
-        action_route:"myplayer",is_read:false
+        body:"Nouvelle orientation : "+labels[focus]+(needsPartner?" · choisis maintenant un partenaire dans le hub Double.":"."),
+        action_route:needsPartner?"doubles":"myplayer",is_read:false
       });
-      return h({ok:true,...(result.data||{}),label:labels[focus]});
+      return h({ok:true,...(result.data||{}),label:labels[focus],needs_partner:needsPartner});
     }
 
 

@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:13,development_model:"development-v3",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:14,development_model:"development-v3",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -1855,9 +1855,12 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
+      managedIdForMatchup===id
+        ?db.from("player_development_trait_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(60)
+        :Promise.resolve({data:[],error:null}),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_role_suitability").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_ceilings").select("ceilings,ability_snapshot,potential_snapshot,development_type,last_review_date").eq("player_id",id).maybeSingle(),
@@ -1902,6 +1905,7 @@ Deno.serve(async(req:Request)=>{
       doublesPartnerHistory:doublesPartnerHistory.error?[]:(doublesPartnerHistory.data??[]),
       developmentProfile:developmentProfile.error?null:developmentProfile.data,
       developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[]),
+      developmentTraitHistory:developmentTraitHistory.error?[]:(developmentTraitHistory.data??[]),
       scoutingReport:scoutingReport.error?null:scoutingReport.data,
       roleSuitability:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=80)&&!roleSuitability.error?roleSuitability.data:null,
       attributeCeilings:managedIdForMatchup===id&&!attributeCeilings.error?attributeCeilings.data:null,

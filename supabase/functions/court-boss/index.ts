@@ -1721,26 +1721,24 @@ Deno.serve(async(req:Request)=>{
         finals:"ITF World Tennis Tour Junior Finals",source:"Court Boss Junior Finals Race"
       };
     }
-    const dr=await db.from("doubles_race_view")
-      .select("doubles_race_ranking,doubles_race_points,doubles_race_snapshot_date,finals_status,name,player_one_id,player_two_id")
-      .or(`player_one_id.eq.${id},player_two_id.eq.${id}`)
-      .lte("doubles_race_snapshot_date",referenceDate)
-      .order("doubles_race_snapshot_date",{ascending:false})
-      .order("doubles_race_ranking",{ascending:true}).limit(1).maybeSingle();
-    if(!dr.error&&dr.data)raceCards.doubles={
-      rank:dr.data.doubles_race_ranking,points:dr.data.doubles_race_points,status:dr.data.finals_status,
-      snapshot_date:dr.data.doubles_race_snapshot_date,team:dr.data.name,
-      finals:"Nitto ATP Finals",source:"ATP Doubles Team Race"
-    };
-    const jdr=await db.from("junior_doubles_race_view")
-      .select("junior_doubles_race_ranking,junior_doubles_race_points,junior_doubles_race_snapshot_date,finals_status,name,player_one_id,player_two_id")
-      .or(`player_one_id.eq.${id},player_two_id.eq.${id}`)
-      .order("junior_doubles_race_ranking",{ascending:true}).limit(1).maybeSingle();
-    if(!jdr.error&&jdr.data)raceCards.juniorDoubles={
-      rank:jdr.data.junior_doubles_race_ranking,points:jdr.data.junior_doubles_race_points,status:jdr.data.finals_status,
-      snapshot_date:jdr.data.junior_doubles_race_snapshot_date,team:jdr.data.name,
-      finals:"Court Boss Junior Doubles Finals",source:"Court Boss Junior Doubles Race"
-    };
+    const dr=await db.rpc("doubles_race_for_date",{p_date:referenceDate});
+    if(!dr.error){
+      const row=(dr.data??[]).find((x:any)=>Number(x.player_one_id)===id||Number(x.player_two_id)===id);
+      if(row)raceCards.doubles={
+        rank:row.doubles_race_ranking,points:row.doubles_race_points,status:row.finals_status,
+        snapshot_date:row.doubles_race_snapshot_date,team:row.name,
+        finals:"Nitto ATP Finals",source:row.source
+      };
+    }
+    const jdr=await db.rpc("junior_doubles_race_for_date",{p_date:referenceDate});
+    if(!jdr.error){
+      const row=(jdr.data??[]).find((x:any)=>Number(x.player_one_id)===id||Number(x.player_two_id)===id);
+      if(row)raceCards.juniorDoubles={
+        rank:row.junior_doubles_race_ranking,points:row.junior_doubles_race_points,status:row.finals_status,
+        snapshot_date:row.junior_doubles_race_snapshot_date,team:row.name,
+        finals:"Court Boss Junior Doubles Finals",source:row.source
+      };
+    }
 
     if(player){
       const gameDate=referenceDate;
@@ -1921,10 +1919,9 @@ Deno.serve(async(req:Request)=>{
       const isAtpDoubleFinals=String(t.data.circuit)==="ATP"&&/ATP Finals/i.test(categoryName);
 
       if(isJuniorDoubleFinals){
-        const race=await db.from("junior_doubles_race_view").select("*")
-          .order("junior_doubles_race_ranking",{ascending:true}).limit(8);
+        const race=await db.rpc("junior_doubles_race_for_date",{p_date:String((await db.from("career_state").select("career_date").eq("id","demo").maybeSingle()).data?.career_date||AGE_REFERENCE_DATE)});
         if(!race.error){
-          doublesMain=(race.data??[]).map((x:any)=>({
+          doublesMain=(race.data??[]).slice(0,8).map((x:any)=>({
             seed:x.junior_doubles_race_ranking,
             player_a:{id:x.player_one_id,name:x.player_one,country:x.country,doubles_ranking:x.junior_doubles_race_ranking},
             player_b:{id:x.player_two_id,name:x.player_two,country:x.country,doubles_ranking:x.junior_doubles_race_ranking},
@@ -1939,15 +1936,9 @@ Deno.serve(async(req:Request)=>{
       }else if(isAtpDoubleFinals){
         const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
         const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
-        const latestRace=await db.from("doubles_race_view").select("doubles_race_snapshot_date")
-          .lte("doubles_race_snapshot_date",refDate)
-          .order("doubles_race_snapshot_date",{ascending:false}).limit(1).maybeSingle();
-        if(!latestRace.error&&latestRace.data?.doubles_race_snapshot_date){
-          const race=await db.from("doubles_race_view").select("*")
-            .eq("doubles_race_snapshot_date",latestRace.data.doubles_race_snapshot_date)
-            .order("doubles_race_ranking",{ascending:true}).limit(8);
-          if(!race.error){
-            doublesMain=(race.data??[]).map((x:any)=>({
+        const race=await db.rpc("doubles_race_for_date",{p_date:refDate});
+        if(!race.error){
+          doublesMain=(race.data??[]).slice(0,8).map((x:any)=>({
               seed:x.doubles_race_ranking,
               player_a:{id:x.player_one_id,name:x.player_one,country:x.country,doubles_ranking:x.doubles_race_ranking},
               player_b:{id:x.player_two_id,name:x.player_two,country:x.country,doubles_ranking:x.doubles_race_ranking},
@@ -1958,7 +1949,6 @@ Deno.serve(async(req:Request)=>{
               finals_status:x.finals_status,
               source:"atp-doubles-race"
             }));
-          }
         }
       }else{
         let dpool:any;

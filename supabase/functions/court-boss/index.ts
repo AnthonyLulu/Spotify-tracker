@@ -2556,11 +2556,12 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const [worldEvents,juniorWorldEvents]=await Promise.all([
+    const [worldEvents,juniorWorldEvents,worldDoublesEvents]=await Promise.all([
       db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date}),
-      db.rpc("simulate_junior_world_tournaments",{p_from_date:previousDate,p_to_date:date})
+      db.rpc("simulate_junior_world_tournaments",{p_from_date:previousDate,p_to_date:date}),
+      db.rpc("simulate_world_doubles_tournaments",{p_from_date:previousDate,p_to_date:date})
     ]);
-    if(worldEvents.error||juniorWorldEvents.error)return h({error:(worldEvents.error||juniorWorldEvents.error)?.message},500);
+    if(worldEvents.error||juniorWorldEvents.error||worldDoublesEvents.error)return h({error:(worldEvents.error||juniorWorldEvents.error||worldDoublesEvents.error)?.message},500);
     const sim=await db.rpc("simulate_world_week",{p_week:week,p_snapshot_date:date});
     if(sim.error) return h({error:sim.error.message},500);
 
@@ -2716,7 +2717,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){

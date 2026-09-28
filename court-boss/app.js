@@ -1146,6 +1146,12 @@ function liveMatchPanel(){
  const oInit=esc(oppName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
  const momentum=clamp(Number(s.momentum||50),10,90);
  const pointText=(a,b,side)=>pointLabel(a,b,side);
+ const pctStat=(num,den)=>Number(den||0)>0?Math.round(Number(num||0)/Number(den)*100):0;
+ const userFirstPct=pctStat(st.user_first_serves_in,st.user_first_serves);
+ const oppFirstPct=pctStat(st.opp_first_serves_in,st.opp_first_serves);
+ const pointEnding=String(lp.ending||lp.shot||'').replaceAll('_',' ');
+ const pointServe=lp.serve_number?`${lp.serve_number}e balle · ${esc(lp.serve_direction||'')}`:'';
+ const pointReturn=lp.return_depth?`retour ${esc(lp.return_depth)}`:'';
  return `<div class="card fm-live-match">
   <div class="fm-match-top">
    <div><div class="eyebrow">Live · ${esc(surface)}${indoor?' · indoor':''}</div><h2>${esc(userName)} vs ${esc(oppName)}</h2></div>
@@ -1165,16 +1171,21 @@ function liveMatchPanel(){
     <div class="fm-player-dot opponent" style="left:${ox}%;top:${oy}%"><span>${oInit}</span><small>${esc(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
     <div class="fm-player-dot user" style="left:${ux}%;top:${uy}%"><span>${uInit}</span><small>${esc(userName.split(' ').slice(-1)[0]||'MOI')}</small></div>
     <i class="fm-ball" style="left:${bx}%;top:${by}%"></i>
-    ${lp.shot?`<div class="fm-rally-call">${esc(lp.shot)} · ${Number(lp.rally||0)} coups${lp.zone?' · '+esc(lp.zone):''}</div>`:''}
+    ${lp.shot?`<div class="fm-rally-call"><b>${esc(pointEnding)}</b> · ${Number(lp.rally||0)} coups${lp.rally_band?' · '+esc(lp.rally_band):''}${pointServe?' · '+pointServe:''}${pointReturn?' · '+pointReturn:''}${lp.at_net?' · filet':''}</div>`:''}
   </div>
 
   <div class="fm-momentum"><span>${esc(oppName)}</span><div><i style="left:${momentum}%"></i></div><span>${esc(userName)}</span></div>
   <div class="fm-match-stats">
    <div><span>Winners</span><b>${st.user_winners||0}–${st.opp_winners||0}</b></div>
    <div><span>Fautes</span><b>${st.user_errors||0}–${st.opp_errors||0}</b></div>
-   <div><span>Aces</span><b>${st.user_aces||0}</b></div>
-   <div><span>Rallyes</span><b>${s.rally_no||0}</b></div>
+   <div><span>Aces</span><b>${st.user_aces||0}–${st.opp_aces||0}</b></div>
+   <div><span>1res IN</span><b>${userFirstPct}%–${oppFirstPct}%</b></div>
+   <div><span>DF</span><b>${st.user_double_faults||0}–${st.opp_double_faults||0}</b></div>
+   <div><span>Non retournés</span><b>${st.user_unreturned_serves||0}–${st.opp_unreturned_serves||0}</b></div>
+   <div><span>Filet</span><b>${st.user_net_points_won||0}/${st.user_net_points||0}</b></div>
+   <div><span>Points</span><b>${s.rally_no||0}</b></div>
   </div>
+  ${lp.model?`<div class="muted micro" style="margin-top:8px">Moteur : ${esc(lp.model)} · P(point) serveur ${lp.server_win_probability??'—'}% · Elo surface ${Math.round(Number(lp.server_surface_elo||0))} vs ${Math.round(Number(lp.returner_surface_elo||0))}</div>`:''}
   ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-live-toolbar">
    <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button>
    <button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button>

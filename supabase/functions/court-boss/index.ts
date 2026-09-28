@@ -1855,7 +1855,7 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,attributeTrend,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,trainingLoad,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,attributeTrend,mentorshipOverview,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,trainingLoad,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       managedIdForMatchup===id
@@ -1865,6 +1865,7 @@ Deno.serve(async(req:Request)=>{
       db.from("player_role_suitability").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_ceilings").select("ceilings,ability_snapshot,potential_snapshot,development_type,last_review_date").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_trends").select("*").eq("player_id",id).maybeSingle(),
+      db.rpc("player_mentorship_overview",{p_player_id:id}),
       managedIdForMatchup===id
         ?db.from("player_hidden_trait_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30)
         :Promise.resolve({data:[],error:null}),
@@ -1913,6 +1914,7 @@ Deno.serve(async(req:Request)=>{
       roleSuitability:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=80)&&!roleSuitability.error?roleSuitability.data:null,
       attributeCeilings:managedIdForMatchup===id&&!attributeCeilings.error?attributeCeilings.data:null,
       attributeTrend:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=85)&&!attributeTrend.error?attributeTrend.data:null,
+      mentorship:mentorshipOverview.error?null:mentorshipOverview.data,
       hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       eloRating:eloRating.error?null:eloRating.data,
@@ -2841,6 +2843,8 @@ Deno.serve(async(req:Request)=>{
         const archetypeRefresh=await db.rpc("refresh_player_archetypes",{p_date:date});
         const coachingDevelopment=await db.rpc("apply_player_coaching_development",{p_date:date});
         const coachingEnvironment=await db.rpc("apply_coaching_development_effects",{p_date:date});
+        const mentorshipRefresh=await db.rpc("refresh_player_mentorships",{p_date:date});
+        const mentorshipEffects=await db.rpc("apply_player_mentorship_effects",{p_date:date});
         const attributeTrends=await db.rpc("refresh_player_attribute_trends",{p_date:date});
         const ceilingRefresh=await db.rpc("refresh_changed_player_attribute_ceilings",{p_date:date});
         const tacticalPreferences=await db.rpc("refresh_player_tactical_preferences",{p_date:date});
@@ -2877,6 +2881,8 @@ Deno.serve(async(req:Request)=>{
           archetypeRefresh:archetypeRefresh.error?{error:archetypeRefresh.error.message}:archetypeRefresh.data,
           coachingDevelopment:coachingDevelopment.error?{error:coachingDevelopment.error.message}:coachingDevelopment.data,
           coachingEnvironment:coachingEnvironment.error?{error:coachingEnvironment.error.message}:coachingEnvironment.data,
+          mentorshipRefresh:mentorshipRefresh.error?{error:mentorshipRefresh.error.message}:mentorshipRefresh.data,
+          mentorshipEffects:mentorshipEffects.error?{error:mentorshipEffects.error.message}:mentorshipEffects.data,
           attributeTrends:attributeTrends.error?{error:attributeTrends.error.message}:attributeTrends.data,
           ceilingRefresh:ceilingRefresh.error?{error:ceilingRefresh.error.message}:ceilingRefresh.data,
           tacticalPreferences:tacticalPreferences.error?{error:tacticalPreferences.error.message}:tacticalPreferences.data,

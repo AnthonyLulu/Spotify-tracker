@@ -505,10 +505,10 @@ function doublesEligibility(t){
  return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
 const MAJOR_TOURNAMENT_LOGOS=[
- {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/AO26_logo.svg",label:"AO",cls:"logo-ao"},
- {re:/Roland[ -]?Garros/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/RG-Logo.png",label:"RG",cls:"logo-rg"},
- {re:/Wimbledon/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/WB-Logo.png",label:"WIM",cls:"logo-wim"},
- {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO",cls:"logo-uso"}
+ {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO",cls:"logo-ao"},
+ {re:/Roland[ -]?Garros/i,url:"https://static.cdnlogo.com/logos/r/52/roland-garros.svg",label:"RG",cls:"logo-rg"},
+ {re:/Wimbledon/i,url:"https://static.cdnlogo.com/logos/w/73/wimbledon.svg",label:"WIM",cls:"logo-wim"},
+ {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
 ];
 function tournamentLogoMeta(t={}){
  const name=String(t.name||t.tournament_name||"");
@@ -516,8 +516,10 @@ function tournamentLogoMeta(t={}){
  const major=MAJOR_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
  const category=String(t.category||t.level||"").trim();
  const circuit=String(t.circuit||"").trim();
- if(explicit)return {url:explicit,label:major?.label||String(category||circuit||"TOUR"),cls:"logo-official "+(major?.cls||"")};
+ // Curated Grand Slam assets win over older DB logo URLs so no baked-in
+ // white/colour rectangle can leak back into the TM-style UI.
  if(major)return {url:major.url,label:major.label,cls:"logo-official "+(major.cls||"")};
+ if(explicit)return {url:explicit,label:String(category||circuit||"TOUR"),cls:"logo-official"};
  if(t.id&&t.is_verified&&circuit==="ATP"){
    return {
      url:API+"/api/tournament-logo?id="+encodeURIComponent(t.id),

@@ -297,8 +297,14 @@ function rankings(){
    ?'Classement monde Court Boss jusqu’au rang 30 000. Le rang ATP officiel reste identifié séparément quand il est disponible · snapshot '+df(snap||RANKING_SNAPSHOT)+'.'
    :rankKind==='doubles'
      ?'Classement ATP Double officiel Live-Tennis · Top 1000 au '+df(snap||RANKING_SNAPSHOT)+' · '+fmt(worldStats?.indexedDoubles||rankCount)+' profils indexés pour le scouting.'
+     :rankKind==='doubles_race'
+       ?'Race par équipes vers le Nitto ATP Finals · Top 8 qualifié · '+df(snap||RANKING_SNAPSHOT)
      :rankKind==='race'
        ?'ATP Race · base 01 déc. 2025 · '+df(snap||RANKING_SNAPSHOT)
+     :rankKind==='junior_race'
+       ?'Qualification ITF World Tennis Tour Junior Finals · Top 8 · points sur 12 mois · '+df(snap||RANKING_SNAPSHOT)
+     :rankKind==='junior_doubles_race'
+       ?'Course par paires vers le Court Boss Junior Doubles Finals · Top 8 · '+df(snap||RANKING_SNAPSHOT)
        :rankKind==='nextgen'
          ?'ATP Next Gen Race · base 01 déc. 2025 · '+df(snap||RANKING_SNAPSHOT)+' · âge au 01/12/2025'
        :rankKind==='junior'

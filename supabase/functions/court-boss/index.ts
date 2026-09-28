@@ -5,7 +5,7 @@ const db=createClient(supabaseUrl,serviceRole,{auth:{persistSession:false}});
 
 const cors={
   "Access-Control-Allow-Origin":"*",
-  "Access-Control-Allow-Headers":"content-type,x-save-key",
+  "Access-Control-Allow-Headers":"content-type,x-save-key,x-court-boss-key",
   "Access-Control-Allow-Methods":"GET,POST,OPTIONS",
   "Cache-Control":"no-store"
 };
@@ -35,6 +35,7 @@ const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=n
 };
 async function resolveTennisTempleBio(player:any,gameDate:string){
   if(!player?.is_real||!player?.name)return player;
+  const observedDate=new Date().toISOString().slice(0,10);
   const needsHeight=!player.height_cm||!player.height_verified;
   const needsAge=!player.birth_date&&(/estimate|estim/i.test(String(player.age_source||""))||player.age==null);
   const needsHand=!player.handedness;
@@ -56,9 +57,9 @@ async function resolveTennisTempleBio(player:any,gameDate:string){
       const age=Number(ah[1]),height=Number(ah[2]);
       if(needsAge&&age>=12&&age<=45){
         player.age=age;
-        player.age_source="TennisTemple · "+gameDate;
-        player.age_snapshot_date=gameDate;
-        update.age=age;update.age_source=player.age_source;update.age_snapshot_date=gameDate;
+        player.age_source="TennisTemple · "+observedDate;
+        player.age_snapshot_date=observedDate;
+        update.age=age;update.age_source=player.age_source;update.age_snapshot_date=observedDate;
       }
       if(needsHeight&&height>=145&&height<=215){
         player.height_cm=height;
@@ -1101,8 +1102,10 @@ async function getManagedPlayer(select="*"){
 Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
-
-  if(path.endsWith("/api/health")||path.endsWith("/court-boss")) return h({ok:true,app:"court-boss-api",version:10});
+  const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
+  const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
+  if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:11,development_model:"development-v2",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2468,6 +2471,91 @@ Deno.serve(async(req:Request)=>{
     return up.error?h({error:up.error.message},500):h({ok:true,active:true});
   }
 
+
+  if(path.endsWith("/api/training-preview")&&req.method==="POST"){
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const current=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
+    const managed=await getManagedPlayer("id,name,age,birth_date,current_ability,potential");
+    if(managed.error||!managed.data)return h({error:managed.error?.message||"Managed player missing"},500);
+    const [devRow,staffRows,facilityRows]=await Promise.all([
+      db.from("player_development_profiles")
+        .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability")
+        .eq("player_id",managed.data.id).maybeSingle(),
+      db.from("staff").select("skill,role,profile:staff_profiles(*)"),
+      db.from("facilities").select("level")
+    ]);
+    const dev:any=devRow.data||{};
+    const sessions=Array.isArray(body?.training)?body.training.slice(0,7).map(String):[];
+    const weights:any={"Service":2,"Retour":2,"Coup droit":2,"Revers":2,"Déplacements":3,"Endurance":3,"Match play":3,"Double":2,"Récupération":0,"Repos":-1};
+    const load=sessions.reduce((sum:number,s:string)=>sum+Number(weights[s]??1),0);
+    const playerAge=ageAt(managed.data.birth_date,String(current.data.career_date||AGE_REFERENCE_DATE),managed.data.age)||Number(managed.data.age||24);
+    const fatigue=Number(current.data.fatigue||0),fitness=Number(current.data.fitness||90),morale=Number(current.data.morale||70);
+    const injury=String(current.data.injury_status||"Fit");
+    const careerFocus=String(current.data.career_focus||"mixed");
+    const personalBase=Math.max(.76,Math.min(1.26,
+      .72+Number(dev.development_rate||10)*.012+Number(dev.professionalism||10)*.010+Number(dev.coachability||10)*.011+Number(dev.staff_stability||8)*.004
+    ));
+    const ageMult=playerAge<Number(dev.peak_age||25)?1.05:playerAge<=Number(dev.decline_start_age||30)?1:Math.max(.68,1-(playerAge-Number(dev.decline_start_age||30))*.055);
+    const conditionMult=Math.max(.66,Math.min(1.08,.88+fitness/500+morale/700-fatigue/550-(injury!=="Fit"?.12:0)));
+    const staffList=staffRows.data??[];
+    const profiles=staffList.map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
+    const staffEfficiency=(p:any)=>{
+      const burnout=Number(p?.burnout||0),travel=Number(p?.travel_fatigue||0),workload=Number(p?.workload||20),pro=Number(p?.professionalism||10);
+      return Math.max(.60,Math.min(1.06,1-burnout*.0032-travel*.0018-Math.max(0,workload-75)*.0015+Math.max(0,pro-14)*.006));
+    };
+    const avgStaff=staffList.length?staffList.reduce((sum:number,x:any)=>sum+Number(x.skill||10),0)/staffList.length:10;
+    const best=(key:string,fallback=avgStaff)=>profiles.length?Math.max(fallback,...profiles.map((p:any)=>Number(p?.[key]||0)*staffEfficiency(p))):fallback;
+    const sessionStaff=(session:string)=>{
+      if(session==="Service")return (best("serve_coaching_rating")+best("technical_rating"))/2;
+      if(session==="Retour")return (best("return_coaching_rating")+best("tactical_rating"))/2;
+      if(session==="Double")return (best("doubles_coaching_rating")+best("tactical_rating")+best("communication_rating"))/3;
+      if(session==="Coup droit"||session==="Revers")return (best("technical_rating")+best("coach_rating"))/2;
+      if(session==="Match play")return (best("tactical_rating")+best("coach_rating"))/2;
+      if(session==="Déplacements"||session==="Endurance")return best("fitness_rating");
+      return avgStaff;
+    };
+    const avgFacility=(facilityRows.data??[]).length?(facilityRows.data??[]).reduce((sum:number,x:any)=>sum+Number(x.level||1),0)/(facilityRows.data??[]).length:1;
+    const targetScores:any={};
+    for(const s of sessions){
+      if(["Repos","Récupération"].includes(s))continue;
+      const focusMult=careerFocus==="doubles_only"
+        ?(["Double","Service","Retour","Match play"].includes(s)?1.12:.96)
+        :careerFocus==="singles_only"
+          ?(s==="Double"?.30:["Service","Retour","Coup droit","Revers","Match play"].includes(s)?1.08:1)
+          :careerFocus==="singles_priority"&&s==="Double"?.90:1;
+      targetScores[s]=(targetScores[s]||0)+(.67+sessionStaff(s)/36+avgFacility/12)*focusMult*personalBase*ageMult*conditionMult;
+    }
+    let minLoad=9,maxLoad=12;
+    if(injury!=="Fit"){minLoad=2;maxLoad=6}
+    else if(fatigue>=70||fitness<65){minLoad=4;maxLoad=7}
+    else if(fatigue>=55||fitness<78){minLoad=6;maxLoad=9}
+    else if(playerAge<=22&&fitness>=90&&fatigue<=25){minLoad=10;maxLoad=13}
+    const warnings:string[]=[];
+    if(load>maxLoad+2)warnings.push("Charge trop élevée : fatigue et blessures vont freiner l’apprentissage.");
+    if(load<minLoad-2)warnings.push("Charge très basse : bonne récupération mais progression technique lente.");
+    if(!sessions.some((s:string)=>s==="Repos"||s==="Récupération"))warnings.push("Aucune journée de récupération prévue.");
+    let hardRun=0,maxHardRun=0;
+    for(const s of sessions){hardRun=Number(weights[s]||0)>=2?hardRun+1:0;maxHardRun=Math.max(maxHardRun,hardRun)}
+    if(maxHardRun>=4)warnings.push("Quatre séances exigeantes consécutives ou plus : surcharge probable.");
+    if(careerFocus==="doubles_only"&&sessions.filter((s:string)=>s==="Double").length<2)warnings.push("Profil double exclusif : ajoute au moins deux séances Double.");
+    if(careerFocus==="singles_only"&&sessions.filter((s:string)=>s==="Double").length>1)warnings.push("Profil simple exclusif : trop de volume consacré au Double.");
+    const multiplier=personalBase*ageMult*conditionMult*(.84+avgStaff/80+avgFacility/20);
+    const risk=injury!=="Fit"?"Élevé":load>maxLoad+2||fatigue>=65?"Élevé":load>maxLoad||fatigue>=50?"Modéré":"Maîtrisé";
+    return h({
+      ok:true,model:"development-v2",player_name:managed.data.name,age:playerAge,
+      current_ability:Number(managed.data.current_ability||0),potential:Number(managed.data.potential||0),
+      current_stars:Math.max(.5,Math.min(5,Math.round(Number(managed.data.current_ability||0)/10)/2)),
+      potential_stars:Math.max(.5,Math.min(5,Math.round(Number(managed.data.potential||0)/10)/2)),
+      load,recommended_load:{min:minLoad,max:maxLoad},risk,multiplier:Number(multiplier.toFixed(3)),
+      fatigue,fitness,morale,injury_status:injury,career_focus:careerFocus,
+      development:{type:String(dev.development_type||"standard"),development_rate:Number(dev.development_rate||10),professionalism:Number(dev.professionalism||10),coachability:Number(dev.coachability||10),peak_age:Number(dev.peak_age||25),decline_start_age:Number(dev.decline_start_age||30)},
+      staff_score:Number(avgStaff.toFixed(1)),facility_score:Number(avgFacility.toFixed(1)),
+      targets:Object.entries(targetScores).map(([session,score])=>({session,score:Number(Number(score).toFixed(2))})).sort((a:any,b:any)=>b.score-a.score),
+      warnings
+    });
+  }
+
   if(path.endsWith("/api/simulate")&&req.method==="POST"){
     let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const requestedDate=String(body?.date||"").slice(0,10);
@@ -2644,17 +2732,10 @@ Deno.serve(async(req:Request)=>{
       if(Object.keys(attrUpdate).length){
         await db.from("player_attributes").update(attrUpdate).eq("player_id",anthony.data.id);
       }
-      const caImprovementNeed=playerAge>Number(dev.decline_start_age||30)?4:playerAge>=Number(dev.peak_age||25)?3:2;
-      if(improved>=caImprovementNeed&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
-        const ca=Math.min(Number(anthony.data.potential||82),Number(anthony.data.current_ability||56)+1);
-        await Promise.all([
-          db.from("players").update({current_ability:ca}).eq("id",anthony.data.id),
-          db.from("career_state").update({current_ability:ca}).eq("id","demo")
-        ]);
-        const starRefresh=await db.rpc("refresh_single_player_star_rating",{p_player_id:anthony.data.id,p_date:date});
-        trainingResult.star_refresh=starRefresh.error?{error:starRefresh.error.message}:starRefresh.data;
-        trainingResult.current_ability=ca;
-      }
+      trainingResult.attribute_improvements=improved;
+      trainingResult.current_ability=Number(anthony.data.current_ability||56);
+      trainingResult.ca_progression="monthly_development_cycle";
+      trainingResult.load=trainingSessions.reduce((sum:number,s:any)=>sum+(["Endurance","Match play","Déplacements"].includes(String(s))?3:["Service","Retour","Coup droit","Revers","Double"].includes(String(s))?2:String(s)==="Récupération"?0:-1),0);
     }
 
     const [worldEvents,juniorWorldEvents,worldDoublesEvents]=await Promise.all([

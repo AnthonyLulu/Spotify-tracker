@@ -1795,6 +1795,7 @@ Deno.serve(async(req:Request)=>{
     t.data=await resolveTournamentImage(t.data);
 
     let tournamentHistory:any[]=[];
+    let tournamentDoublesHistory:any[]=[];
     let tournamentHistoryRecords:any={editions:0,most_titles_name:null,most_titles:0,latest_winner:null};
     if(t.data.history_group){
       const hist=await db.from("tournament_edition_history")
@@ -1819,6 +1820,13 @@ Deno.serve(async(req:Request)=>{
           latest_season:tournamentHistory[0]?.season||null
         };
       }
+
+      const doublesHist=await db.from("tournament_doubles_edition_history")
+        .select("id,season,final_date,tournament_name,level,surface,winner_a_id,winner_a_name,winner_b_id,winner_b_name,runner_a_id,runner_a_name,runner_b_id,runner_b_name,source_label")
+        .eq("history_group",String(t.data.history_group))
+        .order("season",{ascending:false})
+        .limit(100);
+      if(!doublesHist.error)tournamentDoublesHistory=doublesHist.data??[];
     }
 
     const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
@@ -1923,7 +1931,7 @@ Deno.serve(async(req:Request)=>{
         tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
         wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,doubles_run:doublesRun.data??null,
         doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,completed_draw:completedDraw,
-        tournament_history:tournamentHistory,tournament_history_records:tournamentHistoryRecords,
+        tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
         ranking_kind:"junior"
       });
     }
@@ -1966,7 +1974,7 @@ Deno.serve(async(req:Request)=>{
         doubles_main:[],
         doubles_completed_draw:[],
         completed_draw:[],
-        tournament_history:tournamentHistory,tournament_history_records:tournamentHistoryRecords,
+        tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
         ranking_kind:"ncaa"
       });
     }
@@ -1989,7 +1997,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
       run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
-      completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_history_records:tournamentHistoryRecords,ranking_kind:"singles"
+      completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,ranking_kind:"singles"
     });
   }
 

@@ -1799,7 +1799,7 @@ Deno.serve(async(req:Request)=>{
       }
       player=await resolvePlayerPhoto(player);
     }
-    const [staffLinks,staffHistory,staffBonds,relA,relB,agencyRepresentation,agencyHistory]=await Promise.all([
+    const [staffLinks,staffHistory,staffBonds,relA,relB,agencyRepresentation,agencyHistory,focusHistory]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
@@ -1826,7 +1826,11 @@ Deno.serve(async(req:Request)=>{
       db.from("player_agency_history")
         .select("start_date,end_date,commission_pct,trust_start,trust_end,ended_reason,agency:staff_agencies(*),agent:staff_profiles!player_agency_history_agent_staff_id_fkey(id,name,nationality,primary_role,reputation)")
         .eq("player_id",id).lte("start_date",referenceDate)
-        .order("end_date",{ascending:false}).limit(8)
+        .order("end_date",{ascending:false}).limit(8),
+      db.from("player_career_focus_history")
+        .select("changed_at,from_focus,to_focus,reason,source")
+        .eq("player_id",id).lte("changed_at",referenceDate)
+        .order("changed_at",{ascending:false}).limit(20)
     ]);
     const socialRows=[...(relA.data??[]),...(relB.data??[])]
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
@@ -1841,7 +1845,8 @@ Deno.serve(async(req:Request)=>{
       staffBonds:staffBonds.error?[]:(staffBonds.data??[]),
       relationships:socialRows,
       agencyRepresentation:agencyRepresentation.error?null:agencyRepresentation.data,
-      agencyHistory:agencyHistory.error?[]:(agencyHistory.data??[])
+      agencyHistory:agencyHistory.error?[]:(agencyHistory.data??[]),
+      careerFocusHistory:focusHistory.error?[]:(focusHistory.data??[])
     });
   }
 

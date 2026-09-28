@@ -2413,7 +2413,10 @@ Deno.serve(async(req:Request)=>{
           if(member.data.profile_id){
             await Promise.all([
               db.from("staff_profiles").update({market_status:"available",available_from:date}).eq("id",member.data.profile_id),
-              db.from("staff_candidates").update({status:"available"}).eq("profile_id",member.data.profile_id)
+              db.from("staff_candidates").update({status:"available",interview_status:"not_started"}).eq("profile_id",member.data.profile_id),
+              db.from("player_staff_assignments").update({
+                active:false,end_date:date,ended_reason:"Fin de contrat"
+              }).eq("player_id",Number(current.data.managed_player_id||0)).eq("staff_profile_id",member.data.profile_id).eq("active",true)
             ]);
           }
         }

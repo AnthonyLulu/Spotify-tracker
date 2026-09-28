@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:12,development_model:"development-v3",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:13,development_model:"development-v3",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2800,6 +2800,7 @@ Deno.serve(async(req:Request)=>{
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
+        const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
         const month=Number(date.slice(5,7));
         const analyticsBase=month===1||month===4||month===7||month===10
           ?await db.rpc("refresh_player_advanced_metrics",{p_date:date})
@@ -2814,6 +2815,7 @@ Deno.serve(async(req:Request)=>{
           ...(developmentSupply||{}),
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
+          aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
           analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,
           analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data,
           contextTraits:contextTraits.error?{error:contextTraits.error.message}:contextTraits.data

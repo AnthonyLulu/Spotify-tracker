@@ -2539,13 +2539,34 @@ Deno.serve(async(req:Request)=>{
       trainingSessions=["Service","Retour","Coup droit","Revers","Match play","Déplacements","Récupération"];
     }
     const [anthony,facilityRows,progressRows]=await Promise.all([
-      getManagedPlayer("id,current_ability,potential,player_attributes(*)"),
+      getManagedPlayer("id,age,birth_date,current_ability,potential,player_attributes(*)"),
       db.from("facilities").select("level"),
       db.from("user_training_progress").select("*")
     ]);
     let trainingResult:any={improvements:[],xp_gains:{},current_ability:Number(current.data.current_ability||56)};
     if(anthony.data){
       const attrs:any=Array.isArray(anthony.data.player_attributes)?anthony.data.player_attributes[0]:anthony.data.player_attributes||{};
+      const devProfile=await db.from("player_development_profiles")
+        .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability")
+        .eq("player_id",anthony.data.id).maybeSingle();
+      const dev:any=devProfile.error?{}:(devProfile.data||{});
+      const playerAge=Number(anthony.data.age||24);
+      const personalBase=Math.max(.76,Math.min(1.26,
+        .72
+        +Number(dev.development_rate||10)*.012
+        +Number(dev.professionalism||10)*.010
+        +Number(dev.coachability||10)*.011
+        +Number(dev.staff_stability||8)*.004
+      ));
+      const ageMult=playerAge<Number(dev.peak_age||25)
+        ?1.05
+        :playerAge<=Number(dev.decline_start_age||30)
+          ?1
+          :Math.max(.68,1-(playerAge-Number(dev.decline_start_age||30))*.055);
+      const conditionMult=Math.max(.72,Math.min(1.08,
+        .88+Number(current.data.fitness||90)/500+Number(current.data.morale||70)/700-Number(current.data.fatigue||20)/550
+      ));
+      const personalDevMult=personalBase*ageMult*conditionMult;
       const map:any={
         "Service":["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety"],
         "Retour":["return_game","anticipation","return_aggression","return_consistency"],
@@ -2586,19 +2607,29 @@ Deno.serve(async(req:Request)=>{
             :careerFocus==="singles_priority"&&String(s)==="Double"
               ?.90
               :1;
-        const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult;
+        const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult*personalDevMult;
         const targets=map[String(s)]||[];
         const spread=Math.max(.42,Math.min(1,2.4/Math.max(1,targets.length)));
         for(const a of targets)xp[a]=(xp[a]||0)+.52*mult*spread;
       }
       trainingResult.career_focus=careerFocus;
+      trainingResult.development_profile={
+        type:String(dev.development_type||"standard"),
+        coachability:Number(dev.coachability||10),
+        professionalism:Number(dev.professionalism||10),
+        development_rate:Number(dev.development_rate||10),
+        staff_environment:Number(dev.coaching_environment||8),
+        multiplier:Number(personalDevMult.toFixed(3))
+      };
       const progressMap=new Map((progressRows.data??[]).map((x:any)=>[x.attribute,Number(x.xp||0)]));
       const attrUpdate:any={};
       let improved=0;
       for(const [a,gain] of Object.entries(xp)){
         let total=Number(progressMap.get(a)||0)+Number(gain);
         const cur=Number(attrs[a]||10);
-        const threshold=3.2+cur*.22;
+        const threshold=(3.35+cur*.24)*
+          (playerAge>Number(dev.decline_start_age||30)?1.12:1)*
+          (Number(dev.coachability||10)<=8?1.08:1);
         if(total>=threshold&&cur<20&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
           attrUpdate[a]=cur+1;
           total-=threshold;
@@ -2611,12 +2642,15 @@ Deno.serve(async(req:Request)=>{
       if(Object.keys(attrUpdate).length){
         await db.from("player_attributes").update(attrUpdate).eq("player_id",anthony.data.id);
       }
-      if(improved>=2&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
+      const caImprovementNeed=playerAge>Number(dev.decline_start_age||30)?4:playerAge>=Number(dev.peak_age||25)?3:2;
+      if(improved>=caImprovementNeed&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
         const ca=Math.min(Number(anthony.data.potential||82),Number(anthony.data.current_ability||56)+1);
         await Promise.all([
           db.from("players").update({current_ability:ca}).eq("id",anthony.data.id),
           db.from("career_state").update({current_ability:ca}).eq("id","demo")
         ]);
+        const starRefresh=await db.rpc("refresh_single_player_star_rating",{p_player_id:anthony.data.id,p_date:date});
+        trainingResult.star_refresh=starRefresh.error?{error:starRefresh.error.message}:starRefresh.data;
         trainingResult.current_ability=ca;
       }
     }

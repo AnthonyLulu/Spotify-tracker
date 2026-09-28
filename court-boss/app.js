@@ -855,6 +855,8 @@ function training(){
  const mult=p?.multiplier!=null?Number(p.multiplier):null;
  const dev=p?.development||{};
  const topTargets=(p?.targets||[]).slice(0,5);
+ const report=local.lastTrainingReport||null;
+ const reportLabels={serve_power:'Puissance service',serve_precision:'Précision service',first_serve_quality:'1re balle',second_serve_quality:'2e balle',serve_variety:'Variété service',serve_plus_one:'Service +1',return_game:'Retour',return_aggression:'Retour agressif',return_consistency:'Régularité retour',forehand:'Coup droit',forehand_power:'Puissance CD',forehand_accuracy:'Précision CD',backhand:'Revers',backhand_power:'Puissance revers',backhand_accuracy:'Précision revers',volley:'Volée',touch:'Toucher',movement:'Déplacements',speed:'Vitesse',acceleration:'Accélération',agility:'Agilité',balance:'Équilibre',stamina:'Endurance',strength:'Force',recovery:'Récupération',tactics:'Tactique',decision_making:'Décisions',shot_selection:'Choix de coups',big_points:'Points importants',concentration:'Concentration',composure:'Sang-froid',fighting_spirit:'Combativité',doubles:'Double',net_positioning:'Placement filet',doubles_communication:'Communication double',poaching:'Interceptions'};
  return `<div class="section-head"><div><div class="eyebrow">Performance · development-v2</div><h1>Entraînement hebdomadaire</h1><div class="muted">Chaque séance est pondérée par l’âge, le potentiel, la personnalité de développement, le staff, les installations, la fatigue et l’orientation simple/double.</div></div><button class="soft-btn" onclick="refreshTrainingPreview()">↻ Réanalyser</button></div>
  ${trainingPreviewLoading?'<div class="card"><div class="loader">Analyse du plan par le staff…</div></div>':''}
  ${trainingPreview?.error?`<div class="card"><span class="badge bad">Analyse indisponible</span><div class="muted" style="margin-top:8px">${esc(trainingPreview.error)}</div></div>`:''}
@@ -878,7 +880,13 @@ function training(){
   </div>
  </div>
  ${topTargets.length?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Rendement estimé</div><h2>Meilleures séances pour ce joueur</h2></div><span class="badge">Orientation ${esc(p?.career_focus||career().career_focus||'mixed')}</span></div><div class="stack" style="margin-top:8px">${topTargets.map((t,i)=>`<div class="list-item row between"><span><b>#${i+1} ${esc(t.session)}</b></span><span class="badge ${i<2?'good':''}">indice ${Number(t.score).toFixed(2)}</span></div>`).join('')}</div></div>`:''}
- ${p?.warnings?.length?`<div class="card" style="margin-top:12px"><div class="eyebrow">Alertes du staff</div><h2>À surveiller</h2><div class="stack" style="margin-top:8px">${p.warnings.map(w=>`<div class="list-item"><span class="badge warn">!</span> ${esc(w)}</div>`).join('')}</div></div>`:''}`
+ ${p?.warnings?.length?`<div class="card" style="margin-top:12px"><div class="eyebrow">Alertes du staff</div><h2>À surveiller</h2><div class="stack" style="margin-top:8px">${p.warnings.map(w=>`<div class="list-item"><span class="badge warn">!</span> ${esc(w)}</div>`).join('')}</div></div>`:''}
+ ${report?`<div class="card" style="margin-top:12px">
+  <div class="row between"><div><div class="eyebrow">Dernière semaine simulée</div><h2>Bilan d’entraînement</h2></div><span class="badge good">${report.attribute_improvements??(report.improvements||[]).length} attribut(s) amélioré(s)</span></div>
+  ${(report.improvements||[]).length?`<div class="grid g3" style="margin-top:10px">${report.improvements.slice(0,9).map(x=>`<div class="statbox"><span class="muted mini">${esc(reportLabels[x.attribute]||x.attribute)}</span><b>${x.from} → ${x.to}</b></div>`).join('')}</div>`:'<div class="muted">Pas de +1 visible cette semaine. L’XP est conservée pour les prochaines séances.</div>'}
+  ${report.xp_gains?`<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(report.xp_gains).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,6).map(([a,v])=>`<span class="badge">${esc(reportLabels[a]||a)} +${Number(v).toFixed(2)} XP</span>`).join('')}</div>`:''}
+  <div class="muted mini" style="margin-top:10px">Le niveau global et les étoiles sont recalculés par le cycle mensuel. Pas de +1 CA automatique chaque semaine.</div>
+ </div>`:''}`
 }
 function trainingLoad(){return local.training.reduce((a,s)=>a+(['Endurance','Match play','Déplacements'].includes(s)?3:['Service','Retour','Coup droit','Revers','Double'].includes(s)?2:s==='Récupération'?0:-1),0)}
 window.refreshTrainingPreview=async()=>{trainingPreview=null;await loadTrainingPreview(true);render()}
@@ -2652,6 +2660,7 @@ window.simulateWeek=async()=>{
     return;
   }
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
+  local.lastTrainingReport=sim.training||null;
   local.date=sim.date||nextDate;local.week=sim.week||nextWeek;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
   if(sim.userDoublesRanking){cr.doubles_rank=sim.userDoublesRanking.rank;cr.doubles_points=sim.userDoublesRanking.points}
@@ -2660,6 +2669,10 @@ window.simulateWeek=async()=>{
     const labels={serve_power:'Puissance service',serve_precision:'Précision service',forehand:'Coup droit',backhand:'Revers',return_game:'Retour',volley:'Volée',touch:'Toucher',movement:'Déplacements',speed:'Vitesse',stamina:'Endurance',strength:'Force',anticipation:'Anticipation',concentration:'Concentration',composure:'Sang-froid',fighting_spirit:'Combativité',tactics:'Tactique',doubles:'Double'};
     local.feed=local.feed||[];
     local.feed.unshift('Progression entraînement : '+sim.training.improvements.map(x=>(labels[x.attribute]||x.attribute)+' '+x.from+'→'+x.to).join(', '));
+  }
+  else if(sim.training?.xp_gains&&Object.keys(sim.training.xp_gains).length){
+    local.feed=local.feed||[];
+    local.feed.unshift('Entraînement : XP technique accumulée, conservée jusqu’au prochain palier d’attribut.');
   }
   local.feed=local.feed||[];if(sim.medical){local.feed.unshift(sim.medical.recovered?'Centre médical : retour à 100%, le joueur est déclaré apte.':`Centre médical : ${sim.medical.protocol}, risque ${sim.medical.risk_delta>=0?'+':''}${sim.medical.risk_delta}, retour gagné ${sim.medical.return_days_gained||0} jour(s).`)}if(sim.weeklyFinance)local.feed.unshift(`Finances semaine : sponsors +${euro(sim.weeklyFinance.sponsors||0)}, staff -${euro(sim.weeklyFinance.staff||0)}, joueurs -${euro(sim.weeklyFinance.players||0)}, médical -${euro(sim.weeklyFinance.medical||0)} · net ${sim.weeklyFinance.net>=0?'+':''}${euro(sim.weeklyFinance.net||0)}.`);if((sim.weeklyFinance?.expired_contracts||0)>0)local.feed.unshift(`${sim.weeklyFinance.expired_contracts} contrat(s) joueur arrivé(s) à échéance.`);if((sim.academyDevelopment?.ability_progressions||0)>0)local.feed.unshift(`Académie : ${sim.academyDevelopment.ability_progressions} jeune(s) ont progressé en niveau global, ${sim.academyDevelopment.attribute_improvements||0} attribut(s) amélioré(s).`);if((sim.injuries?.new_injuries||0)>0)local.feed.unshift(`${sim.injuries.new_injuries} nouvelle(s) blessure(s) dans le monde cette semaine.`);if((sim.forfeits?.forfeits||0)>0)local.feed.unshift(`${sim.forfeits.forfeits} place(s) libérée(s) par forfait sur les tournois à venir.`);if((sim.worldDoublesTournaments?.tournaments_simulated||0)>0)local.feed.unshift(`Circuit double mondial : ${sim.worldDoublesTournaments.tournaments_simulated} tournoi(s) simulé(s), avec palmarès et points de paire mis à jour.`);local.feed.unshift(`Semaine simulée : ${cr.player_name||'Joueur'} est ${String(cr.career_focus||'mixed')==='doubles_only'?'Double #'+cr.doubles_rank:'ATP #'+cr.singles_rank} · Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
   local.career=cr;persist();

@@ -181,7 +181,38 @@ function managerStrip(){
 }
 function shell(body){app.innerHTML=`<div class="app-shell">${header()}${managerStrip()}<main class="page">${body}</main>${navBar()}</div>`}
 function loading(t='Chargement du monde tennis…'){shell(`<div class="loader">${t}</div>`)}
-window.nav=async r=>{route=r;window.scrollTo({top:0,behavior:'smooth'});if(r==='history'&&!historyData)await loadHistory();if(r==='competitions'&&!competitionRows.length)await loadCompetitions();await render()}
+window.nav=async r=>{
+ route=r;
+ window.scrollTo({top:0,behavior:'smooth'});
+ try{
+  if(r==='rankings'&&!rankRows.length){
+   loading('Chargement du classement…');
+   await loadRankings();
+  }
+  if(r==='calendar'&&!tourRows.length){
+   loading('Chargement du calendrier…');
+   await loadTournaments();
+  }
+  if(r==='world'&&!worldStats){
+   loading('Chargement du monde tennis…');
+   worldStats=await get('/api/world');
+  }
+  if(r==='players'&&!countryRows.length)await loadCountries();
+  if(r==='history'&&!historyData){
+   loading('Chargement de l’histoire du tennis…');
+   await loadHistory();
+  }
+  if(r==='competitions'&&!competitionRows.length){
+   loading('Chargement des compétitions…');
+   await loadCompetitions();
+  }
+ }catch(e){
+  console.warn('Court Boss route load failed',r,e);
+  shell(`<div class="card"><h2>Chargement impossible</h2><p class="muted">${esc(e.message)}</p><div class="row"><button class="primary" onclick="nav('${esc(r)}')">Réessayer</button><button class="ghost" onclick="nav('home')">Accueil</button></div></div>`);
+  return;
+ }
+ await render();
+}
 async function init(){
  loading();
  try{
@@ -191,12 +222,21 @@ async function init(){
    local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
    local.week=boot.career?.week??local.week??1;
    localStorage.setItem('cbLocal',JSON.stringify(local));
-   const [_,__,___,____,_____,______,_______,world]=await Promise.all([
-     loadManagement(),loadRankings(),loadTournaments(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),get('/api/world').catch(()=>null)
-   ]);
-   worldStats=world;
+
+   // Render immediately after the small bootstrap. Heavy world/ranking/calendar data
+   // is now lazy-loaded by route instead of hammering Postgres at startup.
    render();
- }catch(e){shell(`<div class="card"><h2>Connexion au monde impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="location.reload()">Réessayer</button></div>`)}
+
+   Promise.allSettled([
+     loadManagement(),
+     loadRankingLedger(),
+     loadSeasonSummary(),
+     loadScheduleAdvice(),
+     loadCountries()
+   ]).then(()=>{if(route==='home'||route==='more')render()});
+ }catch(e){
+   shell(`<div class="card"><h2>Connexion au monde impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="location.reload()">Réessayer</button></div>`);
+ }
 }
 async function loadManagement(){try{management=await get('/api/management')}catch{management={contracts:[],college:[],shortlist:[]}}}
 async function loadRankings(){

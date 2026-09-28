@@ -1799,7 +1799,24 @@ window.signYouth=async id=>{try{const d=await managerAction('sign_youth',id);if(
 window.openStaff=id=>{
   const s=(boot.staff||[]).find(x=>x.id===id);if(!s)return;
   const p=s.profile||null,n=s.name||p?.name||s.role;
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(s.role)}</div><h1>${esc(n)}</h1><div class="muted">${esc(p?.specialty||'Membre du staff')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau poste</span><b>${s.skill}/20</b></div><div class="bar"><i style="width:${s.skill*5}%"></i></div><div class="list-item row between"><span>Coût hebdomadaire</span><b>${euro(s.weekly_cost)}</b></div>${p?`<div class="list-item row between"><span>Parcours</span><b>${esc(staffFormerLabel(p))}</b></div>`:''}${p?.former_player_id?`<button class="ghost" onclick="openPlayer(${p.former_player_id})">Voir la carrière joueur</button>`:''}</div>${p?`<div class="card" style="margin-top:10px"><h2>Attributs staff</h2>${staffMetaBadges(p)}${staffRatingGrid(p)}<p class="muted mini" style="margin-top:8px">${esc(p.notes||'Notes de gameplay Court Boss.')}</p><div class="muted micro">${esc(p.source_label||'Court Boss')}</div><button class="ghost" style="margin-top:8px" onclick="openStaffProfile(${p.id})">Dossier carrière complet</button></div>`:''}<button class="danger-btn" style="margin-top:10px" onclick="fireStaff(${s.id})">Se séparer</button></div></div>`;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(s.role)}</div><h1>${esc(n)}</h1><div class="muted">${esc(p?.specialty||'Membre du staff')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau poste</span><b>${s.skill}/20</b></div><div class="bar"><i style="width:${s.skill*5}%"></i></div><div class="list-item row between"><span>Coût hebdomadaire</span><b>${euro(s.weekly_cost)}</b></div>${p?`<div class="list-item row between"><span>Parcours</span><b>${esc(staffFormerLabel(p))}</b></div>`:''}${p?.former_player_id?`<button class="ghost" onclick="openPlayer(${p.former_player_id})">Voir la carrière joueur</button>`:''}</div>${p?`<div class="card" style="margin-top:10px"><h2>Attributs staff</h2>${staffMetaBadges(p)}${staffRatingGrid(p)}<p class="muted mini" style="margin-top:8px">${esc(p.notes||'Notes de gameplay Court Boss.')}</p><div class="muted micro">${esc(p.source_label||'Court Boss')}</div><button class="ghost" style="margin-top:8px" onclick="openStaffProfile(${p.id})">Dossier carrière complet</button></div>`:''}<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${p?`<button class="primary" onclick="openStaffTraining(${s.id})">Former / certifier</button>`:''}<button class="danger-btn" onclick="fireStaff(${s.id})">Se séparer</button></div></div></div>`;
+}
+window.openStaffTraining=id=>{
+ const member=(boot.staff||[]).find(x=>Number(x.id)===Number(id));if(!member)return;
+ const centers=management?.staffTrainingCenters||[];
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Formation staff</div><h1>${esc(member.name||member.profile?.name||member.role)}</h1><div class="muted">Choisis une spécialisation. La progression se fait chaque mois de jeu.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+ <div class="grid g2">${centers.map(c=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(c.specialty||'Formation')}</div><h2>${esc(c.name)}</h2><div class="muted mini">${esc(c.country||'INT')} · réputation ${c.reputation}/20</div></div><span class="badge">${c.course_weeks||10} sem.</span></div><div class="list-item row between"><span>Coût</span><b>${euro(c.course_cost||0)}</b></div><div class="list-item row between"><span>Capacité</span><b>${c.capacity||'—'}</b></div><button class="primary" style="margin-top:8px" onclick="enrollStaffTraining(${member.id},${c.id})">Inscrire</button></div>`).join('')||'<div class="card empty">Aucun centre disponible.</div>'}</div>
+ </div></div>`;
+}
+window.enrollStaffTraining=async(staffId,centerId)=>{
+ try{
+  const d=await managerAction('enroll_staff_training',staffId,{center_id:centerId});
+  if(local.career)local.career.budget=d.budget;
+  await refreshManagerState();
+  render();
+  closeOverlay();
+  alert('Formation lancée jusqu’au '+df(d.expected_end)+'.');
+ }catch(e){alert(e.message)}
 }
 window.openStaffCandidate=id=>{
  const x=(management?.candidates||[]).find(v=>Number(v.id)===Number(id));if(!x)return;

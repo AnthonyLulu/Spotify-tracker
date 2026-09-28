@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:20,development_model:"development-v3-lazy-ceilings",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:19,development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2828,7 +2828,6 @@ Deno.serve(async(req:Request)=>{
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const month=Number(date.slice(5,7));
         const quarterly=month===1||month===4||month===7||month===10;
-        const ceilingEnsure=await db.rpc("ensure_eligible_player_attribute_ceilings",{p_date:date});
         const physicalMaturation=await db.rpc("progress_player_physical_maturation",{p_date:date});
         const coachingEnvironmentRefresh=await db.rpc("refresh_player_coaching_environment",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
@@ -2865,7 +2864,6 @@ Deno.serve(async(req:Request)=>{
           :{data:null,error:null};
         developmentSupply={
           ...(developmentSupply||{}),
-          ceilingEnsure:ceilingEnsure.error?{error:ceilingEnsure.error.message}:ceilingEnsure.data,
           physicalMaturation:physicalMaturation.error?{error:physicalMaturation.error.message}:physicalMaturation.data,
           coachingEnvironmentRefresh:coachingEnvironmentRefresh.error?{error:coachingEnvironmentRefresh.error.message}:coachingEnvironmentRefresh.data,
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,

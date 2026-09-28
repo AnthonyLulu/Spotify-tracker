@@ -2117,13 +2117,23 @@ Deno.serve(async(req:Request)=>{
           const refYear=Number(refDate.slice(0,4));
           if(refYear>2025){
             const wp=await db.from("world_doubles_partnerships")
-              .select("race_rank,race_points,chemistry,compatibility,pair_strength,affinity_score,player_a:players!world_doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,current_ability,potential),player_b:players!world_doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,potential)")
+              .select("id,race_rank,race_points,chemistry,compatibility,pair_strength,affinity_score,player_a:players!world_doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,current_ability,potential),player_b:players!world_doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,potential)")
               .eq("season",refYear)
               .eq("active",true)
               .order("race_rank",{ascending:true})
-              .limit(Math.min(64,Math.max(16,drawSize)));
+              .limit(Math.min(256,Math.max(64,drawSize*8)));
             if(!wp.error){
-              doublesMain=(wp.data??[]).slice(0,Math.min(32,drawSize)).map((x:any,i:number)=>({
+              const selected:any[]=[];
+              const used=new Set<number>();
+              const wanted=Math.min(32,drawSize);
+              for(const x of wp.data??[]){
+                const aid=Number((x as any).player_a?.id||0);
+                const bid=Number((x as any).player_b?.id||0);
+                if(!aid||!bid||aid===bid||used.has(aid)||used.has(bid))continue;
+                selected.push(x);used.add(aid);used.add(bid);
+                if(selected.length>=wanted)break;
+              }
+              doublesMain=selected.map((x:any,i:number)=>({
                 seed:i+1,
                 player_a:x.player_a,
                 player_b:x.player_b,
@@ -2906,6 +2916,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     let poolRes:any;
+    let worldPairRows:any[]=[];
     if(finalsPairRows.length){
       const ids=[...new Set(finalsPairRows.flatMap((x:any)=>[Number(x.player_one_id),Number(x.player_two_id)]).filter(Boolean))];
       poolRes=await db.from("players")
@@ -2918,15 +2929,35 @@ Deno.serve(async(req:Request)=>{
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
         .order("junior_doubles_ranking",{ascending:true}).limit(160);
     }else{
-      poolRes=await db.from("players")
-        .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
-        .eq("is_real",true).not("doubles_ranking","is",null)
-        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-        .order("doubles_ranking",{ascending:true}).limit(160);
+      const refYear=Number(String(c.career_date||AGE_REFERENCE_DATE).slice(0,4));
+      if(refYear>2025){
+        const wp=await db.from("world_doubles_partnerships")
+          .select("id,race_rank,race_points,chemistry,compatibility,pair_strength,affinity_score,player_a:players!world_doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)),player_b:players!world_doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity))")
+          .eq("season",refYear).eq("active",true)
+          .order("race_rank",{ascending:true})
+          .limit(256);
+        if(!wp.error)worldPairRows=wp.data??[];
+      }
+
+      if(worldPairRows.length){
+        const byId=new Map<number,any>();
+        for(const x of worldPairRows){
+          const a:any=(x as any).player_a,b:any=(x as any).player_b;
+          if(a?.id)byId.set(Number(a.id),a);
+          if(b?.id)byId.set(Number(b.id),b);
+        }
+        poolRes={data:[...byId.values()],error:null};
+      }else{
+        poolRes=await db.from("players")
+          .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+          .eq("is_real",true).not("doubles_ranking","is",null)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+          .order("doubles_ranking",{ascending:true}).limit(160);
+      }
     }
     if(poolRes.error)return h({error:poolRes.error.message},500);
     const pool=(poolRes.data??[])
-      .filter((p:any)=>p.id!==partner.id)
+      .filter((p:any)=>p.id!==partner.id&&p.id!==anthony.id)
       .map((p:any)=>({...p,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}));
 
     const surface=String(t.surface||"Dur");
@@ -2964,6 +2995,27 @@ Deno.serve(async(req:Request)=>{
           race_rank:Number(row.doubles_race_ranking??row.junior_doubles_race_ranking??999),
           race_points:Number(row.doubles_race_points??row.junior_doubles_race_points??0)
         });
+      }
+    }else if(worldPairRows.length){
+      const used=new Set<number>([Number(anthony.id),Number(partner.id)]);
+      for(const row of worldPairRows){
+        const a0:any=(row as any).player_a,b0:any=(row as any).player_b;
+        if(!a0?.id||!b0?.id)continue;
+        const aid=Number(a0.id),bid=Number(b0.id);
+        if(aid===bid||used.has(aid)||used.has(bid))continue;
+        const a:any={...a0,player_attributes:Array.isArray(a0.player_attributes)?a0.player_attributes[0]:a0.player_attributes};
+        const b:any={...b0,player_attributes:Array.isArray(b0.player_attributes)?b0.player_attributes[0]:b0.player_attributes};
+        pairs.push({
+          a,b,name:a.name+" / "+b.name,isUser:false,
+          strength:pairStrength(a,b,Number((row as any).chemistry||70)),
+          race_rank:Number((row as any).race_rank||9999),
+          race_points:Number((row as any).race_points||0),
+          chemistry:Number((row as any).chemistry||70),
+          compatibility:Number((row as any).compatibility||70),
+          world_pair_id:Number((row as any).id||0)
+        });
+        used.add(aid);used.add(bid);
+        if(pairs.length>=30)break;
       }
     }else{
       for(let i=0;i+1<Math.min(pool.length,30);i+=2){

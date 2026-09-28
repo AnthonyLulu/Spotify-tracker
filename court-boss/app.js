@@ -1267,13 +1267,13 @@ window.toggleLiveAuto=()=>{
 }
 window.clearLiveMatch=()=>{if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}delete local.liveMatch;delete local.liveOpponent;persist();render()}
 function doublesPage(){
- const c=career();
+ const c=career(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);
  const pool=doublesHubRows;
  const juniorPool=juniorDoublesHubRows;
- const partner=pool.find(p=>p.id===local.partnerId)||juniorPool.find(p=>p.id===local.partnerId)
+ const partner=singlesOnly?null:(pool.find(p=>p.id===local.partnerId)||juniorPool.find(p=>p.id===local.partnerId)
    ||(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean)
-   ||null;
+   ||null);
  const offers=management?.doublesPartnerOffers||[];
  const managedCommitment=management?.managedDoublesCommitment||null;
  const ownPartnership=(management?.partnerships||[]).find(x=>Number(x.player_b_id)===Number(partner?.id||0))||null;
@@ -1282,6 +1282,7 @@ function doublesPage(){
  const candidates=pool.filter(p=>p.name!==c.player_name).slice(0,30);
  const exact=pool.filter(p=>p.doubles_source).length;
  return `<div class="section-head"><div><div class="eyebrow">Circuit Double</div><h1>Double & partenariats</h1><div class="muted">Classement individuel officiel jusqu’au Top 1000, index scouting double profond, Race par équipes et gestion du partenaire. La base double étendue contient ${fmt(worldStats?.indexedDoubles||rankCount||0)} profils.</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:7px"><span class="badge ${String(c.career_focus||'mixed')==='doubles_only'?'good':''}">Orientation · ${careerFocusLabel(c.career_focus||'mixed')}</span>${String(c.career_focus||'mixed')==='doubles_only'?'<span class="badge good">Circuit principal</span>':''}</div></div><span class="pill">${fmt(worldStats?.sourcedDoubles||exact)} officiels · ${fmt(worldStats?.indexedDoubles||0)} indexés</span></div>
+ ${singlesOnly?'<div class="notice"><b>Simple exclusivement</b> · consultation du circuit double uniquement. Les paires, propositions et inscriptions double sont verrouillées.</div>':''}
  <div class="tabs rank-tabs"><button class="active">Partenariat</button><button onclick="setRankKind('doubles');nav('rankings')">Classement Double</button><button onclick="setRankKind('doubles_race');nav('rankings')">Race Double</button><button onclick="setRankKind('junior_doubles');nav('rankings')">Junior Double</button><button onclick="setRankKind('junior_doubles_race');nav('rankings')">Race Junior Double</button><button onclick="dbCircuit='Double';dbOffset=0;dbQuery='';loadPlayerDatabase().then(()=>nav('players'))">Base double complète</button><button onclick="document.getElementById('dblRace').scrollIntoView({behavior:'smooth'})">Race équipes</button></div>
  <div class="grid g2" style="margin-top:10px">
   <div class="card"><div class="row between"><h2>Partenaire actuel</h2><span class="badge">Ton rang #${fmt(c.doubles_rank)}</span></div>
@@ -1345,6 +1346,7 @@ function davisPage(){
  const nation=String(boot.selectedFederation||f.nation||career().country||'FRA').toUpperCase();
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
  const doublesOnlyManaged=String(career().career_focus||'mixed')==='doubles_only';
+ const singlesOnlyManaged=String(career().career_focus||'mixed')==='singles_only';
  const managedId=Number(career().managed_player_id||0);
  const nationStaff=allDavisStaff.filter(x=>String(x.nation||'').toUpperCase()===nation);
  const today=String(local.date||RANKING_SNAPSHOT);
@@ -1375,7 +1377,7 @@ function davisPage(){
    ${nextTie?'<button class="primary" style="margin-top:10px" onclick="playDavisTie('+nextTie.id+')">Jouer la rencontre</button>':'<div class="notice" style="margin-top:10px">Aucune rencontre future connue pour cette fédération dans le calendrier actuellement chargé.</div>'}
   </div>
   <div class="card"><div class="row between"><div><div class="eyebrow">Sélection</div><h2>${flags[nation]||'🏳️'} ${nation}</h2></div><span class="pill">${sq.length} joueurs</span></div>
-   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';const ownDoubleOnly=doublesOnlyManaged&&Number(p.id)===managedId;const allowedRoles=ownDoubleOnly?roles.filter(r=>!/^Simple/.test(r)):roles;return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)} ${ownDoubleOnly?'<span class="badge good">Double uniquement</span>':''}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${allowedRoles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné. La sélection sera générée depuis les meilleurs joueurs du pays.</div>'}
+   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';const ownDoubleOnly=doublesOnlyManaged&&Number(p.id)===managedId;const ownSinglesOnly=singlesOnlyManaged&&Number(p.id)===managedId;const allowedRoles=ownDoubleOnly?roles.filter(r=>!/^Simple/.test(r)):ownSinglesOnly?roles.filter(r=>!/^Double/.test(r)):roles;return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)} ${ownDoubleOnly?'<span class="badge good">Double uniquement</span>':ownSinglesOnly?'<span class="badge good">Simple uniquement</span>':''}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${allowedRoles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné. La sélection sera générée depuis les meilleurs joueurs du pays.</div>'}
   </div>
  </div>
 
@@ -1517,18 +1519,21 @@ window.historyArchivePage=d=>runHistoryArchiveSearch(historyQuery,Math.max(0,his
 
 
 function careerFocusLabel(v){
- return v==='doubles_only'?'Double exclusivement':v==='singles_priority'?'Simple prioritaire':'Simple + double';
+ return v==='singles_only'?'Simple exclusivement':v==='doubles_only'?'Double exclusivement':v==='singles_priority'?'Simple prioritaire':'Simple + double';
 }
 function careerFocusDescription(v){
- return v==='doubles_only'
-  ?'Aucune inscription en simple. Le classement simple décroît naturellement et ton calendrier se construit autour du double.'
-  :v==='singles_priority'
-    ?'Le simple reste l’objectif principal, mais tu peux jouer du double quand tu le souhaites.'
-    :'Simple et double sont menés en parallèle avec deux classements actifs.';
+ return v==='singles_only'
+  ?'Aucun tableau de double. Toute la saison, le staff et les objectifs sont construits autour du simple.'
+  :v==='doubles_only'
+    ?'Aucune inscription en simple. Le classement simple décroît naturellement et ton calendrier se construit autour du double.'
+    :v==='singles_priority'
+      ?'Le simple reste l’objectif principal, mais tu peux jouer du double ponctuellement.'
+      :'Simple et double sont menés en parallèle avec deux classements actifs.';
 }
 function myPlayerPage(){
  const c=career(),focus=String(c.career_focus||'mixed');
  const modes=[
+  ['singles_only','Simple exclusivement','Aucun double : calendrier, objectifs et sélection centrés à 100 % sur le simple.'],
   ['singles_priority','Simple prioritaire','ATP simple au centre du projet, double occasionnel.'],
   ['mixed','Simple + double','Deux carrières menées en parallèle.'],
   ['doubles_only','Double exclusivement','Plus aucun tableau simple, carrière construite autour des paires et de la Race double, avec une longévité potentiellement supérieure.']
@@ -1536,13 +1541,13 @@ function myPlayerPage(){
  return `<div class="section-head"><div><div class="eyebrow">Carrière</div><h1>Mon joueur</h1><div class="muted">Personnalise ton joueur géré et définis sa trajectoire sportive.</div></div></div>
  <div class="card" style="margin-bottom:12px">
   <div class="row between"><div><div class="eyebrow">Orientation de carrière</div><h2>${careerFocusLabel(focus)}</h2><div class="muted mini">${careerFocusDescription(focus)}</div></div><span class="badge ${focus==='doubles_only'?'good':focus==='singles_priority'?'warn':''}">${careerFocusLabel(focus)}</span></div>
-  <div class="grid g3 career-focus-grid" style="margin-top:10px">
+  <div class="grid g2 career-focus-grid" style="margin-top:10px">
    ${modes.map(m=>`<button class="card click career-focus-card ${focus===m[0]?'career-focus-active':''}" onclick="setCareerFocus('${m[0]}')"><div class="eyebrow">${focus===m[0]?'Actif':'Choisir'}</div><h3>${m[1]}</h3><div class="muted mini">${m[2]}</div></button>`).join('')}
   </div>
   <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px">
    <span class="badge">Dernier changement : ${df(c.career_focus_changed_at||'2025-12-01')}</span>
    <span class="badge">${fmt(c.career_focus_switches||0)} changement(s)</span>
-   ${focus==='doubles_only'?'<span class="badge good">Inscriptions simple verrouillées</span>':''}
+   ${focus==='doubles_only'?'<span class="badge good">Inscriptions simple verrouillées</span>':focus==='singles_only'?'<span class="badge good">Inscriptions double verrouillées</span>':''}
   </div>
  </div>
  <div class="grid g2"><div class="card"><h2>Identité</h2><label class="mini muted">Nom</label><input class="input" value="${esc(c.player_name)}" onchange="editCareer('player_name',this.value)"><label class="mini muted">Pays</label><input class="input" value="${esc(c.country)}" onchange="editCareer('country',this.value)"><label class="mini muted">Style</label><select class="select" onchange="editCareer('style',this.value)">${['Attaquant polyvalent','Attaquant fond de court','Contreur','All-court','Serveur-volée'].map(x=>`<option ${x===c.style?'selected':''}>${x}</option>`).join('')}</select></div>
@@ -2251,12 +2256,14 @@ window.respondPartnerOffer=async(id,decision)=>{
 window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
 window.setCareerFocus=async focus=>{
- const labels={singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
+ const labels={singles_only:'Simple exclusivement',singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
  const cr=career();
  if(String(cr.career_focus||'mixed')===focus)return;
  const warning=focus==='doubles_only'
   ?'Passer en Double exclusivement ? Tes inscriptions simple futures seront retirées et tu ne pourras plus jouer de tableau simple tant que ce mode reste actif.'
-  :'Passer en '+labels[focus]+' ?';
+  :focus==='singles_only'
+    ?'Passer en Simple exclusivement ? Ta paire active sera rompue et tu ne pourras plus jouer de tableau double tant que ce mode reste actif.'
+    :'Passer en '+labels[focus]+' ?';
  if(!confirm(warning))return;
  try{
   const d=await managerAction('set_career_focus',0,{focus});
@@ -2266,7 +2273,12 @@ window.setCareerFocus=async focus=>{
     local.training=['Double','Service','Retour','Double','Match play','Récupération','Repos'];
     tmCalFilters.entry='Double';
     rankKind='doubles';
-  }else if(String(cr.career_focus||'mixed')==='doubles_only'){
+  }else if(focus==='singles_only'){
+    local.partnerId=null;
+    local.training=['Service','Retour','Coup droit','Revers','Match play','Déplacements','Récupération'];
+    tmCalFilters.entry='Simple';
+    rankKind='singles';
+  }else if(['doubles_only','singles_only'].includes(String(cr.career_focus||'mixed'))){
     tmCalFilters.entry='Tous';
   }
   boot=await get('/api/bootstrap');

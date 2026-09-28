@@ -1852,7 +1852,7 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
@@ -1863,17 +1863,18 @@ Deno.serve(async(req:Request)=>{
       db.from("player_tactical_traits").select("trait_code,trait_name,intensity,source_label").eq("player_id",id).eq("active",true).order("intensity",{ascending:false}).limit(8),
       db.from("player_season_plans").select("*").eq("player_id",id).lte("season",Number(referenceDate.slice(0,4))+1).order("season",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_surface_preferences").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_context_traits").select("*").eq("player_id",id).maybeSingle(),
       managedIdForMatchup&&managedIdForMatchup!==id
         ?db.from("player_h2h_records").select("*").eq("player_a_id",Math.min(id,managedIdForMatchup)).eq("player_b_id",Math.max(id,managedIdForMatchup)).maybeSingle()
         :Promise.resolve({data:null,error:null}),
       managedIdForMatchup&&managedIdForMatchup!==id
-        ?db.rpc("player_matchup_probability_v2",{p_a:id,p_b:managedIdForMatchup,p_surface:"Hard",p_date:referenceDate,p_court_speed:1.0,p_best_of:3})
+        ?db.rpc("player_matchup_probability_v3",{p_a:id,p_b:managedIdForMatchup,p_surface:"Hard",p_date:referenceDate,p_court_speed:1.0,p_best_of:3})
         :Promise.resolve({data:null,error:null}),
       managedIdForMatchup&&managedIdForMatchup!==id
-        ?db.rpc("player_matchup_probability_v2",{p_a:id,p_b:managedIdForMatchup,p_surface:"Clay",p_date:referenceDate,p_court_speed:.68,p_best_of:3})
+        ?db.rpc("player_matchup_probability_v3",{p_a:id,p_b:managedIdForMatchup,p_surface:"Clay",p_date:referenceDate,p_court_speed:.68,p_best_of:3})
         :Promise.resolve({data:null,error:null}),
       managedIdForMatchup&&managedIdForMatchup!==id
-        ?db.rpc("player_matchup_probability_v2",{p_a:id,p_b:managedIdForMatchup,p_surface:"Grass",p_date:referenceDate,p_court_speed:1.15,p_best_of:3})
+        ?db.rpc("player_matchup_probability_v3",{p_a:id,p_b:managedIdForMatchup,p_surface:"Grass",p_date:referenceDate,p_court_speed:1.15,p_best_of:3})
         :Promise.resolve({data:null,error:null})
     ]);
 
@@ -1900,6 +1901,7 @@ Deno.serve(async(req:Request)=>{
       tacticalTraits:tacticalTraits.error?[]:(tacticalTraits.data??[]),
       seasonPlan:seasonPlan.error?null:seasonPlan.data,
       surfacePreference:surfacePreference.error?null:surfacePreference.data,
+      contextProfile:contextProfile.error?null:contextProfile.data,
       h2hWithManaged:h2hWithManaged.error?null:h2hWithManaged.data,
       matchupPreviews:{
         hard:hardPreview.error?null:hardPreview.data,
@@ -2697,11 +2699,15 @@ Deno.serve(async(req:Request)=>{
         const analyticsExtension=month===1||month===4||month===7||month===10
           ?await db.rpc("refresh_player_analytics_extensions",{p_date:date})
           :{data:null,error:null};
+        const contextTraits=month===1||month===4||month===7||month===10
+          ?await db.rpc("refresh_player_context_traits",{p_date:date})
+          :{data:null,error:null};
         developmentSupply={
           ...(developmentSupply||{}),
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,
-          analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data
+          analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data,
+          contextTraits:contextTraits.error?{error:contextTraits.error.message}:contextTraits.data
         };
         const seasonPlans=month===1
           ?await db.rpc("refresh_player_season_plans",{p_date:date})

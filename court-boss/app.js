@@ -231,6 +231,15 @@ async function init(){
    local.career={...(local.career||{}),...(boot.career||{})};
    local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
    local.week=boot.career?.week??local.week??1;
+   if(String(local.career?.career_focus||'mixed')==='doubles_only'){
+     rankKind='doubles';
+     tmCalFilters.entry='Double';
+     local.entries=[];
+     local.entryMeta={};
+     if(!Array.isArray(local.training)||!local.training.length){
+       local.training=['Double','Service','Retour','Double','Match play','Récupération','Repos'];
+     }
+   }
    localStorage.setItem('cbLocal',JSON.stringify(local));
 
    // Render immediately after the small bootstrap. Heavy world/ranking/calendar data
@@ -387,6 +396,9 @@ function home(){
   :boot.upcoming?.[0];
  const academy=boot.academy||{},fin=boot.finance||{};
  const msgs=[...(local.feed||[]),...(boot.news||[]).map(x=>x.body)].slice(0,6);
+ const quickActions=doublesOnly
+  ?[['calendar','Calendrier double','Inscrire la paire'],['competitions','Compétitions','Palmarès & records'],['training','Entraînement','Plan double de la semaine'],['doubles','Hub Double','Partenaire, Race & tournois'],['scouting','Scouting','Chercher des talents'],['contracts','Contrats','Staff & joueurs'],['medical','Médical','Fatigue & blessures'],['davis','Fédération','Coupe Davis'],['world','Monde','Base mondiale & circuits'],['season','Saison','Bilan & points 52 semaines'],['myplayer','Mon joueur','Orientation & progression']]
+  :[['calendar','Calendrier','Inscrire le joueur'],['competitions','Compétitions','Palmarès & records'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Chercher des talents'],['match','Match Center','Analyser les matchs'],['tactics','Tactique','Plan de match'],['contracts','Contrats','Staff & joueurs'],['medical','Médical','Fatigue & blessures'],['davis','Fédération','Coupe Davis'],['world','Monde','Base mondiale & circuits'],['season','Saison','Bilan & points 52 semaines']];
  return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP · classement réf. ${df(RANKING_SNAPSHOT)}</span></div>
  <section class="hero">
   <div class="card click" onclick="nav('myplayer')">
@@ -398,7 +410,7 @@ function home(){
   <div class="card click" onclick="nav('finance')"><div class="eyebrow">Académie</div><h2>${esc(academy.name||'Court Boss Academy')}</h2><div class="statline"><div class="statbox"><span class="muted mini">Budget</span><b>${euro(c.budget??academy.budget??14800)}</b></div><div class="statbox"><span class="muted mini">Board</span><b>${academy.board_confidence||76}%</b></div></div><p class="muted mini" style="margin-top:10px">${esc(academy.philosophy||'Développement complet du joueur')}</p></div>
  </section>
  <div class="quick-grid" style="margin-top:12px">
-  ${[['calendar','Calendrier','Inscrire le joueur'],['competitions','Compétitions','Palmarès & records'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Chercher des talents'],['match','Match Center','Analyser les matchs'],['tactics','Tactique','Plan de match'],['contracts','Contrats','Staff & joueurs'],['medical','Médical','Fatigue & blessures'],['davis','Fédération','Coupe Davis'],['world','Monde','Base mondiale & circuits'],['season','Saison','Bilan & points 52 semaines']].map(x=>`<div class="quick" onclick="nav('${x[0]}')"><span class="muted mini">${x[1]}</span><strong>${x[2]}</strong></div>`).join('')}
+  ${quickActions.map(x=>`<div class="quick" onclick="nav('${x[0]}')"><span class="muted mini">${x[1]}</span><strong>${x[2]}</strong></div>`).join('')}
  </div>
  <section class="grid g2" style="margin-top:12px">
   <div class="card click" onclick="openTournament(${next?.id||0})"><div class="eyebrow">Prochain événement</div>${next?`<h2>${esc(next.name)}</h2><div class="row"><span class="badge ${circuitClass(next.circuit)}">${esc(next.category||next.level)}</span><span class="badge ${surfaceClass(next.surface)}">${esc(surfaceLabel(next))}</span></div><p class="muted">${esc(next.city||'')} · ${df(next.start_date)}</p>`:'<div class="empty">Aucun événement</div>'}</div>
@@ -663,8 +675,10 @@ function tournamentTmRow(t){
  "</tr>";
 }
 function tmCalendarRows(){
+ const doublesOnly=String(career().career_focus||'mixed')==='doubles_only';
  return (tourRows||[]).filter(t=>{
   const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),wk=calWeekStart(t.start_date);
+  if(doublesOnly&&!t.doubles)return false;
   if(tmCalFilters.week!=="Toutes"&&wk!==tmCalFilters.week)return false;
   if(tmCalFilters.country!=="Tous"&&String(t.country)!==tmCalFilters.country)return false;
   if(tmCalFilters.status!=="Tous"&&st.label!==tmCalFilters.status)return false;
@@ -692,7 +706,7 @@ function renderTournamentWeeks(){
  }).join("");
 }
 window.tmCalendarFilter=(k,v)=>{tmCalFilters[k]=v;render()}
-window.resetTmCalendarFilters=()=>{tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};render()}
+window.resetTmCalendarFilters=()=>{tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:String(career().career_focus||'mixed')==='doubles_only'?'Double':'Tous',holder:'Tous'};render()}
 
 function calendar(){
  const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','J500','J300','J200','J100','J60','J30','Junior Finals','Junior Davis Cup','ITA Kickoff Weekend','ITA National Team Indoor Championship','ITA All-American Championships','ITA Division I Regionals','ITA Sectional Championships','ITA Conference Masters','NCAA DI Team Championship','NCAA DI Individual Championship','NCAA','Junior','Davis Cup'];
@@ -726,10 +740,11 @@ function calendar(){
 }
 function tournamentCard(t){
  const c=career(),isJunior=String(t.circuit)==='Junior',isFederation=String(t.circuit)==='Federation',isNcaa=String(t.circuit)==='NCAA';
- const elig=isFederation?'Par sélection nationale':isNcaa?'Championnat universitaire':isJunior?'Circuit Junior ITF':t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
+ const singlesElig=isFederation?'Par sélection nationale':isNcaa?'Championnat universitaire':isJunior?'Circuit Junior ITF':t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
  const joined=(local.entries||[]).includes(t.id);
  const target=isFederation?"nav('davis')":isNcaa?"nav('university')":'openTournament('+t.id+')';
  const doublesOnly=String(c.career_focus||'mixed')==='doubles_only',dJoined=(local.doublesEntries||[]).includes(t.id),dRule=doublesEligibility(t);
+ const elig=doublesOnly?dRule.label:singlesElig;
  const action=isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':isNcaa?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'university\')">Voir NCAA</button>':doublesOnly?(t.doubles&&dRule.can?`<button class="${dJoined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleDoublesEntry(${t.id})">${dJoined?'Double ✓ · retirer':'Inscrire la paire'}</button>`:'<button class="ghost" disabled>Double indisponible</button>'):`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`;
  return `<div class="card click" onclick="${target}"><div class="row between" style="gap:12px"><div class="row" style="align-items:center;min-width:0">${tournamentThumb(t)}<div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span>${t.venue?' · '+esc(t.venue):''}</div></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${action}</div></div></div></div>`
 }

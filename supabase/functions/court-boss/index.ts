@@ -2802,6 +2802,9 @@ Deno.serve(async(req:Request)=>{
     if(hiddenTraitEvolution.error)return h({error:hiddenTraitEvolution.error.message},500);
     const psychology=await db.rpc("refresh_player_psychology_week",{p_date:date});
     if(psychology.error)return h({error:psychology.error.message},500);
+    const weeklyPlayerDevelopment=Number(date.slice(0,4))>2025
+      ?await db.rpc("progress_player_development_weekly",{p_date:date})
+      :{data:{date,processed:0,historical_cutoff:true},error:null};
 
     // Maintain the development pyramids monthly instead of every click/week.
     // This keeps NCAA / ITF / Junior fields full without hammering Disk IO.
@@ -2832,10 +2835,9 @@ Deno.serve(async(req:Request)=>{
         const quarterly=month===1||month===4||month===7||month===10;
         const physicalMaturation=await db.rpc("progress_player_physical_maturation",{p_date:date});
         const coachingEnvironmentRefresh=await db.rpc("refresh_player_coaching_environment",{p_date:date});
-        const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
+        const playerDevelopment=weeklyPlayerDevelopment;
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
-        const aiFocusTraining=await db.rpc("run_ai_training_focus_cycle",{p_date:date});
         const archetypeRefresh=await db.rpc("refresh_player_archetypes",{p_date:date});
         const coachingDevelopment=await db.rpc("apply_player_coaching_development",{p_date:date});
         const coachingEnvironment=await db.rpc("apply_coaching_development_effects",{p_date:date});
@@ -2872,7 +2874,6 @@ Deno.serve(async(req:Request)=>{
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
-          aiFocusTraining:aiFocusTraining.error?{error:aiFocusTraining.error.message}:aiFocusTraining.data,
           archetypeRefresh:archetypeRefresh.error?{error:archetypeRefresh.error.message}:archetypeRefresh.data,
           coachingDevelopment:coachingDevelopment.error?{error:coachingDevelopment.error.message}:coachingDevelopment.data,
           coachingEnvironment:coachingEnvironment.error?{error:coachingEnvironment.error.message}:coachingEnvironment.data,
@@ -3048,7 +3049,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,weeklyPlayerDevelopment:weeklyPlayerDevelopment.error?{error:weeklyPlayerDevelopment.error.message}:weeklyPlayerDevelopment.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){

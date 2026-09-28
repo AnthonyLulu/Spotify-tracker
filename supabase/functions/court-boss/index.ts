@@ -1855,10 +1855,11 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,attributeCeilings,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
+      db.from("player_attribute_ceilings").select("ceilings,ability_snapshot,potential_snapshot,development_type,last_review_date").eq("player_id",id).maybeSingle(),
       db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_elo_ratings").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20),
@@ -1897,6 +1898,7 @@ Deno.serve(async(req:Request)=>{
       developmentProfile:developmentProfile.error?null:developmentProfile.data,
       developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[]),
       scoutingReport:scoutingReport.error?null:scoutingReport.data,
+      attributeCeilings:managedIdForMatchup===id&&!attributeCeilings.error?attributeCeilings.data:null,
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       eloRating:eloRating.error?null:eloRating.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
@@ -2633,13 +2635,17 @@ Deno.serve(async(req:Request)=>{
       db.from("facilities").select("level"),
       db.from("user_training_progress").select("*")
     ]);
-    let trainingResult:any={improvements:[],xp_gains:{},current_ability:Number(current.data.current_ability||56)};
+    let trainingResult:any={improvements:[],capped:[],xp_gains:{},current_ability:Number(current.data.current_ability||56)};
     if(anthony.data){
       const attrs:any=Array.isArray(anthony.data.player_attributes)?anthony.data.player_attributes[0]:anthony.data.player_attributes||{};
-      const devProfile=await db.from("player_development_profiles")
-        .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability")
-        .eq("player_id",anthony.data.id).maybeSingle();
+      const [devProfile,ceilingRow]=await Promise.all([
+        db.from("player_development_profiles")
+          .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability")
+          .eq("player_id",anthony.data.id).maybeSingle(),
+        db.from("player_attribute_ceilings").select("ceilings").eq("player_id",anthony.data.id).maybeSingle()
+      ]);
       const dev:any=devProfile.error?{}:(devProfile.data||{});
+      const attrCeilings:any=ceilingRow.error?{}:(ceilingRow.data?.ceilings||{});
       const playerAge=Number(anthony.data.age||24);
       const personalBase=Math.max(.76,Math.min(1.26,
         .72
@@ -2717,14 +2723,18 @@ Deno.serve(async(req:Request)=>{
       for(const [a,gain] of Object.entries(xp)){
         let total=Number(progressMap.get(a)||0)+Number(gain);
         const cur=Number(attrs[a]||10);
+        const cap=Math.max(cur,Math.min(20,Number(attrCeilings[a]??20)));
         const threshold=(3.35+cur*.24)*
           (playerAge>Number(dev.decline_start_age||30)?1.12:1)*
           (Number(dev.coachability||10)<=8?1.08:1);
-        if(total>=threshold&&cur<20&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
-          attrUpdate[a]=cur+1;
+        if(total>=threshold&&cur<cap&&Number(anthony.data.current_ability||56)<Number(anthony.data.potential||82)){
+          const next=Math.min(cap,cur+1);
+          attrUpdate[a]=next;
           total-=threshold;
-          trainingResult.improvements.push({attribute:a,from:cur,to:cur+1});
+          trainingResult.improvements.push({attribute:a,from:cur,to:next,ceiling:cap});
           improved++;
+        }else if(cur>=cap&&Number(gain)>0){
+          trainingResult.capped.push({attribute:a,value:cur,ceiling:cap});
         }
         trainingResult.xp_gains[a]=Number(gain);
         await db.from("user_training_progress").upsert({attribute:a,xp:total,updated_at:new Date().toISOString()},{onConflict:"attribute"});

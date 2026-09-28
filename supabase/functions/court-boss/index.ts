@@ -1716,7 +1716,7 @@ Deno.serve(async(req:Request)=>{
       db.from("ncaa_player_registry").select("*").eq("player_id",id).order("snapshot_date",{ascending:false}).limit(10),
       db.from("ncaa_career").select("*").eq("player_id",id).maybeSingle(),
       db.from("ncaa_transfer_history").select("*").eq("player_id",id).order("is_current",{ascending:false}).order("verified_at",{ascending:false}).limit(30),
-      db.from("career_state").select("career_date").eq("id","demo").maybeSingle(),
+      db.from("career_state").select("career_date,managed_player_id").eq("id","demo").maybeSingle(),
       db.from("historical_legend_stats").select("*").eq("player_id",id).maybeSingle(),
       db.from("historical_season_summary").select("*").eq("player_id",id).order("season",{ascending:false}).limit(80),
       db.from("junior_display_pool").select("*").eq("player_id",id).maybeSingle()
@@ -1851,7 +1851,8 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
-    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan]=await Promise.all([
+    const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
+    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
@@ -1860,7 +1861,20 @@ Deno.serve(async(req:Request)=>{
       db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20),
       db.from("player_tactical_preferences").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_tactical_traits").select("trait_code,trait_name,intensity,source_label").eq("player_id",id).eq("active",true).order("intensity",{ascending:false}).limit(8),
-      db.from("player_season_plans").select("*").eq("player_id",id).lte("season",Number(referenceDate.slice(0,4))+1).order("season",{ascending:false}).limit(1).maybeSingle()
+      db.from("player_season_plans").select("*").eq("player_id",id).lte("season",Number(referenceDate.slice(0,4))+1).order("season",{ascending:false}).limit(1).maybeSingle(),
+      db.from("player_surface_preferences").select("*").eq("player_id",id).maybeSingle(),
+      managedIdForMatchup&&managedIdForMatchup!==id
+        ?db.from("player_h2h_records").select("*").eq("player_a_id",Math.min(id,managedIdForMatchup)).eq("player_b_id",Math.max(id,managedIdForMatchup)).maybeSingle()
+        :Promise.resolve({data:null,error:null}),
+      managedIdForMatchup&&managedIdForMatchup!==id
+        ?db.rpc("player_matchup_probability_v2",{p_a:id,p_b:managedIdForMatchup,p_surface:"Hard",p_date:referenceDate,p_court_speed:1.0,p_best_of:3})
+        :Promise.resolve({data:null,error:null}),
+      managedIdForMatchup&&managedIdForMatchup!==id
+        ?db.rpc("player_matchup_probability_v2",{p_a:id,p_b:managedIdForMatchup,p_surface:"Clay",p_date:referenceDate,p_court_speed:.68,p_best_of:3})
+        :Promise.resolve({data:null,error:null}),
+      managedIdForMatchup&&managedIdForMatchup!==id
+        ?db.rpc("player_matchup_probability_v2",{p_a:id,p_b:managedIdForMatchup,p_surface:"Grass",p_date:referenceDate,p_court_speed:1.15,p_best_of:3})
+        :Promise.resolve({data:null,error:null})
     ]);
 
     return h({
@@ -1884,7 +1898,14 @@ Deno.serve(async(req:Request)=>{
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
       tacticalProfile:tacticalProfile.error?null:tacticalProfile.data,
       tacticalTraits:tacticalTraits.error?[]:(tacticalTraits.data??[]),
-      seasonPlan:seasonPlan.error?null:seasonPlan.data
+      seasonPlan:seasonPlan.error?null:seasonPlan.data,
+      surfacePreference:surfacePreference.error?null:surfacePreference.data,
+      h2hWithManaged:h2hWithManaged.error?null:h2hWithManaged.data,
+      matchupPreviews:{
+        hard:hardPreview.error?null:hardPreview.data,
+        clay:clayPreview.error?null:clayPreview.data,
+        grass:grassPreview.error?null:grassPreview.data
+      }
     });
   }
 

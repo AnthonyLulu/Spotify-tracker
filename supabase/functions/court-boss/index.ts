@@ -1799,7 +1799,7 @@ Deno.serve(async(req:Request)=>{
       }
       player=await resolvePlayerPhoto(player);
     }
-    const [staffLinks,staffHistory,relA,relB,agencyRepresentation,agencyHistory]=await Promise.all([
+    const [staffLinks,staffHistory,staffBonds,relA,relB,agencyRepresentation,agencyHistory]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
@@ -1808,6 +1808,10 @@ Deno.serve(async(req:Request)=>{
         .select("id,role,start_date,end_date,active,verified,affinity,trust,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",false).lte("snapshot_date",referenceDate)
         .order("end_date",{ascending:false}).limit(12),
+      db.from("staff_player_bonds")
+        .select("bond_type,affinity,trust,respect,is_simulated,source_label,formed_date,last_update,staff:staff_profiles!staff_player_bonds_staff_profile_id_fkey(id,name,nationality,primary_role,specialty,reputation,former_player_status,former_player_id,market_status)")
+        .eq("player_id",id).eq("active",true).lte("last_update",referenceDate)
+        .order("affinity",{ascending:false}).limit(20),
       db.from("player_relationships")
         .select("id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,source_url,formed_date,last_update,other:players!player_relationships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
         .eq("player_a_id",id).eq("active",true).lte("last_update",referenceDate)
@@ -1834,6 +1838,7 @@ Deno.serve(async(req:Request)=>{
       tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons,
       staff:staffLinks.error?[]:(staffLinks.data??[]),
       staffHistory:staffHistory.error?[]:(staffHistory.data??[]),
+      staffBonds:staffBonds.error?[]:(staffBonds.data??[]),
       relationships:socialRows,
       agencyRepresentation:agencyRepresentation.error?null:agencyRepresentation.data,
       agencyHistory:agencyHistory.error?[]:(agencyHistory.data??[])

@@ -3185,9 +3185,13 @@ Deno.serve(async(req:Request)=>{
       .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):p.ranking,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
       .sort((a:any,b:any)=>Number(a.ranking||9999)-Number(b.ranking||9999));
     const surface=String(t.surface||"Dur");
+    const surfaceNorm=surface.toLowerCase();
     const indoor=Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor";
-    const surfKey=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
-    const courtSpeed=Number(t.court_speed||(surface==="Terre"?.68:surface==="Gazon"?1.15:indoor?1.18:1.0));
+    const isClay=/terre|clay/.test(surfaceNorm);
+    const isGrass=/gazon|grass/.test(surfaceNorm);
+    const isCarpet=/carpet|moquette/.test(surfaceNorm);
+    const surfKey=isClay?"clay_affinity":isGrass?"grass_affinity":"hard_affinity";
+    const courtSpeed=Number(t.court_speed||(isClay?.68:isGrass?1.15:isCarpet?(indoor?1.22:1.10):indoor?1.18:1.0));
     const bestOf=String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?5:3;
     const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
     const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),player_attributes:managedAttrs,isUser:true};
@@ -3216,8 +3220,8 @@ Deno.serve(async(req:Request)=>{
       const aa=p.player_attributes||{};
       const d:any=dynBy.get(Number(p.id))||{};
       const liveElo:any=eloBy.get(Number(p.id))||{};
-      const elo=surface==="Terre"?Number(liveElo.clay_elo??d.clay_elo??1500)
-        :surface==="Gazon"?Number(liveElo.grass_elo??d.grass_elo??1500)
+      const elo=isClay?Number(liveElo.clay_elo??d.clay_elo??1500)
+        :isGrass?Number(liveElo.grass_elo??d.grass_elo??1500)
         :indoor?Number(liveElo.indoor_elo??liveElo.hard_elo??d.hard_elo??1500)
         :Number(liveElo.hard_elo??d.hard_elo??1500);
       return elo/22+Number(d.service_rating||50)*.08+Number(d.return_rating||50)*.08+
@@ -3236,8 +3240,8 @@ Deno.serve(async(req:Request)=>{
 
       const surfaceElo=(d:any,er:any)=>{
         const overall=Number(er.overall_elo??d.overall_elo??1500);
-        const specific=surface==="Terre"?Number(er.clay_elo??d.clay_elo??overall)
-          :surface==="Gazon"?Number(er.grass_elo??d.grass_elo??overall)
+        const specific=isClay?Number(er.clay_elo??d.clay_elo??overall)
+          :isGrass?Number(er.grass_elo??d.grass_elo??overall)
           :indoor?Number(er.indoor_elo??er.hard_elo??d.hard_elo??overall)
           :Number(er.hard_elo??d.hard_elo??overall);
         return overall*.50+specific*.50;
@@ -3267,8 +3271,8 @@ Deno.serve(async(req:Request)=>{
         const bw=aIsCanonical?Number(hrow.b_wins||0):Number(hrow.a_wins||0);
         const total=aw+bw;
         let saw=0,sbw=0;
-        if(surface==="Terre"){saw=aIsCanonical?Number(hrow.clay_a_wins||0):Number(hrow.clay_b_wins||0);sbw=aIsCanonical?Number(hrow.clay_b_wins||0):Number(hrow.clay_a_wins||0)}
-        else if(surface==="Gazon"){saw=aIsCanonical?Number(hrow.grass_a_wins||0):Number(hrow.grass_b_wins||0);sbw=aIsCanonical?Number(hrow.grass_b_wins||0):Number(hrow.grass_a_wins||0)}
+        if(isClay){saw=aIsCanonical?Number(hrow.clay_a_wins||0):Number(hrow.clay_b_wins||0);sbw=aIsCanonical?Number(hrow.clay_b_wins||0):Number(hrow.clay_a_wins||0)}
+        else if(isGrass){saw=aIsCanonical?Number(hrow.grass_a_wins||0):Number(hrow.grass_b_wins||0);sbw=aIsCanonical?Number(hrow.grass_b_wins||0):Number(hrow.grass_a_wins||0)}
         else if(indoor){saw=aIsCanonical?Number(hrow.indoor_a_wins||0):Number(hrow.indoor_b_wins||0);sbw=aIsCanonical?Number(hrow.indoor_b_wins||0):Number(hrow.indoor_a_wins||0)}
         else{saw=aIsCanonical?Number(hrow.hard_a_wins||0):Number(hrow.hard_b_wins||0);sbw=aIsCanonical?Number(hrow.hard_b_wins||0):Number(hrow.hard_a_wins||0)}
         const sn=saw+sbw;
@@ -3285,7 +3289,7 @@ Deno.serve(async(req:Request)=>{
       if(a.isUser||b.isUser){
         const sign=a.isUser?1:-1;
         const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
-        const netFit=surface==="Gazon"?tacticNet*.035:indoor?tacticNet*.028:surface==="Dur"?tacticNet*.018:tacticNet*.006;
+        const netFit=isGrass?tacticNet*.035:indoor?tacticNet*.028:!isClay?tacticNet*.018:tacticNet*.006;
         const ret=returnPos==="Avancée"?1.4:returnPos==="Reculée"?.8:1.1;
         let bonus=balance*.025+netFit+ret+staffMatchBonus;
         if(Number(c.fatigue||18)>45&&tacticAgg>75)bonus-=2.8;
@@ -3540,7 +3544,7 @@ Deno.serve(async(req:Request)=>{
         unforced_error_pct:Number(ueRate.toFixed(1)),
         net_approach_pct:Number((Math.max(1,Number(userAnalytics.net_approach_pct||10)+(net-28)*.08+jitter(1.5))).toFixed(1)),
         net_points_won_pct:Number((Math.max(30,Math.min(90,Number(userAnalytics.net_points_won_pct||63)+jitter(3)))).toFixed(1)),
-        avg_rally:Number((Math.max(2,Number(userAnalytics.avg_rally_shots||5)-(aggression-50)*.012+(surface==="Terre"?.45:surface==="Gazon"?-.35:0)+jitter(.5))).toFixed(1)),
+        avg_rally:Number((Math.max(2,Number(userAnalytics.avg_rally_shots||5)-(aggression-50)*.012+(isClay?.45:isGrass?-.35:0)+jitter(.5))).toFixed(1)),
         rally_1_3_win_pct:Number((Number(userAnalytics.rally_1_3_win_pct||50)+jitter(2)).toFixed(1)),
         rally_4_6_win_pct:Number((Number(userAnalytics.rally_4_6_win_pct||50)+jitter(2)).toFixed(1)),
         rally_7_9_win_pct:Number((Number(userAnalytics.rally_7_9_win_pct||50)+jitter(2)).toFixed(1)),

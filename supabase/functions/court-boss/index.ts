@@ -4191,7 +4191,7 @@ Deno.serve(async(req:Request)=>{
     const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||AGE_REFERENCE_DATE);
 
-    const [historyRows,youthRows,ncaaRows,rankRecordRows] = await Promise.all([
+    const [historyRows,youthRows,ncaaRows,rankRecordRows,historyTotal] = await Promise.all([
       db.from("history_player_scores").select("*").order("history_score",{ascending:false}).limit(1500),
       db.from("players")
         .select("id,name,country,birth_date,age,ranking,points,junior_ranking,junior_points,itf_ranking,current_ability,potential,photo_url,game_generated,generated_year,ncaa_current,ncaa_school,career_status,data_source")
@@ -4205,9 +4205,10 @@ Deno.serve(async(req:Request)=>{
         .select("id,name,country,career_high_rank,career_high_rank_date,weeks_at_no1,weeks_top10,weeks_top100,ranking_history_weeks,ranking_history_source,ranking_history_cutoff")
         .gt("ranking_history_weeks",0)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-        .limit(5000)
+        .limit(5000),
+      db.from("history_player_search").select("id",{count:"exact",head:true})
     ]);
-    const err=historyRows.error||youthRows.error||ncaaRows.error||rankRecordRows.error;
+    const err=historyRows.error||youthRows.error||ncaaRows.error||rankRecordRows.error||historyTotal.error;
     if(err)return h({error:err.message},500);
 
     const rankRecordById=new Map((rankRecordRows.data??[]).map((x:any)=>[Number(x.id),x]));
@@ -4286,7 +4287,7 @@ Deno.serve(async(req:Request)=>{
       u18,u21,
       coverage:{
         players:pool.length,
-        historicalPlayers:allHistory.length,
+        historicalPlayers:Number(historyTotal.count||allHistory.length),
         countries:new Set(allHistory.map((x:any)=>x.country)).size,
         ncaaProfiles:ncaaProfiles.size,
         ncaaActive:ncaaActive.size,

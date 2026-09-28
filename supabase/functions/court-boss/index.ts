@@ -2690,14 +2690,14 @@ Deno.serve(async(req:Request)=>{
       const phaseMult=phase==="prospect"?1.08:phase==="developing"?1.05:phase==="prime"?1:phase==="plateau"?.95:phase==="decline"?.82:1;
       const personalDevMult=personalBase*ageMult*conditionMult*phaseMult;
       const map:any={
-        "Service":["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety","serve_plus_one"],
-        "Retour":["return_game","anticipation","return_aggression","return_consistency","reaction","passing_shot"],
-        "Coup droit":["forehand","forehand_power","forehand_accuracy","shot_selection","serve_plus_one"],
-        "Revers":["backhand","backhand_power","backhand_accuracy","slice","passing_shot"],
-        "Déplacements":["movement","speed","acceleration","agility","balance","court_positioning","defensive_skill","defense_to_attack"],
-        "Endurance":["stamina","strength","natural_fitness","recovery","flexibility","work_rate","rally_tolerance"],
-        "Match play":["tactics","concentration","composure","fighting_spirit","decision_making","shot_selection","big_points","consistency","killer_instinct","confidence","determination","court_positioning","transition_game","rally_tolerance","defense_to_attack"],
-        "Double":["volley","touch","doubles","half_volley","smash","net_positioning","doubles_communication","poaching","anticipation","transition_game","reaction"]
+        "Service":["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety","serve_spin","serve_consistency","serve_plus_one","timing"],
+        "Retour":["return_game","anticipation","return_aggression","return_consistency","counter_skill","reaction","passing_shot","timing","shot_control"],
+        "Coup droit":["forehand","forehand_power","forehand_accuracy","forehand_consistency","topspin","shot_control","timing","shot_selection","serve_plus_one"],
+        "Revers":["backhand","backhand_power","backhand_accuracy","backhand_consistency","slice","shot_control","timing","passing_shot"],
+        "Déplacements":["movement","speed","acceleration","agility","balance","footwork","athleticism","court_positioning","defensive_skill","defense_to_attack"],
+        "Endurance":["stamina","strength","athleticism","natural_fitness","recovery","flexibility","work_rate","rally_tolerance","tenacity"],
+        "Match play":["tactics","concentration","composure","fighting_spirit","tenacity","decision_making","shot_selection","shot_control","timing","counter_skill","big_points","consistency","killer_instinct","confidence","determination","court_positioning","transition_game","rally_tolerance","defense_to_attack"],
+        "Double":["volley","touch","doubles","half_volley","smash","net_positioning","doubles_communication","poaching","anticipation","transition_game","reaction","timing","footwork","serve_consistency"]
       };
       const staffList=(staffRows.data??[]);
       const avgStaff=staffList.length?staffList.reduce((sum:number,x:any)=>sum+Number(x.skill||10),0)/staffList.length:10;
@@ -3421,16 +3421,21 @@ Deno.serve(async(req:Request)=>{
         ((Number(aa.first_serve_quality??aa.serve_precision??10)+Number(aa.second_serve_quality??aa.serve_precision??10)+Number(aa.serve_plus_one??aa.forehand??10))-
          (Number(ab.first_serve_quality??ab.serve_precision??10)+Number(ab.second_serve_quality??ab.serve_precision??10)+Number(ab.serve_plus_one??ab.forehand??10)))/180+
         ((Number(aa.return_consistency??aa.return_game??10)+Number(aa.return_aggression??aa.return_game??10))-
-         (Number(ab.return_consistency??ab.return_game??10)+Number(ab.return_aggression??ab.return_game??10)))/150;
+         (Number(ab.return_consistency??ab.return_game??10)+Number(ab.return_aggression??ab.return_game??10)))/150+
+        ((Number(aa.serve_spin||10)+Number(aa.serve_consistency||10))-(Number(ab.serve_spin||10)+Number(ab.serve_consistency||10)))/260+
+        (Number(aa.counter_skill||10)-Number(ab.counter_skill||10))/150;
 
       const mental=
         ((Number(da.pressure_rating||50)+Number(da.tactical_rating||50))-(Number(dbb.pressure_rating||50)+Number(dbb.tactical_rating||50)))/200+
         ((Number(aa.decision_making??aa.tactics??10)+Number(aa.shot_selection??aa.tactics??10)+Number(aa.consistency??aa.concentration??10)+Number(aa.big_points??aa.composure??10))-
-         (Number(ab.decision_making??ab.tactics??10)+Number(ab.shot_selection??ab.tactics??10)+Number(ab.consistency??ab.concentration??10)+Number(ab.big_points??ab.composure??10)))/240;
+         (Number(ab.decision_making??ab.tactics??10)+Number(ab.shot_selection??ab.tactics??10)+Number(ab.consistency??ab.concentration??10)+Number(ab.big_points??ab.composure??10)))/240+
+        ((Number(aa.shot_control||10)+Number(aa.timing||10)+Number(aa.tenacity||10))-
+         (Number(ab.shot_control||10)+Number(ab.timing||10)+Number(ab.tenacity||10)))/360;
 
       const physical=
         ((Number(da.athletic_rating||50)+Number(a.fitness||90)-Number(a.fatigue||20)*.55+Number(aa.natural_fitness??aa.stamina??10)*1.4+Number(aa.recovery||10)*.8+Number(aa.rally_tolerance??aa.stamina??10)*.8)-
-         (Number(dbb.athletic_rating||50)+Number(b.fitness||90)-Number(b.fatigue||20)*.55+Number(ab.natural_fitness??ab.stamina??10)*1.4+Number(ab.recovery||10)*.8+Number(ab.rally_tolerance??ab.stamina??10)*.8))/230;
+         (Number(dbb.athletic_rating||50)+Number(b.fitness||90)-Number(b.fatigue||20)*.55+Number(ab.natural_fitness??ab.stamina??10)*1.4+Number(ab.recovery||10)*.8+Number(ab.rally_tolerance??ab.stamina??10)*.8))/230+
+        ((Number(aa.footwork||10)+Number(aa.athleticism||10))-(Number(ab.footwork||10)+Number(ab.athleticism||10)))/220;
 
       const surfaceFit=(Number(aa?.[surfKey]||10)-Number(ab?.[surfKey]||10))/20;
       const paceFit=(-Math.abs(courtSpeed-Number(sa.preferred_court_speed||1))/Math.max(.12,Number(sa.pace_tolerance||.25))

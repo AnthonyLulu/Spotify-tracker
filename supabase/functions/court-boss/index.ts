@@ -1855,7 +1855,7 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       managedIdForMatchup===id
@@ -1869,6 +1869,7 @@ Deno.serve(async(req:Request)=>{
         :Promise.resolve({data:[],error:null}),
       db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_elo_ratings").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_dynamic_ratings").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20),
       db.from("player_tactical_preferences").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_tactical_traits").select("trait_code,trait_name,intensity,source_label").eq("player_id",id).eq("active",true).order("intensity",{ascending:false}).limit(8),
@@ -1912,6 +1913,7 @@ Deno.serve(async(req:Request)=>{
       hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       eloRating:eloRating.error?null:eloRating.data,
+      dynamicRatings:dynamicRatings.error?null:dynamicRatings.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
       tacticalProfile:tacticalProfile.error?null:tacticalProfile.data,
       tacticalTraits:tacticalTraits.error?[]:(tacticalTraits.data??[]),
@@ -2861,10 +2863,12 @@ Deno.serve(async(req:Request)=>{
         const seasonPlanRefine=month===1
           ?await db.rpc("refine_player_season_plans",{p_date:date})
           :{data:null,error:null};
+        const seasonPlanPsychology=await db.rpc("adapt_player_season_plans_to_psychology",{p_date:date});
         developmentSupply={
           ...(developmentSupply||{}),
           seasonPlans:seasonPlans.error?{error:seasonPlans.error.message}:seasonPlans.data,
-          seasonPlanRefine:seasonPlanRefine.error?{error:seasonPlanRefine.error.message}:seasonPlanRefine.data
+          seasonPlanRefine:seasonPlanRefine.error?{error:seasonPlanRefine.error.message}:seasonPlanRefine.data,
+          seasonPlanPsychology:seasonPlanPsychology.error?{error:seasonPlanPsychology.error.message}:seasonPlanPsychology.data
         };
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})

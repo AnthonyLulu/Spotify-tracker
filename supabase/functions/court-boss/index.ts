@@ -1680,42 +1680,29 @@ Deno.serve(async(req:Request)=>{
       doublesTeams=await db.from("doubles_race_teams").select("*").or(`player_one.ilike.%${escapedName}%,player_two.ilike.%${escapedName}%`).lte("snapshot_date",referenceDate).order("snapshot_date",{ascending:false}).order("rank",{ascending:true}).limit(20);
     }
     let raceCards:any={junior:null,doubles:null,juniorDoubles:null};
-    if(referenceYear===2025){
-      const jr=await db.from("junior_finals_qualification_history").select("*")
-        .eq("season",2025).eq("player_id",id).maybeSingle();
-      if(!jr.error&&jr.data)raceCards.junior={
-        rank:jr.data.race_rank,points:null,status:jr.data.status,
-        snapshot_date:jr.data.snapshot_date,finals:"ITF World Tennis Tour Junior Finals",
-        source:jr.data.source_label
-      };
-    }else{
-      const jr=await db.from("junior_race_view")
-        .select("junior_race_ranking,junior_race_points,junior_race_snapshot_date,finals_status")
-        .eq("id",id).maybeSingle();
-      if(!jr.error&&jr.data)raceCards.junior={
-        rank:jr.data.junior_race_ranking,points:jr.data.junior_race_points,
-        status:jr.data.finals_status,snapshot_date:jr.data.junior_race_snapshot_date,
-        finals:"ITF World Tennis Tour Junior Finals",source:"Court Boss Junior Finals Race"
-      };
-    }
-    const dr=await db.rpc("doubles_race_for_date",{p_date:referenceDate});
-    if(!dr.error){
-      const row=(dr.data??[]).find((x:any)=>Number(x.player_one_id)===id||Number(x.player_two_id)===id);
-      if(row)raceCards.doubles={
-        rank:row.doubles_race_ranking,points:row.doubles_race_points,status:row.finals_status,
-        snapshot_date:row.doubles_race_snapshot_date,team:row.name,
-        finals:"Nitto ATP Finals",source:row.source
-      };
-    }
-    const jdr=await db.rpc("junior_doubles_race_for_date",{p_date:referenceDate});
-    if(!jdr.error){
-      const row=(jdr.data??[]).find((x:any)=>Number(x.player_one_id)===id||Number(x.player_two_id)===id);
-      if(row)raceCards.juniorDoubles={
-        rank:row.junior_doubles_race_ranking,points:row.junior_doubles_race_points,status:row.finals_status,
-        snapshot_date:row.junior_doubles_race_snapshot_date,team:row.name,
-        finals:"Court Boss Junior Doubles Finals",source:row.source
-      };
-    }
+    const jr=await db.rpc("junior_race_for_date",{p_date:referenceDate})
+      .eq("id",id).limit(1).maybeSingle();
+    if(!jr.error&&jr.data)raceCards.junior={
+      rank:jr.data.junior_race_ranking,points:jr.data.junior_race_points,
+      status:jr.data.finals_status,snapshot_date:jr.data.junior_race_snapshot_date,
+      finals:"ITF World Tennis Tour Junior Finals",source:jr.data.source
+    };
+    const dr=await db.rpc("doubles_race_for_date",{p_date:referenceDate})
+      .or(`player_one_id.eq.${id},player_two_id.eq.${id}`)
+      .order("doubles_race_ranking",{ascending:true}).limit(1).maybeSingle();
+    if(!dr.error&&dr.data)raceCards.doubles={
+      rank:dr.data.doubles_race_ranking,points:dr.data.doubles_race_points,status:dr.data.finals_status,
+      snapshot_date:dr.data.doubles_race_snapshot_date,team:dr.data.name,
+      finals:"Nitto ATP Finals",source:dr.data.source
+    };
+    const jdr=await db.rpc("junior_doubles_race_for_date",{p_date:referenceDate})
+      .or(`player_one_id.eq.${id},player_two_id.eq.${id}`)
+      .order("junior_doubles_race_ranking",{ascending:true}).limit(1).maybeSingle();
+    if(!jdr.error&&jdr.data)raceCards.juniorDoubles={
+      rank:jdr.data.junior_doubles_race_ranking,points:jdr.data.junior_doubles_race_points,status:jdr.data.finals_status,
+      snapshot_date:jdr.data.junior_doubles_race_snapshot_date,team:jdr.data.name,
+      finals:"Court Boss Junior Doubles Finals",source:jdr.data.source
+    };
 
     if(player){
       const gameDate=referenceDate;

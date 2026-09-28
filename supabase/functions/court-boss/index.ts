@@ -2098,7 +2098,15 @@ Deno.serve(async(req:Request)=>{
         const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
         const race=await db.rpc("doubles_race_for_date",{p_date:refDate});
         if(!race.error){
-          doublesMain=(race.data??[]).slice(0,8).map((x:any)=>({
+          const qualified:any[]=[];
+          const used=new Set<number>();
+          for(const x of race.data??[]){
+            const aid=Number((x as any).player_one_id||0),bid=Number((x as any).player_two_id||0);
+            if(!aid||!bid||aid===bid||used.has(aid)||used.has(bid))continue;
+            qualified.push(x);used.add(aid);used.add(bid);
+            if(qualified.length>=8)break;
+          }
+          doublesMain=qualified.map((x:any)=>({
               seed:x.doubles_race_ranking,
               player_a:{id:x.player_one_id,name:x.player_one,country:x.country,doubles_ranking:x.doubles_race_ranking},
               player_b:{id:x.player_two_id,name:x.player_two,country:x.country,doubles_ranking:x.doubles_race_ranking},
@@ -2106,7 +2114,7 @@ Deno.serve(async(req:Request)=>{
               combined_rank:Number(x.doubles_race_ranking||9999),
               race_rank:x.doubles_race_ranking,
               race_points:x.doubles_race_points,
-              finals_status:x.finals_status,
+              finals_status:"qualified",
               source:"atp-doubles-race"
             }));
         }
@@ -2475,7 +2483,18 @@ Deno.serve(async(req:Request)=>{
           p_date:date,
           p_target_pairs:2000
         });
-        doublesPairRefresh=pairs.error?{error:pairs.error.message}:pairs.data;
+        if(pairs.error){
+          doublesPairRefresh={error:pairs.error.message};
+        }else{
+          const norm=await db.rpc("normalize_world_doubles_race",{
+            p_year:Number(date.slice(0,4)),
+            p_date:date
+          });
+          doublesPairRefresh={
+            ...(pairs.data||{}),
+            normalization:norm.error?{error:norm.error.message}:norm.data
+          };
+        }
       }
     }
 
@@ -2898,7 +2917,14 @@ Deno.serve(async(req:Request)=>{
     if(isJuniorDoubleFinals){
       const race=await db.rpc("junior_doubles_race_for_date",{p_date:String(c.career_date||AGE_REFERENCE_DATE)});
       if(race.error)return h({error:race.error.message},500);
-      finalsPairRows=(race.data??[]).slice(0,8);
+      const usedFinals=new Set<number>();
+      finalsPairRows=[];
+      for(const x of race.data??[]){
+        const aid=Number((x as any).player_one_id||0),bid=Number((x as any).player_two_id||0);
+        if(!aid||!bid||aid===bid||usedFinals.has(aid)||usedFinals.has(bid))continue;
+        finalsPairRows.push(x);usedFinals.add(aid);usedFinals.add(bid);
+        if(finalsPairRows.length>=8)break;
+      }
       const own=finalsPairRows.find((x:any)=>
         (Number(x.player_one_id)===Number(anthony.id)&&Number(x.player_two_id)===Number(partner.id))
         ||(Number(x.player_one_id)===Number(partner.id)&&Number(x.player_two_id)===Number(anthony.id))

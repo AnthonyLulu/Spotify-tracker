@@ -1970,7 +1970,7 @@ Deno.serve(async(req:Request)=>{
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
     if(source==="Simulation") query=query.eq("is_verified",false);
-    if(source==="Fictif") query=query.eq("is_verified",false).in("circuit",["Challenger","ITF"]);
+    if(source==="Fictif") query=query.eq("is_verified",false);
     if(surface==="Dur intérieur") query=query.eq("surface","Dur").eq("indoor",true);
     else if(surface==="Dur extérieur"||surface==="Dur") query=query.eq("surface","Dur").eq("indoor",false);
     else if(surface&&surface!=="Toutes") query=query.eq("surface",surface);
@@ -2414,6 +2414,20 @@ Deno.serve(async(req:Request)=>{
     if(worldEvents.error||juniorWorldEvents.error)return h({error:(worldEvents.error||juniorWorldEvents.error)?.message},500);
     const sim=await db.rpc("simulate_world_week",{p_week:week,p_snapshot_date:date});
     if(sim.error) return h({error:sim.error.message},500);
+
+    // Maintain the development pyramids monthly instead of every click/week.
+    // This keeps NCAA / ITF / Junior fields full without hammering Disk IO.
+    let developmentSupply:any=null;
+    if(week%4===0 || previousDate.slice(0,7)!==date.slice(0,7)){
+      const supply=await db.rpc("maintain_development_circuit_supply",{
+        p_date:date,
+        p_junior_target:1800,
+        p_itf_target:3600,
+        p_ncaa_target:900
+      });
+      developmentSupply=supply.error?{error:supply.error.message}:supply.data;
+    }
+
     const academyDev=await db.rpc("simulate_academy_roster_week",{p_week:week,p_date:date});
     if(academyDev.error)return h({error:academyDev.error.message},500);
     const [injurySim,forfeitSim]=await Promise.all([
@@ -2438,7 +2452,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/management")&&req.method==="GET"){

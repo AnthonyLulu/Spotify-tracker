@@ -4073,19 +4073,38 @@ Deno.serve(async(req:Request)=>{
       const p:any=Array.isArray(cand.data.profile)?cand.data.profile[0]:cand.data.profile||{};
       const fit=Number(cand.data.managed_fit||60);
       const competing=Number(cand.data.competing_offers||0);
-      const interest=Math.max(25,Math.min(99,Math.round(
-        fit*.62+Number(p.reputation||10)*1.25+Number(p.loyalty||10)*.35-Number(p.ambition||10)*.25-competing*2
+      const managedId=Number(career.data.managed_player_id||0);
+      const managed=managedId?await db.from("players").select("id,country,style").eq("id",managedId).maybeSingle():{data:null,error:null};
+      const ownStaff=await db.from("staff").select("profile_id").not("profile_id","is",null);
+      const ownIds=(ownStaff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean);
+      let recommendationBoost=0;
+      if(ownIds.length&&p.id){
+        const recs=await db.from("staff_recommendations")
+          .select("from_staff_id,to_staff_id,strength")
+          .eq("active",true)
+          .or(`and(from_staff_id.in.(${ownIds.join(",")}),to_staff_id.eq.${p.id}),and(to_staff_id.in.(${ownIds.join(",")}),from_staff_id.eq.${p.id})`)
+          .order("strength",{ascending:false}).limit(3);
+        if(!recs.error&&recs.data?.length)recommendationBoost=Math.min(8,Math.round(Math.max(...recs.data.map((x:any)=>Number(x.strength||0)))/12));
+      }
+      const pref=await db.from("staff_preferences").select("*").eq("staff_profile_id",p.id).maybeSingle();
+      const countryFit=pref.data?.preferred_player_country&&managed.data?.country===pref.data.preferred_player_country?5:0;
+      const styleFit=pref.data?.preferred_style&&managed.data?.style===pref.data.preferred_style?4:0;
+      const interest=Math.max(20,Math.min(99,Math.round(
+        fit*.60+Number(p.reputation||10)*1.15+Number(p.loyalty||10)*.35-Number(p.ambition||10)*.25-competing*2
+        +recommendationBoost+countryFit+styleFit
       )));
+      const agencyLink=p.id?await db.from("staff_agency_members").select("agency:staff_agencies(commission_pct,reputation,network_strength)").eq("staff_profile_id",p.id).eq("active",true).maybeSingle():{data:null,error:null};
+      const agency:any=Array.isArray(agencyLink.data?.agency)?agencyLink.data.agency[0]:agencyLink.data?.agency||{};
+      const agencyCommission=Number(agency.commission_pct||0);
       const requestedWeekly=Math.max(
         Number(cand.data.weekly_cost||0),
         Math.round(Number(p.asking_weekly_cost||cand.data.weekly_cost||0)*(1+Math.max(0,Number(p.ambition||10)-10)*.012+competing*.035))
       );
       const requestedSigning=Math.max(
         Number(cand.data.signing_cost||0),
-        Math.round(requestedWeekly*(1.2+Number(p.reputation||10)*.06+competing*.12))
+        Math.round(requestedWeekly*(1.2+Number(p.reputation||10)*.06+competing*.12)*(1+agencyCommission/100))
       );
       const years=Number(p.reputation||10)>=17?3:Number(p.ambition||10)>=16?2:1;
-      const pref=await db.from("staff_preferences").select("*").eq("staff_profile_id",p.id).maybeSingle();
       const demands={
         lead_role:Boolean(pref.data?.wants_lead_role),
         shared_role:Boolean(pref.data?.willing_shared_role),
@@ -4113,7 +4132,7 @@ Deno.serve(async(req:Request)=>{
       }).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
 
-      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing});
+      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing,recommendation_boost:recommendationBoost,agency_commission:agencyCommission});
     }
 
     if(action==="hire_staff"){
@@ -4131,16 +4150,27 @@ Deno.serve(async(req:Request)=>{
       endDate.setUTCFullYear(endDate.getUTCFullYear()+Math.max(1,Number(cand.data.desired_years||2)));
       const managedId=Number(career.data.managed_player_id||0);
       const weekly=Number(cand.data.requested_weekly||cand.data.weekly_cost||0);
+      const demands:any=cand.data.demands||{};
+      const wantsLead=Boolean(demands.lead_role)&&/coach/i.test(String(cand.data.role||""));
+      const effectiveRole=wantsLead?"Coach principal":String(cand.data.role||"Staff");
+      if(wantsLead&&managedId){
+        const oldLead=await db.from("player_staff_assignments")
+          .select("id,staff_profile_id").eq("player_id",managedId).eq("active",true).ilike("role","%principal%").maybeSingle();
+        if(oldLead.data){
+          await db.from("player_staff_assignments").update({role:"Coach adjoint",notes:"Repositionné après arrivée d'un nouveau coach principal."}).eq("id",oldLead.data.id);
+          if(oldLead.data.staff_profile_id)await db.from("staff").update({role:"Coach adjoint"}).eq("profile_id",oldLead.data.staff_profile_id);
+        }
+      }
       const fit=cand.data.profile_id&&managedId
-        ?await db.rpc("staff_fit_score",{p_player_id:managedId,p_staff_id:cand.data.profile_id,p_role:cand.data.role})
+        ?await db.rpc("staff_fit_score",{p_player_id:managedId,p_staff_id:cand.data.profile_id,p_role:effectiveRole})
         :{data:60,error:null};
       const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
       const [ins,up,car,contract,profileUp,assignment,offers]=await Promise.all([
-        db.from("staff").insert({name:cand.data.name,role:cand.data.role,skill:cand.data.skill,weekly_cost:weekly,profile_id:cand.data.profile_id||null}),
+        db.from("staff").insert({name:cand.data.name,role:effectiveRole,skill:cand.data.skill,weekly_cost:weekly,profile_id:cand.data.profile_id||null}),
         db.from("staff_candidates").update({status:"hired"}).eq("id",id),
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo"),
         db.from("contracts").insert({
-          subject_type:"staff",subject_name:cand.data.name,role:cand.data.role,
+          subject_type:"staff",subject_name:cand.data.name,role:effectiveRole,
           weekly_salary:weekly,start_date:start,
           end_date:endDate.toISOString().slice(0,10),
           bonuses:{loyalty_bonus:Math.round(weekly*2),demands:cand.data.demands||{}},
@@ -4151,7 +4181,7 @@ Deno.serve(async(req:Request)=>{
           :Promise.resolve({error:null}),
         cand.data.profile_id&&managedId
           ?db.from("player_staff_assignments").insert({
-            player_id:managedId,staff_profile_id:cand.data.profile_id,role:cand.data.role,
+            player_id:managedId,staff_profile_id:cand.data.profile_id,role:effectiveRole,
             start_date:start,active:true,verified:false,affinity:72,trust:70,
             source_label:"Court Boss · staff joueur géré",snapshot_date:start,
             notes:"Recruté par le joueur géré après entretien.",weekly_salary:weekly,
@@ -4165,7 +4195,7 @@ Deno.serve(async(req:Request)=>{
           :Promise.resolve({error:null})
       ]);
       const err=ins.error||up.error||car.error||contract.error||profileUp.error||assignment.error||offers.error;if(err)return h({error:err.message},500);
-      await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+cand.data.role+" jusqu'au "+endDate.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
+      await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+effectiveRole+" jusqu'au "+endDate.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
       return h({ok:true,budget,status:"hired",contract_end:endDate.toISOString().slice(0,10)});
     }
 

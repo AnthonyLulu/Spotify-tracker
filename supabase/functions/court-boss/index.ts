@@ -3300,8 +3300,8 @@ Deno.serve(async(req:Request)=>{
       const baseLogit=Math.log(Math.max(.01,Math.min(.99,eloProb))/Math.max(.01,1-Math.min(.99,eloProb)));
       let logit=baseLogit+serviceReturn*.62+mental*.24+physical*.18+surfaceFit*.22+
         styleMatch*.55+paceFit+h2h+(Number(a.form||70)-Number(b.form||70))*.006+userTactics;
+      if(bestOf>=5)logit*=1.18;
       let probA=1/(1+Math.exp(-logit));
-      if(bestOf>=5)probA=probA*probA*(3-2*probA);
       probA=Math.max(.025,Math.min(.975,probA));
       return {probA,components:{
         elo_probability:eloProb,surface_elo_a:aElo,surface_elo_b:bElo,

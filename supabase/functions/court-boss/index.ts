@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:14,development_model:"development-v3",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:15,development_model:"development-v3",match_model:"matchup-v4/point-v2",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -1881,13 +1881,13 @@ Deno.serve(async(req:Request)=>{
         ?db.from("player_h2h_records").select("*").eq("player_a_id",Math.min(id,managedIdForMatchup)).eq("player_b_id",Math.max(id,managedIdForMatchup)).maybeSingle()
         :Promise.resolve({data:null,error:null}),
       managedIdForMatchup&&managedIdForMatchup!==id
-        ?db.rpc("player_matchup_probability_v3",{p_a:id,p_b:managedIdForMatchup,p_surface:"Hard",p_date:referenceDate,p_court_speed:1.0,p_best_of:3})
+        ?db.rpc("player_matchup_probability_v4",{p_a:id,p_b:managedIdForMatchup,p_surface:"Hard",p_date:referenceDate,p_court_speed:1.0,p_best_of:3})
         :Promise.resolve({data:null,error:null}),
       managedIdForMatchup&&managedIdForMatchup!==id
-        ?db.rpc("player_matchup_probability_v3",{p_a:id,p_b:managedIdForMatchup,p_surface:"Clay",p_date:referenceDate,p_court_speed:.68,p_best_of:3})
+        ?db.rpc("player_matchup_probability_v4",{p_a:id,p_b:managedIdForMatchup,p_surface:"Clay",p_date:referenceDate,p_court_speed:.68,p_best_of:3})
         :Promise.resolve({data:null,error:null}),
       managedIdForMatchup&&managedIdForMatchup!==id
-        ?db.rpc("player_matchup_probability_v3",{p_a:id,p_b:managedIdForMatchup,p_surface:"Grass",p_date:referenceDate,p_court_speed:1.15,p_best_of:3})
+        ?db.rpc("player_matchup_probability_v4",{p_a:id,p_b:managedIdForMatchup,p_surface:"Grass",p_date:referenceDate,p_court_speed:1.15,p_best_of:3})
         :Promise.resolve({data:null,error:null})
     ]);
 
@@ -4631,7 +4631,7 @@ Deno.serve(async(req:Request)=>{
     const serverIsUser=Boolean(session.data.serving_user);
     const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
     const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
-    const matchup=await db.rpc("tennis_abstract_matchup_model",{
+    const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
       p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:pressure
     });
     const tm:any=matchup.error?{}:(matchup.data||{});
@@ -4906,7 +4906,7 @@ Deno.serve(async(req:Request)=>{
     const serverIsUser=Boolean(session.data.serving_user);
     const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
     const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
-    const matchup=await db.rpc("tennis_abstract_matchup_model",{
+    const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
       p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:0
     });
     const tm:any=matchup.error?{}:(matchup.data||{});

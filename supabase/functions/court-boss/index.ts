@@ -1810,7 +1810,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
-    if(source==="Simulation") query=query.eq("is_verified",false);
+    if(source==="Simulation"||source==="Fictif") query=query.eq("is_verified",false);
     if(surface==="Dur intérieur") query=query.eq("surface","Dur").eq("indoor",true);
     else if(surface==="Dur extérieur"||surface==="Dur") query=query.eq("surface","Dur").eq("indoor",false);
     else if(surface&&surface!=="Toutes") query=query.eq("surface",surface);
@@ -1827,7 +1827,7 @@ Deno.serve(async(req:Request)=>{
 
     const year=Number((month||from||"2025").slice(0,4))||2025;
     let tbcRows:any[]=[];
-    if(source!=="Simulation"){
+    if(source!=="Simulation"&&source!=="Fictif"){
       const tbc=await db.from("tournament_tbc_events").select("*").eq("season_year",year).order("name");
       if(!tbc.error){
         tbcRows=(tbc.data??[]).filter((x:any)=>{
@@ -3930,7 +3930,7 @@ Deno.serve(async(req:Request)=>{
   if((path.endsWith("/api/history-leaders")||path.endsWith("/api/history-hub"))&&req.method==="GET"){
     const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
     const continent=(u.searchParams.get("continent")??"").trim().slice(0,40);
-    const limit=n(u.searchParams.get("limit"),80,1,200);
+    const limit=n(u.searchParams.get("limit"),300,1,500);
     const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||AGE_REFERENCE_DATE);
 

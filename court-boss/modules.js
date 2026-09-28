@@ -991,6 +991,8 @@ window.renderPalmaresHtml=function(d,p){
   const doubleHistoryYears=Object.keys(doubleHistoryByYear).sort((a,b)=>Number(b)-Number(a));
   const resultClass=code=>code==='W'?'good':code==='F'?'warn':['SF','QF'].includes(code)?'info':'';
   const tourName=name=>String(name||'Tournoi').replace(/^Us Open$/i,'US Open');
+  const tournamentLogo=(name,level='',cls='tournament-history-logo')=>window.tournamentLogoByName?window.tournamentLogoByName(tourName(name),level,cls):'';
+  const slamLogo=(k,cls='slam-logo')=>window.slamLogoHtml?window.slamLogoHtml(k,cls):'<b>'+esc(k)+'</b>';
 
   const levels=titles.reduce((acc,t)=>{
     const raw=String(t.level||'ATP').trim();
@@ -1123,7 +1125,7 @@ window.renderPalmaresHtml=function(d,p){
         <h2>Titres par catégorie</h2>
         ${catOrder.map(k=>`<div class="list-item row between"><span>${k}</span><b>${levels[k]||0}</b></div>`).join('')}
         <h3 style="margin-top:14px">Grand Chelem en détail</h3>
-        ${Object.entries(slamBreakdown).map(([name,n])=>`<div class="list-item row between ${n?'click':''}" ${n?`data-palmares-name="${name==='Roland-Garros'?'Roland Garros':name}"`:''}><span>${name}</span><b>${n}</b></div>`).join('')}
+        ${Object.entries(slamBreakdown).map(([name,n])=>`<div class="list-item row between ${n?'click':''}" ${n?`data-palmares-name="${name==='Roland-Garros'?'Roland Garros':name}"`:''}><span class="tournament-brand-inline">${tournamentLogo(name,'Grand Chelem')}<span>${name}</span></span><b>${n}</b></div>`).join('')}
       </div>
       <div class="card">
         <h2>Titres par surface</h2>
@@ -1141,7 +1143,7 @@ window.renderPalmaresHtml=function(d,p){
       <div class="muted mini" style="margin-top:4px">Résultat atteint dans chaque Grand Chelem. Clique sur une case pour voir l'adversaire du dernier match et le score.</div>
       ${slamYears.length?`
         <div class="slam-history" style="margin-top:12px">
-          <div class="slam-history-head"><span>Année</span>${slamOrder.map(k=>`<span>${k}</span>`).join('')}</div>
+          <div class="slam-history-head"><span>Année</span>${slamOrder.map(k=>`<span class="slam-brand-head">${slamLogo(k)}<small>${k}</small></span>`).join('')}</div>
           ${slamYears.map(y=>`
             <div class="slam-history-row">
               <b>${y}</b>

@@ -4153,11 +4153,17 @@ Deno.serve(async(req:Request)=>{
     const returnDepthScore=Number(tm.return_depth_score||60);
     const returnDepth=returnDepthRoll<Math.max(15,returnDepthScore*.62)?"profond"
       :returnDepthRoll<Math.max(45,returnDepthScore*.62+28)?"moyen":"court";
-    const netChance=Math.max(0,Math.min(.65,
-      Number(serverWon?tm.server_net_approach_pct:tm.returner_net_approach_pct||10)/100+
-      (serverIsUser?net*.002:0)
+    const serverNetChance=Math.max(0,Math.min(.55,
+      Number(tm.server_net_approach_pct||10)/100+(serverIsUser?net*.0015:0)
     ));
-    const atNet=!ace&&!doubleFault&&!unreturned&&Math.random()<netChance;
+    const returnerNetChance=Math.max(0,Math.min(.40,Number(tm.returner_net_approach_pct||8)/100));
+    const netRoll=Math.random();
+    let netPlayerId:number|null=null;
+    if(!ace&&!doubleFault&&!unreturned){
+      if(netRoll<serverNetChance)netPlayerId=serverId;
+      else if(netRoll<serverNetChance+(1-serverNetChance)*returnerNetChance)netPlayerId=returnerId;
+    }
+    const atNet=netPlayerId!==null;
 
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
@@ -4167,7 +4173,7 @@ Deno.serve(async(req:Request)=>{
       rally,rally_band:rallyBand,shot:ending,ending,
       serve_number:firstServeIn?1:2,first_serve_in:firstServeIn,
       double_fault:doubleFault,ace,unreturned_serve:unreturned,
-      serve_direction:serveDirection,return_depth:returnDepth,at_net:atNet,
+      serve_direction:serveDirection,return_depth:returnDepth,at_net:atNet,net_player_id:netPlayerId,
       server:serverIsUser?"user":"opponent",
       server_win_probability:Math.round(serverWinProb*1000)/10,
       server_surface_elo:Number(tm.server_surface_elo||0),
@@ -4262,6 +4268,40 @@ Deno.serve(async(req:Request)=>{
     const saved=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
     if(saved.error)return h({error:saved.error.message},500);
 
+    const eventWrite=await db.from("live_match_point_events").upsert({
+      session_id:id,
+      point_no:Number(session.data.rally_no||0)+1,
+      set_no:Number(session.data.set_no||1),
+      server_id:serverId,
+      returner_id:returnerId,
+      winner_id:userWon?Number(managed.data.id):Number(opp.id),
+      surface,
+      pressure:Boolean(pressure),
+      serve_number:firstServeIn?1:2,
+      first_serve_in:firstServeIn,
+      serve_direction:serveDirection,
+      ace,
+      double_fault:doubleFault,
+      unreturned_serve:unreturned,
+      return_depth:returnDepth,
+      rally_length:rally,
+      rally_band:rallyBand,
+      ending,
+      at_net:atNet,
+      net_player_id:netPlayerId,
+      server_surface_elo:Number(tm.server_surface_elo||0)||null,
+      returner_surface_elo:Number(tm.returner_surface_elo||0)||null
+    },{onConflict:"session_id,point_no"});
+
+    let observedAnalytics:any=null;
+    if(completed&&!eventWrite.error){
+      const learned=await db.rpc("finalize_live_match_analytics",{
+        p_session_id:id,
+        p_date:String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10)
+      });
+      observedAnalytics=learned.error?{error:learned.error.message}:learned.data;
+    }
+
     if(completed){
       const won=us>os;
       const sets=log.filter((x:any)=>x.set_finished).map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ");
@@ -4289,7 +4329,10 @@ Deno.serve(async(req:Request)=>{
       ok:true,session:saved.data,
       opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},
       point_winner:lastPoint.winner,game_finished:gameFinished,set_finished:setFinished,set_winner:setWinner,
-      completed,win_probability:Math.round(prob*100),last_point:lastPoint
+      completed,win_probability:Math.round((serverIsUser?serverWinProb:1-serverWinProb)*100),
+      last_point:lastPoint,
+      point_analytics_error:eventWrite.error?eventWrite.error.message:null,
+      observed_analytics:observedAnalytics
     });
   }
 

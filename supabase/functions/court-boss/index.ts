@@ -2472,7 +2472,11 @@ Deno.serve(async(req:Request)=>{
     }).eq("id","demo");
     if(sync.error)return h({error:sync.error.message},500);
 
-    const trainingSessions=Array.isArray(body?.training)?body.training.slice(0,7):[];
+    let trainingSessions=Array.isArray(body?.training)?body.training.slice(0,7):[];
+    const careerFocus=String(current.data.career_focus||"mixed");
+    if(careerFocus==="doubles_only"&&!trainingSessions.length){
+      trainingSessions=["Double","Service","Retour","Double","Match play","Récupération","Repos"];
+    }
     const [anthony,facilityRows,progressRows]=await Promise.all([
       getManagedPlayer("id,current_ability,potential,player_attributes(*)"),
       db.from("facilities").select("level"),
@@ -2514,9 +2518,15 @@ Deno.serve(async(req:Request)=>{
       };
       const xp:any={};
       for(const s of trainingSessions){
-        const mult=.67+sessionStaff(String(s))/36+avgFacility/12;
+        const focusMult=careerFocus==="doubles_only"
+          ?(["Double","Service","Retour","Match play"].includes(String(s))?1.12:.96)
+          :careerFocus==="singles_priority"&&String(s)==="Double"
+            ?.90
+            :1;
+        const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult;
         for(const a of map[String(s)]||[])xp[a]=(xp[a]||0)+.52*mult;
       }
+      trainingResult.career_focus=careerFocus;
       const progressMap=new Map((progressRows.data??[]).map((x:any)=>[x.attribute,Number(x.xp||0)]));
       const attrUpdate:any={};
       let improved=0;
@@ -2642,10 +2652,16 @@ Deno.serve(async(req:Request)=>{
             p_year:Number(date.slice(0,4)),
             p_date:date
           });
-          const social=await db.rpc("refresh_social_relationships",{p_date:date});
+          const [playerDoublesRankings,specialistProgress,social]=await Promise.all([
+            db.rpc("refresh_world_doubles_player_rankings",{p_date:date}),
+            db.rpc("progress_doubles_specialists",{p_date:date}),
+            db.rpc("refresh_social_relationships",{p_date:date})
+          ]);
           doublesPairRefresh={
             ...(pairs.data||{}),
             normalization:norm.error?{error:norm.error.message}:norm.data,
+            playerRankings:playerDoublesRankings.error?{error:playerDoublesRankings.error.message}:playerDoublesRankings.data,
+            specialistProgress:specialistProgress.error?{error:specialistProgress.error.message}:specialistProgress.data,
             social:social.error?{error:social.error.message}:social.data
           };
         }

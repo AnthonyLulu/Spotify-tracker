@@ -1218,6 +1218,21 @@ window.toggleShortlist=async id=>{
  local.shortlist=active?[...new Set([...local.shortlist,id])]:local.shortlist.filter(x=>x!==id);
  persist();await loadManagement();closeOverlay();render();
 }
+function tournamentDoublesHistoryHtml(rows){
+ if(!Array.isArray(rows)||!rows.length)return '';
+ const team=(aId,aName,bId,bName,champ)=>{
+  if(!aName)return '—';
+  const a=aId?"<span class='click' onclick='openPlayer("+aId+")'>"+esc(aName)+"</span>":esc(aName);
+  const b=bName?(bId?"<span class='click' onclick='openPlayer("+bId+")'>"+esc(bName)+"</span>":esc(bName)):'—';
+  return (champ?'🏆 ':'')+a+' / '+b;
+ };
+ return "<div style='margin-top:14px'><div class='row between'><div><div class='eyebrow'>Archive double</div><h2>Palmarès double documenté</h2></div><span class='badge'>"+rows.length+" édition"+(rows.length>1?'s':'')+"</span></div>"+
+  "<div class='notice mini' style='margin-top:8px'><b>Couverture source :</b> le double est documenté partiellement entre 2000 et 2020. Les années absentes ne sont pas inventées.</div>"+
+  "<div class='table-wrap' style='margin-top:8px'><table class='table'><thead><tr><th>Année</th><th>Champions</th><th>Finalistes</th><th>Surface</th></tr></thead><tbody>"+
+  rows.map(h=>"<tr><td class='rank-num'>"+h.season+"</td><td><b>"+team(h.winner_a_id,h.winner_a_name,h.winner_b_id,h.winner_b_name,true)+"</b></td><td>"+team(h.runner_a_id,h.runner_a_name,h.runner_b_id,h.runner_b_name,false)+"</td><td>"+esc(h.surface||'—')+"</td></tr>").join('')+
+  "</tbody></table></div></div>";
+}
+
 window.openTournament=async id=>{
  const fallback=[...(tourRows||[]),...(boot.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>x.id===id);if(!id)return;
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
@@ -1235,7 +1250,7 @@ window.openTournament=async id=>{
   const completedDraw=d.completed_draw||[];
   const doublesProjection=d.doubles_main||[],doublesCompleted=d.doubles_completed_draw||[];
   const drawRounds=[...new Set(completedDraw.map(m=>m.round_name))];
-  const editionHistory=d.tournament_history||[],historyRecords=d.tournament_history_records||{};
+  const editionHistory=d.tournament_history||[],doublesEditionHistory=d.tournament_doubles_history||[],historyRecords=d.tournament_history_records||{};
   const historyMajor=['Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Challenger 175','Challenger 125'].includes(String(t.category||''));
 
   const managedId=Number(cr.managed_player_id||boot?.career?.managed_player_id||0);
@@ -1308,6 +1323,7 @@ window.openTournament=async id=>{
       <div class='table-wrap' style='margin-top:10px'><table class='table'><thead><tr><th>Année</th><th>Vainqueur</th><th>Finaliste</th><th>Score</th><th>Surface</th></tr></thead><tbody>
        ${editionHistory.map(h=>'<tr><td class="rank-num">'+h.season+'</td><td>'+(h.winner_player_id?'<b class="click" onclick="openPlayer('+h.winner_player_id+')">🏆 '+esc(h.winner_name)+'</b>':'<b>🏆 '+esc(h.winner_name||'—')+'</b>')+'</td><td>'+(h.runner_up_player_id?'<span class="click" onclick="openPlayer('+h.runner_up_player_id+')">'+esc(h.runner_up_name||'—')+'</span>':esc(h.runner_up_name||'—'))+'</td><td class="muted mini">'+esc(h.score||'—')+'</td><td>'+esc(h.surface||'—')+'</td></tr>').join('')}
       </tbody></table></div>
+      ${tournamentDoublesHistoryHtml(doublesEditionHistory)}
     </div>
    </template>
    <template id="tourForfeitsTpl"><div class="card"><h2>Forfaits</h2>${forfeits.length?forfeits.map(x=>{const p=Array.isArray(x.players)?x.players[0]:x.players;return `<div class="list-item row between">${p?`<div class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${isJunior?'Junior':'ATP'} #${p.junior_ranking||p.ranking||'—'}</div></div>`:'<div>Joueur indisponible</div>'}<span class="badge bad">${esc(x.reason||'Blessure')}</span></div>`}).join(''):'<div class="empty">Aucun forfait enregistré.</div>'}</div></template>

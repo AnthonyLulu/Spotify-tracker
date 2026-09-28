@@ -2833,6 +2833,7 @@ Deno.serve(async(req:Request)=>{
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
+        const aiFocusTraining=await db.rpc("run_ai_training_focus_cycle",{p_date:date});
         const archetypeRefresh=await db.rpc("refresh_player_archetypes",{p_date:date});
         const coachingDevelopment=await db.rpc("apply_player_coaching_development",{p_date:date});
         const coachingEnvironment=await db.rpc("apply_coaching_development_effects",{p_date:date});
@@ -2868,6 +2869,7 @@ Deno.serve(async(req:Request)=>{
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
+          aiFocusTraining:aiFocusTraining.error?{error:aiFocusTraining.error.message}:aiFocusTraining.data,
           archetypeRefresh:archetypeRefresh.error?{error:archetypeRefresh.error.message}:archetypeRefresh.data,
           coachingDevelopment:coachingDevelopment.error?{error:coachingDevelopment.error.message}:coachingDevelopment.data,
           coachingEnvironment:coachingEnvironment.error?{error:coachingEnvironment.error.message}:coachingEnvironment.data,

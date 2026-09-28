@@ -1632,7 +1632,7 @@ window.openTournament=async id=>{
 
    <template id="tourDoubleTpl">
     <div class="grid g2"><div class="card"><div class="eyebrow">Partenariat</div><h2>${activePartner?flags[activePartner.country]||'🏳️':''} ${activePartner?esc(activePartner.name):'Aucun partenaire'}</h2><div class="list-item row between"><span>Ton classement</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)}</b></div><div class="list-item row between"><span>Chimie</span><b>${pairScore(activePartner,'chem')}%</b></div>`:''}</div><div class="card"><div class="eyebrow">Tournoi</div><h2>${esc(t.name)} · Double</h2><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div>${doublesRun?`<div class="notice good"><b>Résultat :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts</div>`:isDoublesFinals?(doubleRule.can&&activePartner?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler les Finals double</button><div class="notice good mini" style="margin-top:8px">Top 8 Race · paire qualifiée automatiquement.</div>`:`<div class="notice bad mini" style="margin-top:8px">${esc(doubleRule.label)}</div><button class="soft-btn" style="width:100%;margin-top:8px" onclick="setRankKind('${isJuniorDoubleFinals?'junior_doubles_race':'doubles_race'}');closeOverlay();nav('rankings')">Voir la Race</button>`):activePartner?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler le double</button>`:`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="closeOverlay();nav('doubles')">Choisir un partenaire</button>`}</div></div>
-    <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Projection tableau</div><h2>Paires de double</h2></div><span class="badge">${doublesProjection.length} équipes</span></div><div class="table-wrap"><table class="table"><thead><tr><th>TDS</th><th>Équipe</th><th>Rangs double</th><th>Source</th></tr></thead><tbody>${doublesProjection.slice(0,32).map(x=>`<tr><td>#${x.seed}</td><td><b>${flags[x.player_a?.country]||'🏳️'} ${esc(x.player_a?.name)} / ${flags[x.player_b?.country]||'🏳️'} ${esc(x.player_b?.name)}</b></td><td>#${fmt(x.player_a?.doubles_ranking||0)} / #${fmt(x.player_b?.doubles_ranking||0)}</td><td><span class="badge ${x.source==='official'?'good':''}">${x.source==='official'?'Officiel':x.source==='atp-doubles-race'?'Race Double':x.source==='junior-doubles-race'?'Race Junior Double':x.source==='junior-simulated'?'Junior Double':'Index DB'}</span></td></tr>`).join('')}</tbody></table></div>${!doublesProjection.length?'<div class="empty">Aucune projection double disponible.</div>':''}</div>
+    <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Projection tableau</div><h2>Paires de double</h2></div><span class="badge">${doublesProjection.length} équipes</span></div><div class="table-wrap"><table class="table"><thead><tr><th>TDS</th><th>Équipe</th><th>Rangs double</th><th>Source</th></tr></thead><tbody>${doublesProjection.slice(0,32).map(x=>`<tr><td>#${x.seed}</td><td><b>${flags[x.player_a?.country]||'🏳️'} ${esc(x.player_a?.name)} / ${flags[x.player_b?.country]||'🏳️'} ${esc(x.player_b?.name)}</b></td><td>#${fmt(x.player_a?.doubles_ranking||0)} / #${fmt(x.player_b?.doubles_ranking||0)}</td><td><span class="badge ${x.source==='official'?'good':''}">${x.source==='official'?'Officiel':x.source==='affinity-pair'?'Paire active · affinité':x.source==='atp-doubles-race'?'Race Double':x.source==='junior-doubles-race'?'Race Junior Double':x.source==='junior-simulated'?'Junior Double':'Index DB'}</span></td></tr>`).join('')}</tbody></table></div>${!doublesProjection.length?'<div class="empty">Aucune projection double disponible.</div>':''}</div>
     ${doublesCompleted.length?`<div class="card" style="margin-top:12px"><div class="eyebrow">Ton parcours double</div><h2>Résultats</h2>${doublesCompleted.map(m=>`<div class="list-item"><div class="row between"><b>${esc(m.round_name)}</b><b>${esc(m.score)}</b></div><div>${esc(m.user_pair)} vs ${esc(m.opponent_pair)}</div><div class="muted mini">Vainqueurs : ${esc(m.winner_pair)}</div></div>`).join('')}</div>`:''}
    </template>
 
@@ -1793,7 +1793,24 @@ window.openMatch=idx=>{
     <div class="card" style="margin-top:12px"><h2>Recommandation coach</h2><p class="muted">${errors!=='—'&&Number(errors)>Number(winners)?'Réduire légèrement la prise de risque sur le prochain match.':net!=='—'&&Number(net)>65?'Le jeu vers l’avant a été efficace. Conserver les montées au filet sur surface rapide.':rally!=='—'&&Number(rally)>7?'Les échanges sont longs : surveiller la fatigue et privilégier les schémas service + 1.':'Plan de jeu équilibré. Ajuster surtout selon le prochain adversaire.'}</p></div>
   </div></div>`;
 }
-window.pairScore=(p,k)=>{const seed=(Number(p.id||1)*17+(k==='chem'?7:k==='comp'?13:19))%19;return clamp(68+seed,55,94)}
+window.pairScore=(p,k)=>{
+ const rows=management?.partnerships||[];
+ const rel=rows.find(x=>
+   Number(x.player_b_id)===Number(p?.id)||
+   Number(x.player_a_id)===Number(p?.id)
+ );
+ if(rel){
+   if(k==='chem')return Number(rel.chemistry||60);
+   if(k==='comp')return Number(rel.compatibility||60);
+   return Number(rel.pair_strength||60);
+ }
+ const cr=career();
+ const rankFit=Math.max(0,18-Math.min(18,Math.abs(Number(p?.doubles_ranking||1500)-Number(cr.doubles_rank||1500))/100));
+ const nation=String(p?.country||'')===String(cr.country||'')?6:0;
+ const level=Math.max(0,Math.min(18,(Number(p?.current_ability||55)-45)*.9));
+ const base=54+rankFit+nation+level;
+ return clamp(Math.round(k==='power'?base+3:k==='comp'?base:base-2),40,94)
+}
 window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
 window.editCareer=async(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render();try{await managerAction('edit_career',0,{field:k,value:v});boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};persist();render()}catch(e){alert(e.message)}}

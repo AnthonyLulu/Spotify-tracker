@@ -1567,6 +1567,49 @@ function developmentTypeDescription(v){
   :v==='late'?'Progression plus lente avec marge de développement plus tardive.'
   :'Courbe de progression équilibrée, pic généralement au milieu de la vingtaine.';
 }
+function estimatedTacticalProfileFromScouting(attrs={},report=null){
+ const v=k=>Number(attrs?.[k]);
+ const ok=k=>Number.isFinite(v(k));
+ if(!Object.keys(attrs||{}).length)return {};
+ const clamp=n=>Math.max(1,Math.min(20,Math.round(n)));
+ const val=(k,f=10)=>ok(k)?v(k):f;
+ return {
+   baseline_depth:clamp(12+val('patience')*.25-val('aggression')*.20+val('court_positioning')*.12),
+   net_frequency:clamp(val('volley')*.30+val('net_positioning')*.30+val('transition_game')*.20+val('touch')*.20),
+   rally_length_preference:clamp(val('rally_tolerance')*.45+val('patience')*.25+val('stamina')*.20+val('consistency')*.10),
+   aggression_bias:clamp(val('aggression')*.42+val('forehand_power')*.20+val('killer_instinct')*.18+val('serve_plus_one')*.20),
+   risk_tolerance:clamp(val('aggression')*.28+val('confidence')*.20+val('killer_instinct')*.20+Math.max(1,21-val('patience'))*.12+val('shot_selection')*.20),
+   serve_plus_one_bias:clamp(val('serve_plus_one')*.60+val('first_serve_quality')*.20+val('forehand_power')*.20),
+   return_position:val('return_aggression')>=16&&val('reaction')>=15?'Agressive':val('return_consistency')>=16&&val('patience')>=14?'Reculée':'Neutre',
+   forehand_bias:clamp(val('forehand_power')*.35+val('forehand_accuracy')*.25+val('aggression')*.20+val('shot_selection')*.20),
+   drop_shot_frequency:clamp(val('drop_shot')*.55+val('touch')*.25+val('decision_making')*.20),
+   slice_frequency:clamp(val('slice')*.55+val('touch')*.20+val('patience')*.15+val('decision_making')*.10),
+   pace_preference:clamp(val('forehand_power')*.22+val('backhand_power')*.22+val('serve_power')*.18+val('aggression')*.18+val('acceleration')*.20),
+   defense_to_attack_bias:clamp(val('defense_to_attack')*.60+val('acceleration')*.20+val('decision_making')*.20),
+   tactical_identity:report?.archetype_read||report?.style_read||'Profil estimé'
+ };
+}
+function estimatedTacticalTraitsFromScouting(attrs={},profile={}){
+ const val=(k,f=10)=>Number.isFinite(Number(attrs?.[k]))?Number(attrs[k]):f;
+ const rows=[
+  ['Construit autour du service + 1',42+(Number(profile.serve_plus_one_bias||10)-10)*4+(val('first_serve_quality')-10)*1.2],
+  ['Attaque la deuxième balle adverse',40+(val('return_aggression')-10)*4+(val('reaction')-10)*1.5],
+  ['Cherche régulièrement le filet',40+(Number(profile.net_frequency||10)-10)*4+(val('transition_game')-10)*1.3],
+  ['Contourne pour jouer son coup droit',40+(Number(profile.forehand_bias||10)-10)*4+(val('forehand_power')-10)*1.2],
+  ['Accepte les longs échanges',40+(Number(profile.rally_length_preference||10)-10)*4+(val('rally_tolerance')-10)*1.2],
+  ['Utilise souvent l’amortie',38+(Number(profile.drop_shot_frequency||10)-10)*4.5+(val('touch')-10)],
+  ['Casse le rythme avec le slice',38+(Number(profile.slice_frequency||10)-10)*4.5+(val('touch')-10)],
+  ['Transforme la défense en attaque',40+(Number(profile.defense_to_attack_bias||10)-10)*4+(val('defensive_skill')-10)*1.4],
+  ['Recherche une cadence élevée',40+(Number(profile.pace_preference||10)-10)*4+(val('acceleration')-10)*1.2],
+  ['Hausse l’agressivité sur les grands points',40+(val('big_points')-10)*3.5+(Number(profile.aggression_bias||10)-10)*1.5],
+  ['Coupe beaucoup au filet en double',40+(val('poaching')-10)*4+(val('doubles_communication')-10)*1.2],
+  ['Varie fortement les zones et effets au service',40+(val('serve_variety')-10)*4.5]
+ ].map(([trait_name,intensity])=>({trait_name,intensity:Math.max(0,Math.min(96,Math.round(Number(intensity))))}))
+  .filter(x=>x.intensity>=72)
+  .sort((x,y)=>y.intensity-x.intensity)
+  .slice(0,5);
+ return rows;
+}
 function playerTraitBadges(attrs={},dev={},focus='mixed',report=null){
  const n=k=>Number(attrs?.[k]);
  const ok=k=>Number.isFinite(n(k));
@@ -1658,6 +1701,8 @@ window.openPlayer=async id=>{
   const potentialMax=isManaged?Number(dev.potential_star_max??abilityStarValue(p.potential)):(scoutReport?.estimated_potential_star_max!=null?Number(scoutReport.estimated_potential_star_max):null);
   const traitDev=isManaged?dev:{development_type:String(scoutReport?.development_type_read||'').includes('late')?'late':String(scoutReport?.development_type_read||'').includes('early')?'early':''};
   const playerTraits=playerTraitBadges(knownAttrs,traitDev,String(p.career_focus||'mixed'),scoutReport);
+  const visibleTacticalProfile=isManaged?tacticalProfile:estimatedTacticalProfileFromScouting(knownAttrs,scoutReport);
+  const visibleTacticalTraits=isManaged?tacticalTraits:estimatedTacticalTraitsFromScouting(knownAttrs,visibleTacticalProfile);
   const ncaa=p.ncaa_current?(ncaaRows.find(x=>String(x.status||'')==='Active')||null):null;
   const ncaaIsAlumni=String(p.ncaa_status||'')==='Alumni'||String(ncaaCareer?.status||'')==='Alumni';
   const ncaaHistorical=!p.ncaa_current&&!!p.ncaa_verified&&!ncaaIsAlumni;
@@ -1840,37 +1885,37 @@ ${p.bio_source?`<div class="muted micro" style="margin-top:6px">Bio : ${esc(p.bi
     </div>
     ${surfaceAnalyticsPanel}
     <div class="card" style="margin-top:12px">
-      <div class="row between"><div><div class="eyebrow">Identité tactique</div><h2>${esc(tacticalProfile.tactical_identity||dev.preferred_archetype||p.style||'À préciser')}</h2></div><span class="badge">Évolutif</span></div>
+      <div class="row between"><div><div class="eyebrow">Identité tactique</div><h2>${esc(visibleTacticalProfile.tactical_identity||dev.preferred_archetype||p.style||'À préciser')}</h2></div><span class="badge">Évolutif</span></div>
       <div class="kpi-strip" style="margin-top:8px">
-       <div class="kpi"><span class="muted micro">Agressivité</span><b>${tacticalProfile.aggression_bias??'—'}/20</b></div>
-       <div class="kpi"><span class="muted micro">Prise de risque</span><b>${tacticalProfile.risk_tolerance??'—'}/20</b></div>
-       <div class="kpi"><span class="muted micro">Montées filet</span><b>${tacticalProfile.net_frequency??'—'}/20</b></div>
-       <div class="kpi"><span class="muted micro">Rallyes longs</span><b>${tacticalProfile.rally_length_preference??'—'}/20</b></div>
+       <div class="kpi"><span class="muted micro">Agressivité</span><b>${visibleTacticalProfile.aggression_bias??'—'}/20</b></div>
+       <div class="kpi"><span class="muted micro">Prise de risque</span><b>${visibleTacticalProfile.risk_tolerance??'—'}/20</b></div>
+       <div class="kpi"><span class="muted micro">Montées filet</span><b>${visibleTacticalProfile.net_frequency??'—'}/20</b></div>
+       <div class="kpi"><span class="muted micro">Rallyes longs</span><b>${visibleTacticalProfile.rally_length_preference??'—'}/20</b></div>
       </div>
       <div class="grid g2" style="margin-top:8px">
        <div>
-        <div class="list-item row between"><span>Profondeur de position</span><b>${tacticalProfile.baseline_depth??'—'}/20</b></div>
-        <div class="list-item row between"><span>Service + 1</span><b>${tacticalProfile.serve_plus_one_bias??'—'}/20</b></div>
-        <div class="list-item row between"><span>Retour</span><b>${esc(tacticalProfile.return_position||'—')}</b></div>
-        <div class="list-item row between"><span>Recherche coup droit</span><b>${tacticalProfile.forehand_bias??'—'}/20</b></div>
+        <div class="list-item row between"><span>Profondeur de position</span><b>${visibleTacticalProfile.baseline_depth??'—'}/20</b></div>
+        <div class="list-item row between"><span>Service + 1</span><b>${visibleTacticalProfile.serve_plus_one_bias??'—'}/20</b></div>
+        <div class="list-item row between"><span>Retour</span><b>${esc(visibleTacticalProfile.return_position||'—')}</b></div>
+        <div class="list-item row between"><span>Recherche coup droit</span><b>${visibleTacticalProfile.forehand_bias??'—'}/20</b></div>
        </div>
        <div>
-        <div class="list-item row between"><span>Amorties</span><b>${tacticalProfile.drop_shot_frequency??'—'}/20</b></div>
-        <div class="list-item row between"><span>Slice</span><b>${tacticalProfile.slice_frequency??'—'}/20</b></div>
-        <div class="list-item row between"><span>Cadence</span><b>${tacticalProfile.pace_preference??'—'}/20</b></div>
-        <div class="list-item row between"><span>Défense → attaque</span><b>${tacticalProfile.defense_to_attack_bias??'—'}/20</b></div>
+        <div class="list-item row between"><span>Amorties</span><b>${visibleTacticalProfile.drop_shot_frequency??'—'}/20</b></div>
+        <div class="list-item row between"><span>Slice</span><b>${visibleTacticalProfile.slice_frequency??'—'}/20</b></div>
+        <div class="list-item row between"><span>Cadence</span><b>${visibleTacticalProfile.pace_preference??'—'}/20</b></div>
+        <div class="list-item row between"><span>Défense → attaque</span><b>${visibleTacticalProfile.defense_to_attack_bias??'—'}/20</b></div>
        </div>
       </div>
-      <div class="muted micro" style="margin-top:8px">Ces tendances sont recalculées quand le profil technique et mental évolue. Elles influencent le moteur de match et la sélection des tournois.</div>
+      <div class="muted micro" style="margin-top:8px">Ces tendances évoluent avec le profil. ${isManaged?'Lecture interne complète':scoutReport?'Estimation du recruteur':'Données tactiques masquées sans scouting'}.</div>
     </div>
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
-       <div class="row between"><div><div class="eyebrow">Traits préférés</div><h2>Comportements récurrents</h2></div><span class="badge">${tacticalTraits.length}</span></div>
-       ${tacticalTraits.length?`<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${tacticalTraits.map(x=>`<span class="badge ${Number(x.intensity)>=85?'good':Number(x.intensity)>=72?'warn':''}">${esc(x.trait_name)} · ${x.intensity}%</span>`).join('')}</div>`:'<div class="empty">Aucun trait dominant détecté.</div>'}
+       <div class="row between"><div><div class="eyebrow">Traits préférés</div><h2>Comportements récurrents</h2></div><span class="badge">${visibleTacticalTraits.length}</span></div>
+       ${visibleTacticalTraits.length?`<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${visibleTacticalTraits.map(x=>`<span class="badge ${Number(x.intensity)>=85?'good':Number(x.intensity)>=72?'warn':''}">${esc(x.trait_name)} · ${x.intensity}%</span>`).join('')}</div>`:'<div class="empty">Aucun trait dominant détecté.</div>'}
        <div class="muted micro" style="margin-top:8px">Les traits ne sont pas figés : un changement technique, physique ou tactique peut les faire apparaître ou disparaître.</div>
       </div>
       <div class="card">
-       <div class="row between"><div><div class="eyebrow">IA calendrier</div><h2>${seasonPlan?esc(String(seasonPlan.plan_type||'').replaceAll('_',' ')):'Plan non généré'}</h2></div>${seasonPlan?`<span class="badge">${seasonPlan.season}</span>`:''}</div>
+       <div class="row between"><div><div class="eyebrow">${isManaged?'IA calendrier':'Projection calendrier'}</div><h2>${seasonPlan?esc(String(seasonPlan.plan_type||'').replaceAll('_',' ')):'Plan non généré'}</h2></div>${seasonPlan?`<span class="badge">${seasonPlan.season}</span>`:''}</div>
        ${seasonPlan?`<div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted micro">Tournois cible</span><b>${seasonPlan.target_events}</b></div><div class="kpi"><span class="muted micro">Surface</span><b>${esc(seasonPlan.preferred_surface||'—')}</b></div><div class="kpi"><span class="muted micro">Repos</span><b>${seasonPlan.rest_bias}/20</b></div><div class="kpi"><span class="muted micro">Prestige</span><b>${seasonPlan.prestige_bias}/20</b></div></div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><span class="badge">Voyage ${seasonPlan.travel_tolerance}/20</span><span class="badge">Développement ${seasonPlan.development_bias}/20</span><span class="badge">Double ${seasonPlan.doubles_bias}/20</span></div><div class="muted mini" style="margin-top:8px">${esc(seasonPlan.reason||'')}</div>`:'<div class="empty">Le plan apparaîtra au prochain cycle de planification.</div>'}
       </div>
     </div>

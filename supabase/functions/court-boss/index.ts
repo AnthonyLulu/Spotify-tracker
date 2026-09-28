@@ -4267,9 +4267,9 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/world")&&req.method==="GET"){
-    const world=await db.rpc("court_boss_world_stats");
-    if(world.error)return h({error:world.error.message},500);
-    return h(world.data??{
+    const stats=await db.rpc("court_boss_world_stats");
+    if(stats.error)return h({error:stats.error.message},500);
+    return h(stats.data??{
       rankingReferenceDate:"2025-12-01",
       worldRankingCapacity:30000
     });

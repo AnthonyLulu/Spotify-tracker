@@ -66,6 +66,7 @@ let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
+let trainingPreview=null,trainingPreviewLoading=false;
 let local={date:'2025-12-01',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
@@ -216,6 +217,7 @@ window.nav=async r=>{
    loading('Chargement de la base mondiale du staff…');
    await loadStaffWorld();
   }
+  if(r==='training'&&!trainingPreview)await loadTrainingPreview();
  }catch(e){
   console.warn('Court Boss route load failed',r,e);
   shell(`<div class="card"><h2>Chargement impossible</h2><p class="muted">${esc(e.message)}</p><div class="row"><button class="primary" onclick="nav('${esc(r)}')">Réessayer</button><button class="ghost" onclick="nav('home')">Accueil</button></div></div>`);
@@ -824,14 +826,63 @@ function academy(){
 window.setAcademyFocus=async(id,focus)=>{try{await managerAction('academy_focus',id,{focus});await loadManagement();render()}catch(e){alert(e.message)}}
 window.renewAcademyPlayer=async id=>{try{await managerAction('renew_academy_player',id);await loadManagement();render()}catch(e){alert(e.message)}}
 window.releaseAcademyPlayer=async(id,name)=>{if(!confirm('Libérer '+name+' de l’académie ?'))return;try{await managerAction('release_academy_player',id);await loadManagement();render()}catch(e){alert(e.message)}}
+async function loadTrainingPreview(force=false){
+ if(trainingPreviewLoading)return trainingPreview;
+ if(trainingPreview&&!force)return trainingPreview;
+ trainingPreviewLoading=true;
+ try{
+  trainingPreview=await get('/api/training-preview',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({training:local.training})
+  });
+  return trainingPreview;
+ }catch(e){
+  trainingPreview={error:e.message};
+  return trainingPreview;
+ }finally{
+  trainingPreviewLoading=false;
+ }
+}
 function training(){
  const sessions=['Service','Retour','Coup droit','Revers','Déplacements','Endurance','Match play','Double','Récupération','Repos'];
- return `<div class="section-head"><div><div class="eyebrow">Performance</div><h1>Entraînement hebdomadaire</h1><div class="muted">La charge influe sur progression, forme, fatigue et risque médical.</div></div></div>
- <div class="card"><div class="stack">${local.training.map((x,i)=>`<div class="list-item row between"><div><b>Jour ${i+1}</b><div class="muted mini">${i<5?'Séance principale':'Week-end'}</div></div><select class="select" style="width:auto" onchange="setTraining(${i},this.value)">${sessions.map(s=>`<option ${s===x?'selected':''}>${s}</option>`).join('')}</select></div>`).join('')}</div></div>
- <div class="grid g3" style="margin-top:12px"><div class="card"><h3>Charge actuelle</h3><div class="big">${trainingLoad()}</div><div class="muted">/ 14 conseillé</div></div><div class="card"><h3>Risque fatigue</h3><div class="big">${career().fatigue||18}%</div></div><div class="card"><h3>Staff performance</h3><div class="big">${Math.round((boot.staff||[]).reduce((a,x)=>a+x.skill,0)/Math.max(1,(boot.staff||[]).length))}/20</div></div></div>`
+ const p=trainingPreview&&!trainingPreview.error?trainingPreview:null;
+ const load=p?.load??trainingLoad();
+ const min=p?.recommended_load?.min??9,max=p?.recommended_load?.max??12;
+ const inRange=load>=min&&load<=max;
+ const risk=String(p?.risk||((career().fatigue||18)>=65?'Élevé':(career().fatigue||18)>=50?'Modéré':'Maîtrisé'));
+ const riskClass=risk==='Élevé'?'bad':risk==='Modéré'?'warn':'good';
+ const mult=p?.multiplier!=null?Number(p.multiplier):null;
+ const dev=p?.development||{};
+ const topTargets=(p?.targets||[]).slice(0,5);
+ return `<div class="section-head"><div><div class="eyebrow">Performance · development-v2</div><h1>Entraînement hebdomadaire</h1><div class="muted">Chaque séance est pondérée par l’âge, le potentiel, la personnalité de développement, le staff, les installations, la fatigue et l’orientation simple/double.</div></div><button class="soft-btn" onclick="refreshTrainingPreview()">↻ Réanalyser</button></div>
+ ${trainingPreviewLoading?'<div class="card"><div class="loader">Analyse du plan par le staff…</div></div>':''}
+ ${trainingPreview?.error?`<div class="card"><span class="badge bad">Analyse indisponible</span><div class="muted" style="margin-top:8px">${esc(trainingPreview.error)}</div></div>`:''}
+ <div class="grid g3">
+  <div class="card"><div class="eyebrow">Charge</div><div class="big">${load}</div><div class="muted">Conseillé : ${min}–${max}</div><div style="margin-top:8px"><span class="badge ${inRange?'good':'warn'}">${inRange?'Zone optimale':'À ajuster'}</span></div></div>
+  <div class="card"><div class="eyebrow">Risque physique</div><div class="big">${esc(risk)}</div><div style="margin-top:8px"><span class="badge ${riskClass}">Fatigue ${p?.fatigue??career().fatigue??18}% · forme ${p?.fitness??career().fitness??90}%</span></div></div>
+  <div class="card"><div class="eyebrow">Qualité progression</div><div class="big">${mult==null?'—':'×'+mult.toFixed(2)}</div><div class="muted">Staff ${p?.staff_score??Math.round((boot.staff||[]).reduce((a,x)=>a+x.skill,0)/Math.max(1,(boot.staff||[]).length))}/20 · installations ${p?.facility_score??'—'}</div></div>
+ </div>
+ <div class="grid g2" style="margin-top:12px">
+  <div class="card"><div class="row between"><div><div class="eyebrow">Plan de la semaine</div><h2>7 jours</h2></div><span class="pill">${esc(p?.player_name||career().player_name||'Joueur')} · ${p?.age??career().age??'—'} ans</span></div><div class="stack" style="margin-top:10px">${local.training.map((x,i)=>`<div class="list-item row between"><div><b>Jour ${i+1}</b><div class="muted mini">${i<5?'Séance principale':'Week-end'}</div></div><select class="select" style="width:auto" onchange="setTraining(${i},this.value)">${sessions.map(s=>`<option ${s===x?'selected':''}>${s}</option>`).join('')}</select></div>`).join('')}</div></div>
+  <div class="card"><div class="eyebrow">Profil de développement</div><h2>${esc(dev.type||'standard')}</h2>
+   <div class="kpi-strip" style="margin-top:10px">
+    <div class="kpi"><span class="muted micro">Niveau</span><b>${p?starRatingHtml(p.current_stars):'—'}</b><small class="muted micro">CA ${p?.current_ability??career().current_ability??'—'}</small></div>
+    <div class="kpi"><span class="muted micro">Potentiel</span><b>${p?starRatingHtml(p.potential_stars):'—'}</b><small class="muted micro">PA ${p?.potential??career().potential??'—'}</small></div>
+   </div>
+   <div class="list-item row between"><span>Vitesse de développement</span><b>${dev.development_rate??'—'}/20</b></div>
+   <div class="list-item row between"><span>Professionnalisme</span><b>${dev.professionalism??'—'}/20</b></div>
+   <div class="list-item row between"><span>Réceptivité au coaching</span><b>${dev.coachability??'—'}/20</b></div>
+   <div class="list-item row between"><span>Pic théorique</span><b>${dev.peak_age??'—'} ans</b></div>
+   <div class="list-item row between"><span>Déclin à partir de</span><b>${dev.decline_start_age??'—'} ans</b></div>
+  </div>
+ </div>
+ ${topTargets.length?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Rendement estimé</div><h2>Meilleures séances pour ce joueur</h2></div><span class="badge">Orientation ${esc(p?.career_focus||career().career_focus||'mixed')}</span></div><div class="stack" style="margin-top:8px">${topTargets.map((t,i)=>`<div class="list-item row between"><span><b>#${i+1} ${esc(t.session)}</b></span><span class="badge ${i<2?'good':''}">indice ${Number(t.score).toFixed(2)}</span></div>`).join('')}</div></div>`:''}
+ ${p?.warnings?.length?`<div class="card" style="margin-top:12px"><div class="eyebrow">Alertes du staff</div><h2>À surveiller</h2><div class="stack" style="margin-top:8px">${p.warnings.map(w=>`<div class="list-item"><span class="badge warn">!</span> ${esc(w)}</div>`).join('')}</div></div>`:''}`
 }
 function trainingLoad(){return local.training.reduce((a,s)=>a+(['Endurance','Match play','Déplacements'].includes(s)?3:['Service','Retour','Coup droit','Revers','Double'].includes(s)?2:s==='Récupération'?0:-1),0)}
-window.setTraining=(i,v)=>{local.training[i]=v;persist();render()}
+window.refreshTrainingPreview=async()=>{trainingPreview=null;await loadTrainingPreview(true);render()}
+window.setTraining=async(i,v)=>{local.training[i]=v;trainingPreview=null;persist();render();await loadTrainingPreview(true);render()}
 function scouting(){
  const shortlist=management?.shortlist||[];
  const reports=boot.scoutingReports||[];
@@ -2596,6 +2647,7 @@ window.simulateWeek=async()=>{
     boot=await get('/api/bootstrap');
     if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
     await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
+    trainingPreview=null;if(route==='training')await loadTrainingPreview(true);
     if(route==='history')await loadHistory();
     return;
   }
@@ -2614,6 +2666,7 @@ window.simulateWeek=async()=>{
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
+  trainingPreview=null;if(route==='training')await loadTrainingPreview(true);
   if(route==='history')await loadHistory();
  }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}

@@ -1832,7 +1832,7 @@ Deno.serve(async(req:Request)=>{
     }
     let rows=[...byKey.values()];
     const keys=rows.map((x:any)=>x.competition_key).filter(Boolean);
-    const groups=rows.map((x:any)=>x.history_group).filter(Boolean);
+    const groups=[...new Set(rows.map((x:any)=>String(x.history_group||"")).filter(Boolean))];
     const histCounts=new Map<string,number>(),groupCounts=new Map<string,number>(),latestHist=new Map<string,any>(),latestGroupHist=new Map<string,any>();
     for(let i=0;i<keys.length;i+=200){
       const hr=await db.from("competition_history")

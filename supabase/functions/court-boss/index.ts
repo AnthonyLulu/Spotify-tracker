@@ -3739,16 +3739,21 @@ Deno.serve(async(req:Request)=>{
       const jp=await db.rpc("junior_points_for",{p_event_type:"singles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
       if(jp.error)return h({error:jp.error.message},500);
       userPoints=Number(jp.data||0);
+    }else if(isAtpSinglesFinals){
+      const rrWins=matchRows.filter((m:any)=>String(m.round_name||"").startsWith("Groupe ")&&Number(m.winner_id)===managedId).length;
+      const sfWin=matchRows.some((m:any)=>m.round_name==="SF"&&Number(m.winner_id)===managedId)?1:0;
+      const finalWin=matchRows.some((m:any)=>m.round_name==="F"&&Number(m.winner_id)===managedId)?1:0;
+      userPoints=rrWins*200+sfWin*400+finalWin*500;
     }else{
-      const basePoints=(()=>{
-        const cat=String(t.category||t.level||"");
-        if(/Grand Chelem/i.test(cat))return 2000;if(/Masters 1000/i.test(cat))return 1000;
-        if(/ATP 500/i.test(cat))return 500;if(/ATP 250/i.test(cat))return 250;
-        const m=cat.match(/Challenger\s+(175|125|100|75|50)/i);if(m)return Number(m[1]);
-        if(/M25/i.test(cat))return 25;if(/M15/i.test(cat))return 15;return 50;
-      })();
-      const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:userRound==="R16"?.1:userRound==="R32"?.05:userRound==="Qualifié"?.03:.01;
-      userPoints=Math.max(0,Math.round(basePoints*mult));
+      const roundCode=userRound==="Champion"?"W":userRound;
+      const rp=await db.rpc("world_tournament_round_points",{
+        p_category:String(t.category||t.level||""),
+        p_winner_points:Number(t.winner_points||0),
+        p_draw_size:Number(t.singles_draw_size||t.draw_size||32),
+        p_round:roundCode
+      });
+      if(rp.error)return h({error:rp.error.message},500);
+      userPoints=Math.max(0,Number(rp.data||0));
     }
     const prizePool=Number(t.prize_money||0);
     const prizeMult=userRound==="Champion"?.18:userRound==="F"?.10:userRound==="SF"?.055:(userRound==="QF"||userRound==="Phase de groupes")?.03:userRound==="R16"?.015:userRound==="R32"?.008:.003;
@@ -3803,6 +3808,10 @@ Deno.serve(async(req:Request)=>{
         p_match_date:String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE)
       });
       matchLearning=learning.error?{error:learning.error.message}:learning.data;
+      if(!isJuniorSingles){
+        const worldSync=await db.rpc("populate_world_results_from_tournament_run",{p_run_id:Number(runId)});
+        if(worldSync.error)return h({error:worldSync.error.message},500);
+      }
     }
 
     const userAnalytics:any=advBy.get(Number(user.id))||{};

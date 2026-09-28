@@ -975,7 +975,8 @@ window.renderPalmaresHtml=function(d,p){
   singlesHistory.forEach(x=>{
     const y=String(x.season||String(x.tournament_date||'').slice(0,4));
     (allHistoryByYear[y]??=[]).push(x);
-    if(!x.is_grand_slam)return;
+    // Name matching is the reliable identity for the four majors. Imported
+    // rows may have an incomplete flag but must still render in Slam history.
     const k=slamKey(x.tournament_name);
     if(!k)return;
     historyByYear[y]=historyByYear[y]||{};

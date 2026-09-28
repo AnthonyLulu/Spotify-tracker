@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:16,development_model:"development-v3",match_model:"matchup-v4/point-v2+live-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:17,development_model:"development-v3",match_model:"matchup-v4/point-v2+live-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2823,6 +2823,7 @@ Deno.serve(async(req:Request)=>{
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
+        const archetypeRefresh=await db.rpc("refresh_player_archetypes",{p_date:date});
         const coachingDevelopment=await db.rpc("apply_player_coaching_development",{p_date:date});
         const coachingEnvironment=await db.rpc("apply_coaching_development_effects",{p_date:date});
         const ceilingRefresh=await db.rpc("refresh_changed_player_attribute_ceilings",{p_date:date});
@@ -2846,6 +2847,7 @@ Deno.serve(async(req:Request)=>{
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
+          archetypeRefresh:archetypeRefresh.error?{error:archetypeRefresh.error.message}:archetypeRefresh.data,
           coachingDevelopment:coachingDevelopment.error?{error:coachingDevelopment.error.message}:coachingDevelopment.data,
           coachingEnvironment:coachingEnvironment.error?{error:coachingEnvironment.error.message}:coachingEnvironment.data,
           ceilingRefresh:ceilingRefresh.error?{error:ceilingRefresh.error.message}:ceilingRefresh.data,

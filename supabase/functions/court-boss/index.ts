@@ -4387,7 +4387,7 @@ Deno.serve(async(req:Request)=>{
       if(fit.error)return h({error:fit.error.message},500);
       const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
       const role=String(p.primary_role||"Staff"),low=role.toLowerCase();
-      const skill=low.includes("kin")||low.includes("ost")||low.includes("méd")||low.includes("med")?Number(p.medical_rating||10):low.includes("phys")?Number(p.fitness_rating||10):low.includes("recrut")||low.includes("scout")?Number(p.scouting_rating||10):low.includes("anal")?Math.max(Number(p.tactical_rating||10),Number(p.scouting_rating||10)):low.includes("mental")?Number(p.mental_rating||10):low.includes("agent")?Number(p.negotiation_rating||10):Number(p.coach_rating||10);
+      const skill=low.includes("double")?Number(p.doubles_coaching_rating||p.coach_rating||10):low.includes("kin")||low.includes("ost")||low.includes("méd")||low.includes("med")?Number(p.medical_rating||10):low.includes("phys")?Number(p.fitness_rating||10):low.includes("recrut")||low.includes("scout")?Number(p.scouting_rating||10):low.includes("anal")?Math.max(Number(p.tactical_rating||10),Number(p.scouting_rating||10)):low.includes("mental")?Number(p.mental_rating||10):low.includes("agent")?Number(p.negotiation_rating||10):Number(p.coach_rating||10);
       const weekly=Math.max(100,Math.round(Number(p.asking_weekly_cost||500)));
       const signing=Math.round(weekly*(1.35+Number(p.reputation||10)*.055));
       const offers=await db.from("staff_competing_offers").select("id",{count:"exact",head:true}).eq("staff_profile_id",id).eq("status","pending");
@@ -4640,7 +4640,9 @@ Deno.serve(async(req:Request)=>{
           if(profile.data){
             const p:any=profile.data;
             const role=String(p.primary_role||"");
-            const skill=role.toLowerCase().includes("kin")||role.toLowerCase().includes("ost")
+            const skill=role.toLowerCase().includes("double")
+              ?Number(p.doubles_coaching_rating||p.coach_rating||10)
+              :role.toLowerCase().includes("kin")||role.toLowerCase().includes("ost")
               ?Number(p.medical_rating||10)
               :role.toLowerCase().includes("phys")
                 ?Number(p.fitness_rating||10)

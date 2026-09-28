@@ -1205,7 +1205,12 @@ Deno.serve(async(req:Request)=>{
       topPlayers:top.data??[],
       upcoming:(events.data??[])
         .filter((x:any)=>String(x.start_date)>=String(career.data?.career_date||AGE_REFERENCE_DATE))
-        .filter((x:any)=>String(career.data?.career_focus||"mixed")!=="doubles_only"||Boolean(x.doubles))
+        .filter((x:any)=>{
+          const focus=String(career.data?.career_focus||"mixed");
+          if(focus==="doubles_only")return Boolean(x.doubles);
+          if(focus==="singles_only")return Boolean(x.singles);
+          return true;
+        })
         .slice(0,40),
       injuries:injuries.data??[],
       managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===Number(career.data?.managed_player_id)&&x.status==="Active")??null,
@@ -2488,6 +2493,8 @@ Deno.serve(async(req:Request)=>{
     const careerFocus=String(current.data.career_focus||"mixed");
     if(careerFocus==="doubles_only"&&!trainingSessions.length){
       trainingSessions=["Double","Service","Retour","Double","Match play","Récupération","Repos"];
+    }else if(careerFocus==="singles_only"&&!trainingSessions.length){
+      trainingSessions=["Service","Retour","Coup droit","Revers","Match play","Déplacements","Récupération"];
     }
     const [anthony,facilityRows,progressRows]=await Promise.all([
       getManagedPlayer("id,current_ability,potential,player_attributes(*)"),
@@ -2532,9 +2539,11 @@ Deno.serve(async(req:Request)=>{
       for(const s of trainingSessions){
         const focusMult=careerFocus==="doubles_only"
           ?(["Double","Service","Retour","Match play"].includes(String(s))?1.12:.96)
-          :careerFocus==="singles_priority"&&String(s)==="Double"
-            ?.90
-            :1;
+          :careerFocus==="singles_only"
+            ?(String(s)==="Double"?.30:["Service","Retour","Coup droit","Revers","Match play"].includes(String(s))?1.08:1)
+            :careerFocus==="singles_priority"&&String(s)==="Double"
+              ?.90
+              :1;
         const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult;
         for(const a of map[String(s)]||[])xp[a]=(xp[a]||0)+.52*mult;
       }
@@ -3351,6 +3360,9 @@ Deno.serve(async(req:Request)=>{
     const err=tour.error||career.error||anth.error||oldRun.error||partnership.error;
     if(err)return h({error:err.message},500);
     if(!tour.data||!career.data||!anth.data)return h({error:"Données carrière incomplètes"},404);
+    if(String(career.data.career_focus||"mixed")==="singles_only"){
+      return h({error:"Orientation Simple exclusivement : ce joueur ne participe pas aux tableaux de double.",career_focus:"singles_only",singles_only:true},409);
+    }
     if(!tour.data.doubles)return h({error:"Ce tournoi ne propose pas le double."},409);
     if(oldRun.data)return h({error:"Le double de ce tournoi a déjà été joué.",run_id:oldRun.data.id},409);
     if(!partnership.data?.partner)return h({error:"Choisis d’abord un partenaire de double."},409);
@@ -3787,7 +3799,9 @@ Deno.serve(async(req:Request)=>{
     const tours=await db.from("tournaments").select("*").eq("is_active",true).in("circuit",["ATP","Challenger","ITF"]).gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(180);
     if(tours.error)return h({error:tours.error.message},500);
     const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
-    const doublesOnly=String(c.career_focus||"mixed")==="doubles_only";
+    const focus=String(c.career_focus||"mixed");
+    const doublesOnly=focus==="doubles_only";
+    const singlesOnly=focus==="singles_only";
     const score=(t:any)=>{
       const direct=Number(t.direct_cut??t.projected_direct_cut??0),qual=Number(t.qual_cut??t.projected_qual_cut??0);
       const singlesCut=direct&&c.singles_rank<=direct?30:qual&&c.singles_rank<=qual?18:qual&&c.singles_rank<=qual+50?8:-10;
@@ -3804,8 +3818,8 @@ Deno.serve(async(req:Request)=>{
       return Math.max(0,Math.min(100,40+cut+surf+travel+fatigue+level+sourceBonus));
     };
     const rows=(tours.data??[])
-      .filter((t:any)=>!doublesOnly||Boolean(t.doubles))
-      .map((t:any)=>({...t,recommendation_score:score(t),career_focus:doublesOnly?"doubles_only":String(c.career_focus||"mixed")}))
+      .filter((t:any)=>doublesOnly?Boolean(t.doubles):singlesOnly?Boolean(t.singles):true)
+      .map((t:any)=>({...t,recommendation_score:score(t),career_focus:focus}))
       .sort((x:any,y:any)=>y.recommendation_score-x.recommendation_score);
     return h({career:{rank:doublesOnly?c.doubles_rank:c.singles_rank,singles_rank:c.singles_rank,doubles_rank:c.doubles_rank,career_focus:c.career_focus,fatigue:c.fatigue,fitness:c.fitness},recommended:rows.slice(0,12)});
   }
@@ -4966,7 +4980,7 @@ Deno.serve(async(req:Request)=>{
       const focus=String(career.data.career_focus||"mixed");
       const visibilityRank=focus==="doubles_only"
         ?Number(career.data.doubles_rank||999999)
-        :focus==="singles_priority"
+        :(focus==="singles_only"||focus==="singles_priority")
           ?Number(career.data.singles_rank||999999)
           :Math.min(Number(career.data.singles_rank||999999),Number(career.data.doubles_rank||999999));
       const visibilityMult=visibilityRank<=10?1.18:visibilityRank<=50?1.10:visibilityRank<=100?1.05:visibilityRank<=300?1.00:visibilityRank<=800?.94:.88;
@@ -5020,6 +5034,9 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="approach_partner"){
+      if(String(career.data.career_focus||"mixed")==="singles_only"){
+        return h({error:"Orientation Simple exclusivement : les projets de double sont désactivés."},409);
+      }
       const managedId=Number(career.data.managed_player_id||0);
       if(!managedId)return h({error:"Joueur géré introuvable"},409);
       if(Number(id)===managedId)return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
@@ -5028,7 +5045,7 @@ Deno.serve(async(req:Request)=>{
         .select("id,name,country,doubles_ranking,career_focus,career_status")
         .eq("id",id).maybeSingle();
       if(target.error||!target.data)return h({error:target.error?.message||"Joueur introuvable"},404);
-      if(target.data.career_status!=="active"||target.data.doubles_ranking==null)return h({error:"Ce joueur n'est pas disponible pour un projet double."},409);
+      if(target.data.career_status!=="active"||target.data.doubles_ranking==null||String(target.data.career_focus||"mixed")==="singles_only")return h({error:"Ce joueur n'est pas disponible pour un projet double."},409);
 
       const today=String(career.data.career_date||AGE_REFERENCE_DATE);
       const interest=await db.rpc("doubles_partner_interest",{
@@ -5088,6 +5105,9 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="respond_partner_offer"){
+      if(String(career.data.career_focus||"mixed")==="singles_only"){
+        return h({error:"Orientation Simple exclusivement : les propositions de double sont désactivées."},409);
+      }
       const decision=String(body?.decision||"decline").toLowerCase();
       if(!["accept","decline"].includes(decision))return h({error:"Décision invalide"},400);
       const managedId=Number(career.data.managed_player_id||0);
@@ -5139,10 +5159,14 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="choose_partner"){
+      if(String(career.data.career_focus||"mixed")==="singles_only"){
+        return h({error:"Orientation Simple exclusivement : choisis d'abord une autre orientation pour former une paire."},409);
+      }
       const anth=await getManagedPlayer("id");
-      const partner=await db.from("players").select("id,name,current_ability,doubles_ranking").eq("id",id).maybeSingle();
+      const partner=await db.from("players").select("id,name,current_ability,doubles_ranking,career_focus").eq("id",id).maybeSingle();
       if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
       if(Number(anth.data.id)===Number(id))return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
+      if(String(partner.data.career_focus||"mixed")==="singles_only")return h({error:"Ce joueur a choisi une carrière Simple exclusivement."},409);
 
       const today=String(career.data?.career_date||AGE_REFERENCE_DATE);
       const season=Number(today.slice(0,4));
@@ -5232,10 +5256,14 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="davis_role"){
       const role=String(body?.role||"Réserve").slice(0,40);
-      if(Number(id)===Number(career.data.managed_player_id||0)
-         && String(career.data.career_focus||"mixed")==="doubles_only"
-         && /^Simple/i.test(role)){
-        return h({error:"Orientation Double exclusivement : ce joueur ne peut pas être aligné en simple en Coupe Davis."},409);
+      if(Number(id)===Number(career.data.managed_player_id||0)){
+        const focus=String(career.data.career_focus||"mixed");
+        if(focus==="doubles_only"&&/^Simple/i.test(role)){
+          return h({error:"Orientation Double exclusivement : ce joueur ne peut pas être aligné en simple en Coupe Davis."},409);
+        }
+        if(focus==="singles_only"&&/^Double/i.test(role)){
+          return h({error:"Orientation Simple exclusivement : ce joueur ne peut pas être aligné en double en Coupe Davis."},409);
+        }
       }
       const nation=String(career.data.selected_federation_nation||career.data.federation_nation||"FRA").toUpperCase();
       const up=await db.from("davis_squad").update({role}).eq("player_id",id).eq("nation",nation);
@@ -5374,7 +5402,7 @@ Deno.serve(async(req:Request)=>{
         const role=(r:string)=>assigned.find((x:any)=>x.role===r)?.p;
         const base=(fallback??[]).map(flatten);
         const singlesPool=base.filter((p:any)=>String(p.career_focus||"mixed")!=="doubles_only");
-        const doublesPool=base.filter((p:any)=>p.doubles_ranking).sort((x:any,y:any)=>{
+        const doublesPool=base.filter((p:any)=>p.doubles_ranking&&String(p.career_focus||"mixed")!=="singles_only").sort((x:any,y:any)=>{
           const xf=String(x.career_focus||"mixed")==="doubles_only"?0:1;
           const yf=String(y.career_focus||"mixed")==="doubles_only"?0:1;
           return xf-yf||Number(x.doubles_ranking||999999)-Number(y.doubles_ranking||999999);
@@ -5528,13 +5556,13 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="set_career_focus"){
       const focus=String(body?.focus||"").trim().toLowerCase();
-      if(!["singles_priority","mixed","doubles_only"].includes(focus))return h({error:"Orientation de carrière invalide"},400);
+      if(!["singles_only","singles_priority","mixed","doubles_only"].includes(focus))return h({error:"Orientation de carrière invalide"},400);
       const result=await db.rpc("set_managed_career_focus",{
         p_focus:focus,
         p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
       });
       if(result.error)return h({error:result.error.message},500);
-      const labels:any={singles_priority:"Simple prioritaire",mixed:"Simple + double",doubles_only:"Double exclusivement"};
+      const labels:any={singles_only:"Simple exclusivement",singles_priority:"Simple prioritaire",mixed:"Simple + double",doubles_only:"Double exclusivement"};
       let needsPartner=false;
       let davisRole:any=null;
       if(focus==="doubles_only"){

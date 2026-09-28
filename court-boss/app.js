@@ -283,6 +283,21 @@ async function loadTournaments(){
  if(!tourFilters.month)p.set('from','2025-12-01');
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows||[];tourTbc=d.tbc||[];tourCount=d.count||0;
+
+ const missing=(tourRows||[])
+  .filter(t=>t.circuit==='ATP'&&!t.logo_url&&!t.logo_checked_at)
+  .slice(0,12).map(t=>t.id);
+ if(missing.length&&!window.__courtBossLogoResolveBusy){
+  window.__courtBossLogoResolveBusy=true;
+  get('/api/tournament-logos?ids='+missing.join(','))
+   .then(x=>{
+    const byId=new Map((x.rows||[]).map(r=>[Number(r.id),r]));
+    tourRows=(tourRows||[]).map(t=>byId.has(Number(t.id))?{...t,...byId.get(Number(t.id))}:t);
+    if(route==='calendar')render();
+   })
+   .catch(()=>{})
+   .finally(()=>{window.__courtBossLogoResolveBusy=false});
+ }
 }
 async function loadCompetitions(){
  competitionLoading=true;

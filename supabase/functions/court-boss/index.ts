@@ -2816,26 +2816,41 @@ Deno.serve(async(req:Request)=>{
       if(Number(date.slice(0,4))>2025){
         const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
+        const month=Number(date.slice(5,7));
+        const quarterly=month===1||month===4||month===7||month===10;
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
-        const contextualStars=await db.rpc("refresh_player_contextual_stars",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
-        const month=Number(date.slice(5,7));
-        const analyticsBase=month===1||month===4||month===7||month===10
+        const coachingDevelopment=await db.rpc("apply_player_coaching_development",{p_date:date});
+        const coachingEnvironment=await db.rpc("apply_coaching_development_effects",{p_date:date});
+        const ceilingRefresh=await db.rpc("refresh_changed_player_attribute_ceilings",{p_date:date});
+        const tacticalPreferences=await db.rpc("refresh_player_tactical_preferences",{p_date:date});
+        const roleSuitability=await db.rpc("refresh_player_role_suitability",{p_date:date});
+        const tacticalTraits=await db.rpc("refresh_player_tactical_traits",{p_date:date});
+        const contextualStars=quarterly
+          ?await db.rpc("refresh_player_contextual_stars",{p_date:date})
+          :{data:null,error:null};
+        const analyticsBase=quarterly
           ?await db.rpc("refresh_player_advanced_metrics",{p_date:date})
           :{data:null,error:null};
-        const analyticsExtension=month===1||month===4||month===7||month===10
+        const analyticsExtension=quarterly
           ?await db.rpc("refresh_player_analytics_extensions",{p_date:date})
           :{data:null,error:null};
-        const contextTraits=month===1||month===4||month===7||month===10
+        const contextTraits=quarterly
           ?await db.rpc("refresh_player_context_traits",{p_date:date})
           :{data:null,error:null};
         developmentSupply={
           ...(developmentSupply||{}),
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
-          contextualStars:contextualStars.error?{error:contextualStars.error.message}:contextualStars.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
+          coachingDevelopment:coachingDevelopment.error?{error:coachingDevelopment.error.message}:coachingDevelopment.data,
+          coachingEnvironment:coachingEnvironment.error?{error:coachingEnvironment.error.message}:coachingEnvironment.data,
+          ceilingRefresh:ceilingRefresh.error?{error:ceilingRefresh.error.message}:ceilingRefresh.data,
+          tacticalPreferences:tacticalPreferences.error?{error:tacticalPreferences.error.message}:tacticalPreferences.data,
+          roleSuitability:roleSuitability.error?{error:roleSuitability.error.message}:roleSuitability.data,
+          tacticalTraits:tacticalTraits.error?{error:tacticalTraits.error.message}:tacticalTraits.data,
+          contextualStars:contextualStars.error?{error:contextualStars.error.message}:contextualStars.data,
           analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,
           analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data,
           contextTraits:contextTraits.error?{error:contextTraits.error.message}:contextTraits.data

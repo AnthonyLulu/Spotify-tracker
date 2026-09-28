@@ -461,28 +461,6 @@ function tmCalendarRows(){
   return true;
  });
 }
-function tmCalendarRows(){
- return (tourRows||[]).filter(t=>{
-  const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),wk=calWeekStart(t.start_date);
-  if(tmCalFilters.week!=="Toutes"&&wk!==tmCalFilters.week)return false;
-  if(tmCalFilters.country!=="Tous"&&String(t.country)!==tmCalFilters.country)return false;
-  if(tmCalFilters.status!=="Tous"&&st.label!==tmCalFilters.status)return false;
-  if(tmCalFilters.environment==="Indoor"&&!t.indoor)return false;
-  if(tmCalFilters.environment==="Outdoor"&&t.indoor)return false;
-  if(tmCalFilters.entry==="Simple"&&!t.singles)return false;
-  if(tmCalFilters.entry==="Double"&&!t.doubles)return false;
-  if(tmCalFilters.entry==="Simple + Double"&&!(t.singles&&t.doubles))return false;
-  if(tmCalFilters.holder==="Avec tenant"&&!t.defending_champion_name)return false;
-  if(tmCalFilters.holder==="Sans tenant"&&t.defending_champion_name)return false;
-  if(tmCalFilters.eligibility==="Éligible simple"&&!se.can)return false;
-  if(tmCalFilters.eligibility==="Éligible double"&&!de.can)return false;
-  if(tmCalFilters.eligibility==="Tableau direct"&&!/Tableau direct/.test(se.label))return false;
-  if(tmCalFilters.eligibility==="Qualifications"&&!/Qualif/.test(se.label))return false;
-  if(tmCalFilters.eligibility==="Alternate / WC"&&!/Alternate|WC/.test(se.label))return false;
-  if(tmCalFilters.eligibility==="Sélection"&&!/Sélection|université|NCAA/.test(se.label))return false;
-  return true;
- });
-}
 function renderTournamentWeeks(){
  const groups={};tmCalendarRows().forEach(t=>{const k=calWeekStart(t.start_date);(groups[k]??=[]).push(t)});
  return Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([week,rows])=>{

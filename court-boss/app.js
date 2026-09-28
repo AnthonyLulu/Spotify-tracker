@@ -986,7 +986,7 @@ function staffWorldSection(){
 function staffPage(){
  const cand=management?.candidates||[];
  const roles=[...new Set(cand.map(x=>String(x.role||'')).filter(Boolean))].sort();
- const rels=management?.ownStaffRelations||[],agent=management?.managedAgency||null,agencyNetwork=management?.agencyNetwork||[];
+ const rels=management?.ownStaffRelations||[],agent=management?.managedAgency||null,agencyNetwork=management?.agencyNetwork||[],staffLeaders=management?.staffLeaders||[];
  const activeTraining=(management?.userStaffTraining||[]).filter(x=>x.status==='active');
  const trainingByProfile=new Map(activeTraining.map(x=>[Number(x.staff_profile_id),x]));
  const avgConflict=rels.length?Math.round(rels.reduce((s,x)=>s+Number(x.conflict_score||0),0)/rels.length):0;
@@ -997,6 +997,12 @@ function staffPage(){
   <div class="card"><div class="row between"><div><div class="eyebrow">Cohésion staff</div><h2>Vestiaire technique</h2></div><span class="badge ${avgConflict>=60?'bad':avgConflict>=35?'warn':'good'}">${100-avgConflict}/100</span></div><div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted micro">Affinité moyenne</span><b>${avgAffinity}</b></div><div class="kpi"><span class="muted micro">Conflit moyen</span><b>${avgConflict}</b></div><div class="kpi"><span class="muted micro">Tensions fortes</span><b>${highConflicts.length}</b></div></div>${highConflicts.slice(0,4).map(x=>`<div class="list-item"><div class="row between"><span>${esc(x.staff_a?.name||'Staff')} ↔ ${esc(x.staff_b?.name||'Staff')}</span><span class="badge bad">${x.conflict_score}/100</span></div><div class="row between" style="margin-top:5px"><div class="muted micro">${esc(x.relation_type||'Tension')} · rivalité ${x.rivalry||0}</div><button class="soft-btn" onclick="mediateStaffConflict(${x.staff_a_id},${x.staff_b_id})">Médiation</button></div></div>`).join('')||'<div class="muted mini" style="margin-top:8px">Aucune tension majeure dans ton équipe.</div>'}</div>
   <div class="card"><div class="row between"><div><div class="eyebrow">Agent & réseau</div><h2>${esc(agent?.agent?.name||'Aucun agent actif')}</h2></div><span class="badge">${agent?'Confiance '+(agent.trust??'—')+'/100':'À recruter'}</span></div>${agent?`<div class="list-item row between"><span>Agence</span><b>${esc(agent.agency?.name||'—')}</b></div><div class="list-item row between"><span>Commission</span><b>${agent.commission_pct??'—'}%</b></div><div class="list-item row between"><span>Négociation</span><b>${agent.agent?.negotiation_rating??'—'}/20</b></div><button class="ghost" onclick="openStaffProfile(${agent.agent?.id})">Voir le dossier agent</button>`:'<div class="empty">Recrute un agent dans le marché du staff pour débloquer un vrai réseau de représentation.</div>'}</div>
  </div>
+ ${staffLeaders.length?`<div class="card" style="margin-bottom:12px">
+  <div class="row between"><div><div class="eyebrow">Monde du staff</div><h2>Réputation & palmarès</h2><div class="muted mini">Indice Court Boss basé sur palmarès, réputation, niveau des clients et expertise.</div></div><span class="badge">Top ${Math.min(20,staffLeaders.length)}</span></div>
+  <div class="table-wrap" style="margin-top:8px"><table class="table"><thead><tr><th>#</th><th>Staff</th><th>Rôle</th><th>Score</th><th>Titres</th><th>GC</th><th>Meilleur client</th></tr></thead><tbody>
+   ${staffLeaders.slice(0,20).map((x,i)=>`<tr class="click" onclick="openStaffProfile(${x.staff_profile_id})"><td><b>${i+1}</b></td><td><b>${flags[x.nationality]||'🏳️'} ${esc(x.name)}</b><div class="muted micro">réputation ${x.reputation}/20</div></td><td>${esc(x.primary_role||'Staff')}</td><td><b>${fmt(x.world_staff_score||0)}</b></td><td>${fmt(x.titles_total||0)}</td><td>${fmt(x.grand_slams||0)}</td><td>${x.best_client_rank?'#'+fmt(x.best_client_rank):'—'}</td></tr>`).join('')}
+  </tbody></table></div>
+ </div>`:''}
  ${agencyNetwork.length?`<div class="card" style="margin-bottom:12px">
   <div class="row between"><div><div class="eyebrow">Représentation mondiale</div><h2>Réseaux d’agents</h2></div><span class="badge">${agencyNetwork.reduce((s,x)=>s+Number(x.clients||0),0).toLocaleString('fr-FR')} clients</span></div>
   <div class="table-wrap" style="margin-top:8px"><table class="table"><thead><tr><th>Agence</th><th>Clients</th><th>Agents</th><th>Top client</th><th>Réseau</th></tr></thead><tbody>

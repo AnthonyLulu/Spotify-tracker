@@ -1175,7 +1175,7 @@ Deno.serve(async(req:Request)=>{
     const [career,academy,staff,facilities,finance,board,inbox,scouting,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save] = await Promise.all([
       Promise.resolve(currentCareer),
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
-      db.from("staff").select("*").order("id"),
+      db.from("staff").select("*,profile:staff_profiles(*)").order("id"),
       db.from("facilities").select("*").order("id"),
       db.from("finances").select("*").eq("id","demo").maybeSingle(),
       db.from("board_objectives").select("*").order("priority",{ascending:true}),
@@ -1797,10 +1797,30 @@ Deno.serve(async(req:Request)=>{
       }
       player=await resolvePlayerPhoto(player);
     }
+    const [staffLinks,relA,relB]=await Promise.all([
+      db.from("player_staff_assignments")
+        .select("id,role,start_date,end_date,active,verified,affinity,trust,source_url,source_label,snapshot_date,notes,staff:staff_profiles(*)")
+        .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
+        .order("verified",{ascending:false}).order("affinity",{ascending:false}).limit(20),
+      db.from("player_relationships")
+        .select("id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,source_url,formed_date,last_update,other:players!player_relationships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
+        .eq("player_a_id",id).eq("active",true).lte("last_update",referenceDate)
+        .order("affinity",{ascending:false}).limit(12),
+      db.from("player_relationships")
+        .select("id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,source_url,formed_date,last_update,other:players!player_relationships_player_a_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
+        .eq("player_b_id",id).eq("active",true).lte("last_update",referenceDate)
+        .order("affinity",{ascending:false}).limit(12)
+    ]);
+    const socialRows=[...(relA.data??[]),...(relB.data??[])]
+      .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
+      .slice(0,12);
+
     return h({
       player,sponsors:sp.data??[],titles:visibleTitles,history:visibleHistory,shortlist:short.data??null,
       matches:visibleMatches,careerStats:careerStats.data??null,finals:visibleFinals,juniorEntries:visibleJuniorEntries,
-      tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons
+      tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons,
+      staff:staffLinks.error?[]:(staffLinks.data??[]),
+      relationships:socialRows
     });
   }
 
@@ -2490,9 +2510,11 @@ Deno.serve(async(req:Request)=>{
             p_year:Number(date.slice(0,4)),
             p_date:date
           });
+          const social=await db.rpc("refresh_social_relationships",{p_date:date});
           doublesPairRefresh={
             ...(pairs.data||{}),
-            normalization:norm.error?{error:norm.error.message}:norm.data
+            normalization:norm.error?{error:norm.error.message}:norm.data,
+            social:social.error?{error:social.error.message}:social.data
           };
         }
       }
@@ -2531,7 +2553,7 @@ Deno.serve(async(req:Request)=>{
       db.from("college_teams").select("*").order("ita_rank"),
       db.from("shortlist").select("*,players(id,name,country,ranking,points,age,potential,current_ability,style)").order("added_at",{ascending:false}).limit(50),
       db.from("sponsor_offers").select("*").order("id"),
-      db.from("staff_candidates").select("*").order("skill",{ascending:false}),
+      db.from("staff_candidates").select("*,profile:staff_profiles(*)").order("skill",{ascending:false}),
       db.from("doubles_partnerships").select("*,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,ranking,doubles_ranking),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)").order("id",{ascending:false}).limit(20),
       db.from("college_offers").select("*,team:college_teams(*)").order("scholarship_pct",{ascending:false}),
       db.from("college_career_state").select("*,team:college_teams(*)").eq("id","demo").maybeSingle(),
@@ -3905,7 +3927,7 @@ Deno.serve(async(req:Request)=>{
       if(budget<cost)return h({error:"Budget insuffisant"},409);
       budget-=cost;
       const [ins,up,car]=await Promise.all([
-        db.from("staff").insert({role:cand.data.role+" · "+cand.data.name,skill:cand.data.skill,weekly_cost:cand.data.weekly_cost}),
+        db.from("staff").insert({name:cand.data.name,role:cand.data.role,skill:cand.data.skill,weekly_cost:cand.data.weekly_cost,profile_id:cand.data.profile_id||null}),
         db.from("staff_candidates").update({status:"hired"}).eq("id",id),
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
       ]);
@@ -3962,6 +3984,22 @@ Deno.serve(async(req:Request)=>{
         chemistry,compatibility,pair_strength
       });
       if(ins.error)return h({error:ins.error.message},500);
+
+      const pa=Math.min(Number(anth.data.id),Number(id)),pb=Math.max(Number(anth.data.id),Number(id));
+      await db.from("player_relationships").upsert({
+        player_a_id:pa,player_b_id:pb,
+        relation_type:chemistry>=91&&compatibility>=86?"Ami / partenaire":"Partenaire de double",
+        affinity:chemistry,
+        trust:Math.round(chemistry*.55+compatibility*.45),
+        respect:Math.round(pair_strength*.55+compatibility*.45),
+        closeness:Math.round(chemistry*.70+compatibility*.30),
+        is_simulated:true,
+        source_label:"Court Boss · relation issue du choix de partenaire",
+        formed_date:String(career.data?.career_date||AGE_REFERENCE_DATE),
+        last_update:String(career.data?.career_date||AGE_REFERENCE_DATE),
+        active:true
+      },{onConflict:"player_a_id,player_b_id"});
+
       return h({
         ok:true,chemistry,compatibility,pair_strength,
         affinity_score:Number(m.affinity_score||0)

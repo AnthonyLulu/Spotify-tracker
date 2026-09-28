@@ -2499,8 +2499,11 @@ Deno.serve(async(req:Request)=>{
         ?Math.max(fallback,...profileRows.map((p:any)=>Number(p?.[key]||0)*staffEfficiency(p)))
         :fallback;
       const sessionStaff=(session:string)=>{
-        if(session==="Service"||session==="Coup droit"||session==="Revers")return (best("technical_rating")+best("coach_rating"))/2;
-        if(session==="Retour"||session==="Match play"||session==="Double")return (best("tactical_rating")+best("coach_rating"))/2;
+        if(session==="Service")return (best("serve_coaching_rating")+best("technical_rating"))/2;
+        if(session==="Retour")return (best("return_coaching_rating")+best("tactical_rating"))/2;
+        if(session==="Double")return (best("doubles_coaching_rating")+best("tactical_rating")+best("communication_rating"))/3;
+        if(session==="Coup droit"||session==="Revers")return (best("technical_rating")+best("coach_rating"))/2;
+        if(session==="Match play")return (best("tactical_rating")+best("coach_rating"))/2;
         if(session==="Déplacements"||session==="Endurance")return best("fitness_rating");
         return avgStaff;
       };

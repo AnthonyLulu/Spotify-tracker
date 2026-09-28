@@ -1203,7 +1203,10 @@ Deno.serve(async(req:Request)=>{
       scoutingReports:scoutingReports.data??[],
       youth:youth.data??[],federation:fed.data,news:news.data??[],matches:matches.data??[],
       topPlayers:top.data??[],
-      upcoming:(events.data??[]).filter((x:any)=>String(x.start_date)>=String(career.data?.career_date||AGE_REFERENCE_DATE)).slice(0,40),
+      upcoming:(events.data??[])
+        .filter((x:any)=>String(x.start_date)>=String(career.data?.career_date||AGE_REFERENCE_DATE))
+        .filter((x:any)=>String(career.data?.career_focus||"mixed")!=="doubles_only"||Boolean(x.doubles))
+        .slice(0,40),
       injuries:injuries.data??[],
       managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===Number(career.data?.managed_player_id)&&x.status==="Active")??null,
       medicalPlan:medicalPlan.data??null,
@@ -5340,7 +5343,15 @@ Deno.serve(async(req:Request)=>{
         body:"Nouvelle orientation : "+labels[focus]+(needsPartner?" · choisis maintenant un partenaire dans le hub Double.":"."),
         action_route:needsPartner?"doubles":"myplayer",is_read:false
       });
-      return h({ok:true,...(result.data||{}),label:labels[focus],needs_partner:needsPartner});
+      const [boardRefresh,sponsorRefresh]=await Promise.all([
+        db.rpc("update_board_state"),
+        db.rpc("refresh_sponsor_offer_eligibility",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)})
+      ]);
+      return h({
+        ok:true,...(result.data||{}),label:labels[focus],needs_partner:needsPartner,
+        board:boardRefresh.error?{error:boardRefresh.error.message}:boardRefresh.data,
+        sponsor_visibility:sponsorRefresh.error?{error:sponsorRefresh.error.message}:sponsorRefresh.data
+      });
     }
 
 

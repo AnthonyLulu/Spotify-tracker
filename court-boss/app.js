@@ -867,7 +867,7 @@ function training(){
  </div>
  <div class="grid g2" style="margin-top:12px">
   <div class="card"><div class="row between"><div><div class="eyebrow">Plan de la semaine</div><h2>7 jours</h2></div><span class="pill">${esc(p?.player_name||career().player_name||'Joueur')} · ${p?.age??career().age??'—'} ans</span></div><div class="stack" style="margin-top:10px">${local.training.map((x,i)=>`<div class="list-item row between"><div><b>Jour ${i+1}</b><div class="muted mini">${i<5?'Séance principale':'Week-end'}</div></div><select class="select" style="width:auto" onchange="setTraining(${i},this.value)">${sessions.map(s=>`<option ${s===x?'selected':''}>${s}</option>`).join('')}</select></div>`).join('')}</div></div>
-  <div class="card"><div class="eyebrow">Profil de développement</div><h2>${esc(dev.type||'standard')}</h2>
+  <div class="card"><div class="row between"><div><div class="eyebrow">Profil de développement</div><h2>${esc(dev.type||'standard')}</h2></div>${dev.phase?`<span class="badge good">${esc(dev.phase)}</span>`:''}</div>
    <div class="kpi-strip" style="margin-top:10px">
     <div class="kpi"><span class="muted micro">Niveau</span><b>${p?starRatingHtml(p.current_stars):'—'}</b><small class="muted micro">CA ${p?.current_ability??career().current_ability??'—'}</small></div>
     <div class="kpi"><span class="muted micro">Potentiel</span><b>${p?starRatingHtml(p.potential_stars):'—'}</b><small class="muted micro">PA ${p?.potential??career().potential??'—'}</small></div>
@@ -875,6 +875,9 @@ function training(){
    <div class="list-item row between"><span>Vitesse de développement</span><b>${dev.development_rate??'—'}/20</b></div>
    <div class="list-item row between"><span>Professionnalisme</span><b>${dev.professionalism??'—'}/20</b></div>
    <div class="list-item row between"><span>Réceptivité au coaching</span><b>${dev.coachability??'—'}/20</b></div>
+   <div class="list-item row between"><span>Résilience</span><b>${dev.resilience??'—'}/20</b></div>
+   <div class="list-item row between"><span>Discipline</span><b>${dev.discipline??'—'}/20</b></div>
+   <div class="list-item row between"><span>Drive compétitif</span><b>${dev.competitive_drive??'—'}/20</b></div>
    <div class="list-item row between"><span>Pic théorique</span><b>${dev.peak_age??'—'} ans</b></div>
    <div class="list-item row between"><span>Déclin à partir de</span><b>${dev.decline_start_age??'—'} ans</b></div>
   </div>

@@ -300,7 +300,7 @@ async function loadTournaments(){
 
  const overview=!tourFilters.circuit||tourFilters.circuit==="Tous";
  if(tourOffset===0&&overview){
-  const priorityCircuits=["ATP","Junior","Federation"];
+  const priorityCircuits=["ATP","Junior","NCAA","Federation"];
   const extra=await Promise.all(priorityCircuits.map(async circuit=>{
    try{return await get("/api/tournaments?"+buildParams(circuit).toString())}
    catch{return {rows:[],tbc:[]}}

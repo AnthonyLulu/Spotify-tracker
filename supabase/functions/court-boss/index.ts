@@ -2683,9 +2683,11 @@ Deno.serve(async(req:Request)=>{
             specialistProgress:specialistProgress.error?{error:specialistProgress.error.message}:specialistProgress.data,
             social:social.error?{error:social.error.message}:social.data
           };
+          const managedPartnerReview=await db.rpc("review_managed_doubles_partnership",{p_date:date});
           const partnerOffers=await db.rpc("refresh_managed_doubles_partner_offers",{p_date:date});
           doublesPairRefresh={
             ...(doublesPairRefresh||{}),
+            managedPartnerReview:managedPartnerReview.error?{error:managedPartnerReview.error.message}:managedPartnerReview.data,
             partnerOffers:partnerOffers.error?{error:partnerOffers.error.message}:partnerOffers.data
           };
         }
@@ -2871,6 +2873,11 @@ Deno.serve(async(req:Request)=>{
 
     const careerNow=await db.from("career_state").select("managed_player_id,career_date,career_focus,doubles_rank").eq("id","demo").maybeSingle();
     const managedId=Number(careerNow.data?.managed_player_id||0);
+    const managedDoublesCommitment=managedId
+      ?await db.from("player_doubles_commitments")
+        .select("season,primary_partner_id,started_at,last_review_date,commitment,affinity,switches,reason,source_label,active,partner:players!player_doubles_commitments_primary_partner_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability)")
+        .eq("player_id",managedId).eq("active",true).maybeSingle()
+      :{data:null,error:null};
     const doublesPartnerOffers=managedId
       ?await db.from("doubles_partner_offers")
         .select("id,from_player_id,to_player_id,season,offer_date,response_date,expires_at,direction,status,interest_score,acceptance_threshold,chemistry,compatibility,pair_strength,proposed_commitment,current_partner_id,current_partner_commitment,reason,source_label,from_player:players!doubles_partner_offers_from_player_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability),to_player:players!doubles_partner_offers_to_player_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability)")
@@ -2916,7 +2923,8 @@ Deno.serve(async(req:Request)=>{
       staffLeaders:staffLeaders.error?[]:(staffLeaders.data??[]),
       ownStaffRelations,
       ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[]),
-      doublesPartnerOffers:doublesPartnerOffers.error?[]:(doublesPartnerOffers.data??[])
+      doublesPartnerOffers:doublesPartnerOffers.error?[]:(doublesPartnerOffers.data??[]),
+      managedDoublesCommitment:managedDoublesCommitment.error?null:managedDoublesCommitment.data
     });
   }
 

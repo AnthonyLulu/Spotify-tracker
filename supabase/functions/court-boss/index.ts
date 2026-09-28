@@ -1770,6 +1770,9 @@ Deno.serve(async(req:Request)=>{
     const surface=(u.searchParams.get("surface")??"Toutes").trim().slice(0,40);
     const country=(u.searchParams.get("country")??"").trim().slice(0,12);
     const source=(u.searchParams.get("source")??"Tous").trim().slice(0,20);
+    const prestige=(u.searchParams.get("prestige")??"Tous").trim().slice(0,20);
+    const historyFilter=(u.searchParams.get("history")??"Tous").trim().slice(0,24);
+    const holderFilter=(u.searchParams.get("holder")??"Tous").trim().slice(0,24);
     const offset=n(u.searchParams.get("offset"),0,0,10000),limit=n(u.searchParams.get("limit"),100,1,200);
 
     let tq=db.from("tournaments").select("*").eq("is_active",true).gte("start_date","2025-12-01").order("start_date",{ascending:true}).limit(5000);
@@ -1806,8 +1809,15 @@ Deno.serve(async(req:Request)=>{
         }
       }
     }
-    rows=rows.map((t:any)=>({...t,history_count:histCounts.get(t.competition_key)||0,latest_history:latestHist.get(t.competition_key)||null}))
-      .sort((a:any,b:any)=>Number(b.prestige||0)-Number(a.prestige||0)||String(a.start_date).localeCompare(String(b.start_date))||String(a.name).localeCompare(String(b.name)));
+    rows=rows.map((t:any)=>({...t,history_count:histCounts.get(t.competition_key)||0,latest_history:latestHist.get(t.competition_key)||null}));
+    if(prestige==="5 étoiles")rows=rows.filter((x:any)=>Number(x.prestige||0)>=90);
+    else if(prestige==="4+ étoiles")rows=rows.filter((x:any)=>Number(x.prestige||0)>=70);
+    else if(prestige==="3+ étoiles")rows=rows.filter((x:any)=>Number(x.prestige||0)>=50);
+    if(historyFilter==="Avec historique")rows=rows.filter((x:any)=>Number(x.history_count||0)>0);
+    if(historyFilter==="Sans historique")rows=rows.filter((x:any)=>Number(x.history_count||0)===0);
+    if(holderFilter==="Avec tenant")rows=rows.filter((x:any)=>!!x.defending_champion_name||!!x.latest_history?.winner_name);
+    if(holderFilter==="Sans tenant")rows=rows.filter((x:any)=>!x.defending_champion_name&&!x.latest_history?.winner_name);
+    rows=rows.sort((a:any,b:any)=>Number(b.prestige||0)-Number(a.prestige||0)||String(a.start_date).localeCompare(String(b.start_date))||String(a.name).localeCompare(String(b.name)));
     return h({offset,limit,count:rows.length,rows:rows.slice(offset,offset+limit)});
   }
 

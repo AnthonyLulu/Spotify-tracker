@@ -5411,11 +5411,15 @@ Deno.serve(async(req:Request)=>{
           const p=role(r);
           return p&&String(p.career_focus||"mixed")!=="doubles_only"?p:null;
         };
+        const doublesRole=(r:string)=>{
+          const p=role(r);
+          return p&&String(p.career_focus||"mixed")!=="singles_only"?p:null;
+        };
         return {
-          s1:singlesRole("Simple 1")||singlesPool[0]||base[0],
-          s2:singlesRole("Simple 2")||singlesPool[1]||singlesPool[0]||base[1]||base[0],
-          d1:role("Double A")||doublesPool[0]||base[0],
-          d2:role("Double B")||doublesPool[1]||doublesPool[0]||base[1]||base[0]
+          s1:singlesRole("Simple 1")||singlesPool[0]||null,
+          s2:singlesRole("Simple 2")||singlesPool[1]||singlesPool[0]||null,
+          d1:doublesRole("Double A")||doublesPool[0]||null,
+          d2:doublesRole("Double B")||doublesPool[1]||doublesPool[0]||null
         };
       };
       const H=squad(homeSquad.data??[],homeRes.data??[]),A=squad(awaySquad.data??[],awayRes.data??[]);
@@ -5605,6 +5609,18 @@ Deno.serve(async(req:Request)=>{
             await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
           }
         }
+      }else if(focus==="singles_only"){
+        const managedId=Number(career.data.managed_player_id||0);
+        if(managedId){
+          const nation=String(career.data.selected_federation_nation||career.data.federation_nation||career.data.country||"FRA").toUpperCase();
+          const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",managedId).eq("nation",nation).maybeSingle();
+          if(!ownDavis.error&&ownDavis.data&&/^Double/i.test(String(ownDavis.data.role||""))){
+            const taken=await db.from("davis_squad").select("role,player_id").eq("nation",nation).in("role",["Simple 1","Simple 2"]);
+            const used=new Set((taken.data??[]).filter((x:any)=>Number(x.player_id)!==managedId).map((x:any)=>String(x.role)));
+            davisRole=!used.has("Simple 1")?"Simple 1":!used.has("Simple 2")?"Simple 2":"Réserve";
+            await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
+          }
+        }
       }
       await db.from("inbox_items").insert({
         kind:"career",title:"Orientation de carrière modifiée",
@@ -5742,8 +5758,9 @@ Deno.serve(async(req:Request)=>{
       const attrs:any=Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes||{};
       const startDate=String(body?.date||AGE_REFERENCE_DATE).slice(0,10);
       const basePoints=Math.max(0,Number(p.points||0));
-      const baseDoubleRank=Math.max(1,Number(p.doubles_ranking||1800));
-      const baseDoublePoints=Math.max(0,Math.round(45*(1800/baseDoubleRank-1)));
+      const startingFocus=String(p.career_focus||"mixed");
+      const baseDoubleRank=p.doubles_ranking==null?3000:Math.max(1,Number(p.doubles_ranking));
+      const baseDoublePoints=p.doubles_ranking==null?0:Math.max(0,Math.round(45*(1800/baseDoubleRank-1)));
 
       await Promise.all([
         db.from("tournament_runs").delete().gte("id",0),
@@ -5776,7 +5793,7 @@ Deno.serve(async(req:Request)=>{
         current_ability:Number(p.current_ability||55),potential:Number(p.potential||75),
         form:Number(p.form||70),fitness:Number(p.fitness||90),morale:Number(p.morale||75),fatigue:Number(p.fatigue||15),
         budget:14800,style:String(p.style||"All-court"),injury_status:"Fit",
-        career_focus:String(p.career_focus||"mixed"),
+        career_focus:startingFocus,
         career_focus_changed_at:startDate,
         career_focus_switches:0,
         career_focus_reason:String(p.career_focus_reason||"Orientation de départ issue du profil du joueur."),

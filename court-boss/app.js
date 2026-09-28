@@ -1652,6 +1652,34 @@ function publicLevelStars(p){
  if(r<=1800)return 2;
  return 1.5;
 }
+
+function scoutingReportForPlayer(id){
+ return (boot?.scoutingReports||[]).find(x=>Number(x.player_id)===Number(id))||null;
+}
+function listCurrentStars(p){
+ const own=Number(p?.id)===Number(career().managed_player_id||0),r=scoutingReportForPlayer(p?.id);
+ if(own)return Number(p?.current_ability!=null?abilityStarValue(p.current_ability):publicLevelStars(p));
+ if(r)return Number(r.estimated_world_current_stars??r.estimated_current_stars??publicLevelStars(p));
+ return publicLevelStars(p);
+}
+function listPotentialStars(p){
+ const own=Number(p?.id)===Number(career().managed_player_id||0),r=scoutingReportForPlayer(p?.id);
+ if(own)return Number(p?.potential!=null?abilityStarValue(p.potential):0);
+ if(r)return Number(r.estimated_world_potential_stars??r.estimated_potential_stars??0)||null;
+ return null;
+}
+function rankingLevelKnowledgeCell(p){
+ const own=Number(p?.id)===Number(career().managed_player_id||0),r=scoutingReportForPlayer(p?.id);
+ const stars=listCurrentStars(p);
+ const note=own?(p.current_ability!=null?'CA '+p.current_ability:'Connu'):r?((r.estimated_ca_min??'?')+'–'+(r.estimated_ca_max??'?')+' · '+(r.confidence??0)+'%'):'Public';
+ return starRatingHtml(stars,own?'Niveau connu':r?'Estimation scout':'Estimation publique')+'<div class="muted micro">'+note+'</div>';
+}
+function rankingPotentialKnowledgeCell(p){
+ const own=Number(p?.id)===Number(career().managed_player_id||0),r=scoutingReportForPlayer(p?.id),stars=listPotentialStars(p);
+ if(own)return starRatingHtml(stars||.5,'Potentiel connu')+'<div class="muted micro">PA dynamique</div>';
+ if(r&&stars)return starRatingHtml(stars,'Potentiel scout')+'<div class="muted micro">'+(r.estimated_potential_star_min??'?')+'–'+(r.estimated_potential_star_max??'?')+' ★</div>';
+ return '<span class="muted">À scouter</span>';
+}
 function playerKnowledgeLabel(isManaged,report){
  if(isManaged)return 'Connaissance complète';
  if(report)return 'Rapport scout · '+Number(report.confidence||0)+'%';

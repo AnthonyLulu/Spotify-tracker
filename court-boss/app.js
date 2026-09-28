@@ -744,6 +744,7 @@ function datesOverlap(aStart,aEnd,bStart,bEnd){
 
 function findTournamentById(id){return [...(tourRows||[]),...(boot?.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>Number(x.id)===Number(id))}
 window.toggleSinglesEntry=id=>{
+ if(String(career().career_focus||'mixed')==='doubles_only'){alert('Mode Double exclusivement : les inscriptions simple sont désactivées.');return}
  local.entries=local.entries||[];local.entryMeta=local.entryMeta||{};
  const exists=local.entries.includes(id);
  if(exists){local.entries=local.entries.filter(x=>x!==id);delete local.entryMeta[id];persist();render();return}
@@ -2182,6 +2183,28 @@ window.pairScore=(p,k)=>{
 }
 window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
+window.setCareerFocus=async focus=>{
+ const labels={singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
+ const cr=career();
+ if(String(cr.career_focus||'mixed')===focus)return;
+ const warning=focus==='doubles_only'
+  ?'Passer en Double exclusivement ? Tes inscriptions simple futures seront retirées et tu ne pourras plus jouer de tableau simple tant que ce mode reste actif.'
+  :'Passer en '+labels[focus]+' ?';
+ if(!confirm(warning))return;
+ try{
+  const d=await managerAction('set_career_focus',0,{focus});
+  if(focus==='doubles_only'){
+    local.entries=[];
+    local.entryMeta={};
+    local.training=['Double','Service','Retour','Double','Match play','Récupération','Repos'];
+  }
+  boot=await get('/api/bootstrap');
+  if(boot.career)local.career={...(local.career||{}),...boot.career};
+  await Promise.all([loadScheduleAdvice(),loadTournaments(),loadManagement()]);
+  persist();render();
+  alert('Orientation active : '+(d.label||labels[focus])+'.');
+ }catch(e){alert(e.message)}
+}
 window.editCareer=async(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render();try{await managerAction('edit_career',0,{field:k,value:v});boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};persist();render()}catch(e){alert(e.message)}}
 window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invitational');if(!name)return;const surface=prompt('Surface ? Dur / Terre / Gazon','Dur')||'Dur';const draw=Number(prompt('Taille du tableau ?','32'))||32;local.fantasy=local.fantasy||[];local.fantasy.push({name,surface,draw,category:'Fantasy'});persist();render()}
 window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}

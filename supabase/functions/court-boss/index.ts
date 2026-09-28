@@ -1038,36 +1038,52 @@ async function resolveTournamentImage(t:any){
 
   if(!t.image_url&&t.city){
     try{
-      const cityQuery=[String(t.city||""),String(t.country||"")].filter(Boolean).join(" ");
-      const qs=new URLSearchParams({
-        action:"query",generator:"search",gsrsearch:cityQuery,gsrnamespace:"0",gsrlimit:"6",
+      const cityName=String(t.city||"").split("/")[0].trim();
+      const exactQs=new URLSearchParams({
+        action:"query",titles:cityName,redirects:"1",
         prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
         inprop:"url",format:"json",origin:"*"
       });
-      const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{
-        headers:{"User-Agent":"CourtBoss/1.0 (+city-photo-fallback)"}
+      const exact=await fetch("https://en.wikipedia.org/w/api.php?"+exactQs.toString(),{
+        headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-photo-fallback)"}
       });
-      if(r.ok){
-        const j:any=await r.json();
-        const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
-        const cityNorm=normalizeName(String(t.city||"")).replace(/\s+/g,"");
-        const chosen=pages.find((x:any)=>{
-          const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+      let chosen:any=null;
+      if(exact.ok){
+        const j:any=await exact.json();
+        chosen=(Object.values(j?.query?.pages||{}) as any[]).find((x:any)=>{
           const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-          return title.includes(cityNorm)&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
-        })??pages.find((x:any)=>{
-          const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-          return raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+          return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+        })||null;
+      }
+      if(!chosen){
+        const cityNorm=normalizeName(cityName).replace(/\s+/g,"");
+        const searchQs=new URLSearchParams({
+          action:"query",generator:"search",gsrsearch:`intitle:"${cityName}"`,gsrnamespace:"0",gsrlimit:"5",
+          prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
+          inprop:"url",format:"json",origin:"*"
         });
-        const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
-        if(raw&&/^https?:\/\//i.test(raw)){
-          t.image_url=raw;
-          t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
-          t.image_source_label="Photo de la ville · Wikipedia/Wikimedia";
-          await db.from("tournaments").update({
-            image_url:raw,image_source_url:t.image_source_url,image_source_label:t.image_source_label
-          }).eq("id",t.id);
+        const search=await fetch("https://en.wikipedia.org/w/api.php?"+searchQs.toString(),{
+          headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-search-fallback)"}
+        });
+        if(search.ok){
+          const j:any=await search.json();
+          const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+          chosen=pages.find((x:any)=>{
+            const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+            const raw=String(x?.original?.source||x?.thumbnail?.source||"");
+            return (title===cityNorm||title.startsWith(cityNorm)||cityNorm.startsWith(title))
+              &&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+          })||null;
         }
+      }
+      const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
+      if(raw&&/^https?:\/\//i.test(raw)){
+        t.image_url=raw;
+        t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
+        t.image_source_label="Photo de la ville · Wikipedia/Wikimedia";
+        await db.from("tournaments").update({
+          image_url:raw,image_source_url:t.image_source_url,image_source_label:t.image_source_label
+        }).eq("id",t.id);
       }
     }catch{}
   }

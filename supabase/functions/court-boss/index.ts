@@ -2587,6 +2587,7 @@ Deno.serve(async(req:Request)=>{
           :{data:null,error:null};
         const evolution=await db.rpc("evolve_staff_ecosystem",{p_date:date});
         const dynamics=await db.rpc("simulate_staff_team_dynamics",{p_date:date});
+        const bonds=await db.rpc("refresh_staff_player_bonds",{p_date:date});
         const competition=await db.rpc("refresh_staff_recruitment_competition",{p_date:date});
         const ownStaffOffers=await db.rpc("refresh_user_staff_external_offers",{p_date:date});
         const workload=await db.rpc("refresh_staff_workload",{p_date:date});
@@ -2602,6 +2603,7 @@ Deno.serve(async(req:Request)=>{
           academyDevelopment:academyDevelopment.error?{error:academyDevelopment.error.message}:academyDevelopment.data,
           evolution:evolution.error?{error:evolution.error.message}:evolution.data,
           dynamics:dynamics.error?{error:dynamics.error.message}:dynamics.data,
+          bonds:bonds.error?{error:bonds.error.message}:bonds.data,
           competition:competition.error?{error:competition.error.message}:competition.data,
           ownStaffOffers:ownStaffOffers.error?{error:ownStaffOffers.error.message}:ownStaffOffers.data,
           workload:workload.error?{error:workload.error.message}:workload.data
@@ -2702,7 +2704,7 @@ Deno.serve(async(req:Request)=>{
     if(profile.error)return h({error:profile.error.message},500);
     if(!profile.data)return h({error:"Profil staff introuvable"},404);
 
-    const [activeAssignments,history,events,agency,licenses,preferences,scopeReputation,peerA,peerB,recommendationsFrom,recommendationsTo,collegeStaff,davisStaff,training,coachAcademy]=await Promise.all([
+    const [activeAssignments,history,events,agency,licenses,preferences,scopeReputation,peerA,peerB,recommendationsFrom,recommendationsTo,collegeStaff,davisStaff,training,coachAcademy,bonds]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,weekly_salary,contract_end,source_label,player:players!player_staff_assignments_player_id_fkey(id,name,country,ranking,game_world_rank,style,photo_url)")
         .eq("staff_profile_id",id).eq("active",true)
@@ -2725,9 +2727,13 @@ Deno.serve(async(req:Request)=>{
       db.from("staff_training_enrollments").select("*,center:staff_training_centers(*)").eq("staff_profile_id",id).order("start_date",{ascending:false}).limit(10),
       db.from("staff_academy_members")
         .select("started_year,graduated_year,development_bonus,academy:staff_academies(*),mentor:staff_profiles!staff_academy_members_mentor_staff_id_fkey(id,name,primary_role,reputation)")
-        .eq("staff_profile_id",id).maybeSingle()
+        .eq("staff_profile_id",id).maybeSingle(),
+      db.from("staff_player_bonds")
+        .select("bond_type,affinity,trust,respect,is_simulated,source_label,formed_date,last_update,player:players!staff_player_bonds_player_id_fkey(id,name,country,ranking,game_world_rank,photo_url,style)")
+        .eq("staff_profile_id",id).eq("active",true)
+        .order("affinity",{ascending:false}).limit(30)
     ]);
-    const err=activeAssignments.error||history.error||events.error||agency.error||licenses.error||preferences.error||scopeReputation.error||peerA.error||peerB.error||recommendationsFrom.error||recommendationsTo.error||collegeStaff.error||davisStaff.error||training.error||coachAcademy.error;
+    const err=activeAssignments.error||history.error||events.error||agency.error||licenses.error||preferences.error||scopeReputation.error||peerA.error||peerB.error||recommendationsFrom.error||recommendationsTo.error||collegeStaff.error||davisStaff.error||training.error||coachAcademy.error||bonds.error;
     if(err)return h({error:err.message},500);
 
     let agentClients:any={data:[],count:0,error:null};
@@ -2755,6 +2761,7 @@ Deno.serve(async(req:Request)=>{
       davisStaff:davisStaff.data??[],
       training:training.data??[],
       coachAcademy:coachAcademy.data??null,
+      playerBonds:bonds.data??[],
       agentClients:agentClients.data??[],
       agentClientCount:Number(agentClients.count||0)
     });
@@ -4350,6 +4357,9 @@ Deno.serve(async(req:Request)=>{
       const competing=Number(cand.data.competing_offers||0);
       const managedId=Number(career.data.managed_player_id||0);
       const managed=managedId?await db.from("players").select("id,country,style").eq("id",managedId).maybeSingle():{data:null,error:null};
+      const priorBond=managedId&&p.id
+        ?await db.from("staff_player_bonds").select("bond_type,affinity,trust,respect").eq("staff_profile_id",p.id).eq("player_id",managedId).eq("active",true).maybeSingle()
+        :{data:null,error:null};
       const ownStaff=await db.from("staff").select("profile_id").not("profile_id","is",null);
       const ownIds=(ownStaff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean);
       let recommendationBoost=0;
@@ -4364,9 +4374,16 @@ Deno.serve(async(req:Request)=>{
       const pref=await db.from("staff_preferences").select("*").eq("staff_profile_id",p.id).maybeSingle();
       const countryFit=pref.data?.preferred_player_country&&managed.data?.country===pref.data.preferred_player_country?5:0;
       const styleFit=pref.data?.preferred_style&&managed.data?.style===pref.data.preferred_style?4:0;
+      const bondBoost=priorBond.data
+        ?Math.max(-8,Math.min(14,Math.round(
+          (Number(priorBond.data.affinity||50)-50)*.12+
+          (Number(priorBond.data.trust||50)-50)*.10+
+          (Number(priorBond.data.respect||50)-50)*.06
+        )))
+        :0;
       const interest=Math.max(20,Math.min(99,Math.round(
         fit*.60+Number(p.reputation||10)*1.15+Number(p.loyalty||10)*.35-Number(p.ambition||10)*.25-competing*2
-        +recommendationBoost+countryFit+styleFit
+        +recommendationBoost+countryFit+styleFit+bondBoost
       )));
       const agencyLink=p.id?await db.from("staff_agency_members").select("agency:staff_agencies(commission_pct,reputation,network_strength)").eq("staff_profile_id",p.id).eq("active",true).maybeSingle():{data:null,error:null};
       const agency:any=Array.isArray(agencyLink.data?.agency)?agencyLink.data.agency[0]:agencyLink.data?.agency||{};
@@ -4407,7 +4424,7 @@ Deno.serve(async(req:Request)=>{
       }).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
 
-      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing,recommendation_boost:recommendationBoost,agency_commission:agencyCommission});
+      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing,recommendation_boost:recommendationBoost,bond_boost:bondBoost,agency_commission:agencyCommission});
     }
 
     if(action==="counter_staff_offer"){

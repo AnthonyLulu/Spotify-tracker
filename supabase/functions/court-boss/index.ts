@@ -1168,26 +1168,17 @@ Deno.serve(async(req:Request)=>{
 
 
     if(kind==="doubles_race"){
-      const latest=await db.from("doubles_race_view").select("doubles_race_snapshot_date")
-        .lte("doubles_race_snapshot_date",gameDate)
-        .order("doubles_race_snapshot_date",{ascending:false}).limit(1).maybeSingle();
-      if(latest.error)return h({error:latest.error.message},500);
-      if(!latest.data?.doubles_race_snapshot_date)return h({
-        kind,offset,limit,count:0,rows:[],rankingDate:gameDate,
-        finalsName:"Nitto ATP Finals · Double",qualificationPlaces:8,raceType:"team"
-      });
-      let query=db.from("doubles_race_view").select("*",{count:"exact"})
-        .eq("doubles_race_snapshot_date",latest.data.doubles_race_snapshot_date);
-      if(q)query=query.ilike("name",`%${q}%`);
-      if(country)query=query.eq("country",country);
-      query=query.order("doubles_race_ranking",{ascending:true}).range(offset,offset+limit-1);
-      const {data,error,count}=await query;
-      if(error)return h({error:error.message},500);
+      const race=await db.rpc("doubles_race_for_date",{p_date:gameDate});
+      if(race.error)return h({error:race.error.message},500);
+      let rows=race.data??[];
+      if(q){const nq=normalizeName(q);rows=rows.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));}
+      if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
+      const count=rows.length;
+      rows=rows.slice(offset,offset+limit);
       return h({
-        kind,offset,limit,count:count??0,rows:data??[],
-        rankingDate:latest.data.doubles_race_snapshot_date,
+        kind,offset,limit,count,rows,rankingDate:gameDate,
         finalsName:"Nitto ATP Finals · Double",qualificationPlaces:8,raceType:"team",
-        source:"ATP doubles team race · final 2025 standings"
+        source:Number(gameDate.slice(0,4))<=2025?"ATP doubles team race · final 2025 standings":"Court Boss simulated ATP doubles race"
       });
     }
 
@@ -1241,15 +1232,15 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(kind==="junior_doubles_race"){
-      let query=db.from("junior_doubles_race_view").select("*",{count:"exact"})
-        .or(`junior_doubles_race_snapshot_date.is.null,junior_doubles_race_snapshot_date.lte.${gameDate}`);
-      if(q)query=query.ilike("name_norm",`%${normalizeName(q)}%`);
-      if(country)query=query.eq("country",country);
-      query=query.order("junior_doubles_race_ranking",{ascending:true}).range(offset,offset+limit-1);
-      const {data,error,count}=await query;
-      if(error)return h({error:error.message},500);
+      const race=await db.rpc("junior_doubles_race_for_date",{p_date:gameDate});
+      if(race.error)return h({error:race.error.message},500);
+      let rows=race.data??[];
+      if(q){const nq=normalizeName(q);rows=rows.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));}
+      if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
+      const count=rows.length;
+      rows=rows.slice(offset,offset+limit);
       return h({
-        kind,offset,limit,count:count??0,rows:data??[],rankingDate:gameDate,
+        kind,offset,limit,count,rows,rankingDate:gameDate,
         finalsName:"Court Boss Junior Doubles Finals",qualificationPlaces:8,
         raceType:"team",simulated:true,
         source:"Court Boss · course de qualification Junior Double"

@@ -2716,8 +2716,10 @@ Deno.serve(async(req:Request)=>{
       db.rpc("recalculate_user_doubles_ranking",{p_date:date})
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
+    const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
+    if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -4916,8 +4918,15 @@ Deno.serve(async(req:Request)=>{
       ));
       const negotiation=Number(ap.negotiation_rating||10)*agentEfficiency,agentRep=Number(ap.reputation||10);
       const negotiationMult=Math.min(1.18,1+Math.max(0,negotiation-10)*.012+Math.max(0,agentRep-10)*.004);
-      const negotiatedWeekly=Math.round(Number(offer.data.weekly_value||0)*negotiationMult);
-      const negotiatedBonus=Math.round(Number(offer.data.signing_bonus||0)*negotiationMult);
+      const focus=String(career.data.career_focus||"mixed");
+      const visibilityRank=focus==="doubles_only"
+        ?Number(career.data.doubles_rank||999999)
+        :focus==="singles_priority"
+          ?Number(career.data.singles_rank||999999)
+          :Math.min(Number(career.data.singles_rank||999999),Number(career.data.doubles_rank||999999));
+      const visibilityMult=visibilityRank<=10?1.18:visibilityRank<=50?1.10:visibilityRank<=100?1.05:visibilityRank<=300?1.00:visibilityRank<=800?.94:.88;
+      const negotiatedWeekly=Math.round(Number(offer.data.weekly_value||0)*negotiationMult*visibilityMult);
+      const negotiatedBonus=Math.round(Number(offer.data.signing_bonus||0)*negotiationMult*visibilityMult);
 
       budget+=negotiatedBonus;
       const [up,car]=await Promise.all([
@@ -4932,7 +4941,7 @@ Deno.serve(async(req:Request)=>{
         body:"Accord signé avec "+offer.data.brand+". Ton agent négocie "+negotiatedBonus+" € de bonus et "+negotiatedWeekly+" €/sem.",
         action_route:"finance",is_read:false
       });
-      return h({ok:true,budget,status:"accepted",weekly_value:negotiatedWeekly,signing_bonus:negotiatedBonus,agent_bonus_pct:Math.round((negotiationMult-1)*100)});
+      return h({ok:true,budget,status:"accepted",weekly_value:negotiatedWeekly,signing_bonus:negotiatedBonus,agent_bonus_pct:Math.round((negotiationMult-1)*100),visibility_rank:visibilityRank,career_focus:focus});
     }
 
     if(action==="renew_contract"){
@@ -5477,7 +5486,12 @@ Deno.serve(async(req:Request)=>{
         handedness:String(p.handedness||"Droitier"),backhand:String(p.backhand||"2 mains"),
         current_ability:Number(p.current_ability||55),potential:Number(p.potential||75),
         form:Number(p.form||70),fitness:Number(p.fitness||90),morale:Number(p.morale||75),fatigue:Number(p.fatigue||15),
-        budget:14800,style:String(p.style||"All-court"),injury_status:"Fit",updated_at:new Date().toISOString()
+        budget:14800,style:String(p.style||"All-court"),injury_status:"Fit",
+        career_focus:String(p.career_focus||"mixed"),
+        career_focus_changed_at:startDate,
+        career_focus_switches:0,
+        career_focus_reason:String(p.career_focus_reason||"Orientation de départ issue du profil du joueur."),
+        updated_at:new Date().toISOString()
       };
       const cu=await db.from("career_state").update(careerUpdate).eq("id","demo");
       if(cu.error)return h({error:cu.error.message},500);

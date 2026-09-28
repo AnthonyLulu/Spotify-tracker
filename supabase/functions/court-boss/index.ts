@@ -1924,37 +1924,83 @@ Deno.serve(async(req:Request)=>{
     let doublesMain:any[]=[];
     if(t.data.doubles){
       const isJuniorDouble=String(t.data.circuit)==="Junior";
-      let dpool:any;
-      if(isJuniorDouble){
-        dpool=await db.from("players")
-          .select("id,name,country,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,current_ability,potential")
-          .not("junior_doubles_ranking","is",null)
-          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-          .order("junior_doubles_ranking",{ascending:true})
-          .limit(Math.min(128,Math.max(16,drawSize*2)));
+      const categoryName=String(t.data.category||"");
+      const isJuniorDoubleFinals=/Junior Double Finals/i.test(categoryName);
+      const isAtpDoubleFinals=String(t.data.circuit)==="ATP"&&/ATP Finals/i.test(categoryName);
+
+      if(isJuniorDoubleFinals){
+        const race=await db.from("junior_doubles_race_view").select("*")
+          .order("junior_doubles_race_ranking",{ascending:true}).limit(8);
+        if(!race.error){
+          doublesMain=(race.data??[]).map((x:any)=>({
+            seed:x.junior_doubles_race_ranking,
+            player_a:{id:x.player_one_id,name:x.player_one,country:x.country,doubles_ranking:x.junior_doubles_race_ranking},
+            player_b:{id:x.player_two_id,name:x.player_two,country:x.country,doubles_ranking:x.junior_doubles_race_ranking},
+            team_name:x.name,
+            combined_rank:Number(x.junior_doubles_race_ranking||9999),
+            race_rank:x.junior_doubles_race_ranking,
+            race_points:x.junior_doubles_race_points,
+            finals_status:x.finals_status,
+            source:"junior-doubles-race"
+          }));
+        }
+      }else if(isAtpDoubleFinals){
+        const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+        const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
+        const latestRace=await db.from("doubles_race_view").select("doubles_race_snapshot_date")
+          .lte("doubles_race_snapshot_date",refDate)
+          .order("doubles_race_snapshot_date",{ascending:false}).limit(1).maybeSingle();
+        if(!latestRace.error&&latestRace.data?.doubles_race_snapshot_date){
+          const race=await db.from("doubles_race_view").select("*")
+            .eq("doubles_race_snapshot_date",latestRace.data.doubles_race_snapshot_date)
+            .order("doubles_race_ranking",{ascending:true}).limit(8);
+          if(!race.error){
+            doublesMain=(race.data??[]).map((x:any)=>({
+              seed:x.doubles_race_ranking,
+              player_a:{id:x.player_one_id,name:x.player_one,country:x.country,doubles_ranking:x.doubles_race_ranking},
+              player_b:{id:x.player_two_id,name:x.player_two,country:x.country,doubles_ranking:x.doubles_race_ranking},
+              team_name:x.name,
+              combined_rank:Number(x.doubles_race_ranking||9999),
+              race_rank:x.doubles_race_ranking,
+              race_points:x.doubles_race_points,
+              finals_status:x.finals_status,
+              source:"atp-doubles-race"
+            }));
+          }
+        }
       }else{
-        dpool=await db.from("players")
-          .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
-          .eq("is_real",true)
-          .not("doubles_ranking","is",null)
-          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-          .order("doubles_ranking",{ascending:true})
-          .limit(Math.min(128,Math.max(16,drawSize*2)));
-      }
-      if(!dpool.error){
-        const arr=dpool.data??[];
-        for(let i=0;i+1<arr.length&&doublesMain.length<Math.min(32,drawSize);i+=2){
-          const a:any=arr[i],b:any=arr[i+1];
-          const ar=isJuniorDouble?a.junior_doubles_ranking:a.doubles_ranking;
-          const br=isJuniorDouble?b.junior_doubles_ranking:b.doubles_ranking;
-          doublesMain.push({
-            seed:doublesMain.length+1,
-            player_a:{...a,doubles_ranking:ar},
-            player_b:{...b,doubles_ranking:br},
-            team_name:String(a.name)+" / "+String(b.name),
-            combined_rank:Number(ar||9999)+Number(br||9999),
-            source:isJuniorDouble?"junior-simulated":((a.doubles_source&&b.doubles_source)?"official":"indexed")
-          });
+        let dpool:any;
+        if(isJuniorDouble){
+          dpool=await db.from("players")
+            .select("id,name,country,junior_doubles_ranking,junior_doubles_points,junior_doubles_snapshot_date,junior_doubles_source,current_ability,potential")
+            .not("junior_doubles_ranking","is",null)
+            .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+            .order("junior_doubles_ranking",{ascending:true})
+            .limit(Math.min(128,Math.max(16,drawSize*2)));
+        }else{
+          dpool=await db.from("players")
+            .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
+            .eq("is_real",true)
+            .not("doubles_ranking","is",null)
+            .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+            .order("doubles_ranking",{ascending:true})
+            .limit(Math.min(128,Math.max(16,drawSize*2)));
+        }
+        if(!dpool.error){
+          const arr=dpool.data??[];
+          for(let i=0;i+1<arr.length&&doublesMain.length<Math.min(32,drawSize);i+=2){
+            const a:any=arr[i],b:any=arr[i+1];
+            const ar=isJuniorDouble?a.junior_doubles_ranking:a.doubles_ranking;
+            const br=isJuniorDouble?b.junior_doubles_ranking:b.doubles_ranking;
+            doublesMain.push({
+              seed:doublesMain.length+1,
+              player_a:{...a,doubles_ranking:ar},
+              player_b:{...b,doubles_ranking:br},
+              team_name:String(a.name)+" / "+String(b.name),
+              combined_rank:Number(ar||9999)+Number(br||9999),
+              source:isJuniorDouble?"junior-simulated":((a.doubles_source&&b.doubles_source)?"official":"indexed")
+            });
+          }
         }
       }
     }

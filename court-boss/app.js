@@ -70,15 +70,18 @@ function surfaceLabel(t){
  return base==='Dur'?((t?.indoor===true||String(t?.environment||'Outdoor')==='Indoor')?'Dur intérieur':'Dur extérieur'):base;
 }
 function circuitClass(c){return c==='Challenger'?'tag-challenger':c==='ITF'?'tag-itf':c==='NCAA'?'tag-ncaa':c==='Junior'?'tag-junior':c==='Federation'?'tag-fed':'tag-atp'}
-function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='junior_doubles'?p.junior_doubles_ranking:k==='race'?p.race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:k==='ncaa'?p.ncaa_rank:(p.official_ranking??(p.ranking_current?p.ranking:null)??p.game_world_rank??p.world_rank??p.ranking)}
+function rankValue(p,k){return k==='doubles'?p.doubles_ranking:k==='junior_doubles'?p.junior_doubles_ranking:k==='race'?p.race_ranking:k==='doubles_race'?p.doubles_race_ranking:k==='junior_race'?p.junior_race_ranking:k==='junior_doubles_race'?p.junior_doubles_race_ranking:k==='nextgen'?p.nextgen_ranking:k==='itf'?p.itf_ranking:k==='junior'?p.junior_ranking:k==='ncaa'?p.ncaa_rank:(p.official_ranking??(p.ranking_current?p.ranking:null)??p.game_world_rank??p.world_rank??p.ranking)}
 function rankCell(p,k){
  const v=rankValue(p,k);
  return v==null?'<span class="muted">NR</span>':'#'+fmt(v);
 }
-function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='junior_doubles'?p.junior_doubles_points:k==='race'?p.race_points:k==='nextgen'?p.nextgen_points:k==='junior'?(Number(p.junior_points||0)+Number(p.junior_game_points||0)):k==='ncaa'?null:p.points}
+function rankPoints(p,k){return k==='doubles'?p.doubles_points:k==='junior_doubles'?p.junior_doubles_points:k==='race'?p.race_points:k==='doubles_race'?p.doubles_race_points:k==='junior_race'?p.junior_race_points:k==='junior_doubles_race'?p.junior_doubles_race_points:k==='nextgen'?p.nextgen_points:k==='junior'?(Number(p.junior_points||0)+Number(p.junior_game_points||0)):k==='ncaa'?null:p.points}
 function rankSnapshot(p,k){
  return k==='doubles'?p.doubles_snapshot_date||RANKING_SNAPSHOT:
         k==='junior_doubles'?p.junior_doubles_snapshot_date||RANKING_SNAPSHOT:
+        k==='doubles_race'?p.doubles_race_snapshot_date||RANKING_SNAPSHOT:
+        k==='junior_race'?p.junior_race_snapshot_date||RANKING_SNAPSHOT:
+        k==='junior_doubles_race'?p.junior_doubles_race_snapshot_date||RANKING_SNAPSHOT:
         k==='race'?p.race_snapshot_date||RANKING_SNAPSHOT:
         k==='nextgen'?p.nextgen_snapshot_date||RANKING_SNAPSHOT:
         k==='junior'?p.junior_snapshot_date||RANKING_SNAPSHOT:
@@ -101,7 +104,7 @@ function displayAge(p,at=RANKING_SNAPSHOT){
  const y=Number(String(at).slice(0,4)),sy=Number(String(snap).slice(0,4));
  return Number(p.age)+(Number.isFinite(y)&&Number.isFinite(sy)?y-sy:0);
 }
-function rankAge(p,k){return displayAge(p,RANKING_SNAPSHOT)??'—'}
+function rankAge(p,k){return p?.is_team?'—':(displayAge(p,RANKING_SNAPSHOT)??'—')}
 function ageLabel(p,withUnit=true){
  const age=displayAge(p,RANKING_SNAPSHOT);
  if(age==null)return withUnit?'âge N/V':'N/V';
@@ -285,11 +288,11 @@ function home(){
  </section>`
 }
 function rankings(){
- const kinds=[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_doubles','Junior Double'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
+ const kinds=[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['doubles_race','Race Double'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_race','Race Junior'],['junior_doubles','Junior Double'],['junior_doubles_race','Race Junior Dbl'],['itf','ITF WTT'],['ncaa','NCAA / ITA']];
  if(rankKind==='ncaa')return ncaaRanking();
  const startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rankRows.length,rankCount);
  const first=rankRows[0]||{},snap=rankSnapshot(first,rankKind);
- const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='junior_doubles'?'Court Boss Junior Doubles':rankKind==='race'?'ATP Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
+ const label=rankKind==='singles'?'ATP Ranking':rankKind==='doubles'?'ATP Doubles':rankKind==='doubles_race'?'ATP Doubles Race':rankKind==='junior_doubles'?'Court Boss Junior Doubles':rankKind==='junior_doubles_race'?'Junior Double Race':rankKind==='race'?'ATP Race':rankKind==='junior_race'?'ITF Junior Finals Race':rankKind==='nextgen'?'Next Gen Race U21':rankKind==='junior'?'ITF Juniors':'ITF World Tennis Tour';
  const reference=rankKind==='singles'
    ?'Classement monde Court Boss jusqu’au rang 30 000. Le rang ATP officiel reste identifié séparément quand il est disponible · snapshot '+df(snap||RANKING_SNAPSHOT)+'.'
    :rankKind==='doubles'

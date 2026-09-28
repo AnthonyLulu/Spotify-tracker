@@ -2035,6 +2035,19 @@ Deno.serve(async(req:Request)=>{
           })
           .filter(Boolean)
           .sort((a:any,b:any)=>Number(a.seed||999)-Number(b.seed||999)||Number(a.ranking||9999)-Number(b.ranking||9999));
+      }else if(/Junior Finals/i.test(String(t.data.category||""))){
+        const race=await db.from("junior_race_view")
+          .select("id,name,country,birth_date,age,age_snapshot_date,junior_race_ranking,junior_race_points,current_ability,potential,form,fitness,fatigue,style,finals_status")
+          .order("junior_race_ranking",{ascending:true}).limit(8);
+        if(race.error)return h({error:race.error.message},500);
+        main=(race.data??[]).map((p:any)=>({
+          ...p,
+          age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
+          ranking:p.junior_race_ranking,
+          points:p.junior_race_points,
+          seed:p.junior_race_ranking,
+          qualification:"Junior Finals Race"
+        }));
       }else{
         const pool=await db.from("junior_display_pool_view")
           .select("id,name,country,age,age_snapshot_date,birth_date,display_rank,junior_points,current_ability,potential,form,fitness,fatigue,style")

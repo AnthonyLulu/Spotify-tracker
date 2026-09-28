@@ -1797,7 +1797,7 @@ Deno.serve(async(req:Request)=>{
       }
       player=await resolvePlayerPhoto(player);
     }
-    const [staffLinks,staffHistory,relA,relB]=await Promise.all([
+    const [staffLinks,staffHistory,relA,relB,agencyRepresentation,agencyHistory]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
@@ -1813,7 +1813,14 @@ Deno.serve(async(req:Request)=>{
       db.from("player_relationships")
         .select("id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,source_url,formed_date,last_update,other:players!player_relationships_player_a_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
         .eq("player_b_id",id).eq("active",true).lte("last_update",referenceDate)
-        .order("affinity",{ascending:false}).limit(12)
+        .order("affinity",{ascending:false}).limit(12),
+      db.from("player_agency_representation")
+        .select("start_date,end_date,commission_pct,active,trust,agency:staff_agencies(*),agent:staff_profiles!player_agency_representation_agent_staff_id_fkey(id,name,nationality,primary_role,reputation,negotiation_rating,former_player_status,former_player_id)")
+        .eq("player_id",id).eq("active",true).lte("start_date",referenceDate).maybeSingle(),
+      db.from("player_agency_history")
+        .select("start_date,end_date,commission_pct,trust_start,trust_end,ended_reason,agency:staff_agencies(*),agent:staff_profiles!player_agency_history_agent_staff_id_fkey(id,name,nationality,primary_role,reputation)")
+        .eq("player_id",id).lte("start_date",referenceDate)
+        .order("end_date",{ascending:false}).limit(8)
     ]);
     const socialRows=[...(relA.data??[]),...(relB.data??[])]
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
@@ -1825,7 +1832,9 @@ Deno.serve(async(req:Request)=>{
       tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons,
       staff:staffLinks.error?[]:(staffLinks.data??[]),
       staffHistory:staffHistory.error?[]:(staffHistory.data??[]),
-      relationships:socialRows
+      relationships:socialRows,
+      agencyRepresentation:agencyRepresentation.error?null:agencyRepresentation.data,
+      agencyHistory:agencyHistory.error?[]:(agencyHistory.data??[])
     });
   }
 
@@ -2544,6 +2553,9 @@ Deno.serve(async(req:Request)=>{
         const agents=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_agent_networks",{p_date:date})
           :{data:null,error:null};
+        const agentEvolution=month===1||month===4||month===7||month===10
+          ?await db.rpc("evolve_player_agent_networks",{p_date:date})
+          :{data:null,error:null};
         const trainingCenters=await db.rpc("progress_staff_training_centers",{p_date:date});
         const teamStaff=await db.rpc("rotate_college_davis_staff",{p_date:date});
         const coachAcademies=month===1
@@ -2559,6 +2571,7 @@ Deno.serve(async(req:Request)=>{
           ...(staffMarketRefresh||{}),
           meta:meta.error?{error:meta.error.message}:meta.data,
           agents:agents.error?{error:agents.error.message}:agents.data,
+          agentEvolution:agentEvolution.error?{error:agentEvolution.error.message}:agentEvolution.data,
           trainingCenters:trainingCenters.error?{error:trainingCenters.error.message}:trainingCenters.data,
           teamStaff:teamStaff.error?{error:teamStaff.error.message}:teamStaff.data,
           coachAcademies:coachAcademies.error?{error:coachAcademies.error.message}:coachAcademies.data,

@@ -1333,6 +1333,8 @@ function davisPage(){
  const federations=boot.federations||[];
  const nation=String(boot.selectedFederation||f.nation||career().country||'FRA').toUpperCase();
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
+ const doublesOnlyManaged=String(career().career_focus||'mixed')==='doubles_only';
+ const managedId=Number(career().managed_player_id||0);
  const nationStaff=allDavisStaff.filter(x=>String(x.nation||'').toUpperCase()===nation);
  const today=String(local.date||RANKING_SNAPSHOT);
  const nationTies=ties.filter(t=>t.home_nation===nation||t.away_nation===nation).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
@@ -1362,7 +1364,7 @@ function davisPage(){
    ${nextTie?'<button class="primary" style="margin-top:10px" onclick="playDavisTie('+nextTie.id+')">Jouer la rencontre</button>':'<div class="notice" style="margin-top:10px">Aucune rencontre future connue pour cette fédération dans le calendrier actuellement chargé.</div>'}
   </div>
   <div class="card"><div class="row between"><div><div class="eyebrow">Sélection</div><h2>${flags[nation]||'🏳️'} ${nation}</h2></div><span class="pill">${sq.length} joueurs</span></div>
-   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné. La sélection sera générée depuis les meilleurs joueurs du pays.</div>'}
+   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';const ownDoubleOnly=doublesOnlyManaged&&Number(p.id)===managedId;const allowedRoles=ownDoubleOnly?roles.filter(r=>!/^Simple/.test(r)):roles;return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)} ${ownDoubleOnly?'<span class="badge good">Double uniquement</span>':''}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${allowedRoles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné. La sélection sera générée depuis les meilleurs joueurs du pays.</div>'}
   </div>
  </div>
 

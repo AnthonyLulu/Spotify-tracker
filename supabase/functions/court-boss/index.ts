@@ -4169,6 +4169,63 @@ Deno.serve(async(req:Request)=>{
       return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing,recommendation_boost:recommendationBoost,agency_commission:agencyCommission});
     }
 
+    if(action==="counter_staff_offer"){
+      const cand=await db.from("staff_candidates").select("*,profile:staff_profiles(*)").eq("id",id).maybeSingle();
+      if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
+      if(cand.data.status!=="available")return h({error:"Ce candidat n'est plus disponible."},409);
+      if(cand.data.interview_status!=="completed")return h({error:"Passe d'abord un entretien avec ce candidat."},409);
+
+      const p:any=Array.isArray(cand.data.profile)?cand.data.profile[0]:cand.data.profile||{};
+      const requestedWeekly=Math.max(1,Number(cand.data.requested_weekly||cand.data.weekly_cost||1));
+      const requestedSigning=Math.max(0,Number(cand.data.requested_signing||cand.data.signing_cost||0));
+      const wantedYears=Math.max(1,Number(cand.data.desired_years||2));
+      const offeredWeekly=Math.max(0,Math.round(Number(body?.weekly||requestedWeekly)));
+      const offeredSigning=Math.max(0,Math.round(Number(body?.signing||requestedSigning)));
+      const offeredYears=Math.max(1,Math.min(5,Math.round(Number(body?.years||wantedYears))));
+      const interest=Number(cand.data.interest||50);
+      const fit=Number(cand.data.managed_fit||60);
+      const competing=Number(cand.data.competing_offers||0);
+
+      const weeklyScore=Math.min(1.15,offeredWeekly/requestedWeekly)*45;
+      const signingScore=requestedSigning>0?Math.min(1.20,offeredSigning/requestedSigning)*18:18;
+      const durationScore=Math.max(0,10-Math.abs(offeredYears-wantedYears)*4);
+      const projectScore=interest*.13+fit*.09;
+      const threshold=76
+        +Math.max(0,Number(p.ambition||10)-10)*.55
+        +Math.max(0,Number(p.reputation||10)-12)*.45
+        +competing*1.5
+        -Math.max(0,Number(p.loyalty||10)-10)*.20;
+      const score=weeklyScore+signingScore+durationScore+projectScore;
+
+      const oldDemands:any=cand.data.demands||{};
+      if(score>=threshold){
+        const newDemands={...oldDemands,negotiation_status:"agreed",last_offer_score:Math.round(score),last_offer_date:String(career.data.career_date||AGE_REFERENCE_DATE)};
+        const up=await db.from("staff_candidates").update({
+          requested_weekly:offeredWeekly,
+          requested_signing:offeredSigning,
+          desired_years:offeredYears,
+          demands:newDemands,
+          interest:Math.min(99,interest+4)
+        }).eq("id",id);
+        if(up.error)return h({error:up.error.message},500);
+        return h({ok:true,status:"accepted",score:Math.round(score),threshold:Math.round(threshold),weekly:offeredWeekly,signing:offeredSigning,years:offeredYears});
+      }
+
+      const gap=Math.max(0,threshold-score);
+      const counterWeekly=Math.round(Math.max(offeredWeekly,requestedWeekly*(gap<8?.97:gap<16?.99:1)));
+      const counterSigning=Math.round(Math.max(offeredSigning,requestedSigning*(gap<8?.94:gap<16?.98:1)));
+      const newDemands={...oldDemands,negotiation_status:"counter",last_offer_score:Math.round(score),last_offer_date:String(career.data.career_date||AGE_REFERENCE_DATE)};
+      const up=await db.from("staff_candidates").update({
+        requested_weekly:counterWeekly,
+        requested_signing:counterSigning,
+        desired_years:wantedYears,
+        demands:newDemands,
+        interest:Math.max(20,interest-(gap>=18?5:2))
+      }).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      return h({ok:true,status:"counter",score:Math.round(score),threshold:Math.round(threshold),weekly:counterWeekly,signing:counterSigning,years:wantedYears});
+    }
+
     if(action==="hire_staff"){
       const cand=await db.from("staff_candidates").select("*").eq("id",id).maybeSingle();
       if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);

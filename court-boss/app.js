@@ -1529,7 +1529,7 @@ window.openPlayer=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier joueur…</div></div></div>';
  try{
   const d=await get('/api/player?id='+id),p=d.player;if(!p)throw new Error('Joueur introuvable');
-  const a=p.player_attributes||{},ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[];
+  const a=p.player_attributes||{},ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[];
   const ncaa=p.ncaa_current?(ncaaRows.find(x=>String(x.status||'')==='Active')||null):null;
   const ncaaIsAlumni=String(p.ncaa_status||'')==='Alumni'||String(ncaaCareer?.status||'')==='Alumni';
   const ncaaHistorical=!p.ncaa_current&&!!p.ncaa_verified&&!ncaaIsAlumni;
@@ -1612,6 +1612,11 @@ window.openPlayer=async id=>{
  ${p.turned_pro_year?`<div class="list-item row between"><span>Passage pro</span><b>${p.turned_pro_year}</b></div>`:''}
  ${p.coaches&&!playerStaff.length?`<div class="list-item row between"><span>Coach(s)</span><b>${esc(p.coaches)}</b></div>`:''}
 </div>
+${!isRetired?`<div class="card" style="margin-top:10px;padding:12px">
+ <div class="row between"><div><div class="eyebrow">Orientation de carrière</div><h3 style="margin:2px 0">${careerFocusLabel(p.career_focus||'mixed')}</h3></div><span class="badge ${String(p.career_focus||'mixed')==='doubles_only'?'good':''}">${p.career_focus_source==='Utilisateur'?'Choix joueur':'Simulation Court Boss'}</span></div>
+ <div class="muted mini">${esc(p.career_focus_reason||careerFocusDescription(p.career_focus||'mixed'))}</div>
+ ${careerFocusHistory.length?`<div style="margin-top:8px">${careerFocusHistory.slice(0,5).map(x=>`<div class="list-item row between"><div><b>${careerFocusLabel(x.to_focus)}</b><div class="muted micro">${esc(x.reason||'Changement de trajectoire')}</div></div><div style="text-align:right"><span class="badge">${df(x.changed_at)}</span><div class="muted micro">${esc(x.source||'Court Boss')}</div></div></div>`).join('')}</div>`:''}
+</div>`:''}
 ${agencyRepresentation?`<div class="card" style="margin-top:10px;padding:12px">
  <div class="row between"><div><div class="eyebrow">Représentation</div><h3 style="margin:2px 0">Agent & agence</h3></div><span class="badge">Confiance ${agencyRepresentation.trust??'—'}/100</span></div>
  <div class="list-item"><div class="row between"><div><b>${esc(agencyRepresentation.agency?.name||'Agence')}</b><div class="muted mini">Commission ${agencyRepresentation.commission_pct??'—'}% · depuis ${df(agencyRepresentation.start_date)}</div></div><div style="text-align:right"><b class="click" onclick="openStaffProfile(${agencyRepresentation.agent?.id})">${esc(agencyRepresentation.agent?.name||'Agent')}</b><div class="muted micro">Négociation ${agencyRepresentation.agent?.negotiation_rating??'—'}/20 · rep ${agencyRepresentation.agent?.reputation??'—'}/20</div></div></div></div>

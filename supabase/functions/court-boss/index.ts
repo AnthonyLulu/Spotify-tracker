@@ -1851,9 +1851,10 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
-    const [developmentProfile,developmentHistory]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
-      db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30)
+      db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
+      db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle()
     ]);
 
     return h({
@@ -1870,7 +1871,8 @@ Deno.serve(async(req:Request)=>{
       primaryDoublesCommitment:primaryDoublesCommitment.error?null:primaryDoublesCommitment.data,
       doublesPartnerHistory:doublesPartnerHistory.error?[]:(doublesPartnerHistory.data??[]),
       developmentProfile:developmentProfile.error?null:developmentProfile.data,
-      developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[])
+      developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[]),
+      scoutingReport:scoutingReport.error?null:scoutingReport.data
     });
   }
 

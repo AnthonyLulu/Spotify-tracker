@@ -2569,8 +2569,36 @@ Deno.serve(async(req:Request)=>{
     const partner:any={...partnership.data.partner,player_attributes:Array.isArray(partnership.data.partner.player_attributes)?partnership.data.partner.player_attributes[0]:partnership.data.partner.player_attributes};
     const anthony:any={...anth.data,player_attributes:Array.isArray(anth.data.player_attributes)?anth.data.player_attributes[0]:anth.data.player_attributes,isUser:true};
     const isJuniorDouble=String(t.circuit)==="Junior";
+    const isJuniorDoubleFinals=/Junior Double Finals/i.test(String(t.category||""));
+    const isAtpDoubleFinals=String(t.circuit)==="ATP"&&/ATP Finals/i.test(String(t.category||""));
+    let finalsPairRows:any[]=[];
+    if(isJuniorDoubleFinals){
+      const race=await db.rpc("junior_doubles_race_for_date",{p_date:String(c.career_date||AGE_REFERENCE_DATE)});
+      if(race.error)return h({error:race.error.message},500);
+      finalsPairRows=(race.data??[]).slice(0,8);
+      const own=finalsPairRows.find((x:any)=>
+        (Number(x.player_one_id)===Number(anthony.id)&&Number(x.player_two_id)===Number(partner.id))
+        ||(Number(x.player_one_id)===Number(partner.id)&&Number(x.player_two_id)===Number(anthony.id))
+      );
+      if(!own)return h({error:"Paire non qualifiée pour les Junior Doubles Finals : Top 8 de la Race requis.",race_required:8},409);
+    }else if(isAtpDoubleFinals){
+      const race=await db.rpc("doubles_race_for_date",{p_date:String(c.career_date||AGE_REFERENCE_DATE)});
+      if(race.error)return h({error:race.error.message},500);
+      finalsPairRows=(race.data??[]).slice(0,8);
+      const own=finalsPairRows.find((x:any)=>
+        (Number(x.player_one_id)===Number(anthony.id)&&Number(x.player_two_id)===Number(partner.id))
+        ||(Number(x.player_one_id)===Number(partner.id)&&Number(x.player_two_id)===Number(anthony.id))
+      );
+      if(!own)return h({error:"Paire non qualifiée pour les ATP Finals : Top 8 de la Race Double requis.",race_required:8},409);
+    }
+
     let poolRes:any;
-    if(isJuniorDouble){
+    if(finalsPairRows.length){
+      const ids=[...new Set(finalsPairRows.flatMap((x:any)=>[Number(x.player_one_id),Number(x.player_two_id)]).filter(Boolean))];
+      poolRes=await db.from("players")
+        .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+        .in("id",ids);
+    }else if(isJuniorDouble){
       poolRes=await db.from("players")
         .select("id,name,country,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
         .not("junior_doubles_ranking","is",null)
@@ -2595,11 +2623,33 @@ Deno.serve(async(req:Request)=>{
 
     const userPair={a:anthony,b:partner,name:anthony.name+" / "+partner.name,isUser:true,strength:pairStrength(anthony,partner,Number(partnership.data.chemistry||70))};
     const pairs:any[]=[];
-    for(let i=0;i+1<Math.min(pool.length,30);i+=2){
-      const a=pool[i],b=pool[i+1];
-      pairs.push({a,b,name:a.name+" / "+b.name,isUser:false,strength:pairStrength(a,b,68+((a.id+b.id)%20))});
+    if(finalsPairRows.length){
+      const byId=new Map<number,any>([
+        ...pool.map((p:any)=>[Number(p.id),p] as [number,any]),
+        [Number(anthony.id),anthony],
+        [Number(partner.id),partner]
+      ]);
+      for(const row of finalsPairRows){
+        const a:any=byId.get(Number(row.player_one_id));
+        const b:any=byId.get(Number(row.player_two_id));
+        if(!a||!b)continue;
+        const isUserPair=(Number(a.id)===Number(anthony.id)&&Number(b.id)===Number(partner.id))
+          ||(Number(a.id)===Number(partner.id)&&Number(b.id)===Number(anthony.id));
+        if(isUserPair)continue;
+        pairs.push({
+          a,b,name:String(row.name||a.name+" / "+b.name),isUser:false,
+          strength:pairStrength(a,b,70),
+          race_rank:Number(row.doubles_race_ranking??row.junior_doubles_race_ranking??999),
+          race_points:Number(row.doubles_race_points??row.junior_doubles_race_points??0)
+        });
+      }
+    }else{
+      for(let i=0;i+1<Math.min(pool.length,30);i+=2){
+        const a=pool[i],b=pool[i+1];
+        pairs.push({a,b,name:a.name+" / "+b.name,isUser:false,strength:pairStrength(a,b,68+((a.id+b.id)%20))});
+      }
     }
-    const drawSize=Math.min(16,Math.max(8,2**Math.floor(Math.log2(Math.max(8,pairs.length+1)))));
+    const drawSize=finalsPairRows.length?8:Math.min(16,Math.max(8,2**Math.floor(Math.log2(Math.max(8,pairs.length+1)))));
     let participants=[userPair,...pairs].slice(0,drawSize);
     const matches:any[]=[];
     let userRound="R16";

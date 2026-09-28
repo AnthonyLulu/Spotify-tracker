@@ -507,6 +507,7 @@ function tournamentStatus(t){
 function tmCuts(t){return {direct:Number(t.direct_cut??t.projected_direct_cut??0)||null,qual:Number(t.qual_cut??t.projected_qual_cut??0)||null,projected:t.direct_cut==null&&t.projected_direct_cut!=null}}
 function singlesEligibility(t){
  const c=career(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
+ if(String(c.career_focus||'mixed')==='doubles_only')return {label:"Double exclusivement",cls:"bad",can:false,phase:"career_focus"};
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
  if(String(t.circuit)==="NCAA"){
   const mode=String(t.registration_mode||"");
@@ -1480,10 +1481,36 @@ window.runHistoryArchiveSearch=async(q,offset=0)=>{
 window.historyArchivePage=d=>runHistoryArchiveSearch(historyQuery,Math.max(0,historyDbOffset+Number(d)*100));
 
 
+function careerFocusLabel(v){
+ return v==='doubles_only'?'Double exclusivement':v==='singles_priority'?'Simple prioritaire':'Simple + double';
+}
+function careerFocusDescription(v){
+ return v==='doubles_only'
+  ?'Aucune inscription en simple. Le classement simple décroît naturellement et ton calendrier se construit autour du double.'
+  :v==='singles_priority'
+    ?'Le simple reste l’objectif principal, mais tu peux jouer du double quand tu le souhaites.'
+    :'Simple et double sont menés en parallèle avec deux classements actifs.';
+}
 function myPlayerPage(){
- const c=career();
- return `<div class="section-head"><div><div class="eyebrow">Carrière</div><h1>Mon joueur</h1><div class="muted">Personnalise ton joueur géré et suis sa trajectoire.</div></div></div>
- <div class="grid g2"><div class="card"><h2>Identité</h2><label class="mini muted">Nom</label><input class="input" value="${esc(c.player_name)}" onchange="editCareer('player_name',this.value)"><label class="mini muted">Pays</label><input class="input" value="${esc(c.country)}" onchange="editCareer('country',this.value)"><label class="mini muted">Style</label><select class="select" onchange="editCareer('style',this.value)">${['Attaquant polyvalent','Attaquant fond de court','Contreur','All-court','Serveur-volée'].map(s=>`<option ${s===c.style?'selected':''}>${s}</option>`).join('')}</select></div>
+ const c=career(),focus=String(c.career_focus||'mixed');
+ const modes=[
+  ['singles_priority','Simple prioritaire','ATP simple au centre du projet, double occasionnel.'],
+  ['mixed','Simple + double','Deux carrières menées en parallèle.'],
+  ['doubles_only','Double exclusivement','Plus aucun tableau simple, carrière construite autour des paires et de la Race double.']
+ ];
+ return `<div class="section-head"><div><div class="eyebrow">Carrière</div><h1>Mon joueur</h1><div class="muted">Personnalise ton joueur géré et définis sa trajectoire sportive.</div></div></div>
+ <div class="card" style="margin-bottom:12px">
+  <div class="row between"><div><div class="eyebrow">Orientation de carrière</div><h2>${careerFocusLabel(focus)}</h2><div class="muted mini">${careerFocusDescription(focus)}</div></div><span class="badge ${focus==='doubles_only'?'good':focus==='singles_priority'?'warn':''}">${careerFocusLabel(focus)}</span></div>
+  <div class="grid g3 career-focus-grid" style="margin-top:10px">
+   ${modes.map(m=>`<button class="card click career-focus-card ${focus===m[0]?'career-focus-active':''}" onclick="setCareerFocus('${m[0]}')"><div class="eyebrow">${focus===m[0]?'Actif':'Choisir'}</div><h3>${m[1]}</h3><div class="muted mini">${m[2]}</div></button>`).join('')}
+  </div>
+  <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px">
+   <span class="badge">Dernier changement : ${df(c.career_focus_changed_at||'2025-12-01')}</span>
+   <span class="badge">${fmt(c.career_focus_switches||0)} changement(s)</span>
+   ${focus==='doubles_only'?'<span class="badge good">Inscriptions simple verrouillées</span>':''}
+  </div>
+ </div>
+ <div class="grid g2"><div class="card"><h2>Identité</h2><label class="mini muted">Nom</label><input class="input" value="${esc(c.player_name)}" onchange="editCareer('player_name',this.value)"><label class="mini muted">Pays</label><input class="input" value="${esc(c.country)}" onchange="editCareer('country',this.value)"><label class="mini muted">Style</label><select class="select" onchange="editCareer('style',this.value)">${['Attaquant polyvalent','Attaquant fond de court','Contreur','All-court','Serveur-volée'].map(x=>`<option ${x===c.style?'selected':''}>${x}</option>`).join('')}</select></div>
  <div class="card"><h2>Profil</h2><div class="statline"><div class="statbox"><span class="muted mini">ATP</span><b>#${fmt(c.singles_rank)}</b></div><div class="statbox"><span class="muted mini">Double</span><b>#${fmt(c.doubles_rank)}</b></div><div class="statbox"><span class="muted mini">CA</span><b>${c.current_ability||56}</b></div><div class="statbox"><span class="muted mini">PA</span><b>${c.potential||82}</b></div></div><div class="list-item row between"><span>Âge</span><input class="input" style="max-width:100px" type="number" value="${c.age||19}" onchange="editCareer('age',Number(this.value))"></div><div class="list-item row between"><span>Taille</span><input class="input" style="max-width:100px" type="number" value="${c.height_cm||184}" onchange="editCareer('height_cm',Number(this.value))"></div><div class="list-item row between"><span>Poids</span><input class="input" style="max-width:100px" type="number" value="${c.weight_kg||78}" onchange="editCareer('weight_kg',Number(this.value))"></div></div></div>`
 }
 function fantasyPage(){

@@ -1886,7 +1886,7 @@ Deno.serve(async(req:Request)=>{
     const tr=await db.from("tournaments").select("*").eq("id",id).maybeSingle();
     if(tr.error)return h({error:tr.error.message},500);
     if(!tr.data)return h({error:"competition not found"},404);
-    const t:any=tr.data,key=String(t.competition_key||"");
+    const t:any=await resolveTournamentImage(tr.data),key=String(tr.data.competition_key||"");
     let history:any[]=[];
     if(key){
       const x=await db.from("competition_history").select("*").eq("competition_key",key).order("season",{ascending:false}).limit(250);

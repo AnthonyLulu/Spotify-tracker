@@ -1084,40 +1084,46 @@ window.commitCollege=async id=>{try{await managerAction('commit_college',id);awa
 window.turnProCollege=async()=>{try{if(!confirm('Passer professionnel et quitter la NCAA ? Le dossier universitaire restera archivé.'))return;await managerAction('turn_pro_college',1);await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id);await loadManagement();render()}catch(e){alert(e.message)}}
 function davisPage(){
- const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[];
+ const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[],history=management?.davisHistory||[];
+ const federations=boot.federations||[];
+ const nation=String(boot.selectedFederation||f.nation||career().country||'FRA').toUpperCase();
  const roles=['Simple 1','Simple 2','Double A','Double B','Réserve'];
  const today=String(local.date||RANKING_SNAPSHOT);
- const franceTies=ties.filter(t=>t.home_nation==='FRA'||t.away_nation==='FRA').sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
- const nextFrance=franceTies.find(t=>t.status!=='completed'&&String(t.tie_date)>=today)||null;
- const lastFrance=[...franceTies].reverse().find(t=>t.status==='completed'||String(t.tie_date)<today)||null;
- const focusTie=nextFrance||lastFrance||franceTies[0]||null;
+ const nationTies=ties.filter(t=>t.home_nation===nation||t.away_nation===nation).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
+ const nextTie=nationTies.find(t=>t.status!=='completed'&&String(t.tie_date)>=today)||null;
+ const lastTie=[...nationTies].reverse().find(t=>t.status==='completed'||String(t.tie_date)<today)||null;
+ const focusTie=nextTie||lastTie||nationTies[0]||null;
  const final8=ties.filter(t=>String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
  const worldQualifiers=ties.filter(t=>!String(t.stage||'').includes('Final 8')).sort((a,b)=>String(a.tie_date).localeCompare(String(b.tie_date)));
- const franceAlive=final8.some(t=>t.home_nation==='FRA'||t.away_nation==='FRA');
+ const nationAlive=final8.some(t=>t.home_nation===nation||t.away_nation===nation);
+ const seniorHistory=history.filter(x=>x.competition==='senior').sort((a,b)=>b.season-a.season);
+ const juniorHistory=history.filter(x=>x.competition==='junior').sort((a,b)=>b.season-a.season);
  const scoreFor=t=>t.home_score!=null&&t.away_score!=null?`${t.home_score}-${t.away_score}`:'vs';
  const tieCard=t=>{const unresolved=/^(TBD|Winner )/i.test(String(t.home_nation||''))||/^(TBD|Winner )/i.test(String(t.away_nation||''));const ready=t.status!=='completed'&&!unresolved;return `<div class="davis-tie-card ${t.status==='completed'?'completed':''} ${ready?'click':''}" ${ready?`onclick="playDavisTie(${t.id})"`:''}>
    <div class="row between"><span class="badge tag-fed">${esc(t.stage||'Coupe Davis')}</span><span class="muted mini">${df(t.tie_date)}</span></div>
    <div class="davis-matchup"><b>${flags[t.home_nation]||'🏳️'} ${esc(t.home_nation)}</b><strong>${scoreFor(t)}</strong><b>${flags[t.away_nation]||'🏳️'} ${esc(t.away_nation)}</b></div>
    <div class="row between" style="margin-top:7px"><div class="muted mini">${esc(t.venue||'Lieu à confirmer')} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></div>${ready?'<span class="badge warn">Simuler</span>':t.status==='completed'?'<span class="badge good">Terminé</span>':'<span class="badge">En attente</span>'}</div>
  </div>`};
+ const historyRows=rows=>rows.map(x=>`<div class="list-item row between"><div><b>${x.season}</b> · ${flags[x.winner_country]||'🏳️'} ${esc(x.winner_country||'Non disputé')}</div><div style="text-align:right"><b>${esc(x.score||'—')}</b><div class="muted micro">${x.runner_up_country?(flags[x.runner_up_country]||'🏳️')+' '+esc(x.runner_up_country):esc(x.venue||'')}</div></div></div>`).join('');
+ const selector=`<select class="select" style="min-width:190px" onchange="selectFederation(this.value)">${federations.map(x=>`<option value="${esc(x.nation)}" ${x.nation===nation?'selected':''}>${flags[x.nation]||'🏳️'} ${esc(x.nation)} · ${x.reputation}/100</option>`).join('')}</select>`;
  return `<div class="fm-dashboard">
- <div class="fm-page-head"><div><div class="eyebrow">Équipe nationale</div><h1>Coupe Davis</h1><div class="muted">Saison 2025, sélection française et tableau mondial au 01/12/2025.</div></div><div class="fm-head-stack"><div class="fm-head-badge">FRA ${f.reputation||91}/100</div><div class="fm-head-badge subtle">${franceAlive?'Final 8':'Parcours terminé'}</div></div></div>
+ <div class="fm-page-head"><div><div class="eyebrow">Équipe nationale</div><h1>Coupe Davis</h1><div class="muted">Fédération sélectionnable · calendrier mondial figé au 01/12/2025 puis simulé par la carrière.</div></div><div class="fm-head-stack">${selector}<div class="fm-head-badge">${flags[nation]||'🏳️'} ${nation} ${f.reputation||'—'}/100</div><div class="fm-head-badge subtle">${nationAlive?'Final 8':'Parcours / qualifications'}</div></div></div>
 
  <div class="grid g2">
   <div class="card davis-focus">
-   <div class="row between"><div><div class="eyebrow">${nextFrance?'Prochaine rencontre France':'Dernière rencontre France'}</div><h2>${focusTie?`${flags[focusTie.home_nation]||'🏳️'} ${esc(focusTie.home_nation)} ${scoreFor(focusTie)} ${esc(focusTie.away_nation)} ${flags[focusTie.away_nation]||'🏳️'}`:'Aucune rencontre'}</h2></div>${nextFrance?'<span class="badge warn">À venir</span>':'<span class="badge">Terminée</span>'}</div>
+   <div class="row between"><div><div class="eyebrow">${nextTie?'Prochaine rencontre '+nation:'Dernière rencontre '+nation}</div><h2>${focusTie?`${flags[focusTie.home_nation]||'🏳️'} ${esc(focusTie.home_nation)} ${scoreFor(focusTie)} ${esc(focusTie.away_nation)} ${flags[focusTie.away_nation]||'🏳️'}`:'Aucune rencontre chargée'}</h2></div>${nextTie?'<span class="badge warn">À venir</span>':'<span class="badge">Archive</span>'}</div>
    ${focusTie?`<div class="list-item row between"><span>Date</span><b>${df(focusTie.tie_date)}</b></div><div class="list-item row between"><span>Phase</span><b>${esc(focusTie.stage||'—')}</b></div><div class="list-item row between"><span>Terrain</span><b class="${surfaceClass(surfaceLabel(focusTie))}">${esc(surfaceLabel(focusTie))}</b></div><div class="list-item row between"><span>Lieu</span><b>${esc(focusTie.venue||'—')}</b></div>`:''}
-   ${nextFrance?'<button class="primary" style="margin-top:10px" onclick="playDavisTie('+nextFrance.id+')">Jouer la rencontre</button>':'<div class="notice" style="margin-top:10px">La France n’est pas qualifiée pour le Final 8 actuellement affiché. Le tableau mondial continue quand même dans la simulation.</div>'}
+   ${nextTie?'<button class="primary" style="margin-top:10px" onclick="playDavisTie('+nextTie.id+')">Jouer la rencontre</button>':'<div class="notice" style="margin-top:10px">Aucune rencontre future connue pour cette fédération dans le calendrier actuellement chargé.</div>'}
   </div>
-  <div class="card"><div class="row between"><div><div class="eyebrow">Sélection</div><h2>Équipe de France</h2></div><span class="pill">${sq.length} joueurs</span></div>
-   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné.</div>'}
+  <div class="card"><div class="row between"><div><div class="eyebrow">Sélection</div><h2>${flags[nation]||'🏳️'} ${nation}</h2></div><span class="pill">${sq.length} joueurs</span></div>
+   ${sq.map(sqRow=>{const p=sqRow.players;if(!p)return'';const role=local.davisRoles[p.id]||sqRow.role||'Réserve';return `<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>${esc(p.name)}</b><div class="muted mini">ATP #${p.ranking||'—'} · Double #${fmt(p.doubles_ranking||9999)}</div></div><select class="select" style="width:auto" onchange="setDavisRole(${p.id},this.value)">${roles.map(r=>`<option ${r===role?'selected':''}>${r}</option>`).join('')}</select></div>`}).join('')||'<div class="empty">Aucun joueur sélectionné. La sélection sera générée depuis les meilleurs joueurs du pays.</div>'}
   </div>
  </div>
 
- <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours France</div><h2>Qualifications 2025</h2></div></div>
- <div class="davis-timeline">${franceTies.map(tieCard).join('')||'<div class="card empty">Aucune rencontre France chargée.</div>'}</div>
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Parcours ${nation}</div><h2>Rencontres de la fédération</h2></div></div>
+ <div class="davis-timeline">${nationTies.map(tieCard).join('')||'<div class="card empty">Aucune rencontre chargée pour cette fédération.</div>'}</div>
 
- <details class="card davis-world-qualifiers" style="margin-top:16px" open>
+ <details class="card davis-world-qualifiers" style="margin-top:16px">
   <summary class="row between"><div><div class="eyebrow">Monde</div><h2>Qualifications Coupe Davis 2025</h2></div><span class="pill">${worldQualifiers.length} rencontres</span></summary>
   <div class="davis-bracket" style="margin-top:10px">${worldQualifiers.map(tieCard).join('')||'<div class="empty">Aucune rencontre mondiale chargée.</div>'}</div>
  </details>
@@ -1125,8 +1131,22 @@ function davisPage(){
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Bologne</div><h2>Final 8 2025</h2><div class="muted">Parcours archivé jusqu’au 01/12/2025.</div></div><span class="badge good">Dur intérieur</span></div>
  <div class="davis-bracket">${final8.map(tieCard).join('')||'<div class="card empty">Tableau Final 8 indisponible.</div>'}</div>
 
- ${focusTie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Détail</div><h2>Rubbers de la rencontre France</h2></div></div><div class="stack">${focusTie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score||'—')}</div><span class="badge ${r.winner_nation==='FRA'?'good':'bad'}">${esc(r.winner_nation||'—')}</span></div></div></div>`).join('')}</div>`:''}
+ <div class="grid g2" style="margin-top:18px">
+  <details class="card" open><summary><div class="eyebrow">Palmarès officiel</div><h2>Coupe Davis senior · 2000–2025</h2></summary><div class="stack" style="margin-top:10px">${historyRows(seniorHistory)}</div></details>
+  <details class="card" open><summary><div class="eyebrow">Palmarès U16</div><h2>Junior Davis Cup · 2000–2025</h2></summary><div class="stack" style="margin-top:10px">${historyRows(juniorHistory)}</div></details>
+ </div>
+
+ ${focusTie?.davis_rubbers?.length?`<div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Détail</div><h2>Rubbers de la rencontre ${nation}</h2></div></div><div class="stack">${focusTie.davis_rubbers.sort((x,y)=>x.rubber_no-y.rubber_no).map(r=>`<div class="card"><div class="row between"><div><div class="eyebrow">${esc(r.rubber_type)} · Rubber ${r.rubber_no}</div><h2>${esc(r.home_names)} vs ${esc(r.away_names)}</h2></div><div style="text-align:right"><div class="big" style="font-size:22px">${esc(r.score||'—')}</div><span class="badge ${r.winner_nation===nation?'good':'bad'}">${esc(r.winner_nation||'—')}</span></div></div></div>`).join('')}</div>`:''}
  </div>`
+}
+window.selectFederation=async nation=>{
+ try{
+  await managerAction('select_federation',1,{nation});
+  boot=await get('/api/bootstrap');
+  local.career={...(local.career||{}),...(boot.career||{})};
+  await loadManagement();
+  render();
+ }catch(e){alert(e.message)}
 }
 window.playDavisTie=async id=>{
  try{

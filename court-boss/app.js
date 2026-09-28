@@ -1503,7 +1503,7 @@ function myPlayerPage(){
  const modes=[
   ['singles_priority','Simple prioritaire','ATP simple au centre du projet, double occasionnel.'],
   ['mixed','Simple + double','Deux carrières menées en parallèle.'],
-  ['doubles_only','Double exclusivement','Plus aucun tableau simple, carrière construite autour des paires et de la Race double.']
+  ['doubles_only','Double exclusivement','Plus aucun tableau simple, carrière construite autour des paires et de la Race double, avec une longévité potentiellement supérieure.']
  ];
  return `<div class="section-head"><div><div class="eyebrow">Carrière</div><h1>Mon joueur</h1><div class="muted">Personnalise ton joueur géré et définis sa trajectoire sportive.</div></div></div>
  <div class="card" style="margin-bottom:12px">
@@ -2217,6 +2217,11 @@ window.setCareerFocus=async focus=>{
   if(boot.career)local.career={...(local.career||{}),...boot.career};
   await Promise.all([loadScheduleAdvice(),loadTournaments(),loadManagement()]);
   persist();render();
+  if(focus==='doubles_only'&&d.needs_partner){
+    alert('Orientation active : '+(d.label||labels[focus])+'. Il te faut maintenant un partenaire.');
+    nav('doubles');
+    return;
+  }
   alert('Orientation active : '+(d.label||labels[focus])+'.');
  }catch(e){alert(e.message)}
 }

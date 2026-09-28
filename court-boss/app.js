@@ -533,6 +533,18 @@ const MAJOR_TOURNAMENT_LOGOS=[
  {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
 ];
 const CURATED_TOURNAMENT_LOGOS=[
+ {re:/Millennium Estoril Open|Estoril Open/i,url:"https://assets.stickpng.com/images/635644eea54eeda751217031.png",label:"EST"},
+ {re:/Mifel Tennis Open|Los Cabos/i,url:"https://assets.stickpng.com/images/63565dd1636d1187068bf55b.png",label:"LCB"},
+ {re:/Winston-Salem Open/i,url:"https://assets.stickpng.com/images/626698e22c88722059d5870e.png",label:"WSO"},
+ {re:/Plava Laguna Croatia Open Umag|Croatia Open|Umag/i,url:"https://assets.stickpng.com/images/62665b7d1e92f9aac65b5bca.png",label:"UMAG"},
+ {re:/BNP Paribas Fortis European Open|European Open/i,url:"https://assets.stickpng.com/images/635659ed636d1187068beaf7.png",label:"EURO"},
+ // Current identities for which a clean transparent current asset is not
+ // reliably available: render a tournament-specific dark wordmark instead of
+ // an inaccurate old logo or a generic ATP 250 tile.
+ {re:/BOSS Open/i,url:null,label:"BOSS OPEN"},
+ {re:/Lynk & Co Hangzhou Open|Hangzhou Open/i,url:null,label:"HANGZHOU"},
+ {re:/Grand Prix Auvergne-Rhone-Alpes|Grand Prix Auvergne-Rhône-Alpes/i,url:null,label:"GP AURA"},
+ {re:/Almaty Open/i,url:null,label:"ALMATY"},
  {re:/Bank of China Hong Kong Tennis Open|Hong Kong Tennis Open/i,url:"https://static.hkmenstennisopen.com/wp-content/themes/hkto_2023/template/frontend/images/overview/2025/boc_hkto_logo_long.svg",label:"HKG"},
  {re:/Open Occitanie|Open Sud de France/i,url:"https://trouverlogo.fr/logos/open-occitanie.svg",label:"OCC"},
  {re:/ABN AMRO Open|ABN Amro World Tennis Tournament/i,url:"https://assets.stickpng.com/images/62ba413db3914fd78a171683.png",label:"RTM"},

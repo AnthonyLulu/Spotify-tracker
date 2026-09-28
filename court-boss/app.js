@@ -284,8 +284,9 @@ async function loadTournaments(){
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows||[];tourTbc=d.tbc||[];tourCount=d.count||0;
 
+ const logoRetryMs=30*24*60*60*1000;
  const missing=(tourRows||[])
-  .filter(t=>t.circuit==='ATP'&&!t.logo_url&&!t.logo_checked_at)
+  .filter(t=>t.circuit==='ATP'&&!t.logo_url&&(!t.logo_checked_at||Date.now()-Date.parse(String(t.logo_checked_at))>logoRetryMs))
   .slice(0,12).map(t=>t.id);
  if(missing.length&&!window.__courtBossLogoResolveBusy){
   window.__courtBossLogoResolveBusy=true;

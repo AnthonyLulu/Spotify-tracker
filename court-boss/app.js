@@ -2436,6 +2436,13 @@ window.openMatch=idx=>{
   const rally=d.avg_rally??d.rallye_moyen??'—';
   const bp=d.break_points_won??'—';
   const plan=d.tactical_plan||local.tactics||{};
+  const mc=d.matchup_components_user||{};
+  const matchupRows=[
+    ['Service / retour',mc.service_return],['Mental',mc.mental],['Physique',mc.physical],
+    ['Surface',mc.surface_fit],['Style',mc.style_matchup],['Match-up tactique',mc.tactical_matchup],
+    ['Contexte',mc.context_skill],['Grands matchs',mc.big_match],['Best of 5',mc.best_of_five],
+    ['Confiance',mc.confidence],['H2H',mc.h2h],['Forme',mc.form_delta],['Tes consignes',mc.user_tactics]
+  ].filter(x=>Number.isFinite(Number(x[1]))&&Math.abs(Number(x[1]))>.0005);
   const result=m.winner===(career().player_name||'Anthony')||m.winner===(career().player_name||'Joueur');
   const efficiency=(()=>{
     const w=Number(winners)||0,e=Number(errors)||0,n=Number(net)||50,r=Number(rally)||5;
@@ -2450,6 +2457,11 @@ window.openMatch=idx=>{
       <div class="kpi"><span class="muted mini">Fautes directes</span><b>${errors}</b></div>
       <div class="kpi"><span class="muted mini">Filet gagné</span><b>${net==='—'?'—':net+'%'}</b></div>
     </div>
+    ${d.expected_win_probability!=null?`<div class="card" style="margin-top:12px">
+<div class="row between"><div><div class="eyebrow">Moteur de match</div><h2>Pourquoi ce duel penchait d’un côté</h2></div><span class="badge">${Math.round(Number(d.expected_win_probability)*100)}%</span></div>
+${matchupRows.length?`<div class="grid g2" style="margin-top:8px">${matchupRows.map(([name,val])=>{const n=Number(val);const pct=Math.round(n*100);return `<div class="list-item row between"><span>${esc(name)}</span><b class="${pct>1?'good':pct<-1?'bad':''}">${pct>0?'+':''}${pct}</b></div>`}).join('')}</div>`:''}
+<div class="muted micro" style="margin-top:8px">Valeur positive = avantage pour ton joueur. Le moteur combine Elo, service/retour, surface, style, contexte, grands matchs, Best of 5, confiance, H2H, forme et consignes.</div>
+</div>`:''}
     <div class="grid g2" style="margin-top:12px">
       <div class="card"><h2>Lecture du match</h2>
         <div class="list-item row between"><span>Longueur moyenne des échanges</span><b>${rally} coups</b></div>

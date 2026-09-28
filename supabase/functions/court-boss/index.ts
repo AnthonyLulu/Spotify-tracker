@@ -1170,7 +1170,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="doubles_race"){
       const race=await db.rpc("doubles_race_for_date",{p_date:gameDate});
       if(race.error)return h({error:race.error.message},500);
-      let rows=race.data??[];
+      let rows=(race.data??[]).map((x:any)=>({...x,id:x.player_one_id??x.player_two_id??null}));
       if(q){const nq=normalizeName(q);rows=rows.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));}
       if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
       const count=rows.length;
@@ -1234,7 +1234,7 @@ Deno.serve(async(req:Request)=>{
     if(kind==="junior_doubles_race"){
       const race=await db.rpc("junior_doubles_race_for_date",{p_date:gameDate});
       if(race.error)return h({error:race.error.message},500);
-      let rows=race.data??[];
+      let rows=(race.data??[]).map((x:any)=>({...x,id:x.player_one_id??x.player_two_id??null}));
       if(q){const nq=normalizeName(q);rows=rows.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));}
       if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
       const count=rows.length;

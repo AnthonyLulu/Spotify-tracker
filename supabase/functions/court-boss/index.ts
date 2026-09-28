@@ -1172,7 +1172,7 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
-    const [career,academy,staff,facilities,finance,board,inbox,scouting,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save] = await Promise.all([
+    const [career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save] = await Promise.all([
       Promise.resolve(currentCareer),
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
       db.from("staff").select("*,profile:staff_profiles(*)").order("id"),
@@ -1180,7 +1180,8 @@ Deno.serve(async(req:Request)=>{
       db.from("finances").select("*").eq("id","demo").maybeSingle(),
       db.from("board_objectives").select("*").order("priority",{ascending:true}),
       db.from("inbox_items").select("*").order("created_at",{ascending:false}).limit(20),
-      db.from("scouting_assignments").select("*").order("id"),
+      db.from("scouting_assignments").select("*,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,primary_role,nationality,scouting_rating,reputation,regions,workload,burnout,energy,operational_status,rest_until)").order("id"),
+      db.from("scouting_reports").select("*,player:players!scouting_reports_player_id_fkey(id,name,country,ranking,game_world_rank,age,style,photo_url)").order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(60),
       db.from("academy_youth").select("*").order("potential",{ascending:false}),
       db.from("federation_state").select("*").eq("nation","FRA").maybeSingle(),
       db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
@@ -1193,12 +1194,13 @@ Deno.serve(async(req:Request)=>{
       db.from("medical_plan").select("*").eq("id","demo").maybeSingle(),
       sid?db.from("game_saves").select("payload").eq("id",sid).maybeSingle():Promise.resolve({data:null,error:null})
     ]);
-    const results=[career,academy,staff,facilities,finance,board,inbox,scouting,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save];
+    const results=[career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save];
     const err=results.find((x:any)=>x?.error)?.error;
     if(err) return h({error:err.message},500);
     return h({
       career:career.data,academy:academy.data,staff:staff.data??[],facilities:facilities.data??[],
       finance:finance.data,board:board.data??[],inbox:inbox.data??[],scouting:scouting.data??[],
+      scoutingReports:scoutingReports.data??[],
       youth:youth.data??[],federation:fed.data,news:news.data??[],matches:matches.data??[],
       topPlayers:top.data??[],
       upcoming:(events.data??[]).filter((x:any)=>String(x.start_date)>=String(career.data?.career_date||AGE_REFERENCE_DATE)).slice(0,40),
@@ -2634,18 +2636,36 @@ Deno.serve(async(req:Request)=>{
     if(injurySim.error||forfeitSim.error)return h({error:(injurySim.error||forfeitSim.error)?.message},500);
     const medical=await db.rpc("apply_managed_medical_week",{p_date:date});
     if(medical.error)return h({error:medical.error.message},500);
-    const scouts=await db.from("scouting_assignments").select("id,progress,status");
+    const scouts=await db.from("scouting_assignments")
+      .select("id,region,focus,progress,status,staff_profile_id,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,scouting_rating,reputation,regions,professionalism,workload,burnout,travel_fatigue,operational_status,rest_until)");
     if(!scouts.error){
       const staffProfiles=(staffRows.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
-      const scoutEfficiency=(p:any)=>Math.max(.68,Math.min(1.06,
-        1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018-Math.max(0,Number(p?.workload||20)-75)*.0015+Math.max(0,Number(p?.professionalism||10)-14)*.006
-      ));
-      const bestScout=staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p.scouting_rating||0)*scoutEfficiency(p))):10;
-      const scoutStep=Math.max(8,Math.min(18,Math.round(7+bestScout*.55)));
+      const scoutEfficiency=(p:any)=>{
+        if(String(p?.operational_status||"active")==="rest"&&String(p?.rest_until||"9999-12-31")>=date)return .40;
+        return Math.max(.62,Math.min(1.08,
+          1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018-Math.max(0,Number(p?.workload||20)-75)*.0015+Math.max(0,Number(p?.professionalism||10)-14)*.006
+        ));
+      };
+      const fallback=staffProfiles.length
+        ?staffProfiles.sort((a:any,b:any)=>Number(b.scouting_rating||0)-Number(a.scouting_rating||0))[0]
+        :null;
       for(const s of scouts.data??[]){
-        if(s.status==="active"){
-          const np=Math.min(100,Number(s.progress||0)+scoutStep);
-          await db.from("scouting_assignments").update({progress:np,status:np>=100?"completed":"active"}).eq("id",s.id);
+        if(s.status!=="active")continue;
+        const sp:any=Array.isArray((s as any).staff)?(s as any).staff[0]:(s as any).staff||fallback||{};
+        const rating=Number(sp.scouting_rating||10);
+        const regions=Array.isArray(sp.regions)?sp.regions:[];
+        const regionText=String((s as any).region||"");
+        const regionBonus=regions.some((r:any)=>regionText.toLowerCase().includes(String(r).toLowerCase()))?2:0;
+        const step=Math.max(5,Math.min(20,Math.round(5+(rating+regionBonus)*.58*scoutEfficiency(sp))));
+        const np=Math.min(100,Number((s as any).progress||0)+step);
+        const quality=Math.max(40,Math.min(98,Math.round(42+rating*2.4*scoutEfficiency(sp)+regionBonus*2)));
+        const confidence=Math.max(40,Math.min(98,Math.round(45+rating*2.2*scoutEfficiency(sp)+regionBonus*2)));
+        const update=await db.from("scouting_assignments").update({
+          progress:np,status:np>=100?"completed":"active",
+          confidence,report_quality:quality,last_update:date
+        }).eq("id",(s as any).id);
+        if(!update.error&&np>=100){
+          await db.rpc("complete_scouting_assignment",{p_assignment_id:(s as any).id,p_date:date});
         }
       }
     }
@@ -5066,10 +5086,52 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="set_scouting_assignment"){
       const focus=String(body?.focus||"U23 potentiel").slice(0,80);
-      const up=await db.from("scouting_assignments").update({focus,progress:0,status:"active",started_at:new Date().toISOString().slice(0,10)}).eq("id",id);
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      let scoutProfileId=Number(body?.scout_profile_id||0);
+      let scoutName="";
+      let scoutRating=10;
+
+      if(scoutProfileId){
+        const own=await db.from("staff")
+          .select("profile_id,name,role,profile:staff_profiles(id,name,scouting_rating)")
+          .eq("profile_id",scoutProfileId).maybeSingle();
+        if(own.error||!own.data)return h({error:"Ce recruteur ne fait pas partie de ton staff."},409);
+        const p:any=Array.isArray(own.data.profile)?own.data.profile[0]:own.data.profile||{};
+        scoutName=String(p.name||own.data.name||"Recruteur");
+        scoutRating=Number(p.scouting_rating||10);
+      }else{
+        const own=await db.from("staff")
+          .select("profile_id,name,role,profile:staff_profiles(id,name,scouting_rating,reputation)")
+          .not("profile_id","is",null);
+        if(!own.error&&own.data?.length){
+          const ranked=(own.data??[])
+            .map((x:any)=>({...x,p:Array.isArray(x.profile)?x.profile[0]:x.profile||{}}))
+            .sort((a:any,b:any)=>Number(b.p?.scouting_rating||0)-Number(a.p?.scouting_rating||0)||Number(b.p?.reputation||0)-Number(a.p?.reputation||0));
+          const pick:any=ranked[0];
+          scoutProfileId=Number(pick?.profile_id||0);
+          scoutName=String(pick?.p?.name||pick?.name||"Recruteur");
+          scoutRating=Number(pick?.p?.scouting_rating||10);
+        }
+      }
+
+      const eta=new Date(today+"T12:00:00Z");
+      eta.setUTCDate(eta.getUTCDate()+Math.max(21,Math.min(70,Math.round((11-scoutRating*.32)*7))));
+      const up=await db.from("scouting_assignments").update({
+        focus,progress:0,status:"active",started_at:today,last_update:today,
+        staff_profile_id:scoutProfileId||null,
+        scout_name:scoutName||"Réseau scouting",
+        confidence:Math.max(45,Math.min(95,48+scoutRating*2)),
+        report_quality:Math.max(40,Math.min(96,45+scoutRating*2)),
+        eta_date:eta.toISOString().slice(0,10)
+      }).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
-      await db.from("inbox_items").insert({kind:"scouting",title:"Nouvelle mission scouting",body:"Mission lancée : "+focus+".",action_route:"scouting",is_read:false});
-      return h({ok:true,focus});
+      await db.from("scouting_reports").delete().eq("assignment_id",id);
+      await db.from("inbox_items").insert({
+        kind:"scouting",title:"Nouvelle mission scouting",
+        body:"Mission lancée : "+focus+" · "+(scoutName||"réseau scouting")+" affecté.",
+        action_route:"scouting",is_read:false
+      });
+      return h({ok:true,focus,scout_profile_id:scoutProfileId||null,scout_name:scoutName,eta_date:eta.toISOString().slice(0,10)});
     }
 
 

@@ -2722,6 +2722,10 @@ Deno.serve(async(req:Request)=>{
     const err=contracts.error||college.error||shortlist.error||sponsors.error||candidates.error||partnerships.error||collegeOffers.error||collegeState.error||collegeDuals.error||davisTies.error||academyMembers.error||academyRoster.error||collegeTeamStaff.error||davisTeamStaff.error;
     if(err) return h({error:err.message},500);
 
+    const staffTrainingCenters=await db.from("staff_training_centers")
+      .select("*").eq("active",true)
+      .order("reputation",{ascending:false}).order("name");
+
     const careerNow=await db.from("career_state").select("managed_player_id,career_date").eq("id","demo").maybeSingle();
     const managedId=Number(careerNow.data?.managed_player_id||0);
     const ownStaff=await db.from("staff").select("id,name,role,profile_id").not("profile_id","is",null);
@@ -2754,6 +2758,7 @@ Deno.serve(async(req:Request)=>{
       collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],
       academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],
       collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
+      staffTrainingCenters:staffTrainingCenters.error?[]:(staffTrainingCenters.data??[]),
       managedAgency:managedAgency.error?null:managedAgency.data,
       agencyNetwork:agencyNetwork.error?[]:(agencyNetwork.data??[]),
       ownStaffRelations,
@@ -4179,6 +4184,60 @@ Deno.serve(async(req:Request)=>{
 
       await db.from("inbox_items").insert({kind:"academy",title:"Prospect signé",body:y.data.name+" rejoint officiellement l’académie avec un contrat de 2 ans.",action_route:"academy",is_read:false});
       return h({ok:true,budget,status:"signed",player_id:playerId,roster:roster.data});
+    }
+
+    if(action==="enroll_staff_training"){
+      const member=await db.from("staff").select("*").eq("id",id).maybeSingle();
+      if(member.error||!member.data)return h({error:member.error?.message||"Membre du staff introuvable"},404);
+      if(!member.data.profile_id)return h({error:"Ce membre du staff n'a pas encore de profil de formation."},409);
+
+      const centerId=n(body?.center_id,0,1,99999999);
+      const center=await db.from("staff_training_centers").select("*").eq("id",centerId).eq("active",true).maybeSingle();
+      if(center.error||!center.data)return h({error:center.error?.message||"Centre de formation introuvable"},404);
+
+      const activeCourse=await db.from("staff_training_enrollments")
+        .select("id,center_id,focus,progress,expected_end")
+        .eq("staff_profile_id",member.data.profile_id).eq("status","active").maybeSingle();
+      if(activeCourse.error)return h({error:activeCourse.error.message},500);
+      if(activeCourse.data)return h({error:"Ce membre du staff suit déjà une formation.",course:activeCourse.data},409);
+
+      const occupancy=await db.from("staff_training_enrollments")
+        .select("id",{count:"exact",head:true})
+        .eq("center_id",centerId).eq("status","active");
+      if(occupancy.error)return h({error:occupancy.error.message},500);
+      if(Number(occupancy.count||0)>=Number(center.data.capacity||50))return h({error:"Ce centre est complet pour le moment."},409);
+
+      const cost=Number(center.data.course_cost||1500+Number(center.data.reputation||10)*220);
+      if(budget<cost)return h({error:"Budget insuffisant pour cette formation."},409);
+
+      const start=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const endDate=new Date(start+"T12:00:00Z");
+      endDate.setUTCDate(endDate.getUTCDate()+Number(center.data.course_weeks||10)*7);
+      const focus=String(body?.focus||center.data.specialty||"Technique");
+      budget-=cost;
+
+      const [ins,car]=await Promise.all([
+        db.from("staff_training_enrollments").insert({
+          center_id:centerId,staff_profile_id:member.data.profile_id,
+          start_date:start,expected_end:endDate.toISOString().slice(0,10),
+          focus,progress:0,status:"active",cost,user_managed:true
+        }),
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
+      ]);
+      const er=ins.error||car.error;
+      if(er)return h({error:er.message},500);
+
+      await db.from("staff_career_events").insert({
+        staff_profile_id:member.data.profile_id,event_date:start,event_type:"training_started",
+        role:member.data.role,description:"Début d'une formation "+focus+" à "+center.data.name+"."
+      });
+      await db.from("inbox_items").insert({
+        kind:"staff",title:"Formation staff",
+        body:(member.data.name||member.data.role)+" débute une formation "+focus+" à "+center.data.name+".",
+        action_route:"staff",is_read:false
+      });
+
+      return h({ok:true,budget,cost,focus,expected_end:endDate.toISOString().slice(0,10),center:center.data.name});
     }
 
     if(action==="interview_staff"){

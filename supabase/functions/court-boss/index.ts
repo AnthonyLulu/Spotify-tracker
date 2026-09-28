@@ -4395,8 +4395,8 @@ Deno.serve(async(req:Request)=>{
     const userWon=serverIsUser?serverWon:!serverWon;
 
     const dirRoll=Math.random()*100;
-    const wide=Number(tm.serve_wide_pct||38),body=Number(tm.serve_body_pct||14);
-    const serveDirection=dirRoll<wide?"large":dirRoll<wide+body?"corps":"T";
+    const wide=Number(tm.serve_wide_pct||38),bodyPct=Number(tm.serve_body_pct||14);
+    const serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
     const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
     const aceChance=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100*aceSurface
       *(serverIsUser?(1+Math.max(-20,risk-50)*.004):1)));

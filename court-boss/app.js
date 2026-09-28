@@ -513,10 +513,18 @@ function tournamentLogoMeta(t={}){
  const name=String(t.name||t.tournament_name||"");
  const explicit=String(t.logo_url||"").trim();
  const major=MAJOR_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
- if(explicit)return {url:explicit,label:major?.label||String(t.category||t.circuit||"TOUR"),cls:"logo-official "+(major?.cls||"")};
- if(major)return {url:major.url,label:major.label,cls:"logo-official "+(major.cls||"")};
  const category=String(t.category||t.level||"").trim();
  const circuit=String(t.circuit||"").trim();
+ if(explicit)return {url:explicit,label:major?.label||String(category||circuit||"TOUR"),cls:"logo-official "+(major?.cls||"")};
+ if(major)return {url:major.url,label:major.label,cls:"logo-official "+(major.cls||"")};
+ if(t.id&&t.is_verified&&circuit==="ATP"){
+   return {
+     url:API+"/api/tournament-logo?id="+encodeURIComponent(t.id),
+     label:category||"ATP",
+     sub:"",
+     cls:"logo-official logo-auto"
+   };
+ }
  if(/Grand Chelem|Grand Slam/i.test(category))return {url:null,label:"GRAND SLAM",sub:"GS",cls:"logo-gs"};
  if(/Masters 1000/i.test(category))return {url:null,label:"ATP 1000",sub:"M1000",cls:"logo-atp"};
  if(/ATP 500|^500$/i.test(category))return {url:null,label:"ATP 500",sub:"500",cls:"logo-atp"};

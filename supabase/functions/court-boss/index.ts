@@ -2385,45 +2385,102 @@ Deno.serve(async(req:Request)=>{
     };
     const matchRows:any[]=[];
     let userAlive=true,userRound=wildcardGranted?"Wild Card":alternateEntered?"Alternate entré":"Non joué",qualifier=false,luckyLoser=false;
-    if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered){
-      qualifier=true;
-      const qOpp=pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80)).slice(0,6);
-      for(let qi=0;qi<2;qi++){
-        const opp=qOpp[qi]||pool[Math.min(pool.length-1,drawSize+qi)];
-        const res=play(user,opp);
-        matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:null,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
-        if(!res.winner.isUser){
-          userAlive=false;userRound="Q"+(qi+1);
-          if(qi===1&&Math.random()<0.18){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
-          break
+    let champion:any=null;
+
+    if(isJuniorFinals){
+      const ordered=[user,...pool].slice(0,8).sort((a:any,b:any)=>Number(a.ranking||999)-Number(b.ranking||999));
+      if(ordered.length<8)return h({error:"Junior Finals : 8 qualifiés requis dans la Race.",qualified:ordered.length},409);
+      const groups:any[][]=[
+        [ordered[0],ordered[3],ordered[4],ordered[7]],
+        [ordered[1],ordered[2],ordered[5],ordered[6]]
+      ];
+      const table=new Map<number,{player:any,wins:number,losses:number}>();
+      ordered.forEach((p:any)=>table.set(Number(p.id),{player:p,wins:0,losses:0}));
+      let rrNo=1;
+      for(let gi=0;gi<groups.length;gi++){
+        const g=groups[gi];
+        for(let i=0;i<g.length;i++)for(let j=i+1;j<g.length;j++){
+          const a=g[i],b=g[j],res=play(a,b);
+          const wa=table.get(Number(res.winner.id)),lo=table.get(Number(res.loser.id));
+          if(wa)wa.wins++;if(lo)lo.losses++;
+          matchRows.push({
+            round_no:rrNo++,round_name:"Groupe "+(gi===0?"A":"B"),
+            player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+            winner_id:res.winner.id,winner_name:res.winner.name,score:res.score
+          });
         }
       }
-      if(userAlive)userRound="Qualifié";
-    }
-    let participants=pool.slice(0,drawSize).map(x=>({...x,isUser:false}));
-    if(userAlive){
-      const replaceIndex=(qualifier||wildcardGranted||luckyLoser||alternateEntered)?participants.length-1:Math.min(participants.length-1,Math.max(0,Math.floor((rank-1)%participants.length)));
-      participants[replaceIndex]=user;
-    }
-    const roundName=(n:number)=>n>=128?"R128":n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
-    let roundNo=1;
-    while(participants.length>1){
-      const rn=roundName(participants.length),next:any[]=[];
-      for(let i=0;i<participants.length;i+=2){
-        const a=participants[i],b=participants[i+1];
-        if(!b){next.push(a);continue}
-        const res=play(a,b);
-        matchRows.push({round_no:roundNo,round_name:rn,player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
-        if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound=rn}
-        if(res.winner.isUser)userRound=rn==="F"?"Champion":rn;
-        next.push(res.winner);
+      const rankGroup=(g:any[])=>g.slice().sort((a:any,b:any)=>{
+        const ta=table.get(Number(a.id)),tb=table.get(Number(b.id));
+        return Number(tb?.wins||0)-Number(ta?.wins||0)||strength(b)-strength(a)||Number(a.ranking||999)-Number(b.ranking||999);
+      });
+      const ga=rankGroup(groups[0]),gb=rankGroup(groups[1]);
+      const semifinalists=[ga[0],gb[1],gb[0],ga[1]];
+      if(!semifinalists.some((p:any)=>p.isUser)){userAlive=false;userRound="Phase de groupes";}
+      const sfWinners:any[]=[];
+      for(let sfi=0;sfi<2;sfi++){
+        const a=semifinalists[sfi*2],b=semifinalists[sfi*2+1],res=play(a,b);
+        matchRows.push({
+          round_no:100+sfi,round_name:"SF",
+          player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+          winner_id:res.winner.id,winner_name:res.winner.name,score:res.score
+        });
+        if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound="SF";}
+        if(res.winner.isUser)userRound="SF";
+        sfWinners.push(res.winner);
       }
-      participants=next;roundNo++;
+      const finalRes=play(sfWinners[0],sfWinners[1]);
+      matchRows.push({
+        round_no:200,round_name:"F",
+        player_a_id:sfWinners[0].id,player_b_id:sfWinners[1].id,
+        player_a_name:sfWinners[0].name,player_b_name:sfWinners[1].name,
+        winner_id:finalRes.winner.id,winner_name:finalRes.winner.name,score:finalRes.score
+      });
+      if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser){userAlive=false;userRound="F";}
+      if(finalRes.winner.isUser)userRound="Champion";
+      champion=finalRes.winner;
+    }else{
+      if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered){
+        qualifier=true;
+        const qOpp=pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80)).slice(0,6);
+        for(let qi=0;qi<2;qi++){
+          const opp=qOpp[qi]||pool[Math.min(pool.length-1,drawSize+qi)];
+          const res=play(user,opp);
+          matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:null,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
+          if(!res.winner.isUser){
+            userAlive=false;userRound="Q"+(qi+1);
+            if(qi===1&&Math.random()<0.18){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
+            break
+          }
+        }
+        if(userAlive)userRound="Qualifié";
+      }
+      let participants=pool.slice(0,drawSize).map(x=>({...x,isUser:false}));
+      if(userAlive){
+        const replaceIndex=(qualifier||wildcardGranted||luckyLoser||alternateEntered)?participants.length-1:Math.min(participants.length-1,Math.max(0,Math.floor((rank-1)%participants.length)));
+        participants[replaceIndex]=user;
+      }
+      const roundName=(n:number)=>n>=128?"R128":n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+      let roundNo=1;
+      while(participants.length>1){
+        const rn=roundName(participants.length),next:any[]=[];
+        for(let i=0;i<participants.length;i+=2){
+          const a=participants[i],b=participants[i+1];
+          if(!b){next.push(a);continue}
+          const res=play(a,b);
+          matchRows.push({round_no:roundNo,round_name:rn,player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
+          if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound=rn}
+          if(res.winner.isUser)userRound=rn==="F"?"Champion":rn;
+          next.push(res.winner);
+        }
+        participants=next;roundNo++;
+      }
+      champion=participants[0];
     }
-    const champion=participants[0];
+
     let userPoints=0;
     if(isJuniorSingles){
-      const roundCode=userRound==="Champion"?"W":userRound;
+      const roundCode=userRound==="Champion"?"W":userRound==="Phase de groupes"?"QF":userRound;
       const jp=await db.rpc("junior_points_for",{p_event_type:"singles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
       if(jp.error)return h({error:jp.error.message},500);
       userPoints=Number(jp.data||0);
@@ -2439,7 +2496,7 @@ Deno.serve(async(req:Request)=>{
       userPoints=Math.max(0,Math.round(basePoints*mult));
     }
     const prizePool=Number(t.prize_money||0);
-    const prizeMult=userRound==="Champion"?.18:userRound==="F"?.10:userRound==="SF"?.055:userRound==="QF"?.03:userRound==="R16"?.015:userRound==="R32"?.008:.003;
+    const prizeMult=userRound==="Champion"?.18:userRound==="F"?.10:userRound==="SF"?.055:(userRound==="QF"||userRound==="Phase de groupes")?.03:userRound==="R16"?.015:userRound==="R32"?.008:.003;
     const userPrize=Math.max(0,Math.round(prizePool*prizeMult));
     const runIns=await db.from("tournament_runs").insert({tournament_id:tid,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
     if(runIns.error)return h({error:runIns.error.message},500);

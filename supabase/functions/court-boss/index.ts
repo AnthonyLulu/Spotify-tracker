@@ -2165,6 +2165,25 @@ Deno.serve(async(req:Request)=>{
 
     const directCut=Number(t.data.direct_cut??t.data.projected_direct_cut??0);
     const qualCut=Number(t.data.qual_cut??t.data.projected_qual_cut??0);
+    const isAtpSinglesFinals=String(t.data.circuit||"")==="ATP"&&/ATP Finals/i.test(String(t.data.category||""))&&!/Next Gen/i.test(String(t.data.category||""))&&Boolean(t.data.singles);
+    if(isAtpSinglesFinals){
+      const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+      const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
+      const race=await db.from("players")
+        .select("id,name,country,race_ranking,race_points,current_ability,potential,form,fitness,fatigue,style")
+        .not("race_ranking","is",null)
+        .or(`race_snapshot_date.is.null,race_snapshot_date.lte.${refDate}`)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .order("race_ranking",{ascending:true}).limit(8);
+      if(race.error)return h({error:race.error.message},500);
+      const main=(race.data??[]).map((p:any)=>({...p,ranking:p.race_ranking,points:p.race_points,seed:p.race_ranking,qualification:"ATP Finals Race"}));
+      return h({
+        tournament:t.data,main,qualifying:[],wildcard:null,forfeits:forfeits.data??[],
+        run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
+        completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
+        ranking_kind:"race",finals_qualification:{required:8,name:"ATP Finals Race"}
+      });
+    }
     const cut=Math.max(drawSize,qualCut||directCut||drawSize*4);
     const pool=await db.from("players")
       .select("id,name,country,ranking,points,current_ability,potential,form,fitness,fatigue,style")
@@ -2384,6 +2403,8 @@ Deno.serve(async(req:Request)=>{
     const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const isJuniorSingles=String(t.circuit||"")==="Junior";
     const isJuniorFinals=isJuniorSingles&&/Junior Finals/i.test(String(t.category||""))&&!/Double/i.test(String(t.category||""));
+    const isAtpSinglesFinals=String(t.circuit||"")==="ATP"&&/ATP Finals/i.test(String(t.category||""))&&!/Next Gen/i.test(String(t.category||""))&&Boolean(t.singles);
+    const isSinglesFinals=isJuniorFinals||isAtpSinglesFinals;
     let finalsRaceRows:any[]=[];
     let rank=Number(c.singles_rank||9999);
     if(isJuniorFinals){
@@ -2396,11 +2417,27 @@ Deno.serve(async(req:Request)=>{
         finals_locked:true,race_required:8
       },409);
       rank=Number(own.junior_race_ranking||9999);
+      finalsRaceRows=finalsRaceRows.map((x:any)=>({...x,finals_rank:Number(x.junior_race_ranking||9999)}));
+    }else if(isAtpSinglesFinals){
+      const race=await db.from("players")
+        .select("id,name,country,race_ranking,race_points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+        .not("race_ranking","is",null)
+        .or(`race_snapshot_date.is.null,race_snapshot_date.lte.${String(c.career_date||AGE_REFERENCE_DATE)}`)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .order("race_ranking",{ascending:true}).limit(8);
+      if(race.error)return h({error:race.error.message},500);
+      finalsRaceRows=(race.data??[]).map((x:any)=>({...x,finals_rank:Number(x.race_ranking||9999)}));
+      const own=finalsRaceRows.find((x:any)=>Number(x.id)===managedId);
+      if(!own)return h({
+        error:"Non qualifié pour les ATP Finals : il faut terminer dans le Top 8 de la Race ATP.",
+        finals_locked:true,race_required:8
+      },409);
+      rank=Number(own.race_ranking||9999);
     }
-    const direct=isJuniorFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);
-    const qual=isJuniorFinals?8:Number(t.qual_cut??t.projected_qual_cut??0);
-    const wildcardGranted=!isJuniorFinals&&wc.data?.status==="accepted";
-    const alternateEligible=!isJuniorFinals&&direct&&qual&&rank>qual&&rank<=qual+50;
+    const direct=isSinglesFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);
+    const qual=isSinglesFinals?8:Number(t.qual_cut??t.projected_qual_cut??0);
+    const wildcardGranted=!isSinglesFinals&&wc.data?.status==="accepted";
+    const alternateEligible=!isSinglesFinals&&direct&&qual&&rank>qual&&rank<=qual+50;
     if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible)return h({error:"Classement insuffisant. Demande une wild card."},409);
     let alternateEntered=false;
     if(alternateEligible&&!wildcardGranted){
@@ -2410,9 +2447,9 @@ Deno.serve(async(req:Request)=>{
       if(availableSpots<needed)return h({error:"Pas assez de forfaits pour remonter depuis la liste alternate.",alternate:true,forfeits:availableSpots},409);
       alternateEntered=true;
     }
-    const drawSize=Math.max(8,Math.min(128,Number(t.draw_size||32)));
+    const drawSize=isSinglesFinals?8:Math.max(8,Math.min(128,Number(t.draw_size||32)));
     let playersRes:any;
-    if(isJuniorFinals){
+    if(isSinglesFinals){
       const ids=finalsRaceRows.map((x:any)=>Number(x.id)).filter(Boolean);
       playersRes=ids.length
         ?await db.from("players")
@@ -2428,10 +2465,10 @@ Deno.serve(async(req:Request)=>{
     }
     if(playersRes.error)return h({error:playersRes.error.message},500);
     const blockedIds=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
-    const raceOrder=new Map(finalsRaceRows.map((x:any)=>[Number(x.id),Number(x.junior_race_ranking)]));
+    const raceOrder=new Map(finalsRaceRows.map((x:any)=>[Number(x.id),Number(x.finals_rank??x.junior_race_ranking??x.race_ranking??9999)]));
     const pool:any[]=(playersRes.data??[])
       .filter((p:any)=>!blockedIds.has(Number(p.id))&&Number(p.id)!==managedId)
-      .map((p:any)=>({...p,ranking:isJuniorFinals?(raceOrder.get(Number(p.id))??9999):p.ranking,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
+      .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):p.ranking,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
       .sort((a:any,b:any)=>Number(a.ranking||9999)-Number(b.ranking||9999));
     const surface=String(t.surface||"Dur");
     const surfKey=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";

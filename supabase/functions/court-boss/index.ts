@@ -2786,21 +2786,43 @@ Deno.serve(async(req:Request)=>{
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
       getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)"),
-      db.from("staff").select("role,profile:staff_profiles(tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating)")
+      db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating)")
     ]);
     if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
+    const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const staffProfiles=(userStaff.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
     const bestStaff=(key:string)=>staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p?.[key]||0))):10;
-    const staffMatchBonus=Math.min(2.4,
+
+    const staffLinks=await db.from("player_staff_assignments")
+      .select("staff_profile_id,role_fit,satisfaction,team_chemistry")
+      .eq("player_id",managedId).eq("active",true);
+    let staffSynergy=70,staffSatisfaction=70,staffRoleFit=70,staffConflict=0;
+    if(!staffLinks.error&&staffLinks.data?.length){
+      staffSynergy=(staffLinks.data??[]).reduce((sum:number,x:any)=>sum+Number(x.team_chemistry||70),0)/(staffLinks.data??[]).length;
+      staffSatisfaction=(staffLinks.data??[]).reduce((sum:number,x:any)=>sum+Number(x.satisfaction||70),0)/(staffLinks.data??[]).length;
+      staffRoleFit=(staffLinks.data??[]).reduce((sum:number,x:any)=>sum+Number(x.role_fit||70),0)/(staffLinks.data??[]).length;
+      const ids=[...new Set((staffLinks.data??[]).map((x:any)=>Number(x.staff_profile_id)).filter(Boolean))];
+      if(ids.length>1){
+        const rel=await db.from("staff_peer_relationships")
+          .select("conflict_score").eq("active",true)
+          .in("staff_a_id",ids).in("staff_b_id",ids);
+        if(!rel.error&&rel.data?.length){
+          staffConflict=(rel.data??[]).reduce((sum:number,x:any)=>sum+Number(x.conflict_score||0),0)/(rel.data??[]).length;
+        }
+      }
+    }
+
+    const rawStaffBonus=
       Math.max(0,bestStaff("tactical_rating")-10)*.085
       +Math.max(0,bestStaff("mental_rating")-10)*.045
       +Math.max(0,bestStaff("pressure_handling")-10)*.035
-      +Math.max(0,bestStaff("scouting_rating")-10)*.025
-    );
-    const managedId=Number(c.managed_player_id||managedPlayer.data.id);
+      +Math.max(0,bestStaff("scouting_rating")-10)*.025;
+    const synergyMult=.72+(staffSynergy/100)*.20+(staffSatisfaction/100)*.08+(staffRoleFit/100)*.08;
+    const staffConflictPenalty=Math.max(0,staffConflict-35)*.012;
+    const staffMatchBonus=Math.max(-.8,Math.min(2.8,rawStaffBonus*synergyMult-staffConflictPenalty));
     const isJuniorSingles=String(t.circuit||"")==="Junior";
     const isJuniorFinals=isJuniorSingles&&/Junior Finals/i.test(String(t.category||""))&&!/Double/i.test(String(t.category||""));
     const isAtpSinglesFinals=String(t.circuit||"")==="ATP"&&/ATP Finals/i.test(String(t.category||""))&&!/Next Gen/i.test(String(t.category||""))&&Boolean(t.singles);

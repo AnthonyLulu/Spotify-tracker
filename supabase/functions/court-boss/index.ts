@@ -1857,6 +1857,7 @@ Deno.serve(async(req:Request)=>{
       const doublesHist=await db.from("tournament_doubles_edition_history")
         .select("id,season,final_date,tournament_name,level,surface,winner_a_id,winner_a_name,winner_b_id,winner_b_name,runner_a_id,runner_a_name,runner_b_id,runner_b_name,source_label")
         .eq("history_group",String(t.data.history_group))
+        .not("winner_a_name","is",null)
         .order("season",{ascending:false})
         .limit(100);
       if(!doublesHist.error)tournamentDoublesHistory=doublesHist.data??[];

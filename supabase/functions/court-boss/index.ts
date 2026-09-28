@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:15,development_model:"development-v3",match_model:"matchup-v4/point-v2",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:16,development_model:"development-v3",match_model:"matchup-v4/point-v2+live-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -4518,10 +4518,13 @@ Deno.serve(async(req:Request)=>{
 
     const attrEdge=(x:any)=>{
       const avg=(keys:string[])=>keys.reduce((s,k)=>s+Number(x?.[k]??10),0)/Math.max(1,keys.length);
-      return (avg(["decision_making","shot_selection","consistency","big_points","killer_instinct"])-10)*.30
-        +(avg(["first_serve_quality","second_serve_quality","forehand_accuracy","backhand_accuracy","return_consistency","serve_plus_one"])-10)*.17
-        +(avg(["reaction","passing_shot","defensive_skill","transition_game","court_positioning","defense_to_attack"])-10)*.14
-        +(avg(["acceleration","agility","balance","natural_fitness","recovery","rally_tolerance"])-10)*.09;
+      const mental=avg(["decision_making","shot_selection","consistency","big_points","killer_instinct","fighting_spirit","determination","patience","tenacity"]);
+      const firstStrike=avg(["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety","serve_spin","serve_consistency","serve_plus_one"]);
+      const ground=avg(["forehand","forehand_power","forehand_accuracy","forehand_consistency","backhand","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"]);
+      const defense=avg(["return_game","return_aggression","return_consistency","reaction","passing_shot","defensive_skill","transition_game","court_positioning","defense_to_attack","counter_skill"]);
+      const athletic=avg(["movement","speed","strength","acceleration","agility","balance","natural_fitness","recovery","flexibility","rally_tolerance","footwork","athleticism","work_rate"]);
+      const netSkill=avg(["volley","touch","half_volley","smash","lob","net_positioning","transition_game","reaction"]);
+      return (mental-10)*.18+(firstStrike-10)*.14+(ground-10)*.12+(defense-10)*.11+(athletic-10)*.07+(netSkill-10)*.07;
     };
     const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.14+Number(managed.data.fitness||90)*.06-Number(managed.data.fatigue||20)*.11+Number(ua[key]||10)*.62+attrEdge(ua);
     const oBase=Number(opp.data.current_ability||55)+Number(opp.data.form||70)*.14+Number(opp.data.fitness||90)*.06-Number(opp.data.fatigue||20)*.11+Number(oa[key]||10)*.62+attrEdge(oa);
@@ -4529,7 +4532,8 @@ Deno.serve(async(req:Request)=>{
     const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
     const momentum=(Number(session.data.momentum||50)-50)*.045;
-    const netQuality=((Number(ua.volley||10)+Number(ua.net_positioning||10)+Number(ua.transition_game||10))/3-Number(oa.passing_shot||10));
+    const netQuality=((Number(ua.volley||10)+Number(ua.net_positioning||10)+Number(ua.transition_game||10)+Number(ua.half_volley||10)+Number(ua.smash||10)+Number(ua.reaction||10))/6
+      -(Number(oa.passing_shot||10)+Number(oa.reaction||10)+Number(oa.defensive_skill||10))/3);
     const returnRead=(ret==="Avancée"
       ?(Number(ua.reaction||10)+Number(ua.return_aggression||10)-Number(oa.first_serve_quality||10)-Number(oa.serve_power||10))*.045
       :ret==="Reculée"
@@ -4550,12 +4554,12 @@ Deno.serve(async(req:Request)=>{
     const setScore=userWon?(close?(Math.random()<.5?"7-6":"7-5"):(Math.random()<.5?"6-3":"6-4")):(close?(Math.random()<.5?"6-7":"5-7"):(Math.random()<.5?"3-6":"4-6"));
 
     const setStats={
-      first_serve_pct:Math.max(42,Math.min(82,48+Number(ua.serve_precision||10)*1.15+Number(ua.consistency||10)*.35-Math.round((risk-50)*.10)+Math.round(Math.random()*6-3))),
-      winners:Math.max(6,Math.round(8+ag*.10+risk*.05+Math.random()*6)),
-      unforced_errors:Math.max(3,Math.round(10+risk*.08+ag*.02-Number(ua.consistency||10)*.28-Number(ua.shot_selection||10)*.18+Math.random()*4)),
-      aces:Math.max(0,Math.round(Number(ua.serve_power||10)*.18+Number(ua.first_serve_quality||10)*.13+Math.random()*2.5)),
-      net_points_won_pct:Math.max(30,Math.min(88,45+Math.round(net*.18)+Math.round((Number(ua.volley||10)+Number(ua.net_positioning||10)+Number(ua.transition_game||10)-30)*.55)-Math.round((Number(oa.passing_shot||10)-10)*.35)+Math.round(Math.random()*7-3))),
-      avg_rally:Math.max(2,Math.round(5.5+Number(ua.rally_tolerance||10)*.16+Number(oa.rally_tolerance||10)*.10-ag*.028+risk*.006+Math.random()*1.5))
+      first_serve_pct:Math.max(42,Math.min(82,44+Number(ua.serve_precision||10)*.82+Number(ua.serve_consistency||10)*.62+Number(ua.timing||10)*.22-Math.round((risk-50)*.10)+Math.round(Math.random()*6-3))),
+      winners:Math.max(6,Math.round(5+ag*.075+risk*.035+(Number(ua.forehand_power||10)+Number(ua.backhand_power||10)+Number(ua.killer_instinct||10)+Number(ua.timing||10))*.16+Math.random()*5)),
+      unforced_errors:Math.max(3,Math.round(15+risk*.07+ag*.018-(Number(ua.consistency||10)+Number(ua.shot_selection||10)+Number(ua.shot_control||10)+Number(ua.forehand_consistency||10)+Number(ua.backhand_consistency||10)+Number(ua.timing||10))*.20+Math.random()*4)),
+      aces:Math.max(0,Math.round(Number(ua.serve_power||10)*.14+Number(ua.first_serve_quality||10)*.10+Number(ua.serve_variety||10)*.08+Number(ua.serve_spin||10)*.06+Math.random()*2.2)),
+      net_points_won_pct:Math.max(30,Math.min(90,37+Math.round(net*.15)+Math.round((Number(ua.volley||10)+Number(ua.half_volley||10)+Number(ua.smash||10)+Number(ua.net_positioning||10)+Number(ua.transition_game||10)+Number(ua.reaction||10)-60)*.38)-Math.round((Number(oa.passing_shot||10)+Number(oa.reaction||10)+Number(oa.lob||10)-30)*.28)+Math.round(Math.random()*7-3))),
+      avg_rally:Math.max(2,Math.round(4.6+(Number(ua.rally_tolerance||10)+Number(ua.patience||10)+Number(ua.footwork||10)+Number(ua.defensive_skill||10))*0.06+(Number(oa.rally_tolerance||10)+Number(oa.patience||10))*0.04-ag*.026+risk*.006+Math.random()*1.5))
     };
 
     let us=Number(session.data.user_sets||0)+(userWon?1:0);

@@ -1035,6 +1035,42 @@ async function resolveTournamentImage(t:any){
       }
     }catch{}
   }
+
+  if(!t.image_url&&t.city){
+    try{
+      const cityQuery=[String(t.city||""),String(t.country||"")].filter(Boolean).join(" ");
+      const qs=new URLSearchParams({
+        action:"query",generator:"search",gsrsearch:cityQuery,gsrnamespace:"0",gsrlimit:"6",
+        prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
+        inprop:"url",format:"json",origin:"*"
+      });
+      const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{
+        headers:{"User-Agent":"CourtBoss/1.0 (+city-photo-fallback)"}
+      });
+      if(r.ok){
+        const j:any=await r.json();
+        const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+        const cityNorm=normalizeName(String(t.city||"")).replace(/\s+/g,"");
+        const chosen=pages.find((x:any)=>{
+          const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+          const raw=String(x?.original?.source||x?.thumbnail?.source||"");
+          return title.includes(cityNorm)&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+        })??pages.find((x:any)=>{
+          const raw=String(x?.original?.source||x?.thumbnail?.source||"");
+          return raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+        });
+        const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
+        if(raw&&/^https?:\/\//i.test(raw)){
+          t.image_url=raw;
+          t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
+          t.image_source_label="Photo de la ville · Wikipedia/Wikimedia";
+          await db.from("tournaments").update({
+            image_url:raw,image_source_url:t.image_source_url,image_source_label:t.image_source_label
+          }).eq("id",t.id);
+        }
+      }
+    }catch{}
+  }
   return t;
 }
 
@@ -1796,7 +1832,8 @@ Deno.serve(async(req:Request)=>{
     }
     let rows=[...byKey.values()];
     const keys=rows.map((x:any)=>x.competition_key).filter(Boolean);
-    const histCounts=new Map<string,number>(),latestHist=new Map<string,any>();
+    const groups=rows.map((x:any)=>x.history_group).filter(Boolean);
+    const histCounts=new Map<string,number>(),groupCounts=new Map<string,number>(),latestHist=new Map<string,any>(),latestGroupHist=new Map<string,any>();
     for(let i=0;i<keys.length;i+=200){
       const hr=await db.from("competition_history")
         .select("competition_key,season,winner_name,winner_player_id,runner_up_name,event_date")
@@ -1809,7 +1846,30 @@ Deno.serve(async(req:Request)=>{
         }
       }
     }
-    rows=rows.map((t:any)=>({...t,history_count:histCounts.get(t.competition_key)||0,latest_history:latestHist.get(t.competition_key)||null}));
+    for(let i=0;i<groups.length;i+=200){
+      const hr=await db.from("tournament_edition_history")
+        .select("history_group,season,winner_name,winner_player_id,runner_up_name,final_date")
+        .in("history_group",groups.slice(i,i+200))
+        .eq("event_type","singles")
+        .order("season",{ascending:false});
+      if(!hr.error){
+        for(const x of hr.data??[]){
+          groupCounts.set(x.history_group,(groupCounts.get(x.history_group)||0)+1);
+          if(!latestGroupHist.has(x.history_group))latestGroupHist.set(x.history_group,x);
+        }
+      }
+    }
+    rows=rows.map((t:any)=>{
+      const keyCount=histCounts.get(t.competition_key)||0;
+      const groupCount=groupCounts.get(t.history_group)||0;
+      return {
+        ...t,
+        history_count:Math.max(keyCount,groupCount),
+        latest_history:groupCount>=keyCount
+          ?(latestGroupHist.get(t.history_group)||latestHist.get(t.competition_key)||null)
+          :(latestHist.get(t.competition_key)||latestGroupHist.get(t.history_group)||null)
+      };
+    });
     if(prestige==="5 étoiles")rows=rows.filter((x:any)=>Number(x.prestige||0)>=90);
     else if(prestige==="4+ étoiles")rows=rows.filter((x:any)=>Number(x.prestige||0)>=70);
     else if(prestige==="3+ étoiles")rows=rows.filter((x:any)=>Number(x.prestige||0)>=50);
@@ -1840,6 +1900,22 @@ Deno.serve(async(req:Request)=>{
           if(t.circuit==="Challenger")return /Challenger|ATP Tour/.test(String(r.level||""));
           return true;
         });
+      }
+    }
+    if(t.history_group){
+      const full=await db.from("tournament_edition_history")
+        .select("season,final_date,tournament_name,level,surface,winner_player_id,winner_name,runner_up_player_id,runner_up_name,score,source_url,source_label")
+        .eq("history_group",String(t.history_group))
+        .eq("event_type","singles")
+        .order("season",{ascending:false})
+        .limit(250);
+      if(!full.error&&(full.data??[]).length>history.length){
+        history=(full.data??[]).map((x:any)=>({
+          ...x,
+          event_date:x.final_date,
+          competition_key:key,
+          event_type:"singles"
+        }));
       }
     }
 

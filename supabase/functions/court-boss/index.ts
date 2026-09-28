@@ -1737,6 +1737,33 @@ Deno.serve(async(req:Request)=>{
     if(!t.data) return h({error:"Tournament not found"},404);
     t.data=await resolveTournamentImage(t.data);
 
+    let tournamentHistory:any[]=[];
+    let tournamentHistoryRecords:any={editions:0,most_titles_name:null,most_titles:0,latest_winner:null};
+    if(t.data.history_group){
+      const hist=await db.from("tournament_edition_history")
+        .select("id,season,final_date,tournament_name,level,surface,winner_player_id,winner_name,runner_up_player_id,runner_up_name,score,source_url,source_label,verified")
+        .eq("history_group",String(t.data.history_group))
+        .eq("event_type","singles")
+        .order("season",{ascending:false})
+        .limit(120);
+      if(!hist.error){
+        tournamentHistory=hist.data??[];
+        const counts=new Map<string,number>();
+        for(const row of tournamentHistory){
+          const name=String(row.winner_name||"").trim();
+          if(name)counts.set(name,(counts.get(name)||0)+1);
+        }
+        const top=[...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]||[null,0];
+        tournamentHistoryRecords={
+          editions:tournamentHistory.length,
+          most_titles_name:top[0],
+          most_titles:top[1],
+          latest_winner:tournamentHistory[0]?.winner_name||null,
+          latest_season:tournamentHistory[0]?.season||null
+        };
+      }
+    }
+
     const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
     const [run,doublesRun] = await Promise.all([
       db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle(),
@@ -1839,6 +1866,7 @@ Deno.serve(async(req:Request)=>{
         tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
         wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,doubles_run:doublesRun.data??null,
         doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,completed_draw:completedDraw,
+        tournament_history:tournamentHistory,tournament_history_records:tournamentHistoryRecords,
         ranking_kind:"junior"
       });
     }
@@ -1881,6 +1909,7 @@ Deno.serve(async(req:Request)=>{
         doubles_main:[],
         doubles_completed_draw:[],
         completed_draw:[],
+        tournament_history:tournamentHistory,tournament_history_records:tournamentHistoryRecords,
         ranking_kind:"ncaa"
       });
     }
@@ -1903,7 +1932,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
       run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
-      completed_draw:completedDraw,ranking_kind:"singles"
+      completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_history_records:tournamentHistoryRecords,ranking_kind:"singles"
     });
   }
 

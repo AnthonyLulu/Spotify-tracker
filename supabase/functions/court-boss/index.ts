@@ -2671,6 +2671,17 @@ Deno.serve(async(req:Request)=>{
     ]);
     const err=activeAssignments.error||history.error||events.error||agency.error||licenses.error||preferences.error||scopeReputation.error||peerA.error||peerB.error||recommendationsFrom.error||recommendationsTo.error||collegeStaff.error||davisStaff.error||training.error||coachAcademy.error;
     if(err)return h({error:err.message},500);
+
+    let agentClients:any={data:[],count:0,error:null};
+    if(/agent/i.test(String(profile.data.primary_role||""))){
+      agentClients=await db.from("player_agency_representation")
+        .select("player_id,commission_pct,trust,start_date,player:players!player_agency_representation_player_id_fkey(id,name,country,ranking,game_world_rank,photo_url)",{count:"exact"})
+        .eq("agent_staff_id",id).eq("active",true)
+        .order("trust",{ascending:false})
+        .limit(30);
+      if(agentClients.error)return h({error:agentClients.error.message},500);
+    }
+
     return h({
       profile:profile.data,
       activeAssignments:activeAssignments.data??[],
@@ -2685,7 +2696,9 @@ Deno.serve(async(req:Request)=>{
       collegeStaff:collegeStaff.data??[],
       davisStaff:davisStaff.data??[],
       training:training.data??[],
-      coachAcademy:coachAcademy.data??null
+      coachAcademy:coachAcademy.data??null,
+      agentClients:agentClients.data??[],
+      agentClientCount:Number(agentClients.count||0)
     });
   }
 
@@ -2733,6 +2746,7 @@ Deno.serve(async(req:Request)=>{
         .select("start_date,end_date,commission_pct,active,trust,agency:staff_agencies(*),agent:staff_profiles!player_agency_representation_agent_staff_id_fkey(id,name,nationality,primary_role,reputation,negotiation_rating,former_player_status)")
         .eq("player_id",managedId).eq("active",true).maybeSingle()
       :{data:null,error:null};
+    const agencyNetwork=await db.rpc("agency_network_overview",{p_limit:12});
 
     return h({
       contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],
@@ -2741,6 +2755,7 @@ Deno.serve(async(req:Request)=>{
       academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],
       collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
       managedAgency:managedAgency.error?null:managedAgency.data,
+      agencyNetwork:agencyNetwork.error?[]:(agencyNetwork.data??[]),
       ownStaffRelations,
       ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[])
     });

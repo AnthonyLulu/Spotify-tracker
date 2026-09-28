@@ -2712,9 +2712,13 @@ Deno.serve(async(req:Request)=>{
         const seasonPlans=month===1
           ?await db.rpc("refresh_player_season_plans",{p_date:date})
           :{data:null,error:null};
+        const seasonPlanRefine=month===1
+          ?await db.rpc("refine_player_season_plans",{p_date:date})
+          :{data:null,error:null};
         developmentSupply={
           ...(developmentSupply||{}),
-          seasonPlans:seasonPlans.error?{error:seasonPlans.error.message}:seasonPlans.data
+          seasonPlans:seasonPlans.error?{error:seasonPlans.error.message}:seasonPlans.data,
+          seasonPlanRefine:seasonPlanRefine.error?{error:seasonPlanRefine.error.message}:seasonPlanRefine.data
         };
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})

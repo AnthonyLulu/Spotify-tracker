@@ -1129,12 +1129,16 @@ window.openPlayer=async id=>{
    ['Spécial',[['Double','doubles'],['Terre battue','clay_affinity'],['Dur','hard_affinity'],['Gazon','grass_affinity']]]
   ];
   const nat=countryTheme(p.country);
+  const races=d.races||{};
   const rankBits=[];
   if(p.ranking_current&&p.ranking!=null)rankBits.push('ATP #'+fmt(p.ranking));
   if(p.doubles_ranking!=null&&p.doubles_source)rankBits.push('Double #'+fmt(p.doubles_ranking)+(p.doubles_snapshot_date?' · '+df(p.doubles_snapshot_date):''));
   if(p.race_ranking!=null&&p.race_source)rankBits.push('Race #'+fmt(p.race_ranking)+(p.race_snapshot_date?' · '+df(p.race_snapshot_date):''));
   if(p.nextgen_ranking!=null&&p.nextgen_source)rankBits.push('Next Gen #'+fmt(p.nextgen_ranking)+(p.nextgen_snapshot_date?' · '+df(p.nextgen_snapshot_date):''));
   if(p.junior_doubles_ranking!=null)rankBits.push('Junior Double #'+fmt(p.junior_doubles_ranking));
+  if(races.junior?.rank!=null)rankBits.push('Race Junior #'+fmt(races.junior.rank)+(races.junior.status==='qualified'?' · Qualifié Finals':''));
+  if(races.doubles?.rank!=null)rankBits.push('Race Double #'+fmt(races.doubles.rank)+(races.doubles.status==='qualified'?' · Qualifié Finals':''));
+  if(races.juniorDoubles?.rank!=null)rankBits.push('Race Junior Double #'+fmt(races.juniorDoubles.rank)+(races.juniorDoubles.status==='qualified'?' · Qualifié Finals':''));
   if(p.junior_ranking!=null){const jx=p.junior_rank_type==='official'&&p.junior_official_ranking!=null?' · ITF officiel #'+fmt(p.junior_official_ranking):p.junior_rank_type==='verified_nr'?' · rang estimé':p.game_generated?' · simulé':'';rankBits.push('Junior #'+fmt(p.junior_ranking)+jx);}
   if(p.ncaa_current)rankBits.push('NCAA actif'+(ncaa?.ita_rank?' ITA #'+fmt(ncaa.ita_rank):p.ncaa_rank?' ITA #'+fmt(p.ncaa_rank):'')+(ncaa?.school?' · '+ncaa.school:p.ncaa_school?' · '+p.ncaa_school:''));
   else if(ncaaIsAlumni)rankBits.push('NCAA Alumni'+((ncaaCareer?.verified||p.ncaa_verified)?' certifié':'')+' · '+(ncaaCareer?.school||p.ncaa_last_school||'Université'));
@@ -1165,6 +1169,12 @@ window.openPlayer=async id=>{
   <div class="kpi"><span class="muted mini">Semaines n°1</span><b>${fmt(p.weeks_at_no1||0)}</b></div>
   <div class="kpi"><span class="muted mini">Junior</span><b>${p.junior_ranking!=null?'#'+fmt(p.junior_ranking):'—'}</b><small class="muted micro">${p.junior_rank_type==='official'&&p.junior_official_ranking!=null?'ITF officiel #'+fmt(p.junior_official_ranking):p.junior_rank_type==='verified_nr'?'ITF NR':p.game_generated&&p.junior_ranking!=null?'simulé':''}</small></div>
   <div class="kpi"><span class="muted mini">NCAA / ITA</span><b>${(ncaa?.ita_rank??p.ncaa_rank)!=null?'#'+fmt(ncaa?.ita_rank??p.ncaa_rank):p.ncaa_current?'Actif':'—'}</b><small class="muted micro">${esc(ncaa?.school||p.ncaa_school||'')}</small></div>
+ </div>
+ <div class="kpi-strip" style="margin-top:8px">
+  <div class="kpi"><span class="muted mini">Race Junior</span><b>${races.junior?.rank!=null?'#'+fmt(races.junior.rank):'—'}</b><small class="muted micro">${races.junior?.status==='qualified'?'Qualifié Finals':races.junior?.status==='alternate'?'Remplaçant':races.junior?.rank!=null?'En course':''}</small></div>
+  <div class="kpi"><span class="muted mini">Race Double</span><b>${races.doubles?.rank!=null?'#'+fmt(races.doubles.rank):'—'}</b><small class="muted micro">${races.doubles?.team?esc(races.doubles.team):''}</small></div>
+  <div class="kpi"><span class="muted mini">Race Junior Double</span><b>${races.juniorDoubles?.rank!=null?'#'+fmt(races.juniorDoubles.rank):'—'}</b><small class="muted micro">${races.juniorDoubles?.team?esc(races.juniorDoubles.team):''}</small></div>
+  <div class="kpi"><span class="muted mini">Statut Finals</span><b>${[races.junior,races.doubles,races.juniorDoubles].some(x=>x?.status==='qualified')?'Qualifié':'—'}</b></div>
  </div>
 </div>
 <div class="card" style="margin-top:10px;padding:12px">

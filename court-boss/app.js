@@ -402,7 +402,7 @@ function home(){
  return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP · classement réf. ${df(RANKING_SNAPSHOT)}</span></div>
  <section class="hero">
   <div class="card click" onclick="nav('myplayer')">
-   <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double #${fmt(c.doubles_rank)} · ${careerFocusLabel(c.career_focus||'mixed')}</div><div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="badge ${doublesOnly?'good':''}">${doublesOnly?'Circuit principal · Double':'Objectif · '+careerFocusLabel(c.career_focus||'mixed')}</span>${doublesOnly?'<span class="badge">Points simple en extinction naturelle</span>':''}</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
+   <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double ${careerDoublesRankText(c)} · ${careerFocusLabel(c.career_focus||'mixed')}</div><div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="badge ${doublesOnly?'good':''}">${doublesOnly?'Circuit principal · Double':'Objectif · '+careerFocusLabel(c.career_focus||'mixed')}</span>${doublesOnly?'<span class="badge">Points simple en extinction naturelle</span>':''}</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
    <div class="kpi-strip" style="margin-top:14px">
     ${[['Forme',c.form||72],['Fitness',c.fitness||91],['Moral',c.morale||78],['Fatigue',c.fatigue||18]].map(x=>`<div class="kpi"><span class="muted mini">${x[0]}</span><b>${x[1]}</b><div class="bar"><i style="width:${x[1]}%"></i></div></div>`).join('')}
    </div>
@@ -550,6 +550,7 @@ function singlesEligibility(t){
 function doublesEligibility(t){
  const partner=activeDoublesPartner(),c=career(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
  const now=String(local.date||"2025-12-01"),advance=String(t.doubles_entry_deadline||""),onsite=String(t.doubles_onsite_deadline||"");
+ if(String(c.career_focus||'mixed')==='singles_only')return {label:"Simple exclusivement",cls:"bad",can:false,phase:"career_focus"};
  if(!t.doubles)return {label:"Pas de double",cls:"",can:false,phase:"none"};
  if(String(t.circuit)==="NCAA")return {label:"Via lineup NCAA",cls:"info",can:false,phase:"selection"};
  if(String(t.circuit)==="Federation")return {label:"Par sélection",cls:"info",can:false,phase:"selection"};
@@ -675,10 +676,12 @@ function tournamentTmRow(t){
  "</tr>";
 }
 function tmCalendarRows(){
- const doublesOnly=String(career().career_focus||'mixed')==='doubles_only';
+ const focus=String(career().career_focus||'mixed');
+ const doublesOnly=focus==='doubles_only',singlesOnly=focus==='singles_only';
  return (tourRows||[]).filter(t=>{
   const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),wk=calWeekStart(t.start_date);
   if(doublesOnly&&!t.doubles)return false;
+  if(singlesOnly&&!t.singles)return false;
   if(tmCalFilters.week!=="Toutes"&&wk!==tmCalFilters.week)return false;
   if(tmCalFilters.country!=="Tous"&&String(t.country)!==tmCalFilters.country)return false;
   if(tmCalFilters.status!=="Tous"&&st.label!==tmCalFilters.status)return false;
@@ -706,7 +709,7 @@ function renderTournamentWeeks(){
  }).join("");
 }
 window.tmCalendarFilter=(k,v)=>{tmCalFilters[k]=v;render()}
-window.resetTmCalendarFilters=()=>{tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:String(career().career_focus||'mixed')==='doubles_only'?'Double':'Tous',holder:'Tous'};render()}
+window.resetTmCalendarFilters=()=>{const f=String(career().career_focus||'mixed');tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:f==='doubles_only'?'Double':f==='singles_only'?'Simple':'Tous',holder:'Tous'};render()}
 
 function calendar(){
  const cats=['Toutes','Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Next Gen Finals','United Cup','Laver Cup','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','J500','J300','J200','J100','J60','J30','Junior Finals','Junior Davis Cup','ITA Kickoff Weekend','ITA National Team Indoor Championship','ITA All-American Championships','ITA Division I Regionals','ITA Sectional Championships','ITA Conference Masters','NCAA DI Team Championship','NCAA DI Individual Championship','NCAA','Junior','Davis Cup'];
@@ -717,7 +720,7 @@ function calendar(){
  const partner=activeDoublesPartner(),singleEntries=(local.entries||[]).length,doubleEntries=(local.doublesEntries||[]).length;
  return `<div class="fm-page-head tm-calendar-head"><div><div class="eyebrow">Tournament registration · calendrier TM</div><h1>Calendrier mondial</h1><div class="muted">Départ de la base : <b>01/12/2025</b>. Vrais événements 2025-26, semaine par semaine, avec simple, double, qualifs et règles d’accès séparés.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(tourCount)} tournois</div><div class="fm-head-badge subtle">${fmt(officialCount)} officiels</div><div class="fm-head-badge subtle">S ${singleEntries} · D ${doubleEntries}</div></div></div>
  <div class="tm-calendar-tabs"><button class="${tourFilters.circuit==='Tous'?'active':''}" onclick="tourFilter('circuit','Tous')">Tous</button><button class="${tourFilters.circuit==='ATP'?'active':''}" onclick="tourFilter('circuit','ATP')">ATP</button><button class="${tourFilters.circuit==='Challenger'?'active':''}" onclick="tourFilter('circuit','Challenger')">Challenger</button><button class="${tourFilters.circuit==='ITF'?'active':''}" onclick="tourFilter('circuit','ITF')">ITF</button><button class="${tourFilters.circuit==='Junior'?'active':''}" onclick="tourFilter('circuit','Junior')">Junior</button><button class="${tourFilters.circuit==='NCAA'?'active':''}" onclick="tourFilter('circuit','NCAA')">NCAA</button><button class="${tourFilters.circuit==='Federation'?'active':''}" onclick="tourFilter('circuit','Federation')">Davis Cup</button><button onclick="showMyEntries()">Mes inscriptions</button></div>
- <div class="card tm-registration-summary"><div><span>Joueur</span><b>${esc(career().player_name)}</b><small>ATP #${fmt(career().singles_rank)} · Double #${fmt(career().doubles_rank)} · ${careerFocusLabel(career().career_focus||'mixed')}</small></div><div><span>Partenaire double</span><b>${partner?esc(partner.name):'Aucun'}</b><small>${partner?'Double #'+fmt(partner.doubles_ranking||0):'Choisir dans le hub Double'}</small></div><div><span>Date carrière</span><b>${df(local.date||'2025-12-01')}</b><small>Semaine ${calGameWeek(local.date||'2025-12-01')}</small></div><div><span>Couverture</span><b>${coverage}</b><small>Officiels + fictifs Challenger/ITF · filtrables</small></div></div>
+ <div class="card tm-registration-summary"><div><span>Joueur</span><b>${esc(career().player_name)}</b><small>ATP #${fmt(career().singles_rank)} · Double ${careerDoublesRankText(career())} · ${careerFocusLabel(career().career_focus||'mixed')}</small></div><div><span>Partenaire double</span><b>${String(career().career_focus||'mixed')==='singles_only'?'Désactivé':partner?esc(partner.name):'Aucun'}</b><small>${String(career().career_focus||'mixed')==='singles_only'?'Carrière 100 % simple':partner?'Double #'+fmt(partner.doubles_ranking||0):'Choisir dans le hub Double'}</small></div><div><span>Date carrière</span><b>${df(local.date||'2025-12-01')}</b><small>Semaine ${calGameWeek(local.date||'2025-12-01')}</small></div><div><span>Couverture</span><b>${coverage}</b><small>Officiels + fictifs Challenger/ITF · filtrables</small></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)"><option value="Tous" ${tourFilters.source==='Tous'?'selected':''}>Tous</option><option value="Officiel" ${tourFilters.source==='Officiel'?'selected':''}>Officiels</option><option value="Fictif" ${tourFilters.source==='Fictif'?'selected':''}>Fictifs Challenger/ITF</option></select><input class="input" type="month" min="2025-12" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>
  <div class="surface-legend"><span class="surface-hard">● Dur extérieur</span><span class="surface-indoor">● Dur intérieur</span><span class="surface-clay">● Terre battue</span><span class="surface-grass">● Gazon</span><span class="muted mini">Cut “proj.” = estimation Court Boss, pas une acceptance list officielle.</span></div>
  <div class="card tm-advanced-filters">
@@ -780,6 +783,7 @@ window.toggleSinglesEntry=id=>{
  local.entries.push(id);persist();render();
 }
 window.toggleDoublesEntry=id=>{
+ if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les inscriptions double sont désactivées.');return}
  local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
  const exists=local.doublesEntries.includes(id);
  if(exists){local.doublesEntries=local.doublesEntries.filter(x=>x!==id);delete local.doublesEntryMeta[id];persist();render();return}
@@ -1285,11 +1289,11 @@ function doublesPage(){
  ${singlesOnly?'<div class="notice"><b>Simple exclusivement</b> · consultation du circuit double uniquement. Les paires, propositions et inscriptions double sont verrouillées.</div>':''}
  <div class="tabs rank-tabs"><button class="active">Partenariat</button><button onclick="setRankKind('doubles');nav('rankings')">Classement Double</button><button onclick="setRankKind('doubles_race');nav('rankings')">Race Double</button><button onclick="setRankKind('junior_doubles');nav('rankings')">Junior Double</button><button onclick="setRankKind('junior_doubles_race');nav('rankings')">Race Junior Double</button><button onclick="dbCircuit='Double';dbOffset=0;dbQuery='';loadPlayerDatabase().then(()=>nav('players'))">Base double complète</button><button onclick="document.getElementById('dblRace').scrollIntoView({behavior:'smooth'})">Race équipes</button></div>
  <div class="grid g2" style="margin-top:10px">
-  <div class="card"><div class="row between"><h2>Partenaire actuel</h2><span class="badge">Ton rang #${fmt(c.doubles_rank)}</span></div>
+  <div class="card"><div class="row between"><h2>Partenaire actuel</h2><span class="badge">Ton rang ${careerDoublesRankText(c)}</span></div>
    ${partner?`<div class="row between click" onclick="openPlayer(${partner.id})"><div><h2>${flags[partner.country]||'🏳️'} ${esc(partner.name)}</h2><div class="muted">Double #${fmt(partner.doubles_ranking)} ${partner.ranking?'· ATP #'+partner.ranking:''}</div><div class="muted mini">${partner.doubles_snapshot_date?'réf. '+df(partner.doubles_snapshot_date):''}</div></div><span class="badge good">Partenaire principal</span></div><div class="kpi-strip" style="margin-top:12px"><div class="kpi"><span class="muted mini">Chimie</span><b>${pairScore(partner,'chem')}%</b></div><div class="kpi"><span class="muted mini">Compatibilité</span><b>${pairScore(partner,'comp')}%</b></div><div class="kpi"><span class="muted mini">Force paire</span><b>${pairScore(partner,'power')}%</b></div><div class="kpi"><span class="muted mini">Engagement</span><b>${managedCommitment?.commitment??'—'}%</b></div></div>${managedCommitment?`<div class="row between muted mini" style="margin-top:8px"><span>Affinité ${managedCommitment.affinity}/100 · depuis ${df(managedCommitment.started_at)}</span><span>${managedCommitment.switches||0} changement${Number(managedCommitment.switches||0)>1?'s':''}</span></div><div class="muted micro" style="margin-top:5px">Le partenaire peut aussi décider de quitter la paire si le projet sportif ou l'engagement se dégrade.</div>`:''}`:'<div class="empty">Choisis un spécialiste dans le classement Double.</div>'}
   </div>
   <div class="card"><div class="row between"><h2>Top double vérifié</h2><button class="ghost" onclick="setRankKind('doubles');nav('rankings')">Voir tout</button></div>
-   ${pool.slice(0,12).map(p=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>#${p.doubles_ranking} ${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${p.doubles_points==null?'points non publiés dans ce snapshot':fmt(p.doubles_points)+' pts'} · ${df(p.doubles_snapshot_date)}</div></div><button class="soft-btn" onclick="approachPartner(${p.id})">Approcher</button></div>`).join('')||'<div class="loader">Chargement du classement double…</div>'}
+   ${pool.slice(0,12).map(p=>`<div class="list-item row between"><div class="click" onclick="openPlayer(${p.id})"><b>#${p.doubles_ranking} ${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${p.doubles_points==null?'points non publiés dans ce snapshot':fmt(p.doubles_points)+' pts'} · ${df(p.doubles_snapshot_date)}</div></div>${singlesOnly?'<button class="ghost" disabled>Verrouillé</button>':`<button class="soft-btn" onclick="approachPartner(${p.id})">Approcher</button>`}</div>`).join('')||'<div class="loader">Chargement du classement double…</div>'}
   </div>
  </div>
  ${ownPartnership&&partner?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Vie de la paire</div><h2>${esc(c.player_name||'Joueur')} / ${esc(partner.name)}</h2></div><span class="badge ${Number(ownPartnership.momentum||50)>=70?'good':Number(ownPartnership.momentum||50)<45?'bad':''}">Momentum ${fmt(ownPartnership.momentum??50)}%</span></div><div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted mini">Tournois</span><b>${fmt(ownPartnership.events_played||0)}</b></div><div class="kpi"><span class="muted mini">Finales</span><b>${fmt(ownPartnership.finals||0)}</b></div><div class="kpi"><span class="muted mini">Titres</span><b>${fmt(ownPartnership.titles||0)}</b></div><div class="kpi"><span class="muted mini">Dernier match</span><b style="font-size:13px">${ownPartnership.last_played?df(ownPartnership.last_played):'—'}</b></div></div><div class="muted mini" style="margin-top:8px">Les résultats font évoluer la chimie, l’engagement et la force de la paire. Une série de gros résultats stabilise le duo, une mauvaise période peut pousser l’un des deux à partir.</div></div>`:''}
@@ -1300,14 +1304,14 @@ function doublesPage(){
  </div>`:''}
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Circuit Junior</div><h2>Top Junior Double</h2><div class="muted">Classement individuel séparé #1–#2000. Les joueurs peuvent former une paire et jouer le double dans les tournois juniors.</div></div><button class="ghost" onclick="setRankKind('junior_doubles');nav('rankings')">Voir les 2000</button></div>
  <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Âge 01/12/25</th><th>Pts</th><th></th></tr></thead><tbody>
- ${juniorPool.slice(0,20).map(p=>`<tr><td class="rank-num">#${fmt(p.junior_doubles_ranking)}</td><td class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted micro">Junior simple #${p.junior_ranking||'—'}</div></td><td>${rankAge(p,'junior_doubles')}</td><td>${fmt(p.junior_doubles_points||0)}</td><td><button class="soft-btn" onclick="choosePartner(${p.id})">Associer</button></td></tr>`).join('')}
+ ${juniorPool.slice(0,20).map(p=>`<tr><td class="rank-num">#${fmt(p.junior_doubles_ranking)}</td><td class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted micro">Junior simple #${p.junior_ranking||'—'}</div></td><td>${rankAge(p,'junior_doubles')}</td><td>${fmt(p.junior_doubles_points||0)}</td><td>${singlesOnly?'<button class="ghost" disabled>Verrouillé</button>':`<button class="soft-btn" onclick="choosePartner(${p.id})">Associer</button>`}</td></tr>`).join('')}
  </tbody></table></div></div>
  <div id="dblRace" class="section-head" style="margin-top:18px"><div><div class="eyebrow">ATP Finals</div><h2>Race double par équipes</h2><div class="muted">Race double · ${doublesRaceRows[0]?.snapshot_date?df(doublesRaceRows[0].snapshot_date):"snapshot courant"} · ${fmt(doublesRaceRows.length)} équipes chargées.</div></div></div>
  <div class="card"><div class="row between" style="margin-bottom:8px"><span class="muted mini">Historique équipes importé : ${fmt(doublesRaceRows.length)} équipes</span><button class="ghost" onclick="setRankKind(\'doubles\');nav(\'rankings\')">Classement individuel</button></div><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Équipe</th><th>Points</th><th>Référence</th></tr></thead><tbody>
  ${doublesRaceRows.map(x=>`<tr><td class="rank-num">#${x.rank}</td><td><b><span class="click" onclick="openPlayerByName('${esc(String(x.player_one||'').replace(/'/g,"\\'"))}')">${esc(x.player_one)}</span> / <span class="click" onclick="openPlayerByName('${esc(String(x.player_two||'').replace(/'/g,"\\'"))}')">${esc(x.player_two)}</span></b></td><td>${fmt(x.points)}</td><td>${df(x.snapshot_date)}</td></tr>`).join('')}
  </tbody></table></div>${!doublesRaceRows.length?'<div class="loader">Chargement de la Race équipes…</div>':''}</div>
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Scouting double</div><h2>Spécialistes disponibles</h2></div></div>
- <div class="grid g2">${candidates.slice(0,20).map(p=>`<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">Double #${p.doubles_ranking}</div><h3>${flags[p.country]||'🏳️'} ${esc(p.name)}</h3><div class="muted mini">${p.ranking?'ATP #'+p.ranking+' · ':''}CA ${p.current_ability} · PA ${p.potential}</div></div><button class="primary" onclick="approachPartner(${p.id})">Approcher</button></div></div>`).join('')}</div>`
+ <div class="grid g2">${candidates.slice(0,20).map(p=>`<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">Double #${p.doubles_ranking}</div><h3>${flags[p.country]||'🏳️'} ${esc(p.name)}</h3><div class="muted mini">${p.ranking?'ATP #'+p.ranking+' · ':''}CA ${p.current_ability} · PA ${p.potential}</div></div>${singlesOnly?'<button class="ghost" disabled>Verrouillé</button>':`<button class="primary" onclick="approachPartner(${p.id})">Approcher</button>`}</div></div>`).join('')}</div>`
 }
 function universityPage(){
  const teams=management?.college||[],offers=management?.collegeOffers||[],state=management?.collegeState||{},duals=management?.collegeDuals||[],collegeStaff=management?.collegeTeamStaff||[];
@@ -1530,6 +1534,11 @@ function careerFocusDescription(v){
       ?'Le simple reste l’objectif principal, mais tu peux jouer du double ponctuellement.'
       :'Simple et double sont menés en parallèle avec deux classements actifs.';
 }
+function careerDoublesRankText(c=career()){
+ const strict=String(c?.career_focus||'mixed')==='singles_only';
+ const pts=Number(c?.doubles_points||0);
+ return strict&&pts<=0?'NR':(c?.doubles_rank?'#'+fmt(c.doubles_rank):'NR');
+}
 function myPlayerPage(){
  const c=career(),focus=String(c.career_focus||'mixed');
  const modes=[
@@ -1551,7 +1560,7 @@ function myPlayerPage(){
   </div>
  </div>
  <div class="grid g2"><div class="card"><h2>Identité</h2><label class="mini muted">Nom</label><input class="input" value="${esc(c.player_name)}" onchange="editCareer('player_name',this.value)"><label class="mini muted">Pays</label><input class="input" value="${esc(c.country)}" onchange="editCareer('country',this.value)"><label class="mini muted">Style</label><select class="select" onchange="editCareer('style',this.value)">${['Attaquant polyvalent','Attaquant fond de court','Contreur','All-court','Serveur-volée'].map(x=>`<option ${x===c.style?'selected':''}>${x}</option>`).join('')}</select></div>
- <div class="card"><h2>Profil</h2><div class="statline"><div class="statbox"><span class="muted mini">ATP</span><b>#${fmt(c.singles_rank)}</b></div><div class="statbox"><span class="muted mini">Double</span><b>#${fmt(c.doubles_rank)}</b></div><div class="statbox"><span class="muted mini">CA</span><b>${c.current_ability||56}</b></div><div class="statbox"><span class="muted mini">PA</span><b>${c.potential||82}</b></div></div><div class="list-item row between"><span>Âge</span><input class="input" style="max-width:100px" type="number" value="${c.age||19}" onchange="editCareer('age',Number(this.value))"></div><div class="list-item row between"><span>Taille</span><input class="input" style="max-width:100px" type="number" value="${c.height_cm||184}" onchange="editCareer('height_cm',Number(this.value))"></div><div class="list-item row between"><span>Poids</span><input class="input" style="max-width:100px" type="number" value="${c.weight_kg||78}" onchange="editCareer('weight_kg',Number(this.value))"></div></div></div>`
+ <div class="card"><h2>Profil</h2><div class="statline"><div class="statbox"><span class="muted mini">ATP</span><b>#${fmt(c.singles_rank)}</b></div><div class="statbox"><span class="muted mini">Double</span><b>${careerDoublesRankText(c)}</b></div><div class="statbox"><span class="muted mini">CA</span><b>${c.current_ability||56}</b></div><div class="statbox"><span class="muted mini">PA</span><b>${c.potential||82}</b></div></div><div class="list-item row between"><span>Âge</span><input class="input" style="max-width:100px" type="number" value="${c.age||19}" onchange="editCareer('age',Number(this.value))"></div><div class="list-item row between"><span>Taille</span><input class="input" style="max-width:100px" type="number" value="${c.height_cm||184}" onchange="editCareer('height_cm',Number(this.value))"></div><div class="list-item row between"><span>Poids</span><input class="input" style="max-width:100px" type="number" value="${c.weight_kg||78}" onchange="editCareer('weight_kg',Number(this.value))"></div></div></div>`
 }
 function fantasyPage(){
  const rows=local.fantasy||[];
@@ -2233,6 +2242,7 @@ window.pairScore=(p,k)=>{
  return clamp(Math.round(k==='power'?base+3:k==='comp'?base:base-2),40,94)
 }
 window.approachPartner=async id=>{
+ if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les partenariats double sont désactivés.');return}
  try{
   const d=await managerAction('approach_partner',id);
   if(d.accepted){
@@ -2245,6 +2255,7 @@ window.approachPartner=async id=>{
  }catch(e){alert(e.message)}
 }
 window.respondPartnerOffer=async(id,decision)=>{
+ if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les propositions de double sont désactivées.');return}
  try{
   const d=await managerAction('respond_partner_offer',id,{decision});
   if(decision==='accept'&&d.partnership?.partner_id){
@@ -2253,7 +2264,7 @@ window.respondPartnerOffer=async(id,decision)=>{
   await loadManagement();render();
  }catch(e){alert(e.message)}
 }
-window.choosePartner=async id=>{try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
+window.choosePartner=async id=>{if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : change d’orientation avant de former une paire.');return}try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
 window.setCareerFocus=async focus=>{
  const labels={singles_only:'Simple exclusivement',singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
@@ -2275,6 +2286,8 @@ window.setCareerFocus=async focus=>{
     rankKind='doubles';
   }else if(focus==='singles_only'){
     local.partnerId=null;
+    local.doublesEntries=[];
+    local.doublesEntryMeta={};
     local.training=['Service','Retour','Coup droit','Revers','Match play','Déplacements','Récupération'];
     tmCalFilters.entry='Simple';
     rankKind='singles';

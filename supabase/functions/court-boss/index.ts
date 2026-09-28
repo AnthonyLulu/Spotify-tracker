@@ -2896,6 +2896,13 @@ Deno.serve(async(req:Request)=>{
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
+    if(String(c.career_focus||"mixed")==="doubles_only"){
+      return h({
+        error:"Orientation Double exclusivement : ce joueur ne participe plus aux tableaux de simple.",
+        career_focus:"doubles_only",
+        doubles_only:true
+      },409);
+    }
     const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const staffProfiles=(userStaff.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
     const matchStaffEfficiency=(p:any)=>{
@@ -3711,18 +3718,27 @@ Deno.serve(async(req:Request)=>{
     const tours=await db.from("tournaments").select("*").eq("is_active",true).in("circuit",["ATP","Challenger","ITF"]).gte("start_date",c.career_date).order("start_date",{ascending:true}).limit(180);
     if(tours.error)return h({error:tours.error.message},500);
     const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
+    const doublesOnly=String(c.career_focus||"mixed")==="doubles_only";
     const score=(t:any)=>{
       const direct=Number(t.direct_cut??t.projected_direct_cut??0),qual=Number(t.qual_cut??t.projected_qual_cut??0);
-      const cut=direct&&c.singles_rank<=direct?30:qual&&c.singles_rank<=qual?18:qual&&c.singles_rank<=qual+50?8:-10;
+      const singlesCut=direct&&c.singles_rank<=direct?30:qual&&c.singles_rank<=qual?18:qual&&c.singles_rank<=qual+50?8:-10;
+      const doublesRank=Number(c.doubles_rank||99999);
+      const doublesAccess=t.doubles?(doublesRank<=50?28:doublesRank<=150?22:doublesRank<=400?15:doublesRank<=900?8:2):-35;
+      const cut=doublesOnly?doublesAccess:singlesCut;
       const surf=t.surface==="Terre"?Number(a.clay_affinity||10):t.surface==="Gazon"?Number(a.grass_affinity||10):Number(a.hard_affinity||10);
       const travel=t.country===c.country?10:european.includes(t.country)?5:-3;
       const fatigue=Number(c.fatigue||18)>55?-18:Number(c.fatigue||18)>35?-8:7;
-      const level=/Grand Chelem|Masters 1000/i.test(String(t.category||""))?-8:/ATP 500|ATP 250/i.test(String(t.category||""))?0:/Challenger/i.test(String(t.category||""))?10:6;
+      const level=doublesOnly
+        ?(/Grand Chelem|Masters 1000/i.test(String(t.category||""))?4:/ATP 500|ATP 250/i.test(String(t.category||""))?7:/Challenger/i.test(String(t.category||""))?10:5)
+        :(/Grand Chelem|Masters 1000/i.test(String(t.category||""))?-8:/ATP 500|ATP 250/i.test(String(t.category||""))?0:/Challenger/i.test(String(t.category||""))?10:6);
       const sourceBonus=t.is_verified?8:-2;
       return Math.max(0,Math.min(100,40+cut+surf+travel+fatigue+level+sourceBonus));
     };
-    const rows=(tours.data??[]).map((t:any)=>({...t,recommendation_score:score(t)})).sort((x:any,y:any)=>y.recommendation_score-x.recommendation_score);
-    return h({career:{rank:c.singles_rank,fatigue:c.fatigue,fitness:c.fitness},recommended:rows.slice(0,12)});
+    const rows=(tours.data??[])
+      .filter((t:any)=>!doublesOnly||Boolean(t.doubles))
+      .map((t:any)=>({...t,recommendation_score:score(t),career_focus:doublesOnly?"doubles_only":String(c.career_focus||"mixed")}))
+      .sort((x:any,y:any)=>y.recommendation_score-x.recommendation_score);
+    return h({career:{rank:doublesOnly?c.doubles_rank:c.singles_rank,singles_rank:c.singles_rank,doubles_rank:c.doubles_rank,career_focus:c.career_focus,fatigue:c.fatigue,fitness:c.fitness},recommended:rows.slice(0,12)});
   }
 
 
@@ -5230,6 +5246,9 @@ Deno.serve(async(req:Request)=>{
 
 
     if(action==="request_wildcard"){
+      if(String(career.data.career_focus||"mixed")==="doubles_only"){
+        return h({error:"Carrière en mode Double exclusivement : les wild cards simple sont désactivées."},409);
+      }
       const [t,a]=await Promise.all([
         db.from("tournaments").select("*").eq("id",id).maybeSingle(),
         db.from("academies").select("reputation").eq("id","demo").maybeSingle()

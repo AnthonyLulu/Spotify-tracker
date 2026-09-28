@@ -1238,7 +1238,7 @@ window.openCareerTitle=function(i){
   const t=(data.allTitles||[])[Number(i)];
   if(!t)return;
   const discipline=t.event_type==='doubles'?'Double':/^ncaa_|^college_/.test(String(t.event_type||''))?'NCAA / College':'Simple';
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(discipline)} · palmarès</div><h1>${esc(t.tournament_name||'Titre')}</h1><div class="muted">${t.title_date?df(t.title_date):'Date non publiée'} · ${esc(t.level||'—')} · ${esc(t.surface||'—')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div class="tm-title-with-logo">${window.tournamentLogoByName?window.tournamentLogoByName(t.tournament_name||'Tournoi',t.level||discipline,'tm-detail-logo'):''}<div><div class="eyebrow">${esc(discipline)} · palmarès</div><h1>${esc(t.tournament_name||'Titre')}</h1><div class="muted">${t.title_date?df(t.title_date):'Date non publiée'} · ${esc(t.level||'—')} · ${esc(t.surface||'—')}</div></div></div><button class="close" onclick="closeOverlay()">✕</button></div>
   <div class="card"><div class="list-item row between"><span>Joueur</span><b>${esc(data.player?.name||'—')}</b></div>${t.partner_name?`<div class="list-item row between"><span>Partenaire</span><b class="click" ${t.partner_player_id?`onclick="openPlayer(${t.partner_player_id})"`:''}>${esc(t.partner_name)}</b></div>`:''}${t.school?`<div class="list-item row between"><span>Université</span><b>${esc(t.school)}</b></div>`:''}<div class="list-item row between"><span>Statut donnée</span><b>${t.verified?'Vérifié':'Carrière simulée / archive'}</b></div><div class="list-item row between"><span>Source</span><b>${esc(t.source_label||t.origin||'Archive')}</b></div>${t.source_url?`<a class="primary" style="display:inline-block;margin-top:10px" href="${esc(t.source_url)}" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>`:''}</div></div></div>`;
 };
 
@@ -1278,7 +1278,7 @@ window.openTournamentHistoryItem=function(i){
     <div class="modal" onclick="if(event.target===this)closeOverlay()">
       <div class="sheet">
         <div class="sheet-head">
-          <div><div class="eyebrow">${isDouble?'Historique double':'Historique simple'} · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(name)} ${h.season||''}</h1><div class="muted">${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div></div>
+          <div class="tm-title-with-logo">${window.tournamentLogoByName?window.tournamentLogoByName(name,h.category||h.level||(h.is_grand_slam?'Grand Chelem':''),'tm-detail-logo'):''}<div><div class="eyebrow">${isDouble?'Historique double':'Historique simple'} · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(name)} ${h.season||''}</h1><div class="muted">${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div></div></div>
           <button class="close" onclick="closeOverlay()">✕</button>
         </div>
         <div class="grid g2" style="margin-top:12px">

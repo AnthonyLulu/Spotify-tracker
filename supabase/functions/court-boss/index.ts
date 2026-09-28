@@ -2561,6 +2561,9 @@ Deno.serve(async(req:Request)=>{
         const agentEvolution=month===1||month===4||month===7||month===10
           ?await db.rpc("evolve_player_agent_networks",{p_date:date})
           :{data:null,error:null};
+        const trainingIntake=month===1||month===4||month===7||month===10
+          ?await db.rpc("ensure_staff_training_centers",{p_date:date})
+          :{data:null,error:null};
         const trainingCenters=await db.rpc("progress_staff_training_centers",{p_date:date});
         const teamStaff=await db.rpc("rotate_college_davis_staff",{p_date:date});
         const coachAcademies=month===1
@@ -2578,6 +2581,7 @@ Deno.serve(async(req:Request)=>{
           meta:meta.error?{error:meta.error.message}:meta.data,
           agents:agents.error?{error:agents.error.message}:agents.data,
           agentEvolution:agentEvolution.error?{error:agentEvolution.error.message}:agentEvolution.data,
+          trainingIntake:trainingIntake.error?{error:trainingIntake.error.message}:trainingIntake.data,
           trainingCenters:trainingCenters.error?{error:trainingCenters.error.message}:trainingCenters.data,
           teamStaff:teamStaff.error?{error:teamStaff.error.message}:teamStaff.data,
           coachAcademies:coachAcademies.error?{error:coachAcademies.error.message}:coachAcademies.data,
@@ -2636,6 +2640,24 @@ Deno.serve(async(req:Request)=>{
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
     return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+  }
+
+  if(path.endsWith("/api/staff-world")&&req.method==="GET"){
+    const q=String(u.searchParams.get("q")||"").trim();
+    const role=String(u.searchParams.get("role")||"").trim();
+    const country=String(u.searchParams.get("country")||"").trim().toUpperCase();
+    const former=String(u.searchParams.get("former")||"Tous").trim();
+    const status=String(u.searchParams.get("status")||"Tous").trim();
+    const offset=n(u.searchParams.get("offset"),0,0,100000);
+    const limit=n(u.searchParams.get("limit"),50,1,100);
+    const cs=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+    if(cs.error)return h({error:cs.error.message},500);
+    const data=await db.rpc("staff_world_search",{
+      p_managed_player_id:Number(cs.data?.managed_player_id||0)||null,
+      p_q:q,p_role:role,p_country:country,p_former:former,p_status:status,p_offset:offset,p_limit:limit
+    });
+    if(data.error)return h({error:data.error.message},500);
+    return h(data.data||{rows:[],total:0,offset,limit,roles:[],countries:[],agencies:[],academies:[],training_centers:[]});
   }
 
   if(path.endsWith("/api/staff-profile")&&req.method==="GET"){
@@ -4238,6 +4260,36 @@ Deno.serve(async(req:Request)=>{
       });
 
       return h({ok:true,budget,cost,focus,expected_end:endDate.toISOString().slice(0,10),center:center.data.name});
+    }
+
+    if(action==="approach_staff"){
+      const profile=await db.from("staff_profiles").select("*").eq("id",id).maybeSingle();
+      if(profile.error||!profile.data)return h({error:profile.error?.message||"Profil staff introuvable"},404);
+      const p:any=profile.data;
+      if(!p.active)return h({error:"Ce membre du staff n'est plus actif."},409);
+      if(String(p.market_status||"")!=="available")return h({error:"Ce membre du staff est actuellement sous contrat ou indisponible."},409);
+      const already=await db.from("staff_candidates").select("id,status").eq("profile_id",id).maybeSingle();
+      if(already.error)return h({error:already.error.message},500);
+      if(already.data){
+        if(already.data.status!=="available")await db.from("staff_candidates").update({status:"available",interview_status:"not_started"}).eq("id",already.data.id);
+        return h({ok:true,candidate_id:already.data.id,existing:true});
+      }
+      const managedId=Number(career.data.managed_player_id||0);
+      const fit=managedId?await db.rpc("staff_fit_score",{p_player_id:managedId,p_staff_id:id,p_role:p.primary_role}):{data:60,error:null};
+      if(fit.error)return h({error:fit.error.message},500);
+      const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
+      const role=String(p.primary_role||"Staff"),low=role.toLowerCase();
+      const skill=low.includes("kin")||low.includes("ost")||low.includes("méd")||low.includes("med")?Number(p.medical_rating||10):low.includes("phys")?Number(p.fitness_rating||10):low.includes("recrut")||low.includes("scout")?Number(p.scouting_rating||10):low.includes("anal")?Math.max(Number(p.tactical_rating||10),Number(p.scouting_rating||10)):low.includes("mental")?Number(p.mental_rating||10):low.includes("agent")?Number(p.negotiation_rating||10):Number(p.coach_rating||10);
+      const weekly=Math.max(100,Math.round(Number(p.asking_weekly_cost||500)));
+      const signing=Math.round(weekly*(1.35+Number(p.reputation||10)*.055));
+      const offers=await db.from("staff_competing_offers").select("id",{count:"exact",head:true}).eq("staff_profile_id",id).eq("status","pending");
+      const ins=await db.from("staff_candidates").insert({
+        name:p.name,role,skill,weekly_cost:weekly,signing_cost:signing,
+        specialty:p.specialty||"Performance",status:"available",profile_id:id,
+        managed_fit:fitValue,interview_status:"not_started",competing_offers:Number(offers.count||0)
+      }).select("id").single();
+      if(ins.error)return h({error:ins.error.message},500);
+      return h({ok:true,candidate_id:ins.data.id,existing:false,managed_fit:fitValue});
     }
 
     if(action==="interview_staff"){

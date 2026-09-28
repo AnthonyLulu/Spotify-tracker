@@ -4156,6 +4156,34 @@ Deno.serve(async(req:Request)=>{
   }
 
 
+  if(path.endsWith("/api/history-players")&&req.method==="GET"){
+    const q=(u.searchParams.get("q")??"").trim().slice(0,80);
+    const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
+    const offset=n(u.searchParams.get("offset"),0,0,20000);
+    const limit=n(u.searchParams.get("limit"),100,1,100);
+
+    let hq=db.from("history_player_scores").select("*",{count:"exact"});
+    if(q)hq=hq.ilike("name",`%${q}%`);
+    if(country)hq=hq.eq("country",country);
+    hq=hq.order("history_score",{ascending:false}).range(offset,offset+limit-1);
+    const page=await hq;
+    if(page.error)return h({error:page.error.message},500);
+
+    const ids=(page.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
+    let details:any[]=[];
+    if(ids.length){
+      const d=await db.from("players")
+        .select("id,career_high_rank,career_high_rank_date,weeks_at_no1,weeks_top10,weeks_top100,ranking_history_weeks,career_status,photo_url,birth_date")
+        .in("id",ids);
+      if(d.error)return h({error:d.error.message},500);
+      details=d.data??[];
+    }
+    const byId=new Map(details.map((x:any)=>[Number(x.id),x]));
+    const rows=(page.data??[]).map((x:any)=>({...x,...(byId.get(Number(x.id))||{})}));
+    return h({offset,limit,count:page.count??0,rows});
+  }
+
+
   if((path.endsWith("/api/history-leaders")||path.endsWith("/api/history-hub"))&&req.method==="GET"){
     const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
     const continent=(u.searchParams.get("continent")??"").trim().slice(0,40);

@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:18,development_model:"development-v3",match_model:"matchup-v4/point-v3+live-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:19,development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -3484,6 +3484,41 @@ Deno.serve(async(req:Request)=>{
         (Number(aa.confidence||10)-Number(ab.confidence||10))*.010+
         (Number(dpa.temperament||10)-Number(dpb.temperament||10))*.006;
 
+      const extServeA=Number(aa.serve_power||10)*.58+Number(aa.serve_variety||10)*.42;
+      const extServeB=Number(ab.serve_power||10)*.58+Number(ab.serve_variety||10)*.42;
+      const extGroundA=Number(aa.forehand_accuracy||10)*.18+Number(aa.backhand_power||10)*.18+
+        Number(aa.forehand_consistency||10)*.18+Number(aa.backhand_consistency||10)*.18+
+        Number(aa.topspin||10)*.11+Number(aa.slice||10)*.08+Number(aa.patience||10)*.09;
+      const extGroundB=Number(ab.forehand_accuracy||10)*.18+Number(ab.backhand_power||10)*.18+
+        Number(ab.forehand_consistency||10)*.18+Number(ab.backhand_consistency||10)*.18+
+        Number(ab.topspin||10)*.11+Number(ab.slice||10)*.08+Number(ab.patience||10)*.09;
+      const extPhysicalA=Number(aa.strength||10)*.12+Number(aa.acceleration||10)*.17+
+        Number(aa.agility||10)*.17+Number(aa.balance||10)*.11+Number(aa.flexibility||10)*.08+
+        Number(aa.work_rate||10)*.11+Number(aa.defensive_skill||10)*.12+Number(aa.court_positioning||10)*.12;
+      const extPhysicalB=Number(ab.strength||10)*.12+Number(ab.acceleration||10)*.17+
+        Number(ab.agility||10)*.17+Number(ab.balance||10)*.11+Number(ab.flexibility||10)*.08+
+        Number(ab.work_rate||10)*.11+Number(ab.defensive_skill||10)*.12+Number(ab.court_positioning||10)*.12;
+      const extMentalA=Number(aa.fighting_spirit||10)*.27+Number(aa.killer_instinct||10)*.22+
+        Number(aa.determination||10)*.23+Number(aa.patience||10)*.10+Number(aa.leadership||10)*.07+Number(aa.work_rate||10)*.11;
+      const extMentalB=Number(ab.fighting_spirit||10)*.27+Number(ab.killer_instinct||10)*.22+
+        Number(ab.determination||10)*.23+Number(ab.patience||10)*.10+Number(ab.leadership||10)*.07+Number(ab.work_rate||10)*.11;
+      const extNetA=Number(aa.half_volley||10)*.19+Number(aa.smash||10)*.18+Number(aa.lob||10)*.12+
+        Number(aa.slice||10)*.12+Number(aa.transition_game||10)*.22+Number(aa.court_positioning||10)*.17;
+      const extNetB=Number(ab.half_volley||10)*.19+Number(ab.smash||10)*.18+Number(ab.lob||10)*.12+
+        Number(ab.slice||10)*.12+Number(ab.transition_game||10)*.22+Number(ab.court_positioning||10)*.17;
+      let extComboA=0,extComboB=0;
+      if(courtSpeed>=1.08){
+        extComboA=extServeA*.27+extGroundA*.20+extPhysicalA*.19+extMentalA*.17+extNetA*.17;
+        extComboB=extServeB*.27+extGroundB*.20+extPhysicalB*.19+extMentalB*.17+extNetB*.17;
+      }else if(courtSpeed<=.82){
+        extComboA=extServeA*.12+extGroundA*.31+extPhysicalA*.24+extMentalA*.18+extNetA*.15;
+        extComboB=extServeB*.12+extGroundB*.31+extPhysicalB*.24+extMentalB*.18+extNetB*.15;
+      }else{
+        extComboA=extServeA*.20+extGroundA*.26+extPhysicalA*.22+extMentalA*.17+extNetA*.15;
+        extComboB=extServeB*.20+extGroundB*.26+extPhysicalB*.22+extMentalB*.17+extNetB*.15;
+      }
+      const extendedAttributeFit=Math.max(-.14,Math.min(.14,(extComboA-extComboB)/65));
+
       let h2h=0,h2hSummary:any=null;
       if(hrow){
         const aIsCanonical=aid===Number(hrow.player_a_id);
@@ -3521,7 +3556,7 @@ Deno.serve(async(req:Request)=>{
       const baseLogit=Math.log(Math.max(.01,Math.min(.99,eloProb))/Math.max(.01,1-Math.min(.99,eloProb)));
       let logit=baseLogit+serviceReturn*.54+mental*.20+physical*.16+surfaceFit*.20+
         styleMatch*.38+tacticalFit*.42+contextFit*.18+bigMatchFit*.16+bo5Fit*.22+
-        confidenceFit+paceFit+h2h+formDelta+userTactics;
+        confidenceFit+paceFit+h2h+formDelta+userTactics+extendedAttributeFit;
       if(bestOf>=5)logit*=1.10;
       let probA=1/(1+Math.exp(-logit));
       probA=Math.max(.035,Math.min(.965,probA));
@@ -3530,7 +3565,13 @@ Deno.serve(async(req:Request)=>{
         service_return:serviceReturn,mental,physical,surface_fit:surfaceFit,pace_fit:paceFit,
         style_matchup:styleMatch,tactical_matchup:tacticalFit,context_skill:contextFit,
         big_match:bigMatchFit,best_of_five:bo5Fit,confidence:confidenceFit,
-        h2h,form_delta:formDelta,user_tactics:userTactics,h2h_summary:h2hSummary
+        h2h,form_delta:formDelta,user_tactics:userTactics,h2h_summary:h2hSummary,
+        extended_attribute_adjustment:extendedAttributeFit,
+        extended_attributes:{
+          serve_a:extServeA,serve_b:extServeB,ground_a:extGroundA,ground_b:extGroundB,
+          physical_a:extPhysicalA,physical_b:extPhysicalB,mental_a:extMentalA,mental_b:extMentalB,
+          net_a:extNetA,net_b:extNetB,combined_a:extComboA,combined_b:extComboB
+        }
       }};
     };
 
@@ -3710,12 +3751,12 @@ Deno.serve(async(req:Request)=>{
         const mm=matchupModel(pa,pb);
         m.player_a_win_probability=Number(mm.probA.toFixed(4));
         m.court_speed=Number(courtSpeed.toFixed(3));
-        m.model_version="TA-H2H-v2";
+        m.model_version="TA-H2H-v4-full-attrs";
         m.matchup_components=mm.components;
       }else{
         m.player_a_win_probability=null;
         m.court_speed=Number(courtSpeed.toFixed(3));
-        m.model_version="TA-H2H-v2-fallback";
+        m.model_version="TA-H2H-v4-full-attrs-fallback";
         m.matchup_components={};
       }
     }
@@ -3768,7 +3809,7 @@ Deno.serve(async(req:Request)=>{
       };
       const stats={
         expected_win_probability:userProb==null?null:Number(userProb.toFixed(4)),
-        model_version:"TA-H2H-v3-context",
+        model_version:"TA-H2H-v4-full-attrs",
         court_speed:m.court_speed,
         matchup_components:m.matchup_components||{},
         matchup_components_user:userComponents,

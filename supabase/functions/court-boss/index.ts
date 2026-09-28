@@ -1797,11 +1797,15 @@ Deno.serve(async(req:Request)=>{
       }
       player=await resolvePlayerPhoto(player);
     }
-    const [staffLinks,relA,relB]=await Promise.all([
+    const [staffLinks,staffHistory,relA,relB]=await Promise.all([
       db.from("player_staff_assignments")
-        .select("id,role,start_date,end_date,active,verified,affinity,trust,source_url,source_label,snapshot_date,notes,staff:staff_profiles(*)")
+        .select("id,role,start_date,end_date,active,verified,affinity,trust,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
         .order("verified",{ascending:false}).order("affinity",{ascending:false}).limit(20),
+      db.from("player_staff_assignments")
+        .select("id,role,start_date,end_date,active,verified,affinity,trust,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
+        .eq("player_id",id).eq("active",false).lte("snapshot_date",referenceDate)
+        .order("end_date",{ascending:false}).limit(12),
       db.from("player_relationships")
         .select("id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,source_url,formed_date,last_update,other:players!player_relationships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
         .eq("player_a_id",id).eq("active",true).lte("last_update",referenceDate)
@@ -1820,6 +1824,7 @@ Deno.serve(async(req:Request)=>{
       matches:visibleMatches,careerStats:careerStats.data??null,finals:visibleFinals,juniorEntries:visibleJuniorEntries,
       tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons,
       staff:staffLinks.error?[]:(staffLinks.data??[]),
+      staffHistory:staffHistory.error?[]:(staffHistory.data??[]),
       relationships:socialRows
     });
   }
@@ -2399,6 +2404,23 @@ Deno.serve(async(req:Request)=>{
       db.from("academy_roster").select("id,weekly_cost,contract_end,status,players(name)").eq("status","active")
     ]);
     const expiredRoster=(rosterRows.data??[]).filter((x:any)=>String(x.contract_end||"9999-12-31")<date);
+    const expiringStaffContracts=await db.from("contracts").select("*").eq("subject_type","staff").eq("status","active").lt("end_date",date);
+    if(!expiringStaffContracts.error){
+      for(const con of expiringStaffContracts.data??[]){
+        const member=await db.from("staff").select("*").eq("name",con.subject_name).maybeSingle();
+        if(member.data){
+          await db.from("staff").delete().eq("id",member.data.id);
+          if(member.data.profile_id){
+            await Promise.all([
+              db.from("staff_profiles").update({market_status:"available",available_from:date}).eq("id",member.data.profile_id),
+              db.from("staff_candidates").update({status:"available"}).eq("profile_id",member.data.profile_id)
+            ]);
+          }
+        }
+        await db.from("contracts").update({status:"expired"}).eq("id",con.id);
+        await db.from("inbox_items").insert({kind:"staff",title:"Contrat staff terminé",body:con.subject_name+" arrive au terme de son contrat et quitte ton équipe.",action_route:"staff",is_read:false});
+      }
+    }
     for(const x of expiredRoster){
       await db.from("academy_roster").update({status:"expired"}).eq("id",x.id);
       if(x.players?.name)await db.from("contracts").update({status:"expired"}).eq("subject_type","player").eq("subject_name",x.players.name);
@@ -3943,14 +3965,80 @@ Deno.serve(async(req:Request)=>{
       const cost=Number(cand.data.signing_cost||0);
       if(budget<cost)return h({error:"Budget insuffisant"},409);
       budget-=cost;
-      const [ins,up,car]=await Promise.all([
+      const start=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const endDate=new Date(start+"T12:00:00Z");
+      endDate.setUTCFullYear(endDate.getUTCFullYear()+2);
+      const [ins,up,car,contract,profileUp]=await Promise.all([
         db.from("staff").insert({name:cand.data.name,role:cand.data.role,skill:cand.data.skill,weekly_cost:cand.data.weekly_cost,profile_id:cand.data.profile_id||null}),
         db.from("staff_candidates").update({status:"hired"}).eq("id",id),
-        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo"),
+        db.from("contracts").insert({
+          subject_type:"staff",subject_name:cand.data.name,role:cand.data.role,
+          weekly_salary:cand.data.weekly_cost,start_date:start,
+          end_date:endDate.toISOString().slice(0,10),
+          bonuses:{loyalty_bonus:Math.round(Number(cand.data.weekly_cost||0)*2)},
+          status:"active"
+        }),
+        cand.data.profile_id
+          ?db.from("staff_profiles").update({market_status:"user_staff",available_from:null}).eq("id",cand.data.profile_id)
+          :Promise.resolve({error:null})
       ]);
-      const err=ins.error||up.error||car.error;if(err)return h({error:err.message},500);
-      await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+cand.data.role+".",action_route:"staff",is_read:false});
-      return h({ok:true,budget,status:"hired"});
+      const err=ins.error||up.error||car.error||contract.error||profileUp.error;if(err)return h({error:err.message},500);
+      await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+cand.data.role+" jusqu'au "+endDate.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
+      return h({ok:true,budget,status:"hired",contract_end:endDate.toISOString().slice(0,10)});
+    }
+
+    if(action==="fire_staff"){
+      const member=await db.from("staff").select("*").eq("id",id).maybeSingle();
+      if(member.error||!member.data)return h({error:member.error?.message||"Membre du staff introuvable"},404);
+      const severance=Math.max(0,Math.round(Number(member.data.weekly_cost||0)*4));
+      if(budget<severance)return h({error:"Budget insuffisant pour l'indemnité de départ"},409);
+      budget-=severance;
+
+      const [del,car,contracts,profileUp,candUp]=await Promise.all([
+        db.from("staff").delete().eq("id",id),
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo"),
+        db.from("contracts").update({status:"terminated"}).eq("subject_type","staff").eq("subject_name",member.data.name||member.data.role).eq("status","active"),
+        member.data.profile_id
+          ?db.from("staff_profiles").update({market_status:"available",available_from:String(career.data.career_date||AGE_REFERENCE_DATE)}).eq("id",member.data.profile_id)
+          :Promise.resolve({error:null}),
+        member.data.profile_id
+          ?db.from("staff_candidates").update({status:"available"}).eq("profile_id",member.data.profile_id)
+          :Promise.resolve({error:null})
+      ]);
+      const err=del.error||car.error||contracts.error||profileUp.error||candUp.error;
+      if(err)return h({error:err.message},500);
+
+      if(member.data.profile_id){
+        const existing=await db.from("staff_candidates").select("id").eq("profile_id",member.data.profile_id).maybeSingle();
+        if(!existing.error&&!existing.data){
+          const profile=await db.from("staff_profiles").select("*").eq("id",member.data.profile_id).maybeSingle();
+          if(profile.data){
+            const p:any=profile.data;
+            const role=String(p.primary_role||"");
+            const skill=role.toLowerCase().includes("kin")||role.toLowerCase().includes("ost")
+              ?Number(p.medical_rating||10)
+              :role.toLowerCase().includes("phys")
+                ?Number(p.fitness_rating||10)
+                :role.toLowerCase().includes("recrut")||role.toLowerCase().includes("scout")
+                  ?Number(p.scouting_rating||10)
+                  :role.toLowerCase().includes("anal")
+                    ?Math.max(Number(p.tactical_rating||10),Number(p.scouting_rating||10))
+                    :role.toLowerCase().includes("mental")
+                      ?Number(p.mental_rating||10)
+                      :Number(p.coach_rating||10);
+            await db.from("staff_candidates").insert({
+              name:p.name,role:p.primary_role,skill,
+              weekly_cost:p.asking_weekly_cost,
+              signing_cost:Math.round(Number(p.asking_weekly_cost||0)*(1.5+Number(p.reputation||10)/20)),
+              specialty:p.specialty,status:"available",profile_id:p.id
+            });
+          }
+        }
+      }
+
+      await db.from("inbox_items").insert({kind:"staff",title:"Départ du staff",body:(member.data.name||member.data.role)+" quitte ton équipe. Indemnité : "+severance+" €.",action_route:"staff",is_read:false});
+      return h({ok:true,budget,severance});
     }
 
     if(action==="accept_sponsor"){

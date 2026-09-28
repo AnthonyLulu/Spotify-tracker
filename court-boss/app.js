@@ -904,10 +904,12 @@ function staffRatingGrid(p){
 }
 function staffPage(){
  const cand=management?.candidates||[];
+ const roles=[...new Set(cand.map(x=>String(x.role||'')).filter(Boolean))].sort();
  return `<div class="section-head"><div><div class="eyebrow">Équipe</div><h1>Staff</h1><div class="muted">Coachs, préparateurs, kinés, analystes et recruteurs avec attributs 1–20 façon FM.</div></div></div>
  <div class="grid g2">${(boot.staff||[]).map(s=>{const p=s.profile||null,n=s.name||p?.name||s.role;return `<div class="card click" onclick="openStaff(${s.id})"><div class="row between"><div><div class="eyebrow">${esc(s.role)}</div><h2>${esc(n)}</h2><div class="row" style="margin-top:5px;flex-wrap:wrap">${p?`<span class="badge">${esc(staffFormerLabel(p))}</span>`:''}${p?.verified?'<span class="badge good">Profil sourcé</span>':''}</div></div><div class="progress-ring" style="--p:${s.skill*5}"><b>${s.skill}/20</b></div></div><p class="muted">${esc(p?.specialty||'Staff performance')} · ${euro(s.weekly_cost)}/sem.</p></div>`}).join('')}</div>
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Marché du staff</div><h2>Candidats disponibles</h2><div class="muted mini">Un ancien joueur peut devenir coach, scout ou consultant. Les notes sont des évaluations de gameplay Court Boss.</div></div></div>
- <div class="grid g2">${cand.map(x=>{const p=x.profile||null,available=x.status==='available';return `<div class="card click" onclick="openStaffCandidate(${x.id})"><div class="row between"><div><div class="eyebrow">${esc(x.role)}</div><h2>${esc(x.name)}</h2><div class="row" style="margin-top:5px;flex-wrap:wrap">${p?`<span class="badge">${esc(staffFormerLabel(p))}</span>`:''}${p?.former_player_id&&!p?.verified?`<span class="badge">Reconversion simulée</span>`:''}${p?.nationality?`<span class="badge">${flags[p.nationality]||'🏳️'} ${esc(p.nationality)}</span>`:''}</div></div><div class="progress-ring" style="--p:${x.skill*5}"><b>${x.skill}/20</b></div></div><p class="muted">${esc(x.specialty||p?.specialty||'')} · ${euro(x.weekly_cost)}/sem.</p><div class="row between"><span class="mini muted">Prime ${euro(x.signing_cost)}</span><button class="${available?'primary':'ghost'}" ${available?'':'disabled'} onclick="event.stopPropagation();hireStaff(${x.id})">${x.status==='hired'?'Recruté':available?'Recruter':'Indisponible'}</button></div></div>`}).join('')}</div>`
+ <div class="card staff-market-filter"><div class="row" style="gap:8px;flex-wrap:wrap"><input id="staffMarketSearch" placeholder="Rechercher un coach, kiné, recruteur…" oninput="filterStaffMarket()" style="flex:1;min-width:210px"><select id="staffMarketRole" onchange="filterStaffMarket()"><option value="">Tous les rôles</option>${roles.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select><span class="badge">${cand.length} profils visibles</span></div></div>
+ <div class="grid g2" id="staffMarketGrid">${cand.map(x=>{const p=x.profile||null,available=x.status==='available';return `<div class="card click staff-market-card" data-name="${esc(String(x.name||'').toLowerCase())}" data-role="${esc(String(x.role||''))}" onclick="openStaffCandidate(${x.id})"><div class="row between"><div><div class="eyebrow">${esc(x.role)}</div><h2>${esc(x.name)}</h2><div class="row" style="margin-top:5px;flex-wrap:wrap">${p?`<span class="badge">${esc(staffFormerLabel(p))}</span>`:''}${p?.former_player_id&&!p?.verified?`<span class="badge">Reconversion simulée</span>`:''}${p?.nationality?`<span class="badge">${flags[p.nationality]||'🏳️'} ${esc(p.nationality)}</span>`:''}</div></div><div class="progress-ring" style="--p:${x.skill*5}"><b>${x.skill}/20</b></div></div><p class="muted">${esc(x.specialty||p?.specialty||'')} · ${euro(x.weekly_cost)}/sem.</p><div class="row between"><span class="mini muted">Prime ${euro(x.signing_cost)}</span><button class="${available?'primary':'ghost'}" ${available?'':'disabled'} onclick="event.stopPropagation();hireStaff(${x.id})">${x.status==='hired'?'Recruté':available?'Recruter':'Indisponible'}</button></div></div>`}).join('')}</div>`
 }
 function contractsPage(){
  const rows=management?.contracts||[];
@@ -1375,7 +1377,7 @@ window.openPlayer=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier joueur…</div></div></div>';
  try{
   const d=await get('/api/player?id='+id),p=d.player;if(!p)throw new Error('Joueur introuvable');
-  const a=p.player_attributes||{},ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],relationships=d.relationships||[];
+  const a=p.player_attributes||{},ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],relationships=d.relationships||[];
   const ncaa=p.ncaa_current?(ncaaRows.find(x=>String(x.status||'')==='Active')||null):null;
   const ncaaIsAlumni=String(p.ncaa_status||'')==='Alumni'||String(ncaaCareer?.status||'')==='Alumni';
   const ncaaHistorical=!p.ncaa_current&&!!p.ncaa_verified&&!ncaaIsAlumni;
@@ -1461,6 +1463,10 @@ window.openPlayer=async id=>{
 ${playerStaff.length?`<div class="card" style="margin-top:10px;padding:12px">
  <div class="row between"><div><div class="eyebrow">Entourage professionnel</div><h3 style="margin:2px 0">Staff du joueur</h3></div><span class="badge">${playerStaff.length} membre(s)</span></div>
  <div class="stack" style="margin-top:8px">${playerStaff.map(x=>{const sp=x.staff||{};return `<div class="list-item"><div class="row between"><div><b>${esc(sp.name||x.role)}</b><div class="muted mini">${esc(x.role)} · ${esc(sp.specialty||sp.primary_role||'')}</div></div><div style="text-align:right"><span class="badge ${x.verified?'good':''}">${x.verified?'Sourcé':'Base Court Boss'}</span><div class="muted micro">${esc(staffFormerLabel(sp))}</div></div></div><div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="badge">Affinité ${x.affinity??'—'}/100</span><span class="badge">Confiance ${x.trust??'—'}/100</span><span class="badge">Coach ${sp.coach_rating??'—'}/20</span><span class="badge">Tech ${sp.technical_rating??'—'}/20</span><span class="badge">Tact ${sp.tactical_rating??'—'}/20</span><span class="badge">Mental ${sp.mental_rating??'—'}/20</span><span class="badge">Physique ${sp.fitness_rating??'—'}/20</span><span class="badge">Médical ${sp.medical_rating??'—'}/20</span></div>${sp.former_player_id?`<button class="ghost" style="margin-top:6px" onclick="openPlayer(${sp.former_player_id})">Voir sa carrière de joueur</button>`:''}<div class="muted micro" style="margin-top:5px">${esc(x.source_label||sp.source_label||'Court Boss')}</div></div>`}).join('')}</div>
+ </div>`:''}
+${playerStaffHistory.length?`<div class="card" style="margin-top:10px;padding:12px">
+ <div class="row between"><div><div class="eyebrow">Historique staff</div><h3 style="margin:2px 0">Anciens membres de l'équipe</h3></div><span class="badge">${playerStaffHistory.length}</span></div>
+ <div class="stack" style="margin-top:8px">${playerStaffHistory.slice(0,8).map(x=>{const sp=x.staff||{};return `<div class="list-item"><div class="row between"><div><b>${esc(sp.name||x.role)}</b><div class="muted mini">${esc(x.role)} · ${df(x.start_date)} → ${df(x.end_date)}</div></div><span class="badge">${esc(x.ended_reason||'Fin de collaboration')}</span></div><div class="muted micro" style="margin-top:4px">Affinité finale ${fmt(x.affinity||0)}/100 · Confiance ${fmt(x.trust||0)}/100</div></div>`}).join('')}</div>
  </div>`:''}
 ${relationships.length?`<div class="card" style="margin-top:10px;padding:12px">
  <div class="row between"><div><div class="eyebrow">Relations FM</div><h3 style="margin:2px 0">Affinités & proches</h3></div><span class="badge">Évolutif</span></div>
@@ -1738,14 +1744,33 @@ window.signYouth=async id=>{try{const d=await managerAction('sign_youth',id);if(
 window.openStaff=id=>{
   const s=(boot.staff||[]).find(x=>x.id===id);if(!s)return;
   const p=s.profile||null,n=s.name||p?.name||s.role;
-  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(s.role)}</div><h1>${esc(n)}</h1><div class="muted">${esc(p?.specialty||'Membre du staff')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau poste</span><b>${s.skill}/20</b></div><div class="bar"><i style="width:${s.skill*5}%"></i></div><div class="list-item row between"><span>Coût hebdomadaire</span><b>${euro(s.weekly_cost)}</b></div>${p?`<div class="list-item row between"><span>Parcours</span><b>${esc(staffFormerLabel(p))}</b></div>`:''}${p?.former_player_id?`<button class="ghost" onclick="openPlayer(${p.former_player_id})">Voir la carrière joueur</button>`:''}</div>${p?`<div class="card" style="margin-top:10px"><h2>Attributs staff</h2>${staffRatingGrid(p)}<p class="muted mini" style="margin-top:8px">${esc(p.notes||'Notes de gameplay Court Boss.')}</p><div class="muted micro">${esc(p.source_label||'Court Boss')}</div></div>`:''}</div></div>`;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(s.role)}</div><h1>${esc(n)}</h1><div class="muted">${esc(p?.specialty||'Membre du staff')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau poste</span><b>${s.skill}/20</b></div><div class="bar"><i style="width:${s.skill*5}%"></i></div><div class="list-item row between"><span>Coût hebdomadaire</span><b>${euro(s.weekly_cost)}</b></div>${p?`<div class="list-item row between"><span>Parcours</span><b>${esc(staffFormerLabel(p))}</b></div>`:''}${p?.former_player_id?`<button class="ghost" onclick="openPlayer(${p.former_player_id})">Voir la carrière joueur</button>`:''}</div>${p?`<div class="card" style="margin-top:10px"><h2>Attributs staff</h2>${staffRatingGrid(p)}<p class="muted mini" style="margin-top:8px">${esc(p.notes||'Notes de gameplay Court Boss.')}</p><div class="muted micro">${esc(p.source_label||'Court Boss')}</div></div>`:''}<button class="danger-btn" style="margin-top:10px" onclick="fireStaff(${s.id})">Se séparer</button></div></div>`;
 }
 window.openStaffCandidate=id=>{
  const x=(management?.candidates||[]).find(v=>Number(v.id)===Number(id));if(!x)return;
  const p=x.profile||null;
  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(x.role)}</div><h1>${esc(x.name)}</h1><div class="muted">${esc(x.specialty||p?.specialty||'Candidat staff')}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="row between"><span>Niveau poste</span><b>${x.skill}/20</b></div><div class="list-item row between"><span>Salaire</span><b>${euro(x.weekly_cost)}/sem.</b></div><div class="list-item row between"><span>Prime signature</span><b>${euro(x.signing_cost)}</b></div>${p?`<div class="list-item row between"><span>Parcours</span><b>${esc(staffFormerLabel(p))}</b></div>`:''}${p?.former_player_id?`<button class="ghost" onclick="openPlayer(${p.former_player_id})">Voir sa carrière joueur</button>`:''}</div>${p?`<div class="card" style="margin-top:10px"><h2>Attributs 1–20</h2>${staffRatingGrid(p)}<p class="muted mini" style="margin-top:8px">${esc(p.notes||'Évaluation de gameplay Court Boss.')}</p></div>`:''}<button class="${x.status==='available'?'primary':'ghost'}" style="margin-top:10px" ${x.status==='available'?'':'disabled'} onclick="hireStaff(${x.id});closeOverlay()">${x.status==='hired'?'Déjà recruté':x.status==='available'?'Recruter':'Indisponible'}</button></div></div>`;
 }
+window.filterStaffMarket=()=>{
+ const q=String(document.getElementById('staffMarketSearch')?.value||'').trim().toLowerCase();
+ const role=String(document.getElementById('staffMarketRole')?.value||'');
+ document.querySelectorAll('.staff-market-card').forEach(el=>{
+  const okName=!q||String(el.dataset.name||'').includes(q);
+  const okRole=!role||String(el.dataset.role||'')===role;
+  el.style.display=okName&&okRole?'':'none';
+ });
+}
 window.hireStaff=async id=>{try{const d=await managerAction('hire_staff',id);if(local.career)local.career.budget=d.budget;await refreshManagerState();render()}catch(e){alert(e.message)}}
+window.fireStaff=async id=>{
+ if(!confirm('Se séparer de ce membre du staff ? Une indemnité de 4 semaines sera versée.'))return;
+ try{
+  const d=await managerAction('fire_staff',id);
+  if(local.career)local.career.budget=d.budget;
+  closeOverlay();
+  await refreshManagerState();
+  render();
+ }catch(e){alert(e.message)}
+}
 window.openContract=id=>{
   const x=(management?.contracts||[]).find(v=>v.id===id);if(!x)return;
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Contrat</div><h1>${esc(x.subject_name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Rôle</span><b>${esc(x.role||x.subject_type)}</b></div><div class="list-item row between"><span>Salaire</span><b>${euro(x.weekly_salary)}/sem.</b></div><div class="list-item row between"><span>Échéance</span><b>${df(x.end_date)}</b></div><button class="primary" onclick="renewContract(${x.id});closeOverlay()">Proposer +1 an</button></div></div></div>`;

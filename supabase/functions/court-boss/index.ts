@@ -2327,9 +2327,25 @@ Deno.serve(async(req:Request)=>{
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
-    const direct=Number(t.direct_cut??t.projected_direct_cut??0),qual=Number(t.qual_cut??t.projected_qual_cut??0),rank=Number(c.singles_rank||9999);
-    const wildcardGranted=wc.data?.status==="accepted";
-    const alternateEligible=direct&&qual&&rank>qual&&rank<=qual+50;
+    const managedId=Number(c.managed_player_id||managedPlayer.data.id);
+    const isJuniorSingles=String(t.circuit||"")==="Junior";
+    const isJuniorFinals=isJuniorSingles&&/Junior Finals/i.test(String(t.category||""))&&!/Double/i.test(String(t.category||""));
+    let finalsRaceRows:any[]=[];
+    let rank=Number(c.singles_rank||9999);
+    if(isJuniorFinals){
+      const race=await db.from("junior_race_view")
+        .select("id,name,country,junior_race_ranking,junior_race_points")
+        .order("junior_race_ranking",{ascending:true}).limit(8);
+      if(race.error)return h({error:race.error.message},500);
+      finalsRaceRows=race.data??[];
+      const own=finalsRaceRows.find((x:any)=>Number(x.id)===managedId);
+      if(!own)return h({error:"Non qualifié pour les Junior Finals : il faut terminer dans le Top 8 de la Race Junior.",race_required:8},409);
+      rank=Number(own.junior_race_ranking||9999);
+    }
+    const direct=isJuniorFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);
+    const qual=isJuniorFinals?8:Number(t.qual_cut??t.projected_qual_cut??0);
+    const wildcardGranted=!isJuniorFinals&&wc.data?.status==="accepted";
+    const alternateEligible=!isJuniorFinals&&direct&&qual&&rank>qual&&rank<=qual+50;
     if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible)return h({error:"Classement insuffisant. Demande une wild card."},409);
     let alternateEntered=false;
     if(alternateEligible&&!wildcardGranted){
@@ -2340,17 +2356,28 @@ Deno.serve(async(req:Request)=>{
       alternateEntered=true;
     }
     const drawSize=Math.max(8,Math.min(128,Number(t.draw_size||32)));
-    const playersRes=await db.from("players")
-      .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
-      .eq("ranking_current",true)
-      .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-      .order("ranking",{ascending:true}).limit(Math.min(200,Math.max(drawSize+40,80)));
+    let playersRes:any;
+    if(isJuniorFinals){
+      const ids=finalsRaceRows.map((x:any)=>Number(x.id)).filter(Boolean);
+      playersRes=ids.length
+        ?await db.from("players")
+          .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+          .in("id",ids)
+        :{data:[],error:null};
+    }else{
+      playersRes=await db.from("players")
+        .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+        .eq("ranking_current",true)
+        .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        .order("ranking",{ascending:true}).limit(Math.min(200,Math.max(drawSize+40,80)));
+    }
     if(playersRes.error)return h({error:playersRes.error.message},500);
     const blockedIds=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
-    const managedId=Number(c.managed_player_id||managedPlayer.data.id);
+    const raceOrder=new Map(finalsRaceRows.map((x:any)=>[Number(x.id),Number(x.junior_race_ranking)]));
     const pool:any[]=(playersRes.data??[])
       .filter((p:any)=>!blockedIds.has(Number(p.id))&&Number(p.id)!==managedId)
-      .map((p:any)=>({...p,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}));
+      .map((p:any)=>({...p,ranking:isJuniorFinals?(raceOrder.get(Number(p.id))??9999):p.ranking,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
+      .sort((a:any,b:any)=>Number(a.ranking||9999)-Number(b.ranking||9999));
     const surface=String(t.surface||"Dur");
     const surfKey=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
     const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
@@ -2412,7 +2439,6 @@ Deno.serve(async(req:Request)=>{
       participants=next;roundNo++;
     }
     const champion=participants[0];
-    const isJuniorSingles=String(t.circuit||"")==="Junior";
     let userPoints=0;
     if(isJuniorSingles){
       const roundCode=userRound==="Champion"?"W":userRound;

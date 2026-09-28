@@ -1284,10 +1284,10 @@ window.openPlayer=async id=>{
   <div class="kpi"><span class="muted mini">NCAA / ITA</span><b>${(ncaa?.ita_rank??p.ncaa_rank)!=null?'#'+fmt(ncaa?.ita_rank??p.ncaa_rank):p.ncaa_current?'Actif':'—'}</b><small class="muted micro">${esc(ncaa?.school||p.ncaa_school||'')}</small></div>
  </div>
  <div class="kpi-strip" style="margin-top:8px">
-  <div class="kpi"><span class="muted mini">Race Junior</span><b>${races.junior?.rank!=null?'#'+fmt(races.junior.rank):'—'}</b><small class="muted micro">${races.junior?.status==='qualified'?'Qualifié Finals':races.junior?.status==='alternate'?'Remplaçant':races.junior?.rank!=null?'En course':''}</small></div>
-  <div class="kpi"><span class="muted mini">Race Double</span><b>${races.doubles?.rank!=null?'#'+fmt(races.doubles.rank):'—'}</b><small class="muted micro">${races.doubles?.team?esc(races.doubles.team):''}</small></div>
-  <div class="kpi"><span class="muted mini">Race Junior Double</span><b>${races.juniorDoubles?.rank!=null?'#'+fmt(races.juniorDoubles.rank):'—'}</b><small class="muted micro">${races.juniorDoubles?.team?esc(races.juniorDoubles.team):''}</small></div>
-  <div class="kpi"><span class="muted mini">Statut Finals</span><b>${[races.junior,races.doubles,races.juniorDoubles].some(x=>x?.status==='qualified')?'Qualifié':'—'}</b></div>
+  <div class="kpi"><span class="muted mini">Race Junior</span><b>${races.junior?.rank!=null?'#'+fmt(races.junior.rank):'—'}</b><small class="muted micro">${races.junior?.points!=null?fmt(races.junior.points)+' pts · ':''}${races.junior?.status==='qualified'?'Qualifié Finals':races.junior?.status==='alternate'?'Remplaçant':races.junior?.rank!=null?'En course':''}</small></div>
+  <div class="kpi"><span class="muted mini">Race Double</span><b>${races.doubles?.rank!=null?'#'+fmt(races.doubles.rank):'—'}</b><small class="muted micro">${races.doubles?.points!=null?fmt(races.doubles.points)+' pts · ':''}${races.doubles?.status==='qualified'?'Qualifié Finals':races.doubles?.status==='alternate'?'Remplaçant':races.doubles?.rank!=null?'En course':''}${races.doubles?.team?' · '+esc(races.doubles.team):''}</small></div>
+  <div class="kpi"><span class="muted mini">Race Junior Double</span><b>${races.juniorDoubles?.rank!=null?'#'+fmt(races.juniorDoubles.rank):'—'}</b><small class="muted micro">${races.juniorDoubles?.points!=null?fmt(races.juniorDoubles.points)+' pts · ':''}${races.juniorDoubles?.status==='qualified'?'Qualifié Finals':races.juniorDoubles?.status==='alternate'?'Remplaçant':races.juniorDoubles?.rank!=null?'En course':''}${races.juniorDoubles?.team?' · '+esc(races.juniorDoubles.team):''}</small></div>
+  <div class="kpi"><span class="muted mini">Statut Finals</span><b>${[races.junior,races.doubles,races.juniorDoubles].some(x=>x?.status==='qualified')?'Qualifié':[races.junior,races.doubles,races.juniorDoubles].some(x=>x?.status==='alternate')?'Remplaçant':'—'}</b></div>
  </div>
 </div>
 <div class="card" style="margin-top:10px;padding:12px">

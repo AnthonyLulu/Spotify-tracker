@@ -1802,7 +1802,7 @@ Deno.serve(async(req:Request)=>{
       }
       player=await resolvePlayerPhoto(player);
     }
-    const [staffLinks,staffHistory,staffBonds,relA,relB,agencyRepresentation,agencyHistory,focusHistory]=await Promise.all([
+    const [staffLinks,staffHistory,staffBonds,relA,relB,agencyRepresentation,agencyHistory,focusHistory,primaryDoublesCommitment,doublesPartnerHistory]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
@@ -1833,7 +1833,14 @@ Deno.serve(async(req:Request)=>{
       db.from("player_career_focus_history")
         .select("changed_at,from_focus,to_focus,reason,source")
         .eq("player_id",id).lte("changed_at",referenceDate)
-        .order("changed_at",{ascending:false}).limit(20)
+        .order("changed_at",{ascending:false}).limit(20),
+      db.from("player_doubles_commitments")
+        .select("season,started_at,last_review_date,commitment,affinity,switches,reason,source_label,active,partner:players!player_doubles_commitments_primary_partner_id_fkey(id,name,country,doubles_ranking,career_focus,photo_url)")
+        .eq("player_id",id).eq("active",true).lte("started_at",referenceDate).maybeSingle(),
+      db.from("player_doubles_partner_history")
+        .select("start_date,end_date,season,affinity_start,affinity_end,reason,source_label,partner:players!player_doubles_partner_history_partner_id_fkey(id,name,country,doubles_ranking,career_focus,photo_url)")
+        .eq("player_id",id).lte("start_date",referenceDate)
+        .order("end_date",{ascending:false}).limit(12)
     ]);
     const socialRows=[...(relA.data??[]),...(relB.data??[])]
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
@@ -1849,7 +1856,9 @@ Deno.serve(async(req:Request)=>{
       relationships:socialRows,
       agencyRepresentation:agencyRepresentation.error?null:agencyRepresentation.data,
       agencyHistory:agencyHistory.error?[]:(agencyHistory.data??[]),
-      careerFocusHistory:focusHistory.error?[]:(focusHistory.data??[])
+      careerFocusHistory:focusHistory.error?[]:(focusHistory.data??[]),
+      primaryDoublesCommitment:primaryDoublesCommitment.error?null:primaryDoublesCommitment.data,
+      doublesPartnerHistory:doublesPartnerHistory.error?[]:(doublesPartnerHistory.data??[])
     });
   }
 
@@ -2654,6 +2663,7 @@ Deno.serve(async(req:Request)=>{
         if(pairs.error){
           doublesPairRefresh={error:pairs.error.message};
         }else{
+          const primaryPairs=await db.rpc("ensure_doubles_only_primary_partners",{p_date:date});
           const norm=await db.rpc("normalize_world_doubles_race",{
             p_year:Number(date.slice(0,4)),
             p_date:date
@@ -2665,6 +2675,7 @@ Deno.serve(async(req:Request)=>{
           ]);
           doublesPairRefresh={
             ...(pairs.data||{}),
+            primaryCommitments:primaryPairs.error?{error:primaryPairs.error.message}:primaryPairs.data,
             normalization:norm.error?{error:norm.error.message}:norm.data,
             playerRankings:playerDoublesRankings.error?{error:playerDoublesRankings.error.message}:playerDoublesRankings.data,
             specialistProgress:specialistProgress.error?{error:specialistProgress.error.message}:specialistProgress.data,

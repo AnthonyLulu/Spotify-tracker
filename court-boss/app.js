@@ -1819,7 +1819,7 @@ window.openStaffCandidate=id=>{
   ${done&&demandRows.length?`<div class="card" style="margin-top:10px"><div class="eyebrow">Exigences contractuelles</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${demandRows.map(v=>`<span class="badge">${esc(v)}</span>`).join('')}</div></div>`:''}
   ${p?`<div class="card" style="margin-top:10px"><div class="row between"><h2>Profil FM</h2><b>${x.managed_fit!=null?x.managed_fit+'/100':''}</b></div>${staffMetaBadges(p)}<div class="list-item row between"><span>Ambition / Loyauté</span><b>${p.ambition??'—'} / ${p.loyalty??'—'}</b></div><h3>Attributs 1–20</h3>${staffRatingGrid(p)}<button class="ghost" onclick="openStaffProfile(${p.id})">Dossier carrière complet</button></div>`:''}
   ${available&&!done&&!rejected?`<button class="primary" style="margin-top:10px" onclick="interviewStaff(${x.id})">Passer l'entretien</button>`:''}
-  ${available&&done?`<button class="primary" style="margin-top:10px" onclick="hireStaff(${x.id})">Accepter les conditions et recruter</button>`:''}
+  ${available&&done?`<div class="card" style="margin-top:10px"><div class="eyebrow">Négociation</div><div class="grid g3" style="margin-top:8px"><label class="mini muted">Salaire / sem.<input id="staffOfferWeekly" class="input" type="number" min="0" value="${Number(x.requested_weekly||x.weekly_cost||0)}"></label><label class="mini muted">Prime<input id="staffOfferSigning" class="input" type="number" min="0" value="${Number(x.requested_signing||x.signing_cost||0)}"></label><label class="mini muted">Durée<input id="staffOfferYears" class="input" type="number" min="1" max="5" value="${Number(x.desired_years||2)}"></label></div><div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="ghost" onclick="counterStaffOffer(${x.id})">Proposer ces conditions</button><button class="primary" onclick="hireStaff(${x.id})">Signer aux conditions actuelles</button></div>${demands.negotiation_status==='counter'?'<div class="notice warn" style="margin-top:8px">Le candidat a fait une contre-proposition. Ajuste les conditions ou signe sur cette base.</div>':demands.negotiation_status==='agreed'?'<div class="notice good" style="margin-top:8px">Accord de principe trouvé.</div>':''}</div>`:''}
   ${rejected?'<div class="notice bad" style="margin-top:10px">Le candidat n’est pas suffisamment intéressé pour rejoindre ton projet actuellement.</div>':''}
  </div></div>`;
 }
@@ -1831,6 +1831,19 @@ window.filterStaffMarket=()=>{
   const okRole=!role||String(el.dataset.role||'')===role;
   el.style.display=okName&&okRole?'':'none';
  });
+}
+window.counterStaffOffer=async id=>{
+ try{
+  const weekly=Number(document.getElementById('staffOfferWeekly')?.value||0);
+  const signing=Number(document.getElementById('staffOfferSigning')?.value||0);
+  const years=Number(document.getElementById('staffOfferYears')?.value||2);
+  const d=await managerAction('counter_staff_offer',id,{weekly,signing,years});
+  await refreshManagerState();
+  render();
+  openStaffCandidate(id);
+  if(d.status==='counter')alert('Le candidat fait une contre-proposition.');
+  if(d.status==='accepted')alert('Accord de principe trouvé.');
+ }catch(e){alert(e.message)}
 }
 window.interviewStaff=async id=>{
  try{

@@ -4998,16 +4998,22 @@ Deno.serve(async(req:Request)=>{
       if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
       if(Number(anth.data.id)===Number(id))return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
 
+      const today=String(career.data?.career_date||AGE_REFERENCE_DATE);
+      const season=Number(today.slice(0,4));
+      const oldCommit=await db.from("player_doubles_commitments")
+        .select("*").eq("player_id",Number(anth.data.id)).maybeSingle();
+
       const metric=await db.rpc("doubles_pair_metrics",{
         p_a:Number(anth.data.id),
         p_b:Number(id),
-        p_date:String(career.data?.career_date||AGE_REFERENCE_DATE)
+        p_date:today
       });
       if(metric.error)return h({error:metric.error.message},500);
       const m:any=(metric.data??[])[0]||{};
       const chemistry=Number(m.chemistry||60);
       const compatibility=Number(m.compatibility||60);
       const pair_strength=Number(m.pair_strength||60);
+      const affinityScore=Number(m.affinity_score||0);
 
       await db.from("doubles_partnerships").delete().eq("player_a_id",anth.data.id);
       const ins=await db.from("doubles_partnerships").insert({
@@ -5016,6 +5022,44 @@ Deno.serve(async(req:Request)=>{
         chemistry,compatibility,pair_strength
       });
       if(ins.error)return h({error:ins.error.message},500);
+
+      if(!oldCommit.error&&oldCommit.data&&oldCommit.data.active&&Number(oldCommit.data.primary_partner_id)!==Number(id)){
+        await db.from("player_doubles_partner_history").insert({
+          player_id:Number(anth.data.id),
+          partner_id:Number(oldCommit.data.primary_partner_id),
+          start_date:String(oldCommit.data.started_at||today),
+          end_date:today,
+          season:Number(oldCommit.data.season||season),
+          affinity_start:Number(oldCommit.data.affinity||0),
+          affinity_end:Number(oldCommit.data.affinity||0),
+          reason:"Changement de partenaire décidé par le joueur.",
+          source_label:"Utilisateur · historique partenaire double"
+        });
+      }
+
+      const commitment=Math.max(60,Math.min(100,Math.round(affinityScore)+
+        (String(career.data?.career_focus||"mixed")==="doubles_only"?6:2)));
+      const commitmentUp=await db.from("player_doubles_commitments").upsert({
+        player_id:Number(anth.data.id),
+        season,
+        primary_partner_id:Number(id),
+        started_at:(!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)===Number(id))
+          ?String(oldCommit.data.started_at||today):today,
+        last_review_date:today,
+        commitment,
+        affinity:Math.max(0,Math.min(100,chemistry)),
+        switches:Math.max(0,Number(oldCommit.data?.switches||0))+
+          ((!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)!==Number(id))?1:0),
+        previous_partner_id:(!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)!==Number(id))
+          ?Number(oldCommit.data.primary_partner_id):oldCommit.data?.previous_partner_id||null,
+        reason:String(career.data?.career_focus||"mixed")==="doubles_only"
+          ?"Partenaire principal choisi pour une carrière exclusivement en double."
+          :"Partenaire principal choisi par le joueur.",
+        source_label:"Utilisateur · partenaire double",
+        active:true,
+        updated_at:new Date().toISOString()
+      },{onConflict:"player_id"});
+      if(commitmentUp.error)return h({error:commitmentUp.error.message},500);
 
       const pa=Math.min(Number(anth.data.id),Number(id)),pb=Math.max(Number(anth.data.id),Number(id));
       await db.from("player_relationships").upsert({
@@ -5027,14 +5071,16 @@ Deno.serve(async(req:Request)=>{
         closeness:Math.round(chemistry*.70+compatibility*.30),
         is_simulated:true,
         source_label:"Court Boss · relation issue du choix de partenaire",
-        formed_date:String(career.data?.career_date||AGE_REFERENCE_DATE),
-        last_update:String(career.data?.career_date||AGE_REFERENCE_DATE),
+        formed_date:today,
+        last_update:today,
         active:true
       },{onConflict:"player_a_id,player_b_id"});
 
       return h({
         ok:true,chemistry,compatibility,pair_strength,
-        affinity_score:Number(m.affinity_score||0)
+        affinity_score:affinityScore,
+        commitment,
+        primary_partner:true
       });
     }
 
@@ -5351,6 +5397,29 @@ Deno.serve(async(req:Request)=>{
           ?await db.from("doubles_partnerships").select("id,player_b_id").eq("player_a_id",managedId).order("id",{ascending:false}).limit(1).maybeSingle()
           :{data:null,error:null};
         needsPartner=!pair.data;
+
+        if(managedId&&pair.data?.player_b_id){
+          const syncMetric=await db.rpc("doubles_pair_metrics",{
+            p_a:managedId,p_b:Number(pair.data.player_b_id),
+            p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
+          });
+          if(!syncMetric.error){
+            const mm:any=(syncMetric.data??[])[0]||{};
+            await db.from("player_doubles_commitments").upsert({
+              player_id:managedId,
+              season:Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4)),
+              primary_partner_id:Number(pair.data.player_b_id),
+              started_at:String(career.data.career_date||AGE_REFERENCE_DATE),
+              last_review_date:String(career.data.career_date||AGE_REFERENCE_DATE),
+              commitment:Math.max(65,Math.min(100,Math.round(Number(mm.affinity_score||70))+6)),
+              affinity:Math.max(0,Math.min(100,Number(mm.chemistry||70))),
+              reason:"Partenaire principal confirmé lors du passage en Double exclusivement.",
+              source_label:"Utilisateur · carrière double exclusivement",
+              active:true,
+              updated_at:new Date().toISOString()
+            },{onConflict:"player_id"});
+          }
+        }
 
         if(managedId){
           const nation=String(career.data.selected_federation_nation||career.data.federation_nation||career.data.country||"FRA").toUpperCase();

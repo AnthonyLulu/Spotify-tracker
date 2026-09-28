@@ -488,6 +488,11 @@ body{background:
 .tm-tour-logo-shell,.tm-tour-logo-fallback{width:58px;height:44px;border-radius:9px;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;flex:0 0 auto}
 .tm-tour-logo-shell{background:#f5f3ed;padding:4px}
 .tm-tour-logo{width:100%;height:100%;object-fit:contain;display:block}
+.tm-tour-logo-shell.logo-official{padding:3px;background:#f7f7f4}
+.tm-tour-logo-shell.logo-ao{padding:0;background:#1599d2;border-color:#1599d2}
+.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:scale(1.18)}
+.tm-detail-logo.tm-tour-logo-shell.logo-ao .tm-tour-logo{transform:scale(1.12)}
+.tm-tour-logo-shell.logo-rg,.tm-tour-logo-shell.logo-wim,.tm-tour-logo-shell.logo-uso{padding:2px}
 .tm-tour-logo-fallback{padding:5px;text-align:center;font-size:8px;font-weight:950;line-height:1.02;letter-spacing:.05em;background:#11231b;color:#eef8f2}
 .tm-tour-logo-fallback b{display:block;font-size:8px;max-width:50px;white-space:normal}
 .tm-tour-logo-fallback small{display:block;font-size:7px;font-weight:800;opacity:.72;margin-top:3px;max-width:50px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

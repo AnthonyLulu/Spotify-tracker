@@ -252,7 +252,12 @@ async function loadDoublesHub(){
   ]);
   doublesHubRows=r.rows||[];
   juniorDoublesHubRows=j.rows||[];
-  doublesRaceRows=t.rows||[];
+  doublesRaceRows=(t.rows||[]).map(x=>({
+    ...x,
+    rank:x.doubles_race_ranking??x.rank,
+    points:x.doubles_race_points??x.points,
+    snapshot_date:x.doubles_race_snapshot_date??x.snapshot_date
+  }));
  }catch(e){console.warn('Double hub',e)}
  finally{doublesHubLoading=false;if(route==='doubles')render()}
 }

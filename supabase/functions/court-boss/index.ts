@@ -2690,11 +2690,19 @@ Deno.serve(async(req:Request)=>{
         const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
+        const month=Number(date.slice(5,7));
+        const analyticsBase=month===1||month===4||month===7||month===10
+          ?await db.rpc("refresh_player_advanced_metrics",{p_date:date})
+          :{data:null,error:null};
+        const analyticsExtension=month===1||month===4||month===7||month===10
+          ?await db.rpc("refresh_player_analytics_extensions",{p_date:date})
+          :{data:null,error:null};
         developmentSupply={
           ...(developmentSupply||{}),
-          playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data
+          playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
+          analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,
+          analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data
         };
-        const month=Number(date.slice(5,7));
         const seasonPlans=month===1
           ?await db.rpc("refresh_player_season_plans",{p_date:date})
           :{data:null,error:null};
@@ -3394,7 +3402,7 @@ Deno.serve(async(req:Request)=>{
         for(let qi=0;qi<2;qi++){
           const opp=qOpp[qi]||pool[Math.min(pool.length-1,drawSize+qi)];
           const res=play(user,opp);
-          matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:null,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
+          matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:user.id,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
           if(!res.winner.isUser){
             userAlive=false;userRound="Q"+(qi+1);
             if(qi===1&&Math.random()<0.18){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
@@ -3468,29 +3476,88 @@ Deno.serve(async(req:Request)=>{
         .lt("start_date",nextEnd);
       }
     }
+    for(const m of matchRows){
+      const pa=participantById.get(Number(m.player_a_id));
+      const pb=participantById.get(Number(m.player_b_id));
+      if(pa&&pb){
+        const mm=matchupModel(pa,pb);
+        m.player_a_win_probability=Number(mm.probA.toFixed(4));
+        m.court_speed=Number(courtSpeed.toFixed(3));
+        m.model_version="TA-H2H-v2";
+        m.matchup_components=mm.components;
+      }else{
+        m.player_a_win_probability=null;
+        m.court_speed=Number(courtSpeed.toFixed(3));
+        m.model_version="TA-H2H-v2-fallback";
+        m.matchup_components={};
+      }
+    }
+
+    let matchLearning:any=null;
     if(matchRows.length){
       const rows=matchRows.map(x=>({...x,run_id:runId}));
       const ins=await db.from("tournament_draw_matches").insert(rows);
       if(ins.error)return h({error:ins.error.message},500);
+      const learning=await db.rpc("apply_tournament_match_updates",{
+        p_run_id:Number(runId),
+        p_surface:surface,
+        p_match_date:String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE)
+      });
+      matchLearning=learning.error?{error:learning.error.message}:learning.data;
     }
+
+    const userAnalytics:any=advBy.get(Number(user.id))||{};
+    const jitter=(span:number)=>(Math.random()-.5)*span;
     const userMatches=matchRows.filter(x=>x.player_a_name===user.name||x.player_b_name===user.name).map((m:any)=>{
       const won=m.winner_name===user.name;
+      const userIsA=Number(m.player_a_id)===Number(user.id);
+      const userProb=m.player_a_win_probability==null?null:(userIsA?Number(m.player_a_win_probability):1-Number(m.player_a_win_probability));
       const risk=Math.max(0,Math.min(100,tacticRisk));
       const aggression=Math.max(0,Math.min(100,tacticAgg));
       const net=Math.max(0,Math.min(100,tacticNet));
+      const firstServe=Math.max(42,Math.min(82,Number(userAnalytics.first_serve_in_pct||62)-Math.max(0,risk-60)*.035+jitter(3)));
+      const acePct=Math.max(.5,Math.min(25,Number(userAnalytics.ace_pct||6)+Math.max(0,courtSpeed-1)*7+jitter(1.4)));
+      const dfPct=Math.max(.5,Math.min(12,Number(userAnalytics.double_fault_pct||4)+Math.max(0,risk-65)*.035+jitter(.8)));
+      const winnerRate=Math.max(4,Math.min(35,Number(userAnalytics.winner_rate_pct||14)+(aggression-50)*.045+jitter(2)));
+      const ueRate=Math.max(4,Math.min(32,Number(userAnalytics.unforced_error_pct||15)+(risk-50)*.055+jitter(2)));
       const stats={
-        first_serve_pct:Math.max(45,Math.min(78,65-Math.round((risk-50)*.12)+Math.round(Math.random()*8-4))),
-        winners:Math.max(8,Math.round(18+aggression*.17+risk*.08+Math.random()*8)),
-        unforced_errors:Math.max(6,Math.round(10+risk*.16+aggression*.05+Math.random()*7)),
-        net_points_won_pct:Math.max(35,Math.min(82,48+Math.round(net*.28)+Math.round(Math.random()*8-4))),
-        avg_rally:Math.max(2,Math.round(7-aggression*.035+risk*.01+Math.random()*2)),
-        break_points_won:Math.max(0,Math.round((won?3:2)+Math.random()*3)),
+        expected_win_probability:userProb==null?null:Number(userProb.toFixed(4)),
+        model_version:m.model_version,
+        court_speed:m.court_speed,
+        matchup_components:m.matchup_components||{},
+        first_serve_pct:Number(firstServe.toFixed(1)),
+        ace_pct:Number(acePct.toFixed(1)),
+        double_fault_pct:Number(dfPct.toFixed(1)),
+        first_serve_points_won_pct:Number((Number(userAnalytics.first_serve_points_won_pct||68)+jitter(2.4)).toFixed(1)),
+        second_serve_points_won_pct:Number((Number(userAnalytics.second_serve_points_won_pct||51)+jitter(2.2)).toFixed(1)),
+        service_points_won_pct:Number((Number(userAnalytics.service_points_won_pct||61)+jitter(2)).toFixed(1)),
+        return_points_won_pct:Number((Number(userAnalytics.return_points_won_pct||35)+jitter(2)).toFixed(1)),
+        hold_pct:Number((Number(userAnalytics.hold_pct||78)+jitter(2.5)).toFixed(1)),
+        break_pct:Number((Number(userAnalytics.break_pct||23)+jitter(2.5)).toFixed(1)),
+        winners:Math.max(5,Math.round(winnerRate*1.25+Math.random()*4)),
+        winner_rate_pct:Number(winnerRate.toFixed(1)),
+        unforced_errors:Math.max(4,Math.round(ueRate*1.05+Math.random()*4)),
+        unforced_error_pct:Number(ueRate.toFixed(1)),
+        net_approach_pct:Number((Math.max(1,Number(userAnalytics.net_approach_pct||10)+(net-28)*.08+jitter(1.5))).toFixed(1)),
+        net_points_won_pct:Number((Math.max(30,Math.min(90,Number(userAnalytics.net_points_won_pct||63)+jitter(3)))).toFixed(1)),
+        avg_rally:Number((Math.max(2,Number(userAnalytics.avg_rally_shots||5)-(aggression-50)*.012+(surface==="Terre"?.45:surface==="Gazon"?-.35:0)+jitter(.5))).toFixed(1)),
+        rally_1_3_win_pct:Number((Number(userAnalytics.rally_1_3_win_pct||50)+jitter(2)).toFixed(1)),
+        rally_4_6_win_pct:Number((Number(userAnalytics.rally_4_6_win_pct||50)+jitter(2)).toFixed(1)),
+        rally_7_9_win_pct:Number((Number(userAnalytics.rally_7_9_win_pct||50)+jitter(2)).toFixed(1)),
+        rally_10plus_win_pct:Number((Number(userAnalytics.rally_10plus_win_pct||50)+jitter(2)).toFixed(1)),
+        serve_impact:Number(userAnalytics.serve_impact||0),
+        return_depth_score:Number(userAnalytics.return_depth_score||60),
+        break_points_won:Math.max(0,Math.round((won?2.4:1.5)+Number(userAnalytics.break_points_converted_pct||40)/28+Math.random()*2)),
         tactical_plan:{aggression:tacticAgg,risk:tacticRisk,net:tacticNet,return_position:returnPos}
       };
       return {...m,stats};
     });
     for(const m of userMatches){
-      await db.from("match_history").insert({tournament_name:t.name,match_date:t.start_date,surface:t.surface,round:m.round_name,player_a:m.player_a_name,player_b:m.player_b_name,winner:m.winner_name,score:m.score,user_involved:true,match_data:{category:t.category,circuit:t.circuit,...m.stats}});
+      await db.from("match_history").insert({
+        tournament_name:t.name,match_date:t.start_date,surface:t.surface,round:m.round_name,
+        player_a:m.player_a_name,player_b:m.player_b_name,winner:m.winner_name,score:m.score,
+        user_involved:true,match_data:{category:t.category,circuit:t.circuit,...m.stats}
+      });
     }
     const european=["FRA","ESP","ITA","GER","GBR","CZE","AUT","SUI","BEL","NED","POR","MON","NOR","SWE","DEN","POL","SRB","CRO","GRE"];
     const homeCountry=String(c.country||"FRA"),dest=String(t.country||"");
@@ -3565,7 +3632,7 @@ Deno.serve(async(req:Request)=>{
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 

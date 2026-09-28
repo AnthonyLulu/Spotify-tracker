@@ -2489,6 +2489,7 @@ Deno.serve(async(req:Request)=>{
     // This keeps NCAA / ITF / Junior fields full without hammering Disk IO.
     let developmentSupply:any=null;
     let doublesPairRefresh:any=null;
+    let staffMarketRefresh:any=null;
     if(week%4===0 || previousDate.slice(0,7)!==date.slice(0,7)){
       const supply=await db.rpc("maintain_development_circuit_supply",{
         p_date:date,
@@ -2497,6 +2498,9 @@ Deno.serve(async(req:Request)=>{
         p_ncaa_target:900
       });
       developmentSupply=supply.error?{error:supply.error.message}:supply.data;
+
+      const staffMarket=await db.rpc("refresh_staff_market",{p_date:date});
+      staffMarketRefresh=staffMarket.error?{error:staffMarket.error.message}:staffMarket.data;
 
       if(Number(date.slice(0,4))>2025){
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
@@ -2544,7 +2548,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,doublesPairRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/management")&&req.method==="GET"){

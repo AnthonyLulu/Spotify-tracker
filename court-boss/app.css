@@ -485,17 +485,14 @@ body{background:
 }
 
 /* Tournament identity: TM-style logos in lists, photos only inside sheets */
-.tm-tour-logo-shell,.tm-tour-logo-fallback{width:58px;height:44px;border-radius:9px;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;flex:0 0 auto}
-.tm-tour-logo-shell{background:rgba(255,255,255,.04);padding:3px}
-.tm-tour-logo{width:100%;height:100%;object-fit:contain;display:block}
-.tm-tour-logo-shell.logo-official{padding:2px;background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.10)}
-.tm-tour-logo-shell.logo-auto{padding:3px;background:rgba(255,255,255,.06)}
-.tm-tour-logo-shell.logo-ao{width:78px;height:44px;padding:3px 5px;background:#149bd7;border-color:#149bd7}
-.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:scale(1.04)}
-.tm-detail-logo.tm-tour-logo-shell.logo-ao{width:104px;height:56px;padding:4px 7px}
-.tm-detail-logo.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:scale(1.04)}
-.tm-tour-logo-shell.logo-rg,.tm-tour-logo-shell.logo-wim,.tm-tour-logo-shell.logo-uso{padding:2px;background:rgba(255,255,255,.035)}
-.tm-tour-logo-fallback{padding:5px;text-align:center;font-size:8px;font-weight:950;line-height:1.02;letter-spacing:.05em;background:#11231b;color:#eef8f2}
+.tm-tour-logo-shell,.tm-tour-logo-fallback{width:58px;height:44px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
+.tm-tour-logo-shell{border:0;background:transparent;padding:1px;overflow:visible}
+.tm-tour-logo{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;background:transparent;filter:drop-shadow(0 1px 1px rgba(0,0,0,.28))}
+.tm-tour-logo-shell.logo-official{border:0;background:transparent;padding:1px}
+.tm-tour-logo-shell.logo-auto{border:0;background:transparent;padding:1px}
+.tm-tour-logo-shell.logo-ao,.tm-tour-logo-shell.logo-rg,.tm-tour-logo-shell.logo-wim,.tm-tour-logo-shell.logo-uso{border:0;background:transparent;padding:1px;overflow:visible}
+.tm-tour-logo-shell.logo-ao .tm-tour-logo,.tm-tour-logo-shell.logo-rg .tm-tour-logo,.tm-tour-logo-shell.logo-wim .tm-tour-logo,.tm-tour-logo-shell.logo-uso .tm-tour-logo{object-fit:contain;transform:none}
+.tm-tour-logo-fallback{overflow:hidden;border:1px solid var(--line);padding:5px;text-align:center;font-size:8px;font-weight:950;line-height:1.02;letter-spacing:.05em;background:#11231b;color:#eef8f2}
 .tm-tour-logo-fallback b{display:block;font-size:8px;max-width:50px;white-space:normal}
 .tm-tour-logo-fallback small{display:block;font-size:7px;font-weight:800;opacity:.72;margin-top:3px;max-width:50px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tm-tour-logo-fallback.logo-gs{background:linear-gradient(145deg,#17120d,#493824)}
@@ -506,16 +503,21 @@ body{background:
 .tm-tour-logo-fallback.logo-junior{background:linear-gradient(145deg,#111f24,#245567)}
 .tm-tour-logo-fallback.logo-ncaa{background:linear-gradient(145deg,#171b29,#313d68)}
 .tm-tour-logo-fallback.logo-davis{background:linear-gradient(145deg,#21151c,#5a3048)}
-.tm-detail-logo.tm-tour-logo-shell,.tm-detail-logo.tm-tour-logo-fallback{width:72px;height:56px;border-radius:11px}
+.tm-detail-logo.tm-tour-logo-shell,.tm-detail-logo.tm-tour-logo-fallback{width:72px;height:56px;border-radius:9px}
+.tm-detail-logo.tm-tour-logo-shell{padding:1px}
 .tm-title-with-logo{display:flex;align-items:center;gap:12px;min-width:0}
 .tm-title-with-logo>div:last-child{min-width:0}
 .tm-photo-label{position:absolute;right:9px;bottom:9px;z-index:3;background:rgba(3,10,7,.82);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;color:#fff}
 .competition-cover .tm-photo-label{bottom:8px;right:8px}
 .tournament-brand-inline{display:flex;align-items:center;gap:8px;min-width:0}
-.tournament-history-logo.tm-tour-logo-shell,.tournament-history-logo.tm-tour-logo-fallback{width:34px;height:27px;border-radius:6px;padding:3px}
+.tournament-history-logo.tm-tour-logo-shell,.tournament-history-logo.tm-tour-logo-fallback{width:34px;height:28px;border-radius:5px}
+.tournament-history-logo.tm-tour-logo-shell{padding:1px}
+.tournament-history-logo.tm-tour-logo-fallback{padding:3px}
 .tournament-history-logo.tm-tour-logo-fallback b{font-size:6px;max-width:29px}
 .tournament-history-logo.tm-tour-logo-fallback small{font-size:5px;max-width:29px;margin-top:1px}
-.slam-logo.tm-tour-logo-shell,.slam-logo.tm-tour-logo-fallback{width:36px;height:28px;border-radius:6px;padding:3px;margin:auto}
+.slam-logo.tm-tour-logo-shell,.slam-logo.tm-tour-logo-fallback{width:36px;height:28px;border-radius:5px;margin:auto}
+.slam-logo.tm-tour-logo-shell{padding:1px}
+.slam-logo.tm-tour-logo-fallback{padding:3px}
 .slam-logo.tm-tour-logo-fallback b{font-size:6px;max-width:30px}
 .slam-logo.tm-tour-logo-fallback small{font-size:5px;max-width:30px}
 .slam-history-head .slam-brand-head{display:grid;place-items:center;gap:2px;font-size:8px}
@@ -524,3 +526,4 @@ body{background:
  .tm-detail-logo.tm-tour-logo-shell,.tm-detail-logo.tm-tour-logo-fallback{width:58px;height:46px}
  .tm-title-with-logo{gap:8px}
 }
+

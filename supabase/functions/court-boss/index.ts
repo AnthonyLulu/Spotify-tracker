@@ -2534,10 +2534,27 @@ Deno.serve(async(req:Request)=>{
       staffMarketRefresh=staffMarket.error?{error:staffMarket.error.message}:staffMarket.data;
 
       if(Number(date.slice(0,4))>2025){
+        const month=Number(date.slice(5,7));
+        const meta=month===1||month===4||month===7||month===10
+          ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})
+          :{data:null,error:null};
+        const agents=month===1||month===4||month===7||month===10
+          ?await db.rpc("ensure_agent_networks",{p_date:date})
+          :{data:null,error:null};
+        const trainingCenters=await db.rpc("progress_staff_training_centers",{p_date:date});
+        const teamStaff=await db.rpc("rotate_college_davis_staff",{p_date:date});
         const evolution=await db.rpc("evolve_staff_ecosystem",{p_date:date});
+        const dynamics=await db.rpc("simulate_staff_team_dynamics",{p_date:date});
+        const competition=await db.rpc("refresh_staff_recruitment_competition",{p_date:date});
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
-          evolution:evolution.error?{error:evolution.error.message}:evolution.data
+          meta:meta.error?{error:meta.error.message}:meta.data,
+          agents:agents.error?{error:agents.error.message}:agents.data,
+          trainingCenters:trainingCenters.error?{error:trainingCenters.error.message}:trainingCenters.data,
+          teamStaff:teamStaff.error?{error:teamStaff.error.message}:teamStaff.data,
+          evolution:evolution.error?{error:evolution.error.message}:evolution.data,
+          dynamics:dynamics.error?{error:dynamics.error.message}:dynamics.data,
+          competition:competition.error?{error:competition.error.message}:competition.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
@@ -2596,7 +2613,7 @@ Deno.serve(async(req:Request)=>{
     if(profile.error)return h({error:profile.error.message},500);
     if(!profile.data)return h({error:"Profil staff introuvable"},404);
 
-    const [activeAssignments,history,events]=await Promise.all([
+    const [activeAssignments,history,events,agency,licenses,preferences,scopeReputation,peerA,peerB,recommendationsFrom,recommendationsTo,collegeStaff,davisStaff,training]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,weekly_salary,contract_end,source_label,player:players!player_staff_assignments_player_id_fkey(id,name,country,ranking,game_world_rank,style,photo_url)")
         .eq("staff_profile_id",id).eq("active",true)
@@ -2605,17 +2622,35 @@ Deno.serve(async(req:Request)=>{
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,weekly_salary,contract_end,ended_reason,source_label,player:players!player_staff_assignments_player_id_fkey(id,name,country,ranking,game_world_rank,style,photo_url)")
         .eq("staff_profile_id",id).eq("active",false)
         .order("end_date",{ascending:false}).limit(50),
-      db.from("staff_career_events")
-        .select("*").eq("staff_profile_id",id)
-        .order("event_date",{ascending:false}).limit(50)
+      db.from("staff_career_events").select("*").eq("staff_profile_id",id).order("event_date",{ascending:false}).limit(50),
+      db.from("staff_agency_members").select("*,agency:staff_agencies(*)").eq("staff_profile_id",id).eq("active",true).maybeSingle(),
+      db.from("staff_licenses").select("*").eq("staff_profile_id",id).order("license_level",{ascending:false}),
+      db.from("staff_preferences").select("*").eq("staff_profile_id",id).maybeSingle(),
+      db.from("staff_scope_reputation").select("*").eq("staff_profile_id",id).order("rating",{ascending:false}),
+      db.from("staff_peer_relationships").select("*,other:staff_profiles!staff_peer_relationships_staff_b_id_fkey(id,name,primary_role,nationality,reputation)").eq("staff_a_id",id).eq("active",true).order("affinity",{ascending:false}).limit(20),
+      db.from("staff_peer_relationships").select("*,other:staff_profiles!staff_peer_relationships_staff_a_id_fkey(id,name,primary_role,nationality,reputation)").eq("staff_b_id",id).eq("active",true).order("affinity",{ascending:false}).limit(20),
+      db.from("staff_recommendations").select("*,other:staff_profiles!staff_recommendations_to_staff_id_fkey(id,name,primary_role,nationality,reputation)").eq("from_staff_id",id).eq("active",true).order("strength",{ascending:false}).limit(20),
+      db.from("staff_recommendations").select("*,other:staff_profiles!staff_recommendations_from_staff_id_fkey(id,name,primary_role,nationality,reputation)").eq("to_staff_id",id).eq("active",true).order("strength",{ascending:false}).limit(20),
+      db.from("college_team_staff").select("*,team:college_teams(*)").eq("staff_profile_id",id).eq("active",true).limit(10),
+      db.from("davis_team_staff").select("*").eq("staff_profile_id",id).eq("active",true).limit(10),
+      db.from("staff_training_enrollments").select("*,center:staff_training_centers(*)").eq("staff_profile_id",id).order("start_date",{ascending:false}).limit(10)
     ]);
-    const err=activeAssignments.error||history.error||events.error;
+    const err=activeAssignments.error||history.error||events.error||agency.error||licenses.error||preferences.error||scopeReputation.error||peerA.error||peerB.error||recommendationsFrom.error||recommendationsTo.error||collegeStaff.error||davisStaff.error||training.error;
     if(err)return h({error:err.message},500);
     return h({
       profile:profile.data,
       activeAssignments:activeAssignments.data??[],
       history:history.data??[],
-      events:events.data??[]
+      events:events.data??[],
+      agency:agency.data??null,
+      licenses:licenses.data??[],
+      preferences:preferences.data??null,
+      scopeReputation:scopeReputation.data??[],
+      peers:[...(peerA.data??[]),...(peerB.data??[])].sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0)).slice(0,20),
+      recommendations:{from:recommendationsFrom.data??[],to:recommendationsTo.data??[]},
+      collegeStaff:collegeStaff.data??[],
+      davisStaff:davisStaff.data??[],
+      training:training.data??[]
     });
   }
 
@@ -4000,33 +4035,105 @@ Deno.serve(async(req:Request)=>{
       return h({ok:true,budget,status:"signed",player_id:playerId,roster:roster.data});
     }
 
+    if(action==="interview_staff"){
+      const cand=await db.from("staff_candidates").select("*,profile:staff_profiles(*)").eq("id",id).maybeSingle();
+      if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
+      if(cand.data.status!=="available")return h({error:"Ce candidat n'est plus disponible."},409);
+
+      const p:any=Array.isArray(cand.data.profile)?cand.data.profile[0]:cand.data.profile||{};
+      const fit=Number(cand.data.managed_fit||60);
+      const competing=Number(cand.data.competing_offers||0);
+      const interest=Math.max(25,Math.min(99,Math.round(
+        fit*.62+Number(p.reputation||10)*1.25+Number(p.loyalty||10)*.35-Number(p.ambition||10)*.25-competing*2
+      )));
+      const requestedWeekly=Math.max(
+        Number(cand.data.weekly_cost||0),
+        Math.round(Number(p.asking_weekly_cost||cand.data.weekly_cost||0)*(1+Math.max(0,Number(p.ambition||10)-10)*.012+competing*.035))
+      );
+      const requestedSigning=Math.max(
+        Number(cand.data.signing_cost||0),
+        Math.round(requestedWeekly*(1.2+Number(p.reputation||10)*.06+competing*.12))
+      );
+      const years=Number(p.reputation||10)>=17?3:Number(p.ambition||10)>=16?2:1;
+      const pref=await db.from("staff_preferences").select("*").eq("staff_profile_id",p.id).maybeSingle();
+      const demands={
+        lead_role:Boolean(pref.data?.wants_lead_role),
+        shared_role:Boolean(pref.data?.willing_shared_role),
+        preferred_circuits:pref.data?.preferred_circuits||[],
+        travel_tolerance:Number(pref.data?.travel_tolerance||10),
+        performance_bonus:Number(p.reputation||10)>=15,
+        release_clause:Number(p.ambition||10)>=16,
+        minimum_fit:Math.max(55,fit-5)
+      };
+      const status=interest>=42?"completed":"rejected";
+      const start=String(career.data.career_date||AGE_REFERENCE_DATE);
+
+      await db.from("staff_interviews").upsert({
+        staff_profile_id:p.id,candidate_id:id,interview_date:start,status,interest,
+        requested_weekly:requestedWeekly,requested_signing:requestedSigning,
+        desired_years:years,demands,
+        notes:status==="completed"?"Entretien positif. Conditions communiquées.":"Le candidat n'est pas suffisamment intéressé."
+      },{onConflict:"staff_profile_id,interview_date"});
+
+      const up=await db.from("staff_candidates").update({
+        interview_status:status,interest,
+        requested_weekly:requestedWeekly,requested_signing:requestedSigning,
+        desired_years:years,demands,
+        weekly_cost:requestedWeekly,signing_cost:requestedSigning
+      }).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+
+      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing});
+    }
+
     if(action==="hire_staff"){
       const cand=await db.from("staff_candidates").select("*").eq("id",id).maybeSingle();
       if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
       if(cand.data.status==="hired")return h({ok:true,already:true,budget});
       if(cand.data.status!=="available")return h({error:"Ce membre du staff n'est pas disponible actuellement."},409);
-      const cost=Number(cand.data.signing_cost||0);
+      if(cand.data.interview_status==="rejected")return h({error:"Le candidat a refusé les conditions après l'entretien."},409);
+      const cost=Number(cand.data.requested_signing||cand.data.signing_cost||0);
       if(budget<cost)return h({error:"Budget insuffisant"},409);
       budget-=cost;
       const start=String(career.data.career_date||AGE_REFERENCE_DATE);
       const endDate=new Date(start+"T12:00:00Z");
-      endDate.setUTCFullYear(endDate.getUTCFullYear()+2);
-      const [ins,up,car,contract,profileUp]=await Promise.all([
-        db.from("staff").insert({name:cand.data.name,role:cand.data.role,skill:cand.data.skill,weekly_cost:cand.data.weekly_cost,profile_id:cand.data.profile_id||null}),
+      endDate.setUTCFullYear(endDate.getUTCFullYear()+Math.max(1,Number(cand.data.desired_years||2)));
+      const managedId=Number(career.data.managed_player_id||0);
+      const weekly=Number(cand.data.requested_weekly||cand.data.weekly_cost||0);
+      const fit=cand.data.profile_id&&managedId
+        ?await db.rpc("staff_fit_score",{p_player_id:managedId,p_staff_id:cand.data.profile_id,p_role:cand.data.role})
+        :{data:60,error:null};
+      const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
+      const [ins,up,car,contract,profileUp,assignment,offers]=await Promise.all([
+        db.from("staff").insert({name:cand.data.name,role:cand.data.role,skill:cand.data.skill,weekly_cost:weekly,profile_id:cand.data.profile_id||null}),
         db.from("staff_candidates").update({status:"hired"}).eq("id",id),
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo"),
         db.from("contracts").insert({
           subject_type:"staff",subject_name:cand.data.name,role:cand.data.role,
-          weekly_salary:cand.data.weekly_cost,start_date:start,
+          weekly_salary:weekly,start_date:start,
           end_date:endDate.toISOString().slice(0,10),
-          bonuses:{loyalty_bonus:Math.round(Number(cand.data.weekly_cost||0)*2)},
+          bonuses:{loyalty_bonus:Math.round(weekly*2),demands:cand.data.demands||{}},
           status:"active"
         }),
         cand.data.profile_id
           ?db.from("staff_profiles").update({market_status:"user_staff",available_from:null}).eq("id",cand.data.profile_id)
+          :Promise.resolve({error:null}),
+        cand.data.profile_id&&managedId
+          ?db.from("player_staff_assignments").insert({
+            player_id:managedId,staff_profile_id:cand.data.profile_id,role:cand.data.role,
+            start_date:start,active:true,verified:false,affinity:72,trust:70,
+            source_label:"Court Boss · staff joueur géré",snapshot_date:start,
+            notes:"Recruté par le joueur géré après entretien.",weekly_salary:weekly,
+            contract_end:endDate.toISOString().slice(0,10),assignment_generation:1,last_review_date:start,
+            role_fit:fitValue,satisfaction:Math.max(55,Math.min(95,Math.round(62+fitValue*.2))),
+            team_chemistry:Math.max(55,Math.min(95,Math.round(61+fitValue*.22)))
+          })
+          :Promise.resolve({error:null}),
+        cand.data.profile_id
+          ?db.from("staff_competing_offers").update({status:"lost_to_user"}).eq("staff_profile_id",cand.data.profile_id).eq("status","pending")
           :Promise.resolve({error:null})
       ]);
-      const err=ins.error||up.error||car.error||contract.error||profileUp.error;if(err)return h({error:err.message},500);
+      const err=ins.error||up.error||car.error||contract.error||profileUp.error||assignment.error||offers.error;if(err)return h({error:err.message},500);
       await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+cand.data.role+" jusqu'au "+endDate.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
       return h({ok:true,budget,status:"hired",contract_end:endDate.toISOString().slice(0,10)});
     }
@@ -4038,18 +4145,23 @@ Deno.serve(async(req:Request)=>{
       if(budget<severance)return h({error:"Budget insuffisant pour l'indemnité de départ"},409);
       budget-=severance;
 
-      const [del,car,contracts,profileUp,candUp]=await Promise.all([
+      const managedId=Number(career.data.managed_player_id||0);
+      const fireDate=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const [del,car,contracts,profileUp,candUp,assignmentUp]=await Promise.all([
         db.from("staff").delete().eq("id",id),
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo"),
         db.from("contracts").update({status:"terminated"}).eq("subject_type","staff").eq("subject_name",member.data.name||member.data.role).eq("status","active"),
         member.data.profile_id
-          ?db.from("staff_profiles").update({market_status:"available",available_from:String(career.data.career_date||AGE_REFERENCE_DATE)}).eq("id",member.data.profile_id)
+          ?db.from("staff_profiles").update({market_status:"available",available_from:fireDate}).eq("id",member.data.profile_id)
           :Promise.resolve({error:null}),
         member.data.profile_id
-          ?db.from("staff_candidates").update({status:"available"}).eq("profile_id",member.data.profile_id)
+          ?db.from("staff_candidates").update({status:"available",interview_status:"not_started"}).eq("profile_id",member.data.profile_id)
+          :Promise.resolve({error:null}),
+        member.data.profile_id&&managedId
+          ?db.from("player_staff_assignments").update({active:false,end_date:fireDate,ended_reason:"Licencié par le joueur géré"}).eq("player_id",managedId).eq("staff_profile_id",member.data.profile_id).eq("active",true)
           :Promise.resolve({error:null})
       ]);
-      const err=del.error||car.error||contracts.error||profileUp.error||candUp.error;
+      const err=del.error||car.error||contracts.error||profileUp.error||candUp.error||assignmentUp.error;
       if(err)return h({error:err.message},500);
 
       if(member.data.profile_id){

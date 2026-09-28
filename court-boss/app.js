@@ -54,6 +54,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const get=async(path,opts={})=>{const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let competitionRows=[],competitionCount=0,competitionOffset=0,competitionLoading=false,competitionFilters={q:'',circuit:'Tous',category:'Toutes',surface:'Toutes',country:'',source:'Tous'};
 let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
@@ -180,7 +181,7 @@ function managerStrip(){
 }
 function shell(body){app.innerHTML=`<div class="app-shell">${header()}${managerStrip()}<main class="page">${body}</main>${navBar()}</div>`}
 function loading(t='Chargement du monde tennis…'){shell(`<div class="loader">${t}</div>`)}
-window.nav=async r=>{route=r;window.scrollTo({top:0,behavior:'smooth'});if(r==='history'&&!historyData)await loadHistory();await render()}
+window.nav=async r=>{route=r;window.scrollTo({top:0,behavior:'smooth'});if(r==='history'&&!historyData)await loadHistory();if(r==='competitions'&&!competitionRows.length)await loadCompetitions();await render()}
 async function init(){
  loading();
  try{
@@ -238,6 +239,16 @@ async function loadTournaments(){
  Object.entries(tourFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
  const d=await get('/api/tournaments?'+p.toString());tourRows=d.rows||[];tourTbc=d.tbc||[];tourCount=d.count||0;
 }
+async function loadCompetitions(){
+ competitionLoading=true;
+ try{
+  const p=new URLSearchParams({offset:String(competitionOffset),limit:'100'});
+  Object.entries(competitionFilters).forEach(([k,v])=>{if(v&&v!=='Tous'&&v!=='Toutes')p.set(k,v)});
+  const d=await get('/api/competitions?'+p.toString());
+  competitionRows=d.rows||[];competitionCount=d.count||0;
+ }finally{competitionLoading=false}
+}
+
 async function loadRankingLedger(){try{rankingLedger=await get('/api/ranking-ledger?date='+(local.date||RANKING_SNAPSHOT))}catch(e){rankingLedger={total:((local.career&&local.career.points)||34),active:[],expired:[]}}}
 async function loadSeasonSummary(){try{seasonSummary=await get('/api/season-summary')}catch(e){seasonSummary={stats:{tournaments:0,titles:0,finals:0,prize:0,matches:0,wins:0},singles:[],doubles:[],singles_points:[],doubles_points:[]}}}
 async function loadScheduleAdvice(){try{scheduleAdvice=await get('/api/schedule-advice')}catch(e){scheduleAdvice={recommended:[]}}}
@@ -615,8 +626,60 @@ function scouting(){
  </div>`
 }
 window.changeScoutAssignment=async(id,focus)=>{try{await managerAction('set_scouting_assignment',id,{focus});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
+
+function competitionPrestige(p){
+ const n=Number(p||50);return Math.max(1,Math.min(5,Math.round(n/20)));
+}
+function competitionsPage(){
+ const circuits=['Tous','ATP','Challenger','ITF','Junior','NCAA','Federation'];
+ const cats=['Toutes','Grand Chelem','ATP Finals','Masters 1000','ATP 500','ATP 250','Challenger 175','Challenger 125','Challenger 100','Challenger 75','Challenger 50','M25','M15','Junior Grand Slam','NCAA DI Team Championship','NCAA DI Individual Championship'];
+ const surfaces=['Toutes','Dur extérieur','Dur intérieur','Terre','Gazon'];
+ const start=competitionCount?competitionOffset+1:0,end=Math.min(competitionOffset+competitionRows.length,competitionCount);
+ return `<div class="fm-dashboard">
+  <div class="fm-page-head"><div><div class="eyebrow">Competition database · FM style</div><h1>Compétitions</h1><div class="muted">Une fiche permanente par tournoi : prestige, tenant du titre, éditions, palmarès annuel, finalistes et records. Le Calendrier reste dédié aux inscriptions.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(competitionCount)} compétitions</div><div class="fm-head-badge subtle">Open Era</div><button class="soft-btn" onclick="nav('calendar')">Calendrier →</button></div></div>
+  <div class="card fm-db-toolbar">
+   <div class="fm-db-filters">
+    <input class="input" value="${esc(competitionFilters.q)}" placeholder="Rechercher une compétition…" onkeydown="if(event.key==='Enter')setCompetitionFilter('q',this.value)">
+    <select class="select" onchange="setCompetitionFilter('circuit',this.value)">${circuits.map(x=>`<option ${x===competitionFilters.circuit?'selected':''}>${x}</option>`).join('')}</select>
+    <select class="select" onchange="setCompetitionFilter('category',this.value)">${cats.map(x=>`<option ${x===competitionFilters.category?'selected':''}>${x}</option>`).join('')}</select>
+    <select class="select" onchange="setCompetitionFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===competitionFilters.surface?'selected':''}>${x}</option>`).join('')}</select>
+    <select class="select" onchange="setCompetitionFilter('source',this.value)">${['Tous','Officiel','Fictif'].map(x=>`<option ${x===competitionFilters.source?'selected':''}>${x}</option>`).join('')}</select>
+    <button class="primary" onclick="loadCompetitions().then(render)">Filtrer</button>
+   </div>
+  </div>
+  <div class="card fm-panel" style="margin-top:12px">
+   <div class="row between"><div><div class="eyebrow">Base compétitions</div><h2>${competitionFilters.circuit==='Tous'?'Toutes les compétitions':esc(competitionFilters.circuit)}</h2></div><span class="pill">${fmt(competitionCount)}</span></div>
+   ${competitionLoading?'<div class="loader">Chargement des compétitions…</div>':`<div class="table-wrap"><table class="table fm-competition-table"><thead><tr><th></th><th>Compétition</th><th>Niveau</th><th>Surface</th><th>Prestige</th><th>Tenant</th><th>Historique</th><th>Prochaine édition</th></tr></thead><tbody>${competitionRows.map(t=>`<tr class="click" onclick="openCompetition(${t.id})"><td>${tournamentThumb(t)}</td><td><b>${flags[t.country]||'🏳️'} ${esc(t.name)}</b><div class="muted micro">${esc(t.city||'')} · ${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Fictif</span>'}</div></td><td><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span></td><td><span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span></td><td><b class="competition-stars">${'★'.repeat(competitionPrestige(t.prestige))}${'☆'.repeat(5-competitionPrestige(t.prestige))}</b><div class="muted micro">${fmt(t.prestige||50)}/100</div></td><td>${t.defending_champion_name?`<b>${esc(t.defending_champion_name)}</b><div class="muted micro">${t.defending_champion_year||2025}</div>`:'<span class="muted">Aucun tenant connu</span>'}</td><td><b>${fmt(t.history_count||0)} finale(s)</b><div class="muted micro">${t.latest_history?'Dernier : '+esc(t.latest_history.winner_name):'À enrichir'}</div></td><td><b>${df(t.start_date)}</b><div class="muted micro">${esc(t.country||'')}</div></td></tr>`).join('')}</tbody></table></div>`}
+   ${!competitionLoading&&!competitionRows.length?'<div class="empty">Aucune compétition avec ces filtres.</div>':''}
+   <div class="pagination"><button ${competitionOffset===0?'disabled':''} onclick="competitionPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(competitionCount)}</span><button ${competitionOffset+100>=competitionCount?'disabled':''} onclick="competitionPage(1)">→</button></div>
+  </div>
+ </div>`;
+}
+window.setCompetitionFilter=async(k,v)=>{competitionFilters[k]=v;competitionOffset=0;await loadCompetitions();render()}
+window.competitionPage=async d=>{competitionOffset=Math.max(0,competitionOffset+d*100);await loadCompetitions();render();window.scrollTo(0,0)}
+window.openCompetition=async id=>{
+ overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement de la compétition…</div></div></div>';
+ try{
+  const d=await get('/api/competition?id='+id),t=d.tournament,h=d.history||[],records=d.records||[];
+  const image=t.image_url||API+'/api/tournament-image?id='+t.id;
+  const holder=t.defending_champion_name||h[0]?.winner_name||null;
+  const holderId=t.defending_champion_player_id||h[0]?.winner_player_id||null;
+  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet competition-sheet">
+   <div class="sheet-head"><div><div class="eyebrow">Fiche compétition · ${esc(t.circuit||'Tour')}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${esc(t.category||'')} · ${esc(surfaceLabel(t))}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+   <div class="competition-hero" style="margin-top:12px"><div class="competition-cover"><img src="${esc(image)}" alt="${esc(t.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tm-tour-fallback competition-fallback" style="display:none">${flags[t.country]||'🎾'}</div></div><div class="competition-main"><div class="row between"><div><div class="eyebrow">Prestige</div><div class="competition-stars big-stars">${'★'.repeat(competitionPrestige(t.prestige))}${'☆'.repeat(5-competitionPrestige(t.prestige))}</div></div><span class="badge ${t.is_verified?'good':''}">${t.is_verified?'Compétition officielle':'Compétition fictive'}</span></div><div class="kpi-strip" style="margin-top:10px"><div class="kpi"><span class="muted mini">Tenant</span><b class="${holderId?'click':''}" ${holderId?`onclick="openPlayer(${holderId})"`:''}>${holder?esc(holder):'—'}</b></div><div class="kpi"><span class="muted mini">Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="kpi"><span class="muted mini">Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="kpi"><span class="muted mini">Historique</span><b>${d.historyStart&&d.historyEnd?d.historyStart+'–'+d.historyEnd:'—'}</b></div></div></div></div>
+   <div class="tabs" style="margin-top:12px"><button class="active" data-comp-tab="overview" onclick="competitionSection('overview')">Vue d'ensemble</button><button data-comp-tab="history" onclick="competitionSection('history')">Palmarès</button><button data-comp-tab="records" onclick="competitionSection('records')">Records</button><button data-comp-tab="editions" onclick="competitionSection('editions')">Éditions</button></div>
+   <div id="competitionBody">
+    <section data-comp-section="overview"><div class="grid g2"><div class="card"><h2>Identité</h2><div class="list-item row between"><span>Niveau</span><b>${esc(t.category||t.level||'—')}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Lieu</span><b>${esc(t.city||'—')}, ${esc(t.country||'')}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Double</span><b>${t.doubles?t.doubles_draw_size||'Oui':'Non'}</b></div></div><div class="card"><h2>Édition ${String(t.start_date||'').slice(0,4)}</h2><div class="list-item row between"><span>Dates</span><b>${df(t.start_date)} → ${df(t.end_date||t.start_date)}</b></div><div class="list-item row between"><span>Tenant simple</span><b>${holder?esc(holder):'—'}</b></div><div class="list-item row between"><span>Tenant double</span><b>${t.defending_doubles_champion_name?esc(t.defending_doubles_champion_name)+(t.defending_doubles_partner_name?' / '+esc(t.defending_doubles_partner_name):''):'—'}</b></div><div class="list-item row between"><span>Source</span><b>${t.source_url?'<a href="'+esc(t.source_url)+'" target="_blank" rel="noopener">Officielle ↗</a>':'Simulation Court Boss'}</b></div></div></div></section>
+    <section data-comp-section="history" style="display:none"><div class="card"><div class="row between"><div><div class="eyebrow">Finales</div><h2>Palmarès année par année</h2></div><span class="pill">${h.length} éditions</span></div>${h.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Année</th><th>Vainqueur</th><th>Finaliste</th><th>Score</th><th>Surface</th></tr></thead><tbody>${h.map(x=>`<tr><td class="rank-num">${x.season}</td><td class="${x.winner_player_id?'click':''}" ${x.winner_player_id?`onclick="openPlayer(${x.winner_player_id})"`:''}><b>${flags[x.winner_country]||''} ${esc(x.winner_name)}</b></td><td class="${x.runner_up_player_id?'click':''}" ${x.runner_up_player_id?`onclick="openPlayer(${x.runner_up_player_id})"`:''}>${flags[x.runner_up_country]||''} ${esc(x.runner_up_name)}</td><td>${esc(x.score||'—')}</td><td>${esc(x.surface||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Historique en cours d’import.</div>'}</div></section>
+    <section data-comp-section="records" style="display:none"><div class="card"><div class="row between"><div><div class="eyebrow">Open Era</div><h2>Records de la compétition</h2></div><span class="badge">${records.length} joueurs</span></div><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Titres</th><th>Finales</th></tr></thead><tbody>${records.map((r,i)=>`<tr class="${r.player_id?'click':''}" ${r.player_id?`onclick="openPlayer(${r.player_id})"`:''}><td class="rank-num">${i+1}</td><td><b>${esc(r.name)}</b></td><td><b>${r.wins}</b></td><td>${r.finals}</td></tr>`).join('')}</tbody></table></div></div></section>
+    <section data-comp-section="editions" style="display:none"><div class="card"><h2>Éditions Court Boss</h2>${(d.editions||[]).map(x=>`<div class="list-item row between click" onclick="openCompetition(${x.id})"><div><b>${String(x.start_date||'').slice(0,4)} · ${esc(x.name)}</b><div class="muted mini">${df(x.start_date)} · ${esc(x.city||'')} · ${esc(surfaceLabel(x))}</div></div><span class="badge ${x.is_verified?'good':''}">${x.is_verified?'Officiel':'Fictif'}</span></div>`).join('')||'<div class="empty">Une seule édition référencée.</div>'}</div></section>
+   </div>
+  </div></div>`;
+ }catch(e){overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="card"><h2>Compétition indisponible</h2><p class="muted">${esc(e.message)}</p></div></div></div>`}
+}
+window.competitionSection=name=>{document.querySelectorAll('[data-comp-section]').forEach(x=>x.style.display=x.getAttribute('data-comp-section')===name?'block':'none');document.querySelectorAll('[data-comp-tab]').forEach(x=>x.classList.toggle('active',x.getAttribute('data-comp-tab')===name))}
 function more(){
- const items=[['players','Base joueurs',fmt(worldStats?.searchableRealPlayers||22000)+' profils réels · recherche mondiale au-delà du Top 2000 + ITF + Juniors + NCAA + Double'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
+ const items=[['players','Base joueurs',fmt(worldStats?.searchableRealPlayers||22000)+' profils réels · recherche mondiale au-delà du Top 2000 + ITF + Juniors + NCAA + Double'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Fédération française'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['competitions','Compétitions','Fiches, palmarès et records des tournois'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
@@ -1003,7 +1066,7 @@ function worldPage(){
   <div class="menu-card" onclick="setRankKind('junior');nav('rankings')"><div class="menu-icon">🌱</div><strong>Junior</strong><span class="muted">${fmt(w.juniorPlayers||0)} profils juniors</span></div>
   <div class="menu-card" onclick="rankKind='ncaa';rankOffset=0;rankQuery='';loadRankings().then(()=>nav('rankings'))"><div class="menu-icon">🎓</div><strong>NCAA / ITA</strong><span class="muted">${fmt(w.ncaaProfilesTotal||w.ncaaPlayers||0)} profils · ${fmt(w.ncaaActiveProfiles||w.ncaaPlayers||0)} actifs</span></div>
   <div class="menu-card" onclick="nav('scouting')"><div class="menu-icon">🔎</div><strong>Newgens</strong><span class="muted">${fmt(w.gameGenerated||0)} joueurs générés par Court Boss</span></div>
-  <div class="menu-card" onclick="nav('calendar')"><div class="menu-icon">📅</div><strong>Compétitions</strong><span class="muted">ATP, Challenger, ITF, Junior, NCAA, Davis</span></div>
+  <div class="menu-card" onclick="nav('competitions')"><div class="menu-icon">🏆</div><strong>Compétitions</strong><span class="muted">ATP, Challenger, ITF, Junior, NCAA, Davis</span></div>
   <div class="menu-card" onclick="nav('history')"><div class="menu-icon">🏛️</div><strong>Histoire & nations</strong><span class="muted">Meilleurs historiques par pays et continent</span></div>
  </div>
  <div class="card" style="margin-top:14px"><div class="row between"><div><div class="eyebrow">Couverture réelle</div><h2>Base de données</h2></div><span class="badge good">${fmt(w.searchableRealPlayers||0)} joueurs</span></div>
@@ -1071,7 +1134,7 @@ function fantasyPage(){
 function inboxPage(){return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1></div></div><div class="stack">${(boot.inbox||[]).map(x=>`<div class="card click" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')"><div class="row between"><div class="eyebrow">${esc(x.kind)}</div><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div><h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p></div>`).join('')}</div>`}
 function render(){
  if(!boot)return;
- const views={home,rankings,calendar,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage};
+ const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage};
  shell((views[route]||more)());
 }
 window.openPlayer=async id=>{

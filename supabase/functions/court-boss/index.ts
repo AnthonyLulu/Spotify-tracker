@@ -4162,7 +4162,7 @@ Deno.serve(async(req:Request)=>{
     const offset=n(u.searchParams.get("offset"),0,0,20000);
     const limit=n(u.searchParams.get("limit"),100,1,100);
 
-    let hq=db.from("history_player_scores").select("*",{count:"exact"});
+    let hq=db.from("history_player_search").select("*",{count:"exact"});
     if(q)hq=hq.ilike("name",`%${q}%`);
     if(country)hq=hq.eq("country",country);
     hq=hq.order("history_score",{ascending:false}).range(offset,offset+limit-1);

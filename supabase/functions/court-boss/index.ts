@@ -2572,6 +2572,7 @@ Deno.serve(async(req:Request)=>{
         const evolution=await db.rpc("evolve_staff_ecosystem",{p_date:date});
         const dynamics=await db.rpc("simulate_staff_team_dynamics",{p_date:date});
         const competition=await db.rpc("refresh_staff_recruitment_competition",{p_date:date});
+        const ownStaffOffers=await db.rpc("refresh_user_staff_external_offers",{p_date:date});
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
           meta:meta.error?{error:meta.error.message}:meta.data,
@@ -2583,7 +2584,8 @@ Deno.serve(async(req:Request)=>{
           academyDevelopment:academyDevelopment.error?{error:academyDevelopment.error.message}:academyDevelopment.data,
           evolution:evolution.error?{error:evolution.error.message}:evolution.data,
           dynamics:dynamics.error?{error:dynamics.error.message}:dynamics.data,
-          competition:competition.error?{error:competition.error.message}:competition.data
+          competition:competition.error?{error:competition.error.message}:competition.data,
+          ownStaffOffers:ownStaffOffers.error?{error:ownStaffOffers.error.message}:ownStaffOffers.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
@@ -2721,6 +2723,11 @@ Deno.serve(async(req:Request)=>{
         .order("conflict_score",{ascending:false});
       if(!rels.error)ownStaffRelations=rels.data??[];
     }
+    const ownStaffOffers=await db.from("user_staff_external_offers")
+      .select("id,staff_profile_id,competitor_player_id,offered_weekly,offer_date,deadline,status,staff:staff_profiles(id,name,primary_role,reputation,ambition,loyalty),competitor:players!user_staff_external_offers_competitor_player_id_fkey(id,name,country,ranking,game_world_rank)")
+      .eq("status","pending")
+      .order("deadline",{ascending:true});
+
     const managedAgency=managedId
       ?await db.from("player_agency_representation")
         .select("start_date,end_date,commission_pct,active,trust,agency:staff_agencies(*),agent:staff_profiles!player_agency_representation_agent_staff_id_fkey(id,name,nationality,primary_role,reputation,negotiation_rating,former_player_status)")
@@ -2734,7 +2741,8 @@ Deno.serve(async(req:Request)=>{
       academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],
       collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
       managedAgency:managedAgency.error?null:managedAgency.data,
-      ownStaffRelations
+      ownStaffRelations,
+      ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[])
     });
   }
 
@@ -4358,6 +4366,91 @@ Deno.serve(async(req:Request)=>{
         await db.from("inbox_items").insert({kind:"commercial",title:"Représentation à revoir",body:"Ton agent a quitté l'équipe. Tu peux recruter un nouvel agent depuis le marché du staff.",action_route:"staff",is_read:false});
       }
       return h({ok:true,budget,severance,agent_representation:agentSync.error?{error:agentSync.error.message}:agentSync.data});
+    }
+
+    if(action==="match_staff_offer"){
+      const offer=await db.from("user_staff_external_offers").select("*,staff:staff_profiles(*)").eq("id",id).maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offre introuvable"},404);
+      if(offer.data.status!=="pending")return h({error:"Cette offre n'est plus active."},409);
+      const sp:any=Array.isArray(offer.data.staff)?offer.data.staff[0]:offer.data.staff||{};
+      const member=await db.from("staff").select("*").eq("profile_id",offer.data.staff_profile_id).maybeSingle();
+      if(member.error||!member.data)return h({error:"Ce membre n'est plus dans ton staff."},409);
+
+      const bonus=Math.round(Number(offer.data.offered_weekly||0)*2);
+      if(budget<bonus)return h({error:"Budget insuffisant pour la prime de fidélité."},409);
+      budget-=bonus;
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const newEnd=new Date(today+"T12:00:00Z");newEnd.setUTCFullYear(newEnd.getUTCFullYear()+2);
+
+      const [staffUp,contractUp,assignmentUp,offerUp,profileUp,careerUp]=await Promise.all([
+        db.from("staff").update({weekly_cost:offer.data.offered_weekly}).eq("id",member.data.id),
+        db.from("contracts").update({
+          weekly_salary:offer.data.offered_weekly,
+          end_date:newEnd.toISOString().slice(0,10),
+          status:"active"
+        }).eq("subject_type","staff").eq("subject_name",member.data.name).eq("status","active"),
+        db.from("player_staff_assignments").update({
+          weekly_salary:offer.data.offered_weekly,
+          contract_end:newEnd.toISOString().slice(0,10),
+          trust:Math.min(100,75+Number(sp.loyalty||10)),
+          satisfaction:Math.min(100,78+Math.round(Number(sp.loyalty||10)/2)),
+          last_review_date:today
+        }).eq("player_id",career.data.managed_player_id).eq("staff_profile_id",offer.data.staff_profile_id).eq("active",true),
+        db.from("user_staff_external_offers").update({status:"matched"}).eq("id",id),
+        db.from("staff_profiles").update({loyalty:Math.min(20,Number(sp.loyalty||10)+1),updated_at:new Date().toISOString()}).eq("id",offer.data.staff_profile_id),
+        db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
+      ]);
+      const err=staffUp.error||contractUp.error||assignmentUp.error||offerUp.error||profileUp.error||careerUp.error;
+      if(err)return h({error:err.message},500);
+
+      await db.from("staff_career_events").insert({
+        staff_profile_id:offer.data.staff_profile_id,event_date:today,event_type:"retained_after_offer",
+        player_id:career.data.managed_player_id,role:member.data.role,
+        description:"A choisi de rester après une revalorisation alignée sur une offre concurrente."
+      });
+      await db.from("inbox_items").insert({kind:"staff",title:"Staff conservé",body:member.data.name+" reste dans ton équipe après revalorisation. Prime de fidélité : "+bonus+" €.",action_route:"staff",is_read:false});
+      return h({ok:true,budget,weekly_salary:offer.data.offered_weekly,contract_end:newEnd.toISOString().slice(0,10),bonus});
+    }
+
+    if(action==="release_staff_offer"){
+      const offer=await db.from("user_staff_external_offers").select("*,staff:staff_profiles(*)").eq("id",id).maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offre introuvable"},404);
+      if(offer.data.status!=="pending")return h({error:"Cette offre n'est plus active."},409);
+      const sp:any=Array.isArray(offer.data.staff)?offer.data.staff[0]:offer.data.staff||{};
+      const member=await db.from("staff").select("*").eq("profile_id",offer.data.staff_profile_id).maybeSingle();
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+
+      if(member.data){
+        await db.from("staff").delete().eq("id",member.data.id);
+        await db.from("contracts").update({status:"terminated"}).eq("subject_type","staff").eq("subject_name",member.data.name).eq("status","active");
+      }
+      await db.from("player_staff_assignments").update({
+        active:false,end_date:today,ended_reason:"Départ accepté après offre extérieure"
+      }).eq("player_id",career.data.managed_player_id).eq("staff_profile_id",offer.data.staff_profile_id).eq("active",true);
+
+      const fit=await db.rpc("staff_fit_score",{p_player_id:offer.data.competitor_player_id,p_staff_id:offer.data.staff_profile_id,p_role:sp.primary_role||member.data?.role||"Coach"});
+      const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
+      await db.from("player_staff_assignments").insert({
+        player_id:offer.data.competitor_player_id,staff_profile_id:offer.data.staff_profile_id,
+        role:sp.primary_role||member.data?.role||"Coach",start_date:today,active:true,verified:false,
+        affinity:70,trust:68,source_label:"Court Boss · offre extérieure acceptée",snapshot_date:today,
+        notes:"Départ du staff du joueur géré après offre extérieure.",weekly_salary:offer.data.offered_weekly,
+        contract_end:new Date(new Date(today+"T12:00:00Z").setUTCFullYear(new Date(today+"T12:00:00Z").getUTCFullYear()+2)).toISOString().slice(0,10),
+        assignment_generation:1,last_review_date:today,role_fit:fitValue,satisfaction:74,team_chemistry:72
+      });
+      await Promise.all([
+        db.from("user_staff_external_offers").update({status:"accepted_user_release"}).eq("id",id),
+        db.from("staff_profiles").update({market_status:"contracted",available_from:null}).eq("id",offer.data.staff_profile_id),
+        db.from("staff_candidates").update({status:"unavailable"}).eq("profile_id",offer.data.staff_profile_id)
+      ]);
+      await db.from("staff_career_events").insert({
+        staff_profile_id:offer.data.staff_profile_id,event_date:today,event_type:"left_user_for_offer",
+        player_id:offer.data.competitor_player_id,other_player_id:career.data.managed_player_id,
+        role:sp.primary_role||member.data?.role||"Staff",
+        description:"Le joueur géré a accepté son départ après une offre extérieure."
+      });
+      await db.from("inbox_items").insert({kind:"staff",title:"Départ du staff",body:(sp.name||member.data?.name||"Un membre du staff")+" rejoint un autre joueur.",action_route:"staff",is_read:false});
+      return h({ok:true,status:"departed"});
     }
 
     if(action==="accept_sponsor"){

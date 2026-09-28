@@ -1855,12 +1855,15 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,scoutingReport,roleSuitability,attributeCeilings,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_role_suitability").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_ceilings").select("ceilings,ability_snapshot,potential_snapshot,development_type,last_review_date").eq("player_id",id).maybeSingle(),
+      managedIdForMatchup===id
+        ?db.from("player_hidden_trait_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30)
+        :Promise.resolve({data:[],error:null}),
       db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_elo_ratings").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20),
@@ -1901,6 +1904,7 @@ Deno.serve(async(req:Request)=>{
       scoutingReport:scoutingReport.error?null:scoutingReport.data,
       roleSuitability:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=80)&&!roleSuitability.error?roleSuitability.data:null,
       attributeCeilings:managedIdForMatchup===id&&!attributeCeilings.error?attributeCeilings.data:null,
+      hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       eloRating:eloRating.error?null:eloRating.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
@@ -2761,6 +2765,11 @@ Deno.serve(async(req:Request)=>{
     if(worldEvents.error||juniorWorldEvents.error||worldDoublesEvents.error)return h({error:(worldEvents.error||juniorWorldEvents.error||worldDoublesEvents.error)?.message},500);
     const sim=await db.rpc("simulate_world_week",{p_week:week,p_snapshot_date:date});
     if(sim.error) return h({error:sim.error.message},500);
+    const hiddenTraitEvolution=await db.rpc("evolve_player_hidden_traits_from_results",{
+      p_from_date:previousDate,
+      p_to_date:date
+    });
+    if(hiddenTraitEvolution.error)return h({error:hiddenTraitEvolution.error.message},500);
     const psychology=await db.rpc("refresh_player_psychology_week",{p_date:date});
     if(psychology.error)return h({error:psychology.error.message},500);
 
@@ -2966,7 +2975,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -3807,6 +3816,28 @@ Deno.serve(async(req:Request)=>{
       const credit=await db.rpc("credit_staff_title",{p_player_title_id:Number(titleIns.data.id)});
       staffAchievementCredit=credit.error?{error:credit.error.message}:credit.data;
     }
+    let hiddenTraitEvolution:any=null;
+    if(userRound==="Champion"||userRound==="F"){
+      const earnedDate=String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE);
+      const finalMatch=matchRows.find((m:any)=>m.round_name==="F"&&(Number(m.player_a_id)===managedId||Number(m.player_b_id)===managedId));
+      const opponentName=finalMatch
+        ?(Number(finalMatch.player_a_id)===managedId?finalMatch.player_b_name:finalMatch.player_a_name)
+        :null;
+      const finalInsert=await db.from("player_final_results").insert({
+        player_id:managedId,
+        tournament_name:t.name,
+        final_date:earnedDate,
+        level:String(t.category||t.level||t.circuit||"ATP"),
+        surface:String(t.surface||""),
+        result:userRound==="Champion"?"Champion":"Finaliste",
+        opponent_name:opponentName,
+        source:"Court Boss simulation",
+        event_type:isJuniorSingles?"junior_singles":"singles"
+      }).select("id").single();
+      if(finalInsert.error)return h({error:finalInsert.error.message},500);
+      const hidden=await db.rpc("evolve_player_hidden_traits_from_results",{p_from_date:earnedDate,p_to_date:earnedDate});
+      hiddenTraitEvolution=hidden.error?{error:hidden.error.message}:hidden.data;
+    }
     const finState=await db.from("finances").select("prize_money,travel_cost,agent_commission,staff_bonus").eq("id","demo").maybeSingle();
     await Promise.all([
       db.from("career_state").update(isJuniorSingles
@@ -3822,7 +3853,7 @@ Deno.serve(async(req:Request)=>{
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 
@@ -4185,6 +4216,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     const finalUserMatch=matches.filter((m:any)=>m.user_pair===userPair.name).find((m:any)=>m.round_name==="F")||null;
+    let hiddenTraitEvolution:any=null;
     if(userRound==="Champion"||userRound==="F"){
       const resultLabel=userRound==="Champion"?"Champion":"Finaliste";
       await Promise.all([
@@ -4201,6 +4233,8 @@ Deno.serve(async(req:Request)=>{
           event_type:"doubles",partner_player_id:anthony.id,partner_name:anthony.name
         })
       ]);
+      const hidden=await db.rpc("evolve_player_hidden_traits_from_results",{p_from_date:earned,p_to_date:earned});
+      hiddenTraitEvolution=hidden.error?{error:hidden.error.message}:hidden.data;
     }
 
     const singlesRun=await db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle();
@@ -4241,7 +4275,7 @@ Deno.serve(async(req:Request)=>{
 
     const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:Number(run.data.id),p_date:earned});
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
+    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }
 
   if(path.endsWith("/api/season-summary")&&req.method==="GET"){

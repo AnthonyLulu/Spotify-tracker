@@ -381,12 +381,16 @@ function career(){
  return c;
 }
 function home(){
- const c=career(),next=boot.upcoming?.[0],academy=boot.academy||{},fin=boot.finance||{};
+ const c=career(),doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
+ const next=doublesOnly
+  ?((scheduleAdvice?.recommended||[]).find(t=>t.doubles)||boot.upcoming?.find(t=>t.doubles)||boot.upcoming?.[0])
+  :boot.upcoming?.[0];
+ const academy=boot.academy||{},fin=boot.finance||{};
  const msgs=[...(local.feed||[]),...(boot.news||[]).map(x=>x.body)].slice(0,6);
  return `<div class="section-head"><div><div class="eyebrow">Carrière · semaine ${local.week}</div><h1>Centre de management</h1><div class="muted">Le monde avance même quand tu ne joues pas.</div></div><span class="pill">ATP · classement réf. ${df(RANKING_SNAPSHOT)}</span></div>
  <section class="hero">
   <div class="card click" onclick="nav('myplayer')">
-   <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double #${fmt(c.doubles_rank)} · ${fmt(c.points)} pts</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
+   <div class="row between"><div><div class="eyebrow">Joueur géré</div><div class="hero-name">${flags[c.country]||'🏳️'} ${esc(c.player_name)}</div><div class="muted">ATP #${fmt(c.singles_rank)} · Double #${fmt(c.doubles_rank)} · ${careerFocusLabel(c.career_focus||'mixed')}</div><div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="badge ${doublesOnly?'good':''}">${doublesOnly?'Circuit principal · Double':'Objectif · '+careerFocusLabel(c.career_focus||'mixed')}</span>${doublesOnly?'<span class="badge">Points simple en extinction naturelle</span>':''}</div></div><div class="progress-ring" style="--p:${c.form||72}"><b>${c.form||72}</b></div></div>
    <div class="kpi-strip" style="margin-top:14px">
     ${[['Forme',c.form||72],['Fitness',c.fitness||91],['Moral',c.morale||78],['Fatigue',c.fatigue||18]].map(x=>`<div class="kpi"><span class="muted mini">${x[0]}</span><b>${x[1]}</b><div class="bar"><i style="width:${x[1]}%"></i></div></div>`).join('')}
    </div>
@@ -725,8 +729,8 @@ function tournamentCard(t){
  const elig=isFederation?'Par sélection nationale':isNcaa?'Championnat universitaire':isJunior?'Circuit Junior ITF':t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
  const joined=(local.entries||[]).includes(t.id);
  const target=isFederation?"nav('davis')":isNcaa?"nav('university')":'openTournament('+t.id+')';
- const doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
- const action=isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':isNcaa?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'university\')">Voir NCAA</button>':doublesOnly?'<button class="ghost" disabled>Simple désactivé</button>':`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`;
+ const doublesOnly=String(c.career_focus||'mixed')==='doubles_only',dJoined=(local.doublesEntries||[]).includes(t.id),dRule=doublesEligibility(t);
+ const action=isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':isNcaa?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'university\')">Voir NCAA</button>':doublesOnly?(t.doubles&&dRule.can?`<button class="${dJoined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleDoublesEntry(${t.id})">${dJoined?'Double ✓ · retirer':'Inscrire la paire'}</button>`:'<button class="ghost" disabled>Double indisponible</button>'):`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`;
  return `<div class="card click" onclick="${target}"><div class="row between" style="gap:12px"><div class="row" style="align-items:center;min-width:0">${tournamentThumb(t)}<div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span>${t.venue?' · '+esc(t.venue):''}</div></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${action}</div></div></div></div>`
 }
 window.showMyEntries=()=>{
@@ -1162,9 +1166,9 @@ function liveMatchPanel(){
 }
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
- const all=[...(local.practiceMatches||[]),...(boot.matches||[])];
- return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" onclick="simulatePracticeMatch()">Simulation rapide</button></div>
- ${liveMatchPanel()}
+ const all=[...(local.practiceMatches||[]),...(boot.matches||[])],doublesOnly=String(career().career_focus||'mixed')==='doubles_only';
+ return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" ${doublesOnly?'disabled':''} onclick="simulatePracticeMatch()">Simulation rapide</button></div>
+ ${doublesOnly?'<div class="notice good"><b>Carrière Double exclusivement</b> · les matchs simples sont coupés. Utilise le hub Double et les fiches tournoi pour jouer.</div>':liveMatchPanel()}
  <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Plan de jeu</h2>
  <div class="list-item"><div class="row between"><span>Agressivité</span><b>${t.aggression}%</b></div><input class="range" type="range" min="1" max="100" value="${t.aggression}" oninput="setTactic('aggression',this.value)"></div>
  <div class="list-item"><div class="row between"><span>Prise de risque</span><b>${t.risk}%</b></div><input class="range" type="range" min="1" max="100" value="${t.risk}" oninput="setTactic('risk',this.value)"></div>
@@ -1176,6 +1180,7 @@ function matchPage(){
 }
 window.setMatchSurface=(surface,indoor=false)=>{local.matchSurface=surface;local.matchIndoor=!!indoor;persist();render()}
 window.startLiveMatch=async()=>{
+ if(String(career().career_focus||'mixed')==='doubles_only'){alert('Carrière Double exclusivement : le Match Center simple est désactivé.');return}
  try{
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
   const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,tactics:local.tactics||{}})});
@@ -2203,6 +2208,10 @@ window.setCareerFocus=async focus=>{
     local.entries=[];
     local.entryMeta={};
     local.training=['Double','Service','Retour','Double','Match play','Récupération','Repos'];
+    tmCalFilters.entry='Double';
+    rankKind='doubles';
+  }else if(String(cr.career_focus||'mixed')==='doubles_only'){
+    tmCalFilters.entry='Tous';
   }
   boot=await get('/api/bootstrap');
   if(boot.career)local.career={...(local.career||{}),...boot.career};

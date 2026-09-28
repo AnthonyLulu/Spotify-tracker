@@ -2544,6 +2544,11 @@ Deno.serve(async(req:Request)=>{
 
       const staffMarket=await db.rpc("refresh_staff_market",{p_date:date});
       staffMarketRefresh=staffMarket.error?{error:staffMarket.error.message}:staffMarket.data;
+      const managedAgentSync=await db.rpc("sync_managed_agent_representation",{p_date:date});
+      staffMarketRefresh={
+        ...(staffMarketRefresh||{}),
+        managedAgent:managedAgentSync.error?{error:managedAgentSync.error.message}:managedAgentSync.data
+      };
 
       if(Number(date.slice(0,4))>2025){
         const month=Number(date.slice(5,7));
@@ -2701,7 +2706,36 @@ Deno.serve(async(req:Request)=>{
     ]);
     const err=contracts.error||college.error||shortlist.error||sponsors.error||candidates.error||partnerships.error||collegeOffers.error||collegeState.error||collegeDuals.error||davisTies.error||academyMembers.error||academyRoster.error||collegeTeamStaff.error||davisTeamStaff.error;
     if(err) return h({error:err.message},500);
-    return h({contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:collegeOffers.data??[],collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[]});
+
+    const careerNow=await db.from("career_state").select("managed_player_id,career_date").eq("id","demo").maybeSingle();
+    const managedId=Number(careerNow.data?.managed_player_id||0);
+    const ownStaff=await db.from("staff").select("id,name,role,profile_id").not("profile_id","is",null);
+    const ownProfileIds=[...new Set((ownStaff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean))];
+    let ownStaffRelations:any[]=[];
+    if(ownProfileIds.length>1){
+      const rels=await db.from("staff_peer_relationships")
+        .select("*,staff_a:staff_profiles!staff_peer_relationships_staff_a_id_fkey(id,name,primary_role,reputation),staff_b:staff_profiles!staff_peer_relationships_staff_b_id_fkey(id,name,primary_role,reputation)")
+        .eq("active",true)
+        .in("staff_a_id",ownProfileIds)
+        .in("staff_b_id",ownProfileIds)
+        .order("conflict_score",{ascending:false});
+      if(!rels.error)ownStaffRelations=rels.data??[];
+    }
+    const managedAgency=managedId
+      ?await db.from("player_agency_representation")
+        .select("start_date,end_date,commission_pct,active,trust,agency:staff_agencies(*),agent:staff_profiles!player_agency_representation_agent_staff_id_fkey(id,name,nationality,primary_role,reputation,negotiation_rating,former_player_status)")
+        .eq("player_id",managedId).eq("active",true).maybeSingle()
+      :{data:null,error:null};
+
+    return h({
+      contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],
+      candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:collegeOffers.data??[],
+      collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],
+      academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],
+      collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
+      managedAgency:managedAgency.error?null:managedAgency.data,
+      ownStaffRelations
+    });
   }
 
 
@@ -4195,8 +4229,14 @@ Deno.serve(async(req:Request)=>{
           :Promise.resolve({error:null})
       ]);
       const err=ins.error||up.error||car.error||contract.error||profileUp.error||assignment.error||offers.error;if(err)return h({error:err.message},500);
+      const agentSync=/agent/i.test(effectiveRole)
+        ?await db.rpc("sync_managed_agent_representation",{p_date:start})
+        :{data:null,error:null};
       await db.from("inbox_items").insert({kind:"staff",title:"Recrutement staff",body:cand.data.name+" rejoint ton équipe comme "+effectiveRole+" jusqu'au "+endDate.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
-      return h({ok:true,budget,status:"hired",contract_end:endDate.toISOString().slice(0,10)});
+      if(/agent/i.test(effectiveRole)&&!agentSync.error){
+        await db.from("inbox_items").insert({kind:"commercial",title:"Nouvelle représentation",body:cand.data.name+" devient ton agent principal. Ton agence et sa commission sont désormais liées à ce profil.",action_route:"staff",is_read:false});
+      }
+      return h({ok:true,budget,status:"hired",contract_end:endDate.toISOString().slice(0,10),agent_representation:agentSync.error?{error:agentSync.error.message}:agentSync.data});
     }
 
     if(action==="fire_staff"){
@@ -4253,8 +4293,14 @@ Deno.serve(async(req:Request)=>{
         }
       }
 
+      const agentSync=/agent/i.test(String(member.data.role||""))
+        ?await db.rpc("sync_managed_agent_representation",{p_date:fireDate})
+        :{data:null,error:null};
       await db.from("inbox_items").insert({kind:"staff",title:"Départ du staff",body:(member.data.name||member.data.role)+" quitte ton équipe. Indemnité : "+severance+" €.",action_route:"staff",is_read:false});
-      return h({ok:true,budget,severance});
+      if(/agent/i.test(String(member.data.role||""))&&!agentSync.error){
+        await db.from("inbox_items").insert({kind:"commercial",title:"Représentation à revoir",body:"Ton agent a quitté l'équipe. Tu peux recruter un nouvel agent depuis le marché du staff.",action_route:"staff",is_read:false});
+      }
+      return h({ok:true,budget,severance,agent_representation:agentSync.error?{error:agentSync.error.message}:agentSync.data});
     }
 
     if(action==="accept_sponsor"){

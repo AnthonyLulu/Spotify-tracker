@@ -4313,19 +4313,29 @@ Deno.serve(async(req:Request)=>{
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
 
-    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
-    const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.17+Number(opp.fitness||90)*.08-Number(opp.fatigue||20)*.12+Number(opp.player_attributes?.[key]||10)*.8;
-    const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
-    const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
-    const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
-    const momentum=(Number(session.data.momentum||50)-50)*.05;
-    const indoor=surface.toLowerCase().includes("intérieur");
-    const serveBoost=surface==="Gazon"?3.0:indoor?2.8:surface.startsWith("Dur")?2.1:1.55;
-    let uStrength=uBase+balance+netBonus+retBonus+momentum;
-    let oStrength=oBase;
-    if(session.data.serving_user)uStrength+=serveBoost;else oStrength+=serveBoost;
-
-    const prob=1/(1+Math.exp(-(uStrength-oStrength)/7.5));
+    const serverIsUser=Boolean(session.data.serving_user);
+    const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
+    const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
+    const matchup=await db.rpc("tennis_abstract_matchup_model",{
+      p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:0
+    });
+    const tm:any=matchup.error?{}:(matchup.data||{});
+    let serverPointP=Number(tm.expected_server_point_win_prob||.62);
+    if(serverIsUser){
+      serverPointP+=(ag-58)*.0007+(risk-52)*.00025+Math.min(70,net)*.00006+
+        (Number(session.data.momentum||50)-50)*.0008;
+    }else{
+      serverPointP+=(ret==="Avancée"?-.010:ret==="Reculée"?.005:0)-
+        (Number(session.data.momentum||50)-50)*.0008;
+    }
+    serverPointP=Math.max(.32,Math.min(.86,serverPointP));
+    const q=1-serverPointP;
+    const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);
+    const serverGameP=Math.max(.02,Math.min(.98,
+      Math.pow(serverPointP,4)*(1+4*q+10*q*q)+
+      20*Math.pow(serverPointP,3)*Math.pow(q,3)*deuceWin
+    ));
+    const prob=serverIsUser?serverGameP:1-serverGameP;
     const userWon=Math.random()<prob;
 
     let ug=Number(session.data.user_games||0),og=Number(session.data.opponent_games||0);
@@ -4333,14 +4343,30 @@ Deno.serve(async(req:Request)=>{
     let setNo=Number(session.data.set_no||1);
     if(userWon)ug++;else og++;
 
-    const stats:any={user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,...(session.data.stats||{})};
+    const stats:any={
+      user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
+      user_double_faults:0,opp_double_faults:0,
+      user_first_serves:0,user_first_serves_in:0,opp_first_serves:0,opp_first_serves_in:0,
+      user_unreturned_serves:0,opp_unreturned_serves:0,
+      ...(session.data.stats||{})
+    };
+    const gamePoints=6+Math.floor(Math.random()*5);
+    const firstInPct=Number(tm.first_serve_in_pct||62)/100;
+    const acePct=Number(tm.ace_pct||6)/100;
+    const dfPct=Number(tm.double_fault_pct||4)/100;
+    const unretPct=Number(tm.unreturned_serve_pct||22)/100;
+    const srvPrefix=serverIsUser?"user":"opp";
+    stats[srvPrefix+"_first_serves"]=(stats[srvPrefix+"_first_serves"]||0)+gamePoints;
+    stats[srvPrefix+"_first_serves_in"]=(stats[srvPrefix+"_first_serves_in"]||0)+Math.round(gamePoints*firstInPct);
+    stats[srvPrefix+"_aces"]=(stats[srvPrefix+"_aces"]||0)+Math.max(0,Math.round(gamePoints*acePct*(.65+Math.random()*.7)));
+    stats[srvPrefix+"_double_faults"]=(stats[srvPrefix+"_double_faults"]||0)+Math.max(0,Math.round(gamePoints*(1-firstInPct)*dfPct*(.65+Math.random()*.7)));
+    stats[srvPrefix+"_unreturned_serves"]=(stats[srvPrefix+"_unreturned_serves"]||0)+Math.max(0,Math.round(gamePoints*unretPct*(.65+Math.random()*.7)));
     if(userWon){
-      stats.user_winners+=1+Math.floor(Math.random()*4);
-      stats.opp_errors+=Math.floor(Math.random()*3);
-      if(session.data.serving_user&&Math.random()<(surface==="Gazon"?.24:indoor?.22:surface.startsWith("Dur")?.17:.11))stats.user_aces++;
+      stats.user_winners+=(Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.server_winner_rate_pct:tm.returner_winner_rate_pct||14)/100)));
+      stats.opp_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.returner_ue_pct:tm.server_ue_pct||15)/100));
     }else{
-      stats.opp_winners+=1+Math.floor(Math.random()*4);
-      stats.user_errors+=Math.floor(Math.random()*3);
+      stats.opp_winners+=(Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.returner_winner_rate_pct:tm.server_winner_rate_pct||14)/100)));
+      stats.user_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.server_ue_pct:tm.returner_ue_pct||15)/100));
     }
 
     let setFinished=false,setWinner="";
@@ -4385,6 +4411,13 @@ Deno.serve(async(req:Request)=>{
         form:Math.max(35,Math.min(100,Number(career.data.form||72)+(won?2:-1))),
         updated_at:new Date().toISOString()
       }).eq("id","demo");
+      await db.rpc("update_player_elo_after_match",{
+        p_winner_id:won?Number(managed.data.id):Number(opp.id),
+        p_loser_id:won?Number(opp.id):Number(managed.data.id),
+        p_surface:surface,
+        p_match_date:String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10),
+        p_doubles:false,p_weight:1
+      });
     }
 
     return h({

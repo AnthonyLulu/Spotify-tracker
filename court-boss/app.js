@@ -1493,7 +1493,7 @@ window.openPlayer=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier joueur…</div></div></div>';
  try{
   const d=await get('/api/player?id='+id),p=d.player;if(!p)throw new Error('Joueur introuvable');
-  const a=p.player_attributes||{},ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[];
+  const a=p.player_attributes||{},ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[];
   const ncaa=p.ncaa_current?(ncaaRows.find(x=>String(x.status||'')==='Active')||null):null;
   const ncaaIsAlumni=String(p.ncaa_status||'')==='Alumni'||String(ncaaCareer?.status||'')==='Alumni';
   const ncaaHistorical=!p.ncaa_current&&!!p.ncaa_verified&&!ncaaIsAlumni;
@@ -1588,6 +1588,11 @@ ${playerStaff.length?`<div class="card" style="margin-top:10px;padding:12px">
 ${playerStaffHistory.length?`<div class="card" style="margin-top:10px;padding:12px">
  <div class="row between"><div><div class="eyebrow">Historique staff</div><h3 style="margin:2px 0">Anciens membres de l'équipe</h3></div><span class="badge">${playerStaffHistory.length}</span></div>
  <div class="stack" style="margin-top:8px">${playerStaffHistory.slice(0,8).map(x=>{const sp=x.staff||{};return `<div class="list-item"><div class="row between"><div><b>${esc(sp.name||x.role)}</b><div class="muted mini">${esc(x.role)} · ${df(x.start_date)} → ${df(x.end_date)}</div></div><span class="badge">${esc(x.ended_reason||'Fin de collaboration')}</span></div><div class="muted micro" style="margin-top:4px">Affinité finale ${fmt(x.affinity||0)}/100 · Confiance ${fmt(x.trust||0)}/100</div></div>`}).join('')}</div>
+ </div>`:''}
+${playerStaffBonds.length?`<div class="card" style="margin-top:10px;padding:12px">
+ <div class="row between"><div><div class="eyebrow">Relations staff persistantes</div><h3 style="margin:2px 0">Coachs favoris & liens de carrière</h3></div><span class="badge">FM · ${playerStaffBonds.length}</span></div>
+ <div class="muted micro" style="margin:4px 0 8px">Ces liens sont des mécaniques de simulation Court Boss sauf mention sourcée. Ils peuvent influencer une future réunion ou négociation.</div>
+ <div class="stack">${playerStaffBonds.slice(0,12).map(x=>{const sp=x.staff||{};return `<div class="list-item click" onclick="openStaffProfile(${sp.id})"><div class="row between"><div><b>${flags[sp.nationality]||'🏳️'} ${esc(sp.name||'Staff')}</b><div class="muted mini">${esc(sp.primary_role||'Staff')} · ${esc(x.bond_type||'Relation professionnelle')}</div></div><span class="badge ${x.bond_type==='Joueur favori'?'good':x.bond_type==='Relation difficile'?'bad':''}">${x.affinity}/100</span></div><div class="row between muted micro"><span>Confiance ${x.trust}</span><span>Respect ${x.respect}</span><span>${x.is_simulated?'Simulation':'Sourcé'}</span></div></div>`}).join('')}</div>
  </div>`:''}
 ${relationships.length?`<div class="card" style="margin-top:10px;padding:12px">
  <div class="row between"><div><div class="eyebrow">Relations FM</div><h3 style="margin:2px 0">Affinités & proches</h3></div><span class="badge">Évolutif</span></div>

@@ -489,17 +489,17 @@ function doublesEligibility(t){
  return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
 }
 const MAJOR_TOURNAMENT_LOGOS=[
- {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO"},
- {re:/Roland[ -]?Garros/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/RG-Logo.png",label:"RG"},
- {re:/Wimbledon/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/WB-Logo.png",label:"WIM"},
- {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO"}
+ {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO",cls:"logo-ao"},
+ {re:/Roland[ -]?Garros/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/RG-Logo.png",label:"RG",cls:"logo-rg"},
+ {re:/Wimbledon/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/WB-Logo.png",label:"WIM",cls:"logo-wim"},
+ {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO",cls:"logo-uso"}
 ];
 function tournamentLogoMeta(t={}){
  const name=String(t.name||t.tournament_name||"");
  const explicit=String(t.logo_url||"").trim();
  const major=MAJOR_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
- if(explicit)return {url:explicit,label:major?.label||String(t.category||t.circuit||"TOUR"),cls:"logo-official"};
- if(major)return {url:major.url,label:major.label,cls:"logo-official"};
+ if(explicit)return {url:explicit,label:major?.label||String(t.category||t.circuit||"TOUR"),cls:"logo-official "+(major?.cls||"")};
+ if(major)return {url:major.url,label:major.label,cls:"logo-official "+(major.cls||"")};
  const category=String(t.category||t.level||"").trim();
  const circuit=String(t.circuit||"").trim();
  if(/Grand Chelem|Grand Slam/i.test(category))return {url:null,label:"GRAND SLAM",sub:"GS",cls:"logo-gs"};
@@ -519,7 +519,7 @@ function tournamentLogoHtml(t,extraClass=""){
  const m=tournamentLogoMeta(t);
  const fallback="<span class='tm-tour-logo-fallback "+esc(m.cls)+" "+esc(extraClass)+"'><b>"+esc(m.label)+"</b><small>"+esc(m.sub||"")+"</small></span>";
  if(!m.url)return fallback;
- return "<span class='tm-tour-logo-shell "+esc(extraClass)+"'><img class='tm-tour-logo' src='"+esc(m.url)+"' alt='Logo "+esc(t.name||t.tournament_name||m.label)+"' loading='lazy' onerror=\"this.style.display='none';this.parentElement.nextElementSibling.style.display='grid'\"></span>"+fallback.replace("class='tm-tour-logo-fallback","style='display:none' class='tm-tour-logo-fallback");
+ return "<span class='tm-tour-logo-shell "+esc(m.cls)+" "+esc(extraClass)+"'><img class='tm-tour-logo' src='"+esc(m.url)+"' alt='Logo "+esc(t.name||t.tournament_name||m.label)+"' loading='lazy' onerror=\"this.style.display='none';this.parentElement.nextElementSibling.style.display='grid'\"></span>"+fallback.replace("class='tm-tour-logo-fallback","style='display:none' class='tm-tour-logo-fallback");
 }
 function tournamentLogoByName(name,level="",extraClass=""){
  return tournamentLogoHtml({name,tournament_name:name,category:level,level,circuit:/Challenger/i.test(level)?"Challenger":/^M\d+|^W\d+|ITF/i.test(level)?"ITF":""},extraClass);

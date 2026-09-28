@@ -1167,9 +1167,10 @@ window.renderPalmaresHtml=function(d,p){
           <div class="tournament-history-list">
             ${allHistoryByYear[y].map(h=>`
               <button class="tournament-history-item" data-tournament-history-index="${h.__i}">
-                <div>
-                  <b>${esc(tourName(h.tournament_name))}</b>
-                  <div class="muted mini">${esc(h.category||h.level||'ATP')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div>
+                <div class="tournament-brand-inline">
+                  ${tournamentLogo(h.tournament_name,h.category||h.level)}
+                  <div><b>${esc(tourName(h.tournament_name))}</b>
+                  <div class="muted mini">${esc(h.category||h.level||'ATP')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}</div></div>
                 </div>
                 <span class="slam-result compact ${resultClass(h.result_code)}"><span>${esc(h.result_code||'—')}</span></span>
               </button>`).join('')}
@@ -1186,9 +1187,10 @@ window.renderPalmaresHtml=function(d,p){
           <div class="tournament-history-list">
             ${doubleHistoryByYear[y].map(h=>`
               <button class="tournament-history-item" data-tournament-history-index="${h.__i}">
-                <div>
-                  <b>${esc(tourName(h.tournament_name))}</b>
-                  <div class="muted mini">${esc(h.category||h.level||'Double')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}${h.partner_name?' · avec '+esc(h.partner_name):''}</div>
+                <div class="tournament-brand-inline">
+                  ${tournamentLogo(h.tournament_name,h.category||h.level)}
+                  <div><b>${esc(tourName(h.tournament_name))}</b>
+                  <div class="muted mini">${esc(h.category||h.level||'Double')} · ${esc(h.surface||'—')} · ${h.tournament_date?df(h.tournament_date):''}${h.partner_name?' · avec '+esc(h.partner_name):''}</div></div>
                 </div>
                 <span class="slam-result compact ${resultClass(h.result_code)}"><span>${esc(h.result_code||'—')}</span></span>
               </button>`).join('')}

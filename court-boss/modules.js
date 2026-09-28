@@ -1201,8 +1201,8 @@ window.renderPalmaresHtml=function(d,p){
     <div class="card" style="margin-top:12px">
       <div class="row between"><div><div class="eyebrow">ITF World Tennis Tour Juniors</div><h2>Palmarès junior</h2></div><span class="pill">${juniorSinglesTitles.length+juniorDoublesTitles.length} titre(s)</span></div>
       <div class="grid g2" style="margin-top:10px">
-        <div><h3>Simple junior</h3>${juniorSinglesTitles.length?juniorSinglesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior')}</div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior simple enregistré.</div>'}</div>
-        <div><h3>Double junior</h3>${juniorDoublesTitles.length?juniorDoublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior Double')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior double enregistré.</div>'}</div>
+        <div><h3>Simple junior</h3>${juniorSinglesTitles.length?juniorSinglesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div class="tournament-brand-inline">${tournamentLogo(t.tournament_name,t.level||'Junior')}<div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior')}</div></div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior simple enregistré.</div>'}</div>
+        <div><h3>Double junior</h3>${juniorDoublesTitles.length?juniorDoublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div class="tournament-brand-inline">${tournamentLogo(t.tournament_name,t.level||'Junior Double')}<div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Junior Double')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div></div><span class="badge good">🏆</span></div>`).join(''):'<div class="empty">Aucun titre junior double enregistré.</div>'}</div>
       </div>
       ${(p.junior_ranking||p.junior_doubles_ranking)?`<div class="notice mini" style="margin-top:10px"><b>Junior simple</b> : ${p.junior_ranking?'#'+fmt(p.junior_ranking):'—'} · ${fmt(Number(p.junior_points||0)+Number(p.junior_game_points||0))} pts · <b>Double</b> : ${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'} · ${fmt(p.junior_doubles_points||0)} pts.<div class="row" style="margin-top:8px;gap:5px;flex-wrap:wrap"><span class="badge">GC 1000</span><span class="badge">J500 500</span><span class="badge">J300 300</span><span class="badge">J200 200</span><span class="badge">J100 100</span><span class="badge">J60 60</span><span class="badge">J30 30</span></div></div>`:''}
     </div>
@@ -1211,7 +1211,7 @@ window.renderPalmaresHtml=function(d,p){
     <div class="grid g2" style="margin-top:12px">
       <div class="card">
         <div class="row between"><div><div class="eyebrow">Circuit Double</div><h2>Titres en double</h2></div><span class="badge good">${doublesTitles.length}</span></div>
-        ${doublesTitles.length?doublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Double')} · ${esc(t.surface||'—')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div><div style="text-align:right">${t.verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre double enregistré pour ce joueur.</div>'}
+        ${doublesTitles.length?doublesTitles.map(t=>`<div class="list-item row between click" onclick="openCareerTitle(${allTitles.indexOf(t)})"><div class="tournament-brand-inline">${tournamentLogo(t.tournament_name,t.level||'Double')}<div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Double')} · ${esc(t.surface||'—')}${t.partner_name?' · avec '+esc(t.partner_name):''}</div></div></div><div style="text-align:right">${t.verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Carrière</span>'}<div style="margin-top:4px">${titleSource(t)}</div></div></div>`).join(''):'<div class="empty">Aucun titre double enregistré pour ce joueur.</div>'}
       </div>
       <div class="card">
         <div class="row between"><div><div class="eyebrow">NCAA / College</div><h2>Titres universitaires</h2></div><span class="badge tag-ncaa">${collegeTitles.length}</span></div>
@@ -1225,7 +1225,7 @@ window.renderPalmaresHtml=function(d,p){
         <details class="list-item">
           <summary class="row between click"><b>${year}</b><span class="badge">${rows.length} titre${rows.length>1?'s':''}</span></summary>
           <div style="padding-top:8px">
-            ${rows.map(t=>`<div class="list-item row between click" data-palmares-index="${t.__i}"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${esc(t.level||'ATP')} · ${esc(t.surface||'—')}</div></div><span class="badge good">🏆 ${df(t.title_date)}</span></div>`).join('')}
+            ${rows.map(t=>`<div class="list-item row between click" data-palmares-index="${t.__i}"><div class="tournament-brand-inline">${tournamentLogo(t.tournament_name,t.level||'ATP')}<div><b>${esc(t.tournament_name)}</b><div class="muted mini">${esc(t.level||'ATP')} · ${esc(t.surface||'—')}</div></div></div><span class="badge good">🏆 ${df(t.title_date)}</span></div>`).join('')}
           </div>
         </details>
       `).join(''):'<div class="empty">Palmarès détaillé non importé pour ce joueur.</div>'}
@@ -1256,7 +1256,7 @@ window.openPalmaresByName=function(name){
     <div class="modal" onclick="if(event.target===this)closeOverlay()">
       <div class="sheet">
         <div class="sheet-head">
-          <div><div class="eyebrow">Palmarès · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(String(name))}</h1><div class="muted">${rows.length} victoire${rows.length>1?'s':''} dans ce tournoi</div></div>
+          <div class="tm-title-with-logo">${window.tournamentLogoByName?window.tournamentLogoByName(String(name),rows[0]?.level||'ATP','tm-detail-logo'):''}<div><div class="eyebrow">Palmarès · ${esc(data.player?.name||'Joueur')}</div><h1>${esc(String(name))}</h1><div class="muted">${rows.length} victoire${rows.length>1?'s':''} dans ce tournoi</div></div></div>
           <button class="close" onclick="closeOverlay()">✕</button>
         </div>
         <div class="stack" style="margin-top:12px">

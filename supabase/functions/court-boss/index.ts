@@ -1851,14 +1851,16 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
-    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_elo_ratings").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20),
-      db.from("player_tactical_preferences").select("*").eq("player_id",id).maybeSingle()
+      db.from("player_tactical_preferences").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_tactical_traits").select("trait_code,trait_name,intensity,source_label").eq("player_id",id).eq("active",true).order("intensity",{ascending:false}).limit(8),
+      db.from("player_season_plans").select("*").eq("player_id",id).lte("season",Number(referenceDate.slice(0,4))+1).order("season",{ascending:false}).limit(1).maybeSingle()
     ]);
 
     return h({
@@ -1880,7 +1882,9 @@ Deno.serve(async(req:Request)=>{
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       eloRating:eloRating.error?null:eloRating.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
-      tacticalProfile:tacticalProfile.error?null:tacticalProfile.data
+      tacticalProfile:tacticalProfile.error?null:tacticalProfile.data,
+      tacticalTraits:tacticalTraits.error?[]:(tacticalTraits.data??[]),
+      seasonPlan:seasonPlan.error?null:seasonPlan.data
     });
   }
 
@@ -2636,6 +2640,13 @@ Deno.serve(async(req:Request)=>{
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data
         };
         const month=Number(date.slice(5,7));
+        const seasonPlans=month===1
+          ?await db.rpc("refresh_player_season_plans",{p_date:date})
+          :{data:null,error:null};
+        developmentSupply={
+          ...(developmentSupply||{}),
+          seasonPlans:seasonPlans.error?{error:seasonPlans.error.message}:seasonPlans.data
+        };
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})
           :{data:null,error:null};

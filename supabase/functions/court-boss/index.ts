@@ -1799,7 +1799,7 @@ Deno.serve(async(req:Request)=>{
     }
     const [staffLinks,staffHistory,relA,relB]=await Promise.all([
       db.from("player_staff_assignments")
-        .select("id,role,start_date,end_date,active,verified,affinity,trust,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
+        .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,source_url,source_label,snapshot_date,notes,weekly_salary,contract_end,ended_reason,staff:staff_profiles(*)")
         .eq("player_id",id).eq("active",true).lte("snapshot_date",referenceDate)
         .order("verified",{ascending:false}).order("affinity",{ascending:false}).limit(20),
       db.from("player_staff_assignments")
@@ -2534,6 +2534,11 @@ Deno.serve(async(req:Request)=>{
       staffMarketRefresh=staffMarket.error?{error:staffMarket.error.message}:staffMarket.data;
 
       if(Number(date.slice(0,4))>2025){
+        const evolution=await db.rpc("evolve_staff_ecosystem",{p_date:date});
+        staffMarketRefresh={
+          ...(staffMarketRefresh||{}),
+          evolution:evolution.error?{error:evolution.error.message}:evolution.data
+        };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
           p_target_pairs:2000
@@ -2583,6 +2588,35 @@ Deno.serve(async(req:Request)=>{
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
     const board=await db.rpc("update_board_state");
     return h({ok:true,date,week,world:sim.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+  }
+
+  if(path.endsWith("/api/staff-profile")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const profile=await db.from("staff_profiles").select("*").eq("id",id).maybeSingle();
+    if(profile.error)return h({error:profile.error.message},500);
+    if(!profile.data)return h({error:"Profil staff introuvable"},404);
+
+    const [activeAssignments,history,events]=await Promise.all([
+      db.from("player_staff_assignments")
+        .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,weekly_salary,contract_end,source_label,player:players!player_staff_assignments_player_id_fkey(id,name,country,ranking,game_world_rank,style,photo_url)")
+        .eq("staff_profile_id",id).eq("active",true)
+        .order("start_date",{ascending:false}).limit(30),
+      db.from("player_staff_assignments")
+        .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,weekly_salary,contract_end,ended_reason,source_label,player:players!player_staff_assignments_player_id_fkey(id,name,country,ranking,game_world_rank,style,photo_url)")
+        .eq("staff_profile_id",id).eq("active",false)
+        .order("end_date",{ascending:false}).limit(50),
+      db.from("staff_career_events")
+        .select("*").eq("staff_profile_id",id)
+        .order("event_date",{ascending:false}).limit(50)
+    ]);
+    const err=activeAssignments.error||history.error||events.error;
+    if(err)return h({error:err.message},500);
+    return h({
+      profile:profile.data,
+      activeAssignments:activeAssignments.data??[],
+      history:history.data??[],
+      events:events.data??[]
+    });
   }
 
   if(path.endsWith("/api/management")&&req.method==="GET"){

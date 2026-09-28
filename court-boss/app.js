@@ -1255,7 +1255,7 @@ window.openTournament=async id=>{
   const d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
   const cr=career(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior',isNcaa=String(t.circuit)==='NCAA',isFed=String(t.circuit)==='Federation';
   const joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
-  const singleRule=singlesEligibility(t),doubleRule=doublesEligibility(t);
+  let singleRule=singlesEligibility(t),doubleRule=doublesEligibility(t);
   const serverRun=d.run||null,doublesRun=d.doubles_run||null;
   const activePartner=activeDoublesPartner();
   const played=local.playedTournaments?.[t.id]||(serverRun?{user_round:serverRun.user_round,user_points:serverRun.user_points,user_prize:serverRun.user_prize}:null);
@@ -1270,8 +1270,27 @@ window.openTournament=async id=>{
 
   const managedId=Number(cr.managed_player_id||boot?.career?.managed_player_id||0);
   const managedJunior=pairs.find(p=>Number(p.id)===managedId);
-  const rawElig=managedJunior?'Engagé officiel':singleRule.label;
-  const elig=wc?.status==='accepted'?'Wild Card':rawElig;
+  const isJuniorFinals=isJunior&&/Junior Finals/i.test(String(t.category||''))&&!/Double/i.test(String(t.category||''));
+  const isJuniorDoubleFinals=/Junior Double Finals/i.test(String(t.category||''));
+  const isAtpDoubleFinals=String(t.circuit)==='ATP'&&/ATP Finals/i.test(String(t.category||''));
+  if(isJuniorFinals){
+    const raceEntry=pairs.find(p=>Number(p.id)===managedId);
+    singleRule=raceEntry
+      ?{label:'Qualifié Race Junior #'+fmt(raceEntry.ranking||raceEntry.seed||'—'),cls:'good',can:true}
+      :{label:'Non qualifié · Top 8 Race Junior requis',cls:'bad',can:false};
+  }
+  if(isJuniorDoubleFinals||isAtpDoubleFinals){
+    const partnerId=Number(activePartner?.id||0);
+    const racePair=doublesProjection.find(x=>{
+      const a=Number(x.player_a?.id||0),b=Number(x.player_b?.id||0);
+      return (a===managedId&&b===partnerId)||(a===partnerId&&b===managedId);
+    });
+    doubleRule=racePair
+      ?{label:'Qualifié Race #'+fmt(racePair.race_rank||racePair.seed||'—'),cls:'good',can:true,phase:'finals'}
+      :{label:'Non qualifié · Top 8 Race requis',cls:'bad',can:false,phase:'finals'};
+  }
+  const rawElig=managedJunior&&!isJuniorFinals?'Engagé officiel':singleRule.label;
+  const elig=wc?.status==='accepted'&&!isJuniorFinals?'Wild Card':rawElig;
   const canAttempt=!isJunior&&!isNcaa&&!isFed&&(singleRule.can||wc?.status==='accepted');
   const cuts=tmCuts(t);
 
@@ -1301,7 +1320,7 @@ window.openTournament=async id=>{
         <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:singleRule.can?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id});closeOverlay()">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>`}</div>
         ${played?`<div class="notice" style="margin-top:10px"><b>Résultat :</b> ${esc(played.user_round)} · +${played.user_points} pts · +${euro(played.user_prize)}</div>`:''}
       </div>
-      <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${t.qualifying_draw_size||'—'}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||'—':'Non'}</b></div><div class="list-item row between"><span>Points vainqueur</span><b>${t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Fictive Court Boss'}</b></div></div>
+      <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${isJuniorFinals?'Top 8 Race':t.qualifying_draw_size||'—'}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||t.draw_size||'—':'Non'}</b></div>${(isJuniorFinals||isJuniorDoubleFinals||isAtpDoubleFinals)?'<div class="list-item row between"><span>Format Finals</span><b>2 groupes de 4 · demi-finales · finale</b></div>':''}<div class="list-item row between"><span>Points vainqueur</span><b>${isJuniorFinals?'1 000':t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?euro(t.prize_money):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Fictive Court Boss'}</b></div></div>
       <div class="card"><div class="row between"><div><div class="eyebrow">Historique</div><h2>Tenant du titre</h2></div><span class="badge">${t.defending_champion_year||'—'}</span></div>
        ${t.defending_champion_name?`<div class="list-item row between"><span>Simple</span><b class="click" ${t.defending_champion_player_id?`onclick="openPlayer(${t.defending_champion_player_id})"`:''}>🏆 ${esc(t.defending_champion_name)}</b></div>`:`<div class="list-item row between"><span>Simple</span><b>${t.defending_champion_source&&/première édition/i.test(t.defending_champion_source)?'Première édition':'—'}</b></div>`}
        ${t.defending_doubles_champion_name?`<div class="list-item row between"><span>Double</span><b>🏆 ${esc(t.defending_doubles_champion_name)} / ${esc(t.defending_doubles_partner_name||'')}</b></div>`:''}

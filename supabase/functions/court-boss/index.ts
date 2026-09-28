@@ -2678,7 +2678,16 @@ Deno.serve(async(req:Request)=>{
     const playerStrength=(p:any)=>Number(p.current_ability||50)*.55+Number(p.form||70)*.12+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.10+Number(p.player_attributes?.doubles||10)*1.3+Number(p.player_attributes?.[key]||10)*.55;
     const pairStrength=(a:any,b:any,chem=70)=>playerStrength(a)+playerStrength(b)+chem*.18;
 
-    const userPair={a:anthony,b:partner,name:anthony.name+" / "+partner.name,isUser:true,strength:pairStrength(anthony,partner,Number(partnership.data.chemistry||70))};
+    const ownRaceRow=finalsPairRows.find((x:any)=>
+      (Number(x.player_one_id)===Number(anthony.id)&&Number(x.player_two_id)===Number(partner.id))
+      ||(Number(x.player_one_id)===Number(partner.id)&&Number(x.player_two_id)===Number(anthony.id))
+    );
+    const userPair={
+      a:anthony,b:partner,name:anthony.name+" / "+partner.name,isUser:true,
+      strength:pairStrength(anthony,partner,Number(partnership.data.chemistry||70)),
+      race_rank:Number(ownRaceRow?.doubles_race_ranking??ownRaceRow?.junior_doubles_race_ranking??999),
+      race_points:Number(ownRaceRow?.doubles_race_points??ownRaceRow?.junior_doubles_race_points??0)
+    };
     const pairs:any[]=[];
     if(finalsPairRows.length){
       const byId=new Map<number,any>([
@@ -2707,41 +2716,95 @@ Deno.serve(async(req:Request)=>{
       }
     }
     const drawSize=finalsPairRows.length?8:Math.min(16,Math.max(8,2**Math.floor(Math.log2(Math.max(8,pairs.length+1)))));
-    let participants=[userPair,...pairs].slice(0,drawSize);
     const matches:any[]=[];
-    let userRound="R16";
-    const roundName=(n:number)=>n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
-    let roundNo=1;
-    while(participants.length>1){
-      const rn=roundName(participants.length),next:any[]=[];
-      for(let i=0;i<participants.length;i+=2){
-        const A=participants[i],B=participants[i+1];
-        if(!B){next.push(A);continue}
-        const prob=1/(1+Math.exp(-(A.strength-B.strength)/8));
-        const Aw=Math.random()<prob,w=Aw?A:B;
-        const close=Math.abs(A.strength-B.strength)<8;
-        const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
-        matches.push({round_name:rn,user_pair:A.isUser?A.name:B.isUser?B.name:userPair.name,opponent_pair:A.isUser?B.name:B.isUser?A.name:A.name+" vs "+B.name,winner_pair:w.name,score});
-        if((A.isUser||B.isUser)&&!w.isUser)userRound=rn;
-        if(w.isUser)userRound=rn==="F"?"Champion":rn;
-        next.push(w);
+    let userRound=finalsPairRows.length?"Phase de groupes":"R16";
+    const playPair=(A:any,B:any)=>{
+      const prob=1/(1+Math.exp(-(A.strength-B.strength)/8));
+      const Aw=Math.random()<prob,w=Aw?A:B,l=Aw?B:A;
+      const close=Math.abs(A.strength-B.strength)<8;
+      const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
+      return {winner:w,loser:l,score};
+    };
+    const pushPairMatch=(round:string,A:any,B:any,res:any)=>{
+      const involvesUser=!!A.isUser||!!B.isUser;
+      matches.push({
+        round_name:round,
+        user_pair:involvesUser?userPair.name:null,
+        opponent_pair:A.isUser?B.name:B.isUser?A.name:A.name+" vs "+B.name,
+        winner_pair:res.winner.name,score:res.score
+      });
+    };
+
+    if(finalsPairRows.length){
+      const ordered=[userPair,...pairs].slice(0,8).sort((a:any,b:any)=>Number(a.race_rank||999)-Number(b.race_rank||999));
+      if(ordered.length<8)return h({error:"Finals double : 8 paires qualifiées requises.",qualified:ordered.length},409);
+      const groups:any[][]=[
+        [ordered[0],ordered[3],ordered[4],ordered[7]],
+        [ordered[1],ordered[2],ordered[5],ordered[6]]
+      ];
+      const table=new Map<string,{team:any,wins:number,losses:number}>();
+      ordered.forEach((p:any)=>table.set(String(p.name),{team:p,wins:0,losses:0}));
+      for(let gi=0;gi<groups.length;gi++){
+        const g=groups[gi];
+        for(let i=0;i<g.length;i++)for(let j=i+1;j<g.length;j++){
+          const A=g[i],B=g[j],res=playPair(A,B);
+          const w=table.get(String(res.winner.name)),l=table.get(String(res.loser.name));
+          if(w)w.wins++;if(l)l.losses++;
+          pushPairMatch("Groupe "+(gi===0?"A":"B"),A,B,res);
+        }
       }
-      participants=next;roundNo++;
+      const rankGroup=(g:any[])=>g.slice().sort((a:any,b:any)=>{
+        const ta=table.get(String(a.name)),tb=table.get(String(b.name));
+        return Number(tb?.wins||0)-Number(ta?.wins||0)
+          ||Number(b.strength||0)-Number(a.strength||0)
+          ||Number(a.race_rank||999)-Number(b.race_rank||999);
+      });
+      const ga=rankGroup(groups[0]),gb=rankGroup(groups[1]);
+      const semifinalists=[ga[0],gb[1],gb[0],ga[1]];
+      if(!semifinalists.some((p:any)=>p.isUser))userRound="Phase de groupes";
+      const sfWinners:any[]=[];
+      for(let sfi=0;sfi<2;sfi++){
+        const A=semifinalists[sfi*2],B=semifinalists[sfi*2+1],res=playPair(A,B);
+        pushPairMatch("SF",A,B,res);
+        if((A.isUser||B.isUser)&&!res.winner.isUser)userRound="SF";
+        if(res.winner.isUser)userRound="SF";
+        sfWinners.push(res.winner);
+      }
+      const finalRes=playPair(sfWinners[0],sfWinners[1]);
+      pushPairMatch("F",sfWinners[0],sfWinners[1],finalRes);
+      if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser)userRound="F";
+      if(finalRes.winner.isUser)userRound="Champion";
+    }else{
+      let participants=[userPair,...pairs].slice(0,drawSize);
+      const roundName=(n:number)=>n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+      while(participants.length>1){
+        const rn=roundName(participants.length),next:any[]=[];
+        for(let i=0;i<participants.length;i+=2){
+          const A=participants[i],B=participants[i+1];
+          if(!B){next.push(A);continue}
+          const res=playPair(A,B);
+          pushPairMatch(rn,A,B,res);
+          if((A.isUser||B.isUser)&&!res.winner.isUser)userRound=rn;
+          if(res.winner.isUser)userRound=rn==="F"?"Champion":rn;
+          next.push(res.winner);
+        }
+        participants=next;
+      }
     }
 
     const cat=String(t.category||t.level||"");
     const base= /Grand Chelem/i.test(cat)?2000:/Masters 1000/i.test(cat)?1000:/ATP 500/i.test(cat)?500:/ATP 250/i.test(cat)?250:(cat.match(/Challenger\s+(175|125|100|75|50)/i)?.[1]?Number(cat.match(/Challenger\s+(175|125|100|75|50)/i)![1]):/M25/i.test(cat)?25:/M15/i.test(cat)?15:50);
     let pts=0;
     if(isJuniorDouble){
-      const roundCode=userRound==="Champion"?"W":userRound;
+      const roundCode=userRound==="Champion"?"W":userRound==="Phase de groupes"?"QF":userRound;
       const jp=await db.rpc("junior_points_for",{p_event_type:"doubles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
       if(jp.error)return h({error:jp.error.message},500);
       pts=Number(jp.data||0);
     }else{
-      const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:userRound==="QF"?.2:.08;
+      const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:(userRound==="QF"||userRound==="Phase de groupes")?.2:.08;
       pts=Math.max(1,Math.round(base*mult));
     }
-    const prize=Math.max(0,Math.round(Number(t.prize_money||0)*(userRound==="Champion"?.09:userRound==="F"?.055:userRound==="SF"?.032:userRound==="QF"?.018:.007)));
+    const prize=Math.max(0,Math.round(Number(t.prize_money||0)*(userRound==="Champion"?.09:userRound==="F"?.055:userRound==="SF"?.032:(userRound==="QF"||userRound==="Phase de groupes")?.018:.007)));
 
     const run=await db.from("doubles_runs").insert({tournament_id:tid,partnership_id:partnership.data.id,partner_id:partner.id,user_round:userRound,user_points:pts,user_prize:prize,status:"completed"}).select("id").single();
     if(run.error)return h({error:run.error.message},500);

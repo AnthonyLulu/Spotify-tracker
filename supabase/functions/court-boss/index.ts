@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:17,development_model:"development-v3",match_model:"matchup-v4/point-v2+live-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:18,development_model:"development-v3",match_model:"matchup-v4/point-v3+live-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -4626,6 +4626,7 @@ Deno.serve(async(req:Request)=>{
 
     const opp:any={...session.data.opponent,player_attributes:Array.isArray(session.data.opponent?.player_attributes)?session.data.opponent.player_attributes[0]:session.data.opponent?.player_attributes||{}};
     const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
+    const oa:any=opp.player_attributes||{};
     const tactics=body?.tactics||session.data.tactics||{};
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
     const ret=String(tactics.returnPos||"Neutre");
@@ -4645,6 +4646,25 @@ Deno.serve(async(req:Request)=>{
     const clay=surface==="Terre"||surface.toLowerCase().includes("clay");
     const grass=surface==="Gazon"||surface.toLowerCase().includes("grass");
     const userMomentum=(Number(session.data.momentum||50)-50)*.0009;
+    const sAttr:any=serverIsUser?ua:oa;
+    const rAttr:any=serverIsUser?oa:ua;
+    const avgAttr=(x:any,keys:string[])=>keys.reduce((sum,k)=>sum+Number(x?.[k]??10),0)/Math.max(1,keys.length);
+    const surfaceKey=clay?"clay_affinity":grass?"grass_affinity":"hard_affinity";
+    const groundEdge=(avgAttr(sAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"])
+      -avgAttr(rAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"]));
+    const movementEdge=(avgAttr(sAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"])
+      -avgAttr(rAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"]));
+    const mentalEdge=(avgAttr(sAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"])
+      -avgAttr(rAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"]));
+    const netEdge=(avgAttr(sAttr,["volley","touch","half_volley","smash","net_positioning","transition_game","reaction"])
+      -avgAttr(rAttr,["passing_shot","lob","reaction","movement","defensive_skill","court_positioning","speed"]));
+    const touchEdge=(avgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"])
+      -avgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"]));
+    const surfaceEdge=Number(sAttr?.[surfaceKey]??10)-Number(rAttr?.[surfaceKey]??10);
+    const pointAttrEdge=Math.max(-.035,Math.min(.035,
+      groundEdge*.00135+movementEdge*.00085+mentalEdge*(pressure?.00145:.00070)+
+      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011
+    ));
 
     let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
       -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)));
@@ -4656,6 +4676,7 @@ Deno.serve(async(req:Request)=>{
 
     let serverWinProb=Number(firstServeIn?tm.first_serve_point_win_prob:tm.second_serve_point_win_prob);
     if(!Number.isFinite(serverWinProb))serverWinProb=firstServeIn?.64:.51;
+    serverWinProb+=pointAttrEdge*(firstServeIn?0.72:1.0);
     if(serverIsUser){
       serverWinProb+=(ag-58)*.0008+(risk-52)*.00035+Math.min(70,net)*.00007+userMomentum;
     }else{
@@ -4680,6 +4701,8 @@ Deno.serve(async(req:Request)=>{
     const rallyMean=Math.max(2.0,Math.min(10.5,
       Number(tm.avg_rally_shots||5)+(clay?.9:grass?-.7:indoor?-.35:0)
       +(serverIsUser?(55-risk)*.012:0)
+      +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"])
+        -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"]))*.035
     ));
     const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(18,
       2+Math.floor(-Math.log(Math.max(.001,1-Math.random()))*Math.max(1,rallyMean-2))
@@ -4706,6 +4729,7 @@ Deno.serve(async(req:Request)=>{
       :returnDepthRoll<Math.max(45,returnDepthScore*.62+28)?"moyen":"court";
     const serverNetChance=Math.max(0,Math.min(.55,
       Number(tm.server_net_approach_pct||10)/100+(serverIsUser?net*.0015:0)
+      +(avgAttr(sAttr,["volley","touch","half_volley","net_positioning","transition_game"])-10)*.0014
     ));
     const returnerNetChance=Math.max(0,Math.min(.40,Number(tm.returner_net_approach_pct||8)/100));
     const netRoll=Math.random();
@@ -4729,7 +4753,8 @@ Deno.serve(async(req:Request)=>{
       server_win_probability:Math.round(serverWinProb*1000)/10,
       server_surface_elo:Number(tm.server_surface_elo||0),
       returner_surface_elo:Number(tm.returner_surface_elo||0),
-      model:"Court Boss TA/MCP-inspired point engine",
+      model:"Court Boss point-v3 · full attributes",
+      full_attribute_edge:Math.round(pointAttrEdge*10000)/10000,
       user_x:18+Math.floor(Math.random()*64),
       user_y:Math.max(56,Math.min(88,82-Math.round(net*.18)-Math.min(8,Math.floor(rally/2))+Math.floor(Math.random()*7-3))),
       opp_x:18+Math.floor(Math.random()*64),

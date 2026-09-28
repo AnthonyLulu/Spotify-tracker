@@ -1851,6 +1851,11 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
+    const [developmentProfile,developmentHistory]=await Promise.all([
+      db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30)
+    ]);
+
     return h({
       player,sponsors:sp.data??[],titles:visibleTitles,history:visibleHistory,shortlist:short.data??null,
       matches:visibleMatches,careerStats:careerStats.data??null,finals:visibleFinals,juniorEntries:visibleJuniorEntries,
@@ -1863,7 +1868,9 @@ Deno.serve(async(req:Request)=>{
       agencyHistory:agencyHistory.error?[]:(agencyHistory.data??[]),
       careerFocusHistory:focusHistory.error?[]:(focusHistory.data??[]),
       primaryDoublesCommitment:primaryDoublesCommitment.error?null:primaryDoublesCommitment.data,
-      doublesPartnerHistory:doublesPartnerHistory.error?[]:(doublesPartnerHistory.data??[])
+      doublesPartnerHistory:doublesPartnerHistory.error?[]:(doublesPartnerHistory.data??[]),
+      developmentProfile:developmentProfile.error?null:developmentProfile.data,
+      developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[])
     });
   }
 
@@ -2505,14 +2512,14 @@ Deno.serve(async(req:Request)=>{
     if(anthony.data){
       const attrs:any=Array.isArray(anthony.data.player_attributes)?anthony.data.player_attributes[0]:anthony.data.player_attributes||{};
       const map:any={
-        "Service":["serve_power","serve_precision"],
-        "Retour":["return_game","anticipation"],
-        "Coup droit":["forehand"],
-        "Revers":["backhand"],
-        "Déplacements":["movement","speed"],
-        "Endurance":["stamina","strength"],
-        "Match play":["tactics","concentration","composure","fighting_spirit"],
-        "Double":["volley","touch","doubles"]
+        "Service":["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety"],
+        "Retour":["return_game","anticipation","return_aggression","return_consistency"],
+        "Coup droit":["forehand","forehand_power","forehand_accuracy","shot_selection"],
+        "Revers":["backhand","backhand_power","backhand_accuracy","slice"],
+        "Déplacements":["movement","speed","acceleration","agility","balance"],
+        "Endurance":["stamina","strength","natural_fitness","recovery","flexibility","work_rate"],
+        "Match play":["tactics","concentration","composure","fighting_spirit","decision_making","shot_selection","big_points","consistency","killer_instinct","confidence","determination"],
+        "Double":["volley","touch","doubles","half_volley","smash","net_positioning","doubles_communication","poaching","anticipation"]
       };
       const staffList=(staffRows.data??[]);
       const avgStaff=staffList.length?staffList.reduce((sum:number,x:any)=>sum+Number(x.skill||10),0)/staffList.length:10;
@@ -2545,7 +2552,9 @@ Deno.serve(async(req:Request)=>{
               ?.90
               :1;
         const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult;
-        for(const a of map[String(s)]||[])xp[a]=(xp[a]||0)+.52*mult;
+        const targets=map[String(s)]||[];
+        const spread=Math.max(.42,Math.min(1,2.4/Math.max(1,targets.length)));
+        for(const a of targets)xp[a]=(xp[a]||0)+.52*mult*spread;
       }
       trainingResult.career_focus=careerFocus;
       const progressMap=new Map((progressRows.data??[]).map((x:any)=>[x.attribute,Number(x.xp||0)]));
@@ -2611,6 +2620,11 @@ Deno.serve(async(req:Request)=>{
       if(Number(date.slice(0,4))>2025){
         const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
+        const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
+        developmentSupply={
+          ...(developmentSupply||{}),
+          playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data
+        };
         const month=Number(date.slice(5,7));
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})
@@ -2966,7 +2980,7 @@ Deno.serve(async(req:Request)=>{
       db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
-      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)"),
+      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(*)"),
       db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy,operational_status,rest_until)")
     ]);
     if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
@@ -3036,7 +3050,7 @@ Deno.serve(async(req:Request)=>{
       finalsRaceRows=finalsRaceRows.map((x:any)=>({...x,finals_rank:Number(x.junior_race_ranking||9999)}));
     }else if(isAtpSinglesFinals){
       const race=await db.from("players")
-        .select("id,name,country,race_ranking,race_points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+        .select("id,name,country,race_ranking,race_points,current_ability,form,fitness,fatigue,player_attributes(*)")
         .not("race_ranking","is",null)
         .or(`race_snapshot_date.is.null,race_snapshot_date.lte.${String(c.career_date||AGE_REFERENCE_DATE)}`)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
@@ -3069,12 +3083,12 @@ Deno.serve(async(req:Request)=>{
       const ids=finalsRaceRows.map((x:any)=>Number(x.id)).filter(Boolean);
       playersRes=ids.length
         ?await db.from("players")
-          .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+          .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(*)")
           .in("id",ids)
         :{data:[],error:null};
     }else{
       playersRes=await db.from("players")
-        .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(clay_affinity,hard_affinity,grass_affinity)")
+        .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,player_attributes(*)")
         .eq("ranking_current",true)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
         .order("ranking",{ascending:true}).limit(Math.min(200,Math.max(drawSize+40,80)));
@@ -3091,7 +3105,12 @@ Deno.serve(async(req:Request)=>{
     const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
     const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),player_attributes:managedAttrs,isUser:true};
     const strength=(p:any)=>{
-      let base=Number(p.current_ability||50)+Number(p.form||70)*.16-Number(p.fatigue||20)*.13+Number(p.player_attributes?.[surfKey]||10)*.75+Math.max(0,18-Number(p.ranking||9999)/250);
+      const aa=p.player_attributes||{};
+      const avg=(keys:string[],fallback=10)=>keys.reduce((s,k)=>s+Number(aa?.[k]??fallback),0)/Math.max(1,keys.length);
+      const mental=(avg(["decision_making","shot_selection","consistency","big_points","killer_instinct","composure"])-10)*.34;
+      const technical=(avg(["first_serve_quality","second_serve_quality","forehand_accuracy","backhand_accuracy","return_consistency"])-10)*.20;
+      const physical=(avg(["natural_fitness","acceleration","agility","balance","recovery"])-10)*.12;
+      let base=Number(p.current_ability||50)+Number(p.form||70)*.13-Number(p.fatigue||20)*.11+Number(aa?.[surfKey]||10)*.62+mental+technical+physical+Math.max(0,14-Number(p.ranking||9999)/320);
       if(p.isUser){
         const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
         const surfaceNet=surface==="Gazon"?tacticNet*.035:(Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor")?tacticNet*.028:surface==="Dur"?tacticNet*.018:tacticNet*.006;
@@ -3478,7 +3497,17 @@ Deno.serve(async(req:Request)=>{
 
     const surface=String(t.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
-    const playerStrength=(p:any)=>Number(p.current_ability||50)*.55+Number(p.form||70)*.12+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.10+Number(p.player_attributes?.doubles||10)*1.3+Number(p.player_attributes?.[key]||10)*.55;
+    const playerStrength=(p:any)=>{
+      const aa=p.player_attributes||{};
+      return Number(p.current_ability||50)*.50+Number(p.form||70)*.10+Number(p.fitness||85)*.06-Number(p.fatigue||20)*.08
+        +Number(aa.doubles||10)*.70+Number(aa[key]||10)*.42
+        +Number(aa.net_positioning||aa.volley||10)*.28
+        +Number(aa.doubles_communication||aa.doubles||10)*.22
+        +Number(aa.poaching||aa.volley||10)*.20
+        +Number(aa.return_consistency||aa.return_game||10)*.17
+        +Number(aa.first_serve_quality||aa.serve_precision||10)*.15
+        +Number(aa.big_points||aa.composure||10)*.12;
+    };
     const pairCoachBonus=(a:any,b:any)=>{
       const qa=Number(doublesCoachByPlayer.get(Number(a?.id))||10);
       const qb=Number(doublesCoachByPlayer.get(Number(b?.id))||10);
@@ -3947,8 +3976,14 @@ Deno.serve(async(req:Request)=>{
     const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
     const oa:any=Array.isArray(opp.data.player_attributes)?opp.data.player_attributes[0]:opp.data.player_attributes||{};
 
-    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
-    const oBase=Number(opp.data.current_ability||55)+Number(opp.data.form||70)*.17+Number(opp.data.fitness||90)*.08-Number(opp.data.fatigue||20)*.12+Number(oa[key]||10)*.8;
+    const attrEdge=(x:any)=>{
+      const avg=(keys:string[])=>keys.reduce((s,k)=>s+Number(x?.[k]??10),0)/Math.max(1,keys.length);
+      return (avg(["decision_making","shot_selection","consistency","big_points","killer_instinct"])-10)*.34
+        +(avg(["first_serve_quality","second_serve_quality","forehand_accuracy","backhand_accuracy","return_consistency"])-10)*.18
+        +(avg(["acceleration","agility","balance","natural_fitness","recovery"])-10)*.10;
+    };
+    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.14+Number(managed.data.fitness||90)*.06-Number(managed.data.fatigue||20)*.11+Number(ua[key]||10)*.62+attrEdge(ua);
+    const oBase=Number(opp.data.current_ability||55)+Number(opp.data.form||70)*.14+Number(opp.data.fitness||90)*.06-Number(opp.data.fatigue||20)*.11+Number(oa[key]||10)*.62+attrEdge(oa);
     const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
     const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
@@ -3960,10 +3995,10 @@ Deno.serve(async(req:Request)=>{
     const setScore=userWon?(close?(Math.random()<.5?"7-6":"7-5"):(Math.random()<.5?"6-3":"6-4")):(close?(Math.random()<.5?"6-7":"5-7"):(Math.random()<.5?"3-6":"4-6"));
 
     const setStats={
-      first_serve_pct:Math.max(45,Math.min(78,64-Math.round((risk-50)*.12)+Math.round(Math.random()*8-4))),
+      first_serve_pct:Math.max(42,Math.min(82,48+Number(ua.serve_precision||10)*1.15+Number(ua.consistency||10)*.35-Math.round((risk-50)*.10)+Math.round(Math.random()*6-3))),
       winners:Math.max(6,Math.round(8+ag*.10+risk*.05+Math.random()*6)),
-      unforced_errors:Math.max(4,Math.round(5+risk*.10+ag*.03+Math.random()*5)),
-      aces:Math.max(0,Math.round(Number(ua.serve_power||10)*.25+Math.random()*3)),
+      unforced_errors:Math.max(3,Math.round(10+risk*.08+ag*.02-Number(ua.consistency||10)*.28-Number(ua.shot_selection||10)*.18+Math.random()*4)),
+      aces:Math.max(0,Math.round(Number(ua.serve_power||10)*.18+Number(ua.first_serve_quality||10)*.13+Math.random()*2.5)),
       net_points_won_pct:Math.max(30,Math.min(85,45+Math.round(net*.30)+Math.round(Math.random()*10-5))),
       avg_rally:Math.max(2,Math.round(7-ag*.035+risk*.008+Math.random()*2))
     };
@@ -4036,8 +4071,14 @@ Deno.serve(async(req:Request)=>{
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
 
-    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.17+Number(managed.data.fitness||90)*.08-Number(managed.data.fatigue||20)*.12+Number(ua[key]||10)*.8;
-    const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.17+Number(opp.fitness||90)*.08-Number(opp.fatigue||20)*.12+Number(opp.player_attributes?.[key]||10)*.8;
+    const attrEdge=(x:any)=>{
+      const avg=(keys:string[])=>keys.reduce((s,k)=>s+Number(x?.[k]??10),0)/Math.max(1,keys.length);
+      return (avg(["decision_making","shot_selection","consistency","big_points","killer_instinct"])-10)*.34
+        +(avg(["first_serve_quality","second_serve_quality","forehand_accuracy","backhand_accuracy","return_consistency"])-10)*.18
+        +(avg(["acceleration","agility","balance","natural_fitness","recovery"])-10)*.10;
+    };
+    const uBase=Number(managed.data.current_ability||56)+Number(managed.data.form||70)*.14+Number(managed.data.fitness||90)*.06-Number(managed.data.fatigue||20)*.11+Number(ua[key]||10)*.62+attrEdge(ua);
+    const oBase=Number(opp.current_ability||55)+Number(opp.form||70)*.14+Number(opp.fitness||90)*.06-Number(opp.fatigue||20)*.11+Number(opp.player_attributes?.[key]||10)*.62+attrEdge(opp.player_attributes||{});
     const balance=2.8-Math.abs(ag-62)*.025-Math.abs(risk-55)*.02;
     const netBonus=(surface==="Gazon"?.035:surface.toLowerCase().includes("intérieur")?.028:surface.startsWith("Dur")?.018:.006)*net;
     const retBonus=ret==="Avancée"?1.4:ret==="Reculée"?.7:1.0;
@@ -4306,7 +4347,11 @@ Deno.serve(async(req:Request)=>{
     const pow=2**Math.floor(Math.log2(desired));
     participants=participants.slice(0,pow);
     const key=t.surface==="Terre"?"clay_affinity":t.surface==="Gazon"?"grass_affinity":"hard_affinity";
-    const strength=(p:any)=>Number(p.current_ability||50)+Number(p.form||70)*.14+Number(p.fitness||85)*.07-Number(p.fatigue||20)*.08+Number(p.player_attributes?.[key]||10)*.75;
+    const strength=(p:any)=>{
+      const aa=p.player_attributes||{};
+      const mind=(Number(aa.decision_making||10)+Number(aa.consistency||10)+Number(aa.big_points||10)+Number(aa.shot_selection||10))/4;
+      return Number(p.current_ability||50)+Number(p.form||70)*.12+Number(p.fitness||85)*.06-Number(p.fatigue||20)*.08+Number(aa[key]||10)*.58+(mind-10)*.32;
+    };
     const matches:any[]=[];
     const rn=(n:number)=>n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
     while(participants.length>1){

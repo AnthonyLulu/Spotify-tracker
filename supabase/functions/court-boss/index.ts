@@ -3177,32 +3177,159 @@ Deno.serve(async(req:Request)=>{
       .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):p.ranking,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
       .sort((a:any,b:any)=>Number(a.ranking||9999)-Number(b.ranking||9999));
     const surface=String(t.surface||"Dur");
+    const indoor=Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor";
     const surfKey=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const courtSpeed=Number(t.court_speed||(surface==="Terre"?.68:surface==="Gazon"?1.15:indoor?1.18:1.0));
+    const bestOf=String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?5:3;
     const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
     const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),player_attributes:managedAttrs,isUser:true};
+
+    const participantIds=[...new Set([managedId,...pool.map((p:any)=>Number(p.id)).filter(Boolean)])];
+    const [dynamicRows,eloRows,advancedRows,surfaceRows,h2hRows]=await Promise.all([
+      db.from("player_dynamic_ratings").select("*").in("player_id",participantIds),
+      db.from("player_elo_ratings").select("*").in("player_id",participantIds),
+      db.from("player_advanced_metrics").select("*").in("player_id",participantIds),
+      db.from("player_surface_preferences").select("*").in("player_id",participantIds),
+      participantIds.length>1
+        ?db.from("player_h2h_records").select("*").in("player_a_id",participantIds).in("player_b_id",participantIds).limit(5000)
+        :Promise.resolve({data:[],error:null})
+    ]);
+    const analyticsError=dynamicRows.error||eloRows.error||advancedRows.error||surfaceRows.error||h2hRows.error;
+    if(analyticsError)return h({error:analyticsError.message},500);
+
+    const dynBy=new Map((dynamicRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const eloBy=new Map((eloRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const advBy=new Map((advancedRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const surfaceBy=new Map((surfaceRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const h2hBy=new Map((h2hRows.data??[]).map((x:any)=>[Math.min(Number(x.player_a_id),Number(x.player_b_id))+"|"+Math.max(Number(x.player_a_id),Number(x.player_b_id)),x]));
+    const participantById=new Map<number,any>([[Number(user.id),user],...pool.map((p:any)=>[Number(p.id),p] as [number,any])]);
+
     const strength=(p:any)=>{
       const aa=p.player_attributes||{};
-      const avg=(keys:string[],fallback=10)=>keys.reduce((s,k)=>s+Number(aa?.[k]??fallback),0)/Math.max(1,keys.length);
-      const mental=(avg(["decision_making","shot_selection","consistency","big_points","killer_instinct","composure"])-10)*.34;
-      const technical=(avg(["first_serve_quality","second_serve_quality","forehand_accuracy","backhand_accuracy","return_consistency"])-10)*.20;
-      const physical=(avg(["natural_fitness","acceleration","agility","balance","recovery"])-10)*.12;
-      let base=Number(p.current_ability||50)+Number(p.form||70)*.13-Number(p.fatigue||20)*.11+Number(aa?.[surfKey]||10)*.62+mental+technical+physical+Math.max(0,14-Number(p.ranking||9999)/320);
-      if(p.isUser){
-        const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
-        const surfaceNet=surface==="Gazon"?tacticNet*.035:(Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor")?tacticNet*.028:surface==="Dur"?tacticNet*.018:tacticNet*.006;
-        const returnBonus=returnPos==="Avancée"?1.4:returnPos==="Reculée"?.8:1.1;
-        base+=balance*.025+surfaceNet+returnBonus+staffMatchBonus;
-        if(Number(c.fatigue||18)>45&&tacticAgg>75)base-=2.8;
-        if(tacticRisk>80)base-=1.8;
-      }
-      return base;
+      const d:any=dynBy.get(Number(p.id))||{};
+      const liveElo:any=eloBy.get(Number(p.id))||{};
+      const elo=surface==="Terre"?Number(liveElo.clay_elo??d.clay_elo??1500)
+        :surface==="Gazon"?Number(liveElo.grass_elo??d.grass_elo??1500)
+        :indoor?Number(liveElo.indoor_elo??liveElo.hard_elo??d.hard_elo??1500)
+        :Number(liveElo.hard_elo??d.hard_elo??1500);
+      return elo/22+Number(d.service_rating||50)*.08+Number(d.return_rating||50)*.08+
+        Number(d.pressure_rating||50)*.04+Number(d.tactical_rating||50)*.04+
+        Number(aa?.[surfKey]||10)*.20+Number(p.form||70)*.035-Number(p.fatigue||20)*.025;
     };
+
+    const matchupModel=(a:any,b:any)=>{
+      const aid=Number(a.id),bid=Number(b.id);
+      const aa=a.player_attributes||{},ab=b.player_attributes||{};
+      const da:any=dynBy.get(aid)||{},dbb:any=dynBy.get(bid)||{};
+      const ea:any=eloBy.get(aid)||{},eb:any=eloBy.get(bid)||{};
+      const ma:any=advBy.get(aid)||{},mb:any=advBy.get(bid)||{};
+      const sa:any=surfaceBy.get(aid)||{},sb:any=surfaceBy.get(bid)||{};
+      const hrow:any=h2hBy.get(Math.min(aid,bid)+"|"+Math.max(aid,bid));
+
+      const surfaceElo=(d:any,er:any)=>{
+        const overall=Number(er.overall_elo??d.overall_elo??1500);
+        const specific=surface==="Terre"?Number(er.clay_elo??d.clay_elo??overall)
+          :surface==="Gazon"?Number(er.grass_elo??d.grass_elo??overall)
+          :indoor?Number(er.indoor_elo??er.hard_elo??d.hard_elo??overall)
+          :Number(er.hard_elo??d.hard_elo??overall);
+        return overall*.50+specific*.50;
+      };
+      const aElo=surfaceElo(da,ea),bElo=surfaceElo(dbb,eb);
+      const eloProb=1/(1+Math.pow(10,(bElo-aElo)/400));
+      const serviceReturn=((Number(da.service_rating||50)-Number(dbb.return_rating||50))-(Number(dbb.service_rating||50)-Number(da.return_rating||50)))/100;
+      const mental=((Number(da.pressure_rating||50)+Number(da.tactical_rating||50))-(Number(dbb.pressure_rating||50)+Number(dbb.tactical_rating||50)))/200;
+      const physical=((Number(da.athletic_rating||50)+Number(a.fitness||90)-Number(a.fatigue||20)*.55)-(Number(dbb.athletic_rating||50)+Number(b.fitness||90)-Number(b.fatigue||20)*.55))/200;
+      const surfaceFit=(Number(aa?.[surfKey]||10)-Number(ab?.[surfKey]||10))/20;
+      const paceFit=(-Math.abs(courtSpeed-Number(sa.preferred_court_speed||1))/Math.max(.12,Number(sa.pace_tolerance||.25))
+        +Math.abs(courtSpeed-Number(sb.preferred_court_speed||1))/Math.max(.12,Number(sb.pace_tolerance||.25)))*.11;
+      const handed=String(a.handedness||"").toLowerCase()!==String(b.handedness||"").toLowerCase()
+        ?((Number(aa.adaptability||10)+Number(aa.backhand_accuracy||10)+Number(aa.return_consistency||10))
+          -(Number(ab.adaptability||10)+Number(ab.backhand_accuracy||10)+Number(ab.return_consistency||10)))/300
+        :0;
+      const styleMatch=handed+
+        (Number(ma.rally_1_3_win_pct??ma.rally_0_4_win_pct??50)-Number(mb.rally_1_3_win_pct??mb.rally_0_4_win_pct??50))*.004+
+        (Number(ma.rally_10plus_win_pct??ma.rally_9plus_win_pct??50)-Number(mb.rally_10plus_win_pct??mb.rally_9plus_win_pct??50))*.002+
+        (Number(ma.return_depth_score||60)-Number(mb.return_depth_score||60))*.0015+
+        (Number(ma.serve_impact||0)-Number(mb.serve_impact||0))*.002;
+
+      let h2h=0,h2hSummary:any=null;
+      if(hrow){
+        const aIsCanonical=aid===Number(hrow.player_a_id);
+        const aw=aIsCanonical?Number(hrow.a_wins||0):Number(hrow.b_wins||0);
+        const bw=aIsCanonical?Number(hrow.b_wins||0):Number(hrow.a_wins||0);
+        const total=aw+bw;
+        let saw=0,sbw=0;
+        if(surface==="Terre"){saw=aIsCanonical?Number(hrow.clay_a_wins||0):Number(hrow.clay_b_wins||0);sbw=aIsCanonical?Number(hrow.clay_b_wins||0):Number(hrow.clay_a_wins||0)}
+        else if(surface==="Gazon"){saw=aIsCanonical?Number(hrow.grass_a_wins||0):Number(hrow.grass_b_wins||0);sbw=aIsCanonical?Number(hrow.grass_b_wins||0):Number(hrow.grass_a_wins||0)}
+        else if(indoor){saw=aIsCanonical?Number(hrow.indoor_a_wins||0):Number(hrow.indoor_b_wins||0);sbw=aIsCanonical?Number(hrow.indoor_b_wins||0):Number(hrow.indoor_a_wins||0)}
+        else{saw=aIsCanonical?Number(hrow.hard_a_wins||0):Number(hrow.hard_b_wins||0);sbw=aIsCanonical?Number(hrow.hard_b_wins||0):Number(hrow.hard_a_wins||0)}
+        const sn=saw+sbw;
+        const recentA=aIsCanonical?Number(hrow.recent_a_wins||0):Number(hrow.recent_b_wins||0);
+        const recentB=aIsCanonical?Number(hrow.recent_b_wins||0):Number(hrow.recent_a_wins||0);
+        const rn=recentA+recentB;
+        h2h=(total?((aw-bw)/total)*Math.min(.055,total*.007):0)
+          +(sn?((saw-sbw)/sn)*Math.min(.045,sn*.009):0)
+          +(rn?((recentA-recentB)/rn)*Math.min(.025,rn*.006):0);
+        h2hSummary={a_wins:aw,b_wins:bw,matches:total,surface_a_wins:saw,surface_b_wins:sbw,surface_matches:sn,last_match_date:hrow.last_match_date};
+      }
+
+      let userTactics=0;
+      if(a.isUser||b.isUser){
+        const sign=a.isUser?1:-1;
+        const balance=100-Math.abs(tacticAgg-62)*.22-Math.abs(tacticRisk-54)*.18;
+        const netFit=surface==="Gazon"?tacticNet*.035:indoor?tacticNet*.028:surface==="Dur"?tacticNet*.018:tacticNet*.006;
+        const ret=returnPos==="Avancée"?1.4:returnPos==="Reculée"?.8:1.1;
+        let bonus=balance*.025+netFit+ret+staffMatchBonus;
+        if(Number(c.fatigue||18)>45&&tacticAgg>75)bonus-=2.8;
+        if(tacticRisk>80)bonus-=1.8;
+        userTactics=sign*bonus/22;
+      }
+
+      const baseLogit=Math.log(Math.max(.01,Math.min(.99,eloProb))/Math.max(.01,1-Math.min(.99,eloProb)));
+      let logit=baseLogit+serviceReturn*.62+mental*.24+physical*.18+surfaceFit*.22+
+        styleMatch*.55+paceFit+h2h+(Number(a.form||70)-Number(b.form||70))*.006+userTactics;
+      let probA=1/(1+Math.exp(-logit));
+      if(bestOf>=5)probA=probA*probA*(3-2*probA);
+      probA=Math.max(.025,Math.min(.975,probA));
+      return {probA,components:{
+        elo_probability:eloProb,surface_elo_a:aElo,surface_elo_b:bElo,
+        service_return:serviceReturn,mental,physical,surface_fit:surfaceFit,pace_fit:paceFit,
+        style_matchup:styleMatch,h2h,form_delta:(Number(a.form||70)-Number(b.form||70))*.006,
+        user_tactics:userTactics,h2h_summary:h2hSummary
+      }};
+    };
+
+    const generateScore=(probA:number,aWon:boolean,bo=bestOf)=>{
+      const target=bo>=5?3:2;
+      const closeness=1-Math.min(1,Math.abs(probA-.5)*2);
+      const loseSetChance=Math.max(.04,Math.min(.54,.10+closeness*.34+(bo>=5?.06:0)));
+      let loserSets=0;
+      for(let i=0;i<target-1;i++)if(Math.random()<loseSetChance)loserSets++;
+      if(bo>=5&&loserSets<2&&Math.random()<loseSetChance*.55)loserSets++;
+      loserSets=Math.min(target-1,loserSets);
+      const sequence:Array<"W"|"L">=[];
+      for(let i=0;i<target-1;i++)sequence.push("W");
+      for(let i=0;i<loserSets;i++)sequence.push("L");
+      for(let i=sequence.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sequence[i],sequence[j]]=[sequence[j],sequence[i]]}
+      sequence.push("W");
+      const tbChance=Math.max(.08,Math.min(.52,.13+closeness*.25+Math.max(0,courtSpeed-1)*.45));
+      return sequence.map(result=>{
+        const matchWinnerTakesSet=result==="W";
+        const setWinnerIsA=matchWinnerTakesSet?aWon:!aWon;
+        const tight=Math.random()<(.30+closeness*.42);
+        let w=6,l=2+Math.floor(Math.random()*3);
+        if(tight&&Math.random()<tbChance){w=7;l=6}
+        else if(tight){w=7;l=5}
+        const aScore=setWinnerIsA?w:l,bScore=setWinnerIsA?l:w;
+        return aWon?(aScore+"-"+bScore):(bScore+"-"+aScore);
+      }).join(" ");
+    };
+
     const play=(a:any,b:any)=>{
-      const sa=strength(a),sb=strength(b),prob=1/(1+Math.exp(-(sa-sb)/7));
-      const aw=Math.random()<prob,w=aw?a:b,l=aw?b:a;
-      const close=Math.abs(sa-sb)<8;
-      const score=close?(Math.random()<.5?"7-6 4-6 6-3":"6-4 3-6 7-5"):(Math.random()<.5?"6-3 6-4":"6-2 6-4");
-      return {winner:w,loser:l,score};
+      const model=matchupModel(a,b);
+      const aWon=Math.random()<model.probA;
+      const winner=aWon?a:b,loser=aWon?b:a;
+      return {winner,loser,score:generateScore(model.probA,aWon,bestOf),model};
     };
     const matchRows:any[]=[];
     let userAlive=true,userRound=wildcardGranted?"Wild Card":alternateEntered?"Alternate entré":"Non joué",qualifier=false,luckyLoser=false;

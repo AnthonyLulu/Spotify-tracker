@@ -2683,6 +2683,11 @@ Deno.serve(async(req:Request)=>{
             specialistProgress:specialistProgress.error?{error:specialistProgress.error.message}:specialistProgress.data,
             social:social.error?{error:social.error.message}:social.data
           };
+          const partnerOffers=await db.rpc("refresh_managed_doubles_partner_offers",{p_date:date});
+          doublesPairRefresh={
+            ...(doublesPairRefresh||{}),
+            partnerOffers:partnerOffers.error?{error:partnerOffers.error.message}:partnerOffers.data
+          };
         }
       }
     }
@@ -2864,8 +2869,15 @@ Deno.serve(async(req:Request)=>{
       .order("start_date",{ascending:false})
       .limit(30);
 
-    const careerNow=await db.from("career_state").select("managed_player_id,career_date").eq("id","demo").maybeSingle();
+    const careerNow=await db.from("career_state").select("managed_player_id,career_date,career_focus,doubles_rank").eq("id","demo").maybeSingle();
     const managedId=Number(careerNow.data?.managed_player_id||0);
+    const doublesPartnerOffers=managedId
+      ?await db.from("doubles_partner_offers")
+        .select("id,from_player_id,to_player_id,season,offer_date,response_date,expires_at,direction,status,interest_score,acceptance_threshold,chemistry,compatibility,pair_strength,proposed_commitment,current_partner_id,current_partner_commitment,reason,source_label,from_player:players!doubles_partner_offers_from_player_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability),to_player:players!doubles_partner_offers_to_player_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability)")
+        .or(`from_player_id.eq.${managedId},to_player_id.eq.${managedId}`)
+        .order("offer_date",{ascending:false})
+        .limit(30)
+      :{data:[],error:null};
     const ownStaff=await db.from("staff").select("id,name,role,profile_id").not("profile_id","is",null);
     const ownProfileIds=[...new Set((ownStaff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean))];
     let ownStaffRelations:any[]=[];
@@ -2903,7 +2915,8 @@ Deno.serve(async(req:Request)=>{
       agencyNetwork:agencyNetwork.error?[]:(agencyNetwork.data??[]),
       staffLeaders:staffLeaders.error?[]:(staffLeaders.data??[]),
       ownStaffRelations,
-      ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[])
+      ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[]),
+      doublesPartnerOffers:doublesPartnerOffers.error?[]:(doublesPartnerOffers.data??[])
     });
   }
 
@@ -4990,6 +5003,125 @@ Deno.serve(async(req:Request)=>{
         await db.from("staff").update({weekly_cost:salary}).eq("name",con.data.subject_name);
       }
       return h({ok:true,end_date:d.toISOString().slice(0,10),weekly_salary:salary,raise_pct:Math.round((factor-1)*100)});
+    }
+
+    if(action==="approach_partner"){
+      const managedId=Number(career.data.managed_player_id||0);
+      if(!managedId)return h({error:"Joueur géré introuvable"},409);
+      if(Number(id)===managedId)return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
+
+      const target=await db.from("players")
+        .select("id,name,country,doubles_ranking,career_focus,career_status")
+        .eq("id",id).maybeSingle();
+      if(target.error||!target.data)return h({error:target.error?.message||"Joueur introuvable"},404);
+      if(target.data.career_status!=="active"||target.data.doubles_ranking==null)return h({error:"Ce joueur n'est pas disponible pour un projet double."},409);
+
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const interest=await db.rpc("doubles_partner_interest",{
+        p_from_player_id:managedId,
+        p_to_player_id:Number(id),
+        p_date:today
+      });
+      if(interest.error)return h({error:interest.error.message},500);
+      const x:any=(interest.data??[])[0];
+      if(!x)return h({error:"Impossible d'évaluer cette association."},409);
+
+      const accepted=Boolean(x.accepted_now);
+      const offer=await db.from("doubles_partner_offers").insert({
+        from_player_id:managedId,to_player_id:Number(id),
+        season:Number(today.slice(0,4)),offer_date:today,expires_at:today,
+        response_date:today,direction:"outgoing",
+        status:accepted?"accepted":"declined",
+        interest_score:Number(x.interest_score||0),
+        acceptance_threshold:Number(x.acceptance_threshold||60),
+        chemistry:Number(x.chemistry||0),
+        compatibility:Number(x.compatibility||0),
+        pair_strength:Number(x.pair_strength||0),
+        proposed_commitment:Math.max(55,Math.min(100,Math.round(Number(x.affinity_score||0))+4)),
+        current_partner_id:x.current_partner_id||null,
+        current_partner_commitment:x.current_partner_commitment||null,
+        reason:String(x.reason||""),
+        source_label:"Utilisateur · approche partenaire double"
+      }).select("id").single();
+      if(offer.error)return h({error:offer.error.message},500);
+
+      let partnership:any=null;
+      if(accepted){
+        const active=await db.rpc("activate_managed_doubles_partner",{
+          p_partner_id:Number(id),p_date:today,p_source:"Utilisateur · approche acceptée"
+        });
+        if(active.error)return h({error:active.error.message},500);
+        partnership=active.data;
+      }
+
+      await db.from("inbox_items").insert({
+        kind:"double",
+        title:accepted?"Proposition de double acceptée":"Proposition de double refusée",
+        body:String(target.data.name)+(accepted
+          ?" accepte de devenir ton partenaire principal."
+          :" refuse pour le moment. "+String(x.reason||"")),
+        action_route:"doubles",is_read:false
+      });
+
+      return h({
+        ok:true,accepted,
+        offer_id:offer.data.id,
+        interest_score:Number(x.interest_score||0),
+        threshold:Number(x.acceptance_threshold||60),
+        reason:String(x.reason||""),
+        partnership
+      });
+    }
+
+    if(action==="respond_partner_offer"){
+      const decision=String(body?.decision||"decline").toLowerCase();
+      if(!["accept","decline"].includes(decision))return h({error:"Décision invalide"},400);
+      const managedId=Number(career.data.managed_player_id||0);
+      const offer=await db.from("doubles_partner_offers")
+        .select("*,from_player:players!doubles_partner_offers_from_player_id_fkey(id,name,country,doubles_ranking,career_focus)")
+        .eq("id",id).eq("to_player_id",managedId).eq("direction","incoming").maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Proposition introuvable"},404);
+      if(offer.data.status!=="pending")return h({error:"Cette proposition n'est plus disponible."},409);
+
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      if(String(offer.data.expires_at)<today){
+        await db.from("doubles_partner_offers").update({status:"expired",response_date:today}).eq("id",id);
+        return h({error:"Cette proposition a expiré."},409);
+      }
+
+      let partnership:any=null;
+      if(decision==="accept"){
+        const active=await db.rpc("activate_managed_doubles_partner",{
+          p_partner_id:Number(offer.data.from_player_id),
+          p_date:today,
+          p_source:"Utilisateur · proposition entrante acceptée"
+        });
+        if(active.error)return h({error:active.error.message},500);
+        partnership=active.data;
+      }
+
+      const up=await db.from("doubles_partner_offers").update({
+        status:decision==="accept"?"accepted":"declined",
+        response_date:today
+      }).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+
+      if(decision==="accept"){
+        await db.from("doubles_partner_offers").update({
+          status:"withdrawn",response_date:today
+        }).eq("to_player_id",managedId).eq("direction","incoming").eq("status","pending").neq("id",id);
+      }
+
+      await db.from("inbox_items").insert({
+        kind:"double",
+        title:decision==="accept"?"Nouveau partenaire principal":"Proposition refusée",
+        body:decision==="accept"
+          ?String(offer.data.from_player?.name||"Le joueur")+" devient ton partenaire principal."
+          :"Tu as refusé la proposition de "+String(offer.data.from_player?.name||"ce joueur")+".",
+        action_route:"doubles",is_read:false
+      });
+
+      return h({ok:true,status:decision==="accept"?"accepted":"declined",partnership});
     }
 
     if(action==="choose_partner"){

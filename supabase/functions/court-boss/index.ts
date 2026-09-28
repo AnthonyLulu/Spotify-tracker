@@ -2394,7 +2394,7 @@ Deno.serve(async(req:Request)=>{
     const week=Math.max(1,Number(current.data.week||0)+1);
     const cs=body?.career_state||{};
     const [staffRows,sponsorRows,rosterRows]=await Promise.all([
-      db.from("staff").select("weekly_cost,skill"),
+      db.from("staff").select("weekly_cost,skill,role,profile:staff_profiles(*)"),
       db.from("sponsor_offers").select("weekly_value,status"),
       db.from("academy_roster").select("id,weekly_cost,contract_end,status,players(name)").eq("status","active")
     ]);
@@ -2441,11 +2441,20 @@ Deno.serve(async(req:Request)=>{
         "Match play":["tactics","concentration","composure","fighting_spirit"],
         "Double":["volley","touch","doubles"]
       };
-      const avgStaff=(staffRows.data??[]).length?(staffRows.data??[]).reduce((s:number,x:any)=>s+Number(x.skill||10),0)/(staffRows.data??[]).length:10;
-      const avgFacility=(facilityRows.data??[]).length?(facilityRows.data??[]).reduce((s:number,x:any)=>s+Number(x.level||1),0)/(facilityRows.data??[]).length:1;
-      const mult=.72+avgStaff/38+avgFacility/12;
+      const staffList=(staffRows.data??[]);
+      const avgStaff=staffList.length?staffList.reduce((sum:number,x:any)=>sum+Number(x.skill||10),0)/staffList.length:10;
+      const avgFacility=(facilityRows.data??[]).length?(facilityRows.data??[]).reduce((sum:number,x:any)=>sum+Number(x.level||1),0)/(facilityRows.data??[]).length:1;
+      const profileRows=staffList.map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
+      const best=(key:string,fallback=avgStaff)=>profileRows.length?Math.max(fallback,...profileRows.map((p:any)=>Number(p?.[key]||0))):fallback;
+      const sessionStaff=(session:string)=>{
+        if(session==="Service"||session==="Coup droit"||session==="Revers")return (best("technical_rating")+best("coach_rating"))/2;
+        if(session==="Retour"||session==="Match play"||session==="Double")return (best("tactical_rating")+best("coach_rating"))/2;
+        if(session==="Déplacements"||session==="Endurance")return best("fitness_rating");
+        return avgStaff;
+      };
       const xp:any={};
       for(const s of trainingSessions){
+        const mult=.67+sessionStaff(String(s))/36+avgFacility/12;
         for(const a of map[String(s)]||[])xp[a]=(xp[a]||0)+.52*mult;
       }
       const progressMap=new Map((progressRows.data??[]).map((x:any)=>[x.attribute,Number(x.xp||0)]));
@@ -2535,9 +2544,12 @@ Deno.serve(async(req:Request)=>{
     if(medical.error)return h({error:medical.error.message},500);
     const scouts=await db.from("scouting_assignments").select("id,progress,status");
     if(!scouts.error){
+      const staffProfiles=(staffRows.data??[]).map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile).filter(Boolean);
+      const bestScout=staffProfiles.length?Math.max(10,...staffProfiles.map((p:any)=>Number(p.scouting_rating||0))):10;
+      const scoutStep=Math.max(8,Math.min(18,Math.round(7+bestScout*.55)));
       for(const s of scouts.data??[]){
         if(s.status==="active"){
-          const np=Math.min(100,Number(s.progress||0)+12);
+          const np=Math.min(100,Number(s.progress||0)+scoutStep);
           await db.from("scouting_assignments").update({progress:np,status:np>=100?"completed":"active"}).eq("id",s.id);
         }
       }
@@ -3927,6 +3939,7 @@ Deno.serve(async(req:Request)=>{
       const cand=await db.from("staff_candidates").select("*").eq("id",id).maybeSingle();
       if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
       if(cand.data.status==="hired")return h({ok:true,already:true,budget});
+      if(cand.data.status!=="available")return h({error:"Ce membre du staff n'est pas disponible actuellement."},409);
       const cost=Number(cand.data.signing_cost||0);
       if(budget<cost)return h({error:"Budget insuffisant"},409);
       budget-=cost;

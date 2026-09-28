@@ -2596,6 +2596,8 @@ Deno.serve(async(req:Request)=>{
         const competition=await db.rpc("refresh_staff_recruitment_competition",{p_date:date});
         const ownStaffOffers=await db.rpc("refresh_user_staff_external_offers",{p_date:date});
         const workload=await db.rpc("refresh_staff_workload",{p_date:date});
+        const doublesStaff=await db.rpc("refresh_doubles_staff_assignments",{p_date:date});
+        const achievements=await db.rpc("refresh_staff_achievements",{p_date:date});
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
           meta:meta.error?{error:meta.error.message}:meta.data,
@@ -2611,7 +2613,9 @@ Deno.serve(async(req:Request)=>{
           bonds:bonds.error?{error:bonds.error.message}:bonds.data,
           competition:competition.error?{error:competition.error.message}:competition.data,
           ownStaffOffers:ownStaffOffers.error?{error:ownStaffOffers.error.message}:ownStaffOffers.data,
-          workload:workload.error?{error:workload.error.message}:workload.data
+          workload:workload.error?{error:workload.error.message}:workload.data,
+          doublesStaff:doublesStaff.error?{error:doublesStaff.error.message}:doublesStaff.data,
+          achievements:achievements.error?{error:achievements.error.message}:achievements.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
@@ -2709,7 +2713,7 @@ Deno.serve(async(req:Request)=>{
     if(profile.error)return h({error:profile.error.message},500);
     if(!profile.data)return h({error:"Profil staff introuvable"},404);
 
-    const [activeAssignments,history,events,agency,licenses,preferences,scopeReputation,peerA,peerB,recommendationsFrom,recommendationsTo,collegeStaff,davisStaff,training,coachAcademy,bonds]=await Promise.all([
+    const [activeAssignments,history,events,agency,licenses,preferences,scopeReputation,peerA,peerB,recommendationsFrom,recommendationsTo,collegeStaff,davisStaff,training,coachAcademy,bonds,careerStats,achievements,awards]=await Promise.all([
       db.from("player_staff_assignments")
         .select("id,role,start_date,end_date,active,verified,affinity,trust,role_fit,satisfaction,team_chemistry,weekly_salary,contract_end,source_label,player:players!player_staff_assignments_player_id_fkey(id,name,country,ranking,game_world_rank,style,photo_url)")
         .eq("staff_profile_id",id).eq("active",true)
@@ -2736,9 +2740,14 @@ Deno.serve(async(req:Request)=>{
       db.from("staff_player_bonds")
         .select("bond_type,affinity,trust,respect,is_simulated,source_label,formed_date,last_update,player:players!staff_player_bonds_player_id_fkey(id,name,country,ranking,game_world_rank,photo_url,style)")
         .eq("staff_profile_id",id).eq("active",true)
-        .order("affinity",{ascending:false}).limit(30)
+        .order("affinity",{ascending:false}).limit(30),
+      db.from("staff_career_stats").select("*").eq("staff_profile_id",id).maybeSingle(),
+      db.from("staff_achievements")
+        .select("achievement_date,tournament_name,level,event_type,staff_role,achievement_points,player:players!staff_achievements_player_id_fkey(id,name,country,ranking,game_world_rank)")
+        .eq("staff_profile_id",id).order("achievement_date",{ascending:false}).limit(40),
+      db.from("staff_awards").select("*").eq("staff_profile_id",id).order("season",{ascending:false}).limit(20)
     ]);
-    const err=activeAssignments.error||history.error||events.error||agency.error||licenses.error||preferences.error||scopeReputation.error||peerA.error||peerB.error||recommendationsFrom.error||recommendationsTo.error||collegeStaff.error||davisStaff.error||training.error||coachAcademy.error||bonds.error;
+    const err=activeAssignments.error||history.error||events.error||agency.error||licenses.error||preferences.error||scopeReputation.error||peerA.error||peerB.error||recommendationsFrom.error||recommendationsTo.error||collegeStaff.error||davisStaff.error||training.error||coachAcademy.error||bonds.error||careerStats.error||achievements.error||awards.error;
     if(err)return h({error:err.message},500);
 
     let agentClients:any={data:[],count:0,error:null};
@@ -2767,6 +2776,9 @@ Deno.serve(async(req:Request)=>{
       training:training.data??[],
       coachAcademy:coachAcademy.data??null,
       playerBonds:bonds.data??[],
+      careerStats:careerStats.data??null,
+      achievements:achievements.data??[],
+      awards:awards.data??[],
       agentClients:agentClients.data??[],
       agentClientCount:Number(agentClients.count||0)
     });
@@ -3335,10 +3347,42 @@ Deno.serve(async(req:Request)=>{
       .filter((p:any)=>p.id!==partner.id&&p.id!==anthony.id)
       .map((p:any)=>({...p,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}));
 
+    const doublesStaffIds=[...new Set([
+      Number(anthony.id),Number(partner.id),
+      ...pool.map((p:any)=>Number(p.id)).filter(Boolean)
+    ])];
+    const doublesStaffRows=doublesStaffIds.length
+      ?await db.from("player_staff_assignments")
+        .select("player_id,staff:staff_profiles(doubles_coaching_rating,serve_coaching_rating,return_coaching_rating,communication_rating,professionalism,workload,burnout,travel_fatigue)")
+        .in("player_id",doublesStaffIds).eq("active",true).eq("role","Coach double")
+      :{data:[],error:null};
+    if(doublesStaffRows.error)return h({error:doublesStaffRows.error.message},500);
+    const doublesCoachByPlayer=new Map<number,number>();
+    for(const row of doublesStaffRows.data??[]){
+      const sp:any=Array.isArray((row as any).staff)?(row as any).staff[0]:(row as any).staff||{};
+      const eff=Math.max(.68,Math.min(1.06,
+        1-Number(sp.burnout||0)*.0032-Number(sp.travel_fatigue||0)*.0018
+        -Math.max(0,Number(sp.workload||20)-75)*.0015
+        +Math.max(0,Number(sp.professionalism||10)-14)*.006
+      ));
+      const quality=(
+        Number(sp.doubles_coaching_rating||10)*.50+
+        Number(sp.serve_coaching_rating||10)*.18+
+        Number(sp.return_coaching_rating||10)*.18+
+        Number(sp.communication_rating||10)*.14
+      )*eff;
+      doublesCoachByPlayer.set(Number((row as any).player_id),Math.max(doublesCoachByPlayer.get(Number((row as any).player_id))||0,quality));
+    }
+
     const surface=String(t.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
     const playerStrength=(p:any)=>Number(p.current_ability||50)*.55+Number(p.form||70)*.12+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.10+Number(p.player_attributes?.doubles||10)*1.3+Number(p.player_attributes?.[key]||10)*.55;
-    const pairStrength=(a:any,b:any,chem=70)=>playerStrength(a)+playerStrength(b)+chem*.18;
+    const pairCoachBonus=(a:any,b:any)=>{
+      const qa=Number(doublesCoachByPlayer.get(Number(a?.id))||10);
+      const qb=Number(doublesCoachByPlayer.get(Number(b?.id))||10);
+      return Math.max(0,Math.min(2.2,((qa+qb)/2-10)*.16));
+    };
+    const pairStrength=(a:any,b:any,chem=70)=>playerStrength(a)+playerStrength(b)+chem*.18+pairCoachBonus(a,b);
 
     const ownRaceRow=finalsPairRows.find((x:any)=>
       (Number(x.player_one_id)===Number(anthony.id)&&Number(x.player_two_id)===Number(partner.id))

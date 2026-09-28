@@ -1851,13 +1851,14 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
-    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,advancedMetrics,eloRating,styleHistory,tacticalProfile]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_elo_ratings").select("*").eq("player_id",id).maybeSingle(),
-      db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20)
+      db.from("player_style_history").select("*").eq("player_id",id).lte("changed_at",referenceDate).order("changed_at",{ascending:false}).limit(20),
+      db.from("player_tactical_preferences").select("*").eq("player_id",id).maybeSingle()
     ]);
 
     return h({
@@ -1878,7 +1879,8 @@ Deno.serve(async(req:Request)=>{
       scoutingReport:scoutingReport.error?null:scoutingReport.data,
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       eloRating:eloRating.error?null:eloRating.data,
-      styleHistory:styleHistory.error?[]:(styleHistory.data??[])
+      styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
+      tacticalProfile:tacticalProfile.error?null:tacticalProfile.data
     });
   }
 

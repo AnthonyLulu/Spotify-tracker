@@ -2683,7 +2683,7 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/management")&&req.method==="GET"){
-    const [contracts,college,shortlist,sponsors,candidates,partnerships,collegeOffers,collegeState,collegeDuals,davisTies,academyMembers,academyRoster] = await Promise.all([
+    const [contracts,college,shortlist,sponsors,candidates,partnerships,collegeOffers,collegeState,collegeDuals,davisTies,academyMembers,academyRoster,collegeTeamStaff,davisTeamStaff] = await Promise.all([
       db.from("contracts").select("*").order("end_date"),
       db.from("college_teams").select("*").order("ita_rank"),
       db.from("shortlist").select("*,players(id,name,country,ranking,points,age,potential,current_ability,style)").order("added_at",{ascending:false}).limit(50),
@@ -2695,11 +2695,13 @@ Deno.serve(async(req:Request)=>{
       db.from("college_duals").select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)").order("match_date",{ascending:true}).limit(20),
       db.from("davis_ties").select("*,davis_rubbers(*)").order("tie_date",{ascending:true}).limit(40),
       db.from("academy_members").select("*,player:players(id,name,country,ranking,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style),youth:academy_youth(id,name,country,age,current_ability,potential,style,status),progress:academy_member_progress(*)").eq("status","active").order("id"),
-      db.from("academy_roster").select("*,players(id,name,country,ranking,points,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,injury_status)").eq("status","active").order("id")
+      db.from("academy_roster").select("*,players(id,name,country,ranking,points,doubles_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,injury_status)").eq("status","active").order("id"),
+      db.from("college_team_staff").select("id,team_id,role,start_date,end_date,active,staff:staff_profiles(id,name,nationality,primary_role,reputation,coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,staff_personality,coaching_style)").eq("active",true).order("team_id").order("role"),
+      db.from("davis_team_staff").select("id,nation,role,start_date,end_date,active,part_time,staff:staff_profiles(id,name,nationality,primary_role,reputation,coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,staff_personality,coaching_style)").eq("active",true).order("nation").order("role")
     ]);
-    const err=contracts.error||college.error||shortlist.error||sponsors.error||candidates.error||partnerships.error||collegeOffers.error||collegeState.error||collegeDuals.error||davisTies.error||academyMembers.error||academyRoster.error;
+    const err=contracts.error||college.error||shortlist.error||sponsors.error||candidates.error||partnerships.error||collegeOffers.error||collegeState.error||collegeDuals.error||davisTies.error||academyMembers.error||academyRoster.error||collegeTeamStaff.error||davisTeamStaff.error;
     if(err) return h({error:err.message},500);
-    return h({contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:collegeOffers.data??[],collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[]});
+    return h({contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:collegeOffers.data??[],collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[]});
   }
 
 
@@ -4394,15 +4396,48 @@ Deno.serve(async(req:Request)=>{
       const dual=await db.from("college_duals").select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)").eq("id",id).maybeSingle();
       if(dual.error||!dual.data)return h({error:dual.error?.message||"Dual not found"},404);
       if(dual.data.status==="completed")return h({ok:true,home_score:dual.data.home_score,away_score:dual.data.away_score,already:true});
-      const hs=3+((id*7)%5),as=3+((id*11)%5);
-      const homeScore=hs===as?4:Math.min(7,hs),awayScore=hs===as?3:Math.min(7,as);
+
+      const [homeStaff,awayStaff]=await Promise.all([
+        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation)").eq("team_id",dual.data.home_team_id).eq("active",true),
+        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation)").eq("team_id",dual.data.away_team_id).eq("active",true)
+      ]);
+      if(homeStaff.error||awayStaff.error)return h({error:(homeStaff.error||awayStaff.error)?.message},500);
+
+      const collegeStaffPower=(rows:any[])=>{
+        if(!rows?.length)return 0;
+        const vals=rows.map((x:any)=>{
+          const p:any=Array.isArray(x.staff)?x.staff[0]:x.staff||{};
+          const role=String(x.role||"");
+          if(/Head Coach/i.test(role))return Number(p.coach_rating||10)*.34+Number(p.tactical_rating||10)*.24+Number(p.mental_rating||10)*.15+Number(p.youth_rating||10)*.15+Number(p.communication_rating||10)*.12;
+          if(/Assistant/i.test(role))return Number(p.technical_rating||10)*.35+Number(p.tactical_rating||10)*.30+Number(p.youth_rating||10)*.20+Number(p.communication_rating||10)*.15;
+          if(/Trainer/i.test(role))return Number(p.fitness_rating||10)*.45+Number(p.medical_rating||10)*.35+Number(p.communication_rating||10)*.20;
+          return Number(p.scouting_rating||10)*.45+Number(p.youth_rating||10)*.30+Number(p.reputation||10)*.25;
+        });
+        return vals.reduce((s:number,v:number)=>s+v,0)/vals.length;
+      };
+      const homeStaffPower=collegeStaffPower(homeStaff.data??[]);
+      const awayStaffPower=collegeStaffPower(awayStaff.data??[]);
+      const homeRank=Math.max(1,Number(dual.data.home?.ita_rank||50));
+      const awayRank=Math.max(1,Number(dual.data.away?.ita_rank||50));
+      const seedHome=((id*17)%13)-6,seedAway=((id*29)%13)-6;
+      const homePower=82-homeRank*.52+homeStaffPower*.95+seedHome;
+      const awayPower=82-awayRank*.52+awayStaffPower*.95+seedAway;
+      const diff=homePower-awayPower;
+      const homeScore=diff>=12?4:diff>=5?4:diff>=0?4:Math.abs(diff)<5?3:Math.abs(diff)<12?2:1;
+      const awayScore=homeScore===4?(Math.abs(diff)>=12?0:Math.abs(diff)>=5?1:3):4;
+
       const up=await db.from("college_duals").update({home_score:homeScore,away_score:awayScore,status:"completed"}).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
       const cs=await db.from("college_career_state").select("*").eq("id","demo").maybeSingle();
       if(cs.data?.status==="committed"){
-        await db.from("college_career_state").update({coach_trust:Math.min(100,Number(cs.data.coach_trust||55)+3),academic_progress:Math.min(100,Number(cs.data.academic_progress||72)+1)}).eq("id","demo");
+        const managedTeam=Number(cs.data.team_id||0);
+        const won=(managedTeam===Number(dual.data.home_team_id)&&homeScore>awayScore)||(managedTeam===Number(dual.data.away_team_id)&&awayScore>homeScore);
+        await db.from("college_career_state").update({
+          coach_trust:Math.min(100,Number(cs.data.coach_trust||55)+(won?4:1)),
+          academic_progress:Math.min(100,Number(cs.data.academic_progress||72)+1)
+        }).eq("id","demo");
       }
-      return h({ok:true,home_score:homeScore,away_score:awayScore});
+      return h({ok:true,home_score:homeScore,away_score:awayScore,home_staff_power:Number(homeStaffPower.toFixed(1)),away_staff_power:Number(awayStaffPower.toFixed(1))});
     }
 
 
@@ -4417,13 +4452,15 @@ Deno.serve(async(req:Request)=>{
       if(!home||!away||home==="TBD"||away==="TBD")return h({error:"Affiche Davis pas encore déterminée."},409);
 
       const playerSelect="id,name,country,ranking,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity,doubles)";
-      const [homeRes,awayRes,homeSquad,awaySquad]=await Promise.all([
+      const [homeRes,awayRes,homeSquad,awaySquad,homeTeamStaff,awayTeamStaff]=await Promise.all([
         db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",home).order("ranking").limit(6),
         db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",away).order("ranking").limit(6),
         db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",home),
-        db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",away)
+        db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",away),
+        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation)").eq("nation",home).eq("active",true),
+        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation)").eq("nation",away).eq("active",true)
       ]);
-      const err=homeRes.error||awayRes.error||homeSquad.error||awaySquad.error;
+      const err=homeRes.error||awayRes.error||homeSquad.error||awaySquad.error||homeTeamStaff.error||awayTeamStaff.error;
       if(err)return h({error:err.message},500);
       const flatten=(x:any)=>({...x,player_attributes:Array.isArray(x.player_attributes)?x.player_attributes[0]:x.player_attributes});
       const squad=(rows:any[],fallback:any[])=>{
@@ -4442,10 +4479,23 @@ Deno.serve(async(req:Request)=>{
 
       const surf=String(tie.data.surface||"Dur");
       const key=surf.includes("Terre")?"clay_affinity":surf.includes("Gazon")?"grass_affinity":"hard_affinity";
-      const strength=(p:any)=>Number(p.current_ability||50)+Number(p.form||70)*.18+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.12+Number(p.player_attributes?.[key]||10)*.7;
-      const one=(ha:any,aa:any)=>{const prob=1/(1+Math.exp(-(strength(ha)-strength(aa))/7));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(strength(ha)-strength(aa))<7?"7-6 4-6 6-3":(hw?"6-3 6-4":"4-6 3-6")}};
-      const pair=(a:any,b:any)=>strength(a)*.46+strength(b)*.46+Number(a.player_attributes?.doubles||10)*.35+Number(b.player_attributes?.doubles||10)*.35;
-      const dbl=(ha:any,hb:any,aa:any,ab:any)=>{const ph=pair(ha,hb),pa=pair(aa,ab),prob=1/(1+Math.exp(-(ph-pa)/8));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(ph-pa)<7?"7-6 3-6 6-4":(hw?"6-4 6-3":"4-6 3-6")}};
+      const nationStaffPower=(rows:any[])=>{
+        if(!rows?.length)return 0;
+        const vals=rows.map((x:any)=>{
+          const p:any=Array.isArray(x.staff)?x.staff[0]:x.staff||{};
+          const role=String(x.role||"");
+          if(/Captain/i.test(role))return Number(p.tactical_rating||10)*.30+Number(p.mental_rating||10)*.23+Number(p.communication_rating||10)*.20+Number(p.pressure_handling||10)*.17+Number(p.reputation||10)*.10;
+          if(/Physio/i.test(role))return Number(p.medical_rating||10)*.55+Number(p.fitness_rating||10)*.30+Number(p.communication_rating||10)*.15;
+          return Number(p.coach_rating||10)*.28+Number(p.tactical_rating||10)*.24+Number(p.fitness_rating||10)*.18+Number(p.mental_rating||10)*.18+Number(p.communication_rating||10)*.12;
+        });
+        return vals.reduce((s:number,v:number)=>s+v,0)/vals.length;
+      };
+      const homeStaffBonus=Math.max(0,(nationStaffPower(homeTeamStaff.data??[])-10)*.14);
+      const awayStaffBonus=Math.max(0,(nationStaffPower(awayTeamStaff.data??[])-10)*.14);
+      const strength=(p:any,staffBonus=0)=>Number(p.current_ability||50)+Number(p.form||70)*.18+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.12+Number(p.player_attributes?.[key]||10)*.7+staffBonus;
+      const one=(ha:any,aa:any)=>{const hs=strength(ha,homeStaffBonus),as=strength(aa,awayStaffBonus);const prob=1/(1+Math.exp(-(hs-as)/7));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(hs-as)<7?"7-6 4-6 6-3":(hw?"6-3 6-4":"4-6 3-6")}};
+      const pair=(a:any,b:any,staffBonus=0)=>strength(a,staffBonus)*.46+strength(b,staffBonus)*.46+Number(a.player_attributes?.doubles||10)*.35+Number(b.player_attributes?.doubles||10)*.35;
+      const dbl=(ha:any,hb:any,aa:any,ab:any)=>{const ph=pair(ha,hb,homeStaffBonus),pa=pair(aa,ab,awayStaffBonus),prob=1/(1+Math.exp(-(ph-pa)/8));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(ph-pa)<7?"7-6 3-6 6-4":(hw?"6-4 6-3":"4-6 3-6")}};
 
       const rubs:any[]=[];
       const push=(no:number,type:string,hn:string,an:string,res:any)=>rubs.push({tie_id:id,rubber_no:no,rubber_type:type,home_names:hn,away_names:an,winner_nation:res.winner,score:res.score});

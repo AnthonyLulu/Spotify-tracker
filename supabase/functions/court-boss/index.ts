@@ -2572,6 +2572,7 @@ Deno.serve(async(req:Request)=>{
       };
 
       if(Number(date.slice(0,4))>2025){
+        const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
         const month=Number(date.slice(5,7));
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})
@@ -2622,7 +2623,8 @@ Deno.serve(async(req:Request)=>{
           doublesStaff:doublesStaff.error?{error:doublesStaff.error.message}:doublesStaff.data,
           achievements:achievements.error?{error:achievements.error.message}:achievements.data,
           achievementReputation:achievementReputation.error?{error:achievementReputation.error.message}:achievementReputation.data,
-          staffWorldNews:staffWorldNews.error?{error:staffWorldNews.error.message}:staffWorldNews.data
+          staffWorldNews:staffWorldNews.error?{error:staffWorldNews.error.message}:staffWorldNews.data,
+          careerFocus:careerFocus.error?{error:careerFocus.error.message}:careerFocus.data
         };
         const pairs=await db.rpc("refresh_world_doubles_partnerships",{
           p_date:date,
@@ -5242,6 +5244,24 @@ Deno.serve(async(req:Request)=>{
       if(up.error)return h({error:up.error.message},500);
       await db.from("inbox_items").insert({kind:"tournament",title:"Décision wild card",body:(status==="accepted"?"Wild card accordée pour ":"Wild card refusée pour ")+t.data.name+".",action_route:"calendar",is_read:false});
       return h({ok:true,status,score});
+    }
+
+
+    if(action==="set_career_focus"){
+      const focus=String(body?.focus||"").trim().toLowerCase();
+      if(!["singles_priority","mixed","doubles_only"].includes(focus))return h({error:"Orientation de carrière invalide"},400);
+      const result=await db.rpc("set_managed_career_focus",{
+        p_focus:focus,
+        p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
+      });
+      if(result.error)return h({error:result.error.message},500);
+      const labels:any={singles_priority:"Simple prioritaire",mixed:"Simple + double",doubles_only:"Double exclusivement"};
+      await db.from("inbox_items").insert({
+        kind:"career",title:"Orientation de carrière modifiée",
+        body:"Nouvelle orientation : "+labels[focus]+".",
+        action_route:"myplayer",is_read:false
+      });
+      return h({ok:true,...(result.data||{}),label:labels[focus]});
     }
 
 

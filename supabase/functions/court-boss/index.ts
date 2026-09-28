@@ -3048,6 +3048,19 @@ Deno.serve(async(req:Request)=>{
     const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(totalFatigue*.45));
     const newForm=Math.max(35,Math.min(100,Number(c.form||72)+(userRound==="Champion"?6:userRound==="F"?4:userRound==="SF"?2:userMatches.length?1:-1)));
     const travelCost=dest===homeCountry?120:(european.includes(dest)?380:850);
+    const agentRep=await db.from("player_agency_representation").select("commission_pct").eq("player_id",managedId).eq("active",true).maybeSingle();
+    const agentCommission=Math.max(0,Math.round(userPrize*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
+    let staffPerformanceBonus=0;
+    if(userRound==="Champion"){
+      const staffContracts=await db.from("contracts").select("weekly_salary,bonuses").eq("subject_type","staff").eq("status","active");
+      const titleBonusMult=/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?4:/Masters 1000/i.test(String(t.category||t.level||""))?3:2;
+      if(!staffContracts.error){
+        staffPerformanceBonus=(staffContracts.data??[]).reduce((sum:number,x:any)=>{
+          const demands=x.bonuses?.demands||{};
+          return sum+(demands.performance_bonus?Math.round(Number(x.weekly_salary||0)*titleBonusMult):0);
+        },0);
+      }
+    }
     let newPoints=Number(c.points||0),newRank=Number(c.singles_rank||2001);
     if(isJuniorSingles){
       if(userPoints>0){
@@ -3072,7 +3085,7 @@ Deno.serve(async(req:Request)=>{
       if(rankCalc.error)return h({error:rankCalc.error.message},500);
       newPoints=Number(rankCalc.data?.points??c.points??0);newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     }
-    const newBudget=Number(c.budget||0)+userPrize-travelCost;
+    const newBudget=Number(c.budget||0)+userPrize-travelCost-agentCommission-staffPerformanceBonus;
     if(userRound==="Champion"){
       await db.from("player_titles").insert({
         player_id:managedId,tournament_name:t.name,title_date:String(t.end_date||t.start_date),
@@ -3080,7 +3093,7 @@ Deno.serve(async(req:Request)=>{
         event_type:isJuniorSingles?"junior_singles":"singles",verified:false,source_label:isJuniorSingles?"Court Boss · titre junior simulé":"Court Boss · carrière simulée",origin:"game"
       });
     }
-    const finState=await db.from("finances").select("prize_money,travel_cost").eq("id","demo").maybeSingle();
+    const finState=await db.from("finances").select("prize_money,travel_cost,agent_commission,staff_bonus").eq("id","demo").maybeSingle();
     await Promise.all([
       db.from("career_state").update(isJuniorSingles
         ?{budget:newBudget,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}
@@ -3088,12 +3101,14 @@ Deno.serve(async(req:Request)=>{
       ).eq("id","demo"),
       db.from("finances").update({
         prize_money:Number(finState.data?.prize_money||0)+userPrize,
-        travel_cost:Number(finState.data?.travel_cost||0)+travelCost
+        travel_cost:Number(finState.data?.travel_cost||0)+travelCost,
+        agent_commission:Number(finState.data?.agent_commission||0)+agentCommission,
+        staff_bonus:Number(finState.data?.staff_bonus||0)+staffPerformanceBonus
       }).eq("id","demo"),
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,travel_cost:travelCost,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 
@@ -3421,7 +3436,20 @@ Deno.serve(async(req:Request)=>{
     const singlesRun=await db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle();
     const travelCost=singlesRun.data?0:(String(t.country||"")===String(c.country||"FRA")?80:260);
     const fatigueAdd=matches.filter((m:any)=>m.user_pair===userPair.name).length*4+(travelCost?3:0);
-    const newBudget=Number(c.budget||0)+prize-travelCost;
+    const agentRep=await db.from("player_agency_representation").select("commission_pct").eq("player_id",anthony.id).eq("active",true).maybeSingle();
+    const agentCommission=Math.max(0,Math.round(prize*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
+    let staffPerformanceBonus=0;
+    if(userRound==="Champion"){
+      const staffContracts=await db.from("contracts").select("weekly_salary,bonuses").eq("subject_type","staff").eq("status","active");
+      const titleBonusMult=/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?3:/Masters 1000/i.test(String(t.category||t.level||""))?2:1;
+      if(!staffContracts.error){
+        staffPerformanceBonus=(staffContracts.data??[]).reduce((sum:number,x:any)=>{
+          const demands=x.bonuses?.demands||{};
+          return sum+(demands.performance_bonus?Math.round(Number(x.weekly_salary||0)*titleBonusMult):0);
+        },0);
+      }
+    }
+    const newBudget=Number(c.budget||0)+prize-travelCost-agentCommission-staffPerformanceBonus;
     const newFatigue=Math.min(100,Number(c.fatigue||18)+fatigueAdd);
     const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(fatigueAdd*.35));
     const careerUpdate:any={budget:newBudget,fatigue:newFatigue,fitness:newFitness,updated_at:new Date().toISOString()};
@@ -3430,10 +3458,19 @@ Deno.serve(async(req:Request)=>{
       careerUpdate.doubles_points=Number(rank.data?.points||c.doubles_points);
     }
     await db.from("career_state").update(careerUpdate).eq("id","demo");
+    const finState=await db.from("finances").select("prize_money,travel_cost,agent_commission,staff_bonus").eq("id","demo").maybeSingle();
+    if(!finState.error){
+      await db.from("finances").update({
+        prize_money:Number(finState.data?.prize_money||0)+prize,
+        travel_cost:Number(finState.data?.travel_cost||0)+travelCost,
+        agent_commission:Number(finState.data?.agent_commission||0)+agentCommission,
+        staff_bonus:Number(finState.data?.staff_bonus||0)+staffPerformanceBonus
+      }).eq("id","demo");
+    }
     await db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" remportent le double à "+t.name+" !":String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" terminent "+userRound+" en double à "+t.name+"."});
 
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
+    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }
 
   if(path.endsWith("/api/season-summary")&&req.method==="GET"){

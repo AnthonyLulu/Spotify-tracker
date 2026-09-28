@@ -1131,6 +1131,7 @@ function historyPage(){
   <div class="fm-filterbar">
    <select class="select" onchange="setHistoryCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${historyCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.players)}</option>`).join('')}</select>
    <select class="select" onchange="setHistoryContinent(this.value)">${continents.map(x=>`<option value="${esc(x)}" ${historyContinent===x?'selected':''}>${x||'Tous continents'}</option>`).join('')}</select>
+   <button class="primary" onclick="openHistoryArchive()">Base historique complète</button>
    <button class="ghost" onclick="historyCountry='';historyContinent='';loadHistory().then(render)">Réinitialiser</button>
   </div>
   ${global?`<div class="fm-history-hero card click" onclick="openPlayer(${global.id})"><div><div class="eyebrow">Référence de la sélection</div><div class="hero-name">${flags[global.country]||'🏳️'} ${esc(global.name)}</div><div class="muted">${esc(global.country)} · ${esc(global.continent)} · ${global.career_status==='retired'?'Retraité':'Actif'}</div></div><div class="fm-history-score"><span>Indice historique</span><b>${fmt(global.history_score)}</b></div><div class="fm-history-stats"><div><span>Grand Chelem</span><b>${global.grand_slams}</b></div><div><span>Titres</span><b>${global.titles}</b></div><div><span>Victoires</span><b>${fmt(global.wins)}</b></div><div><span>% victoires</span><b>${global.win_pct==null?'—':global.win_pct+'%'}</b></div></div></div>`:''}
@@ -1165,6 +1166,27 @@ function historyPage(){
 }
 window.setHistoryCountry=async c=>{historyCountry=String(c||'').toUpperCase();if(c)historyContinent='';await loadHistory();render()}
 window.setHistoryContinent=async c=>{historyContinent=String(c||'');if(c)historyCountry='';await loadHistory();render()}
+window.openHistoryArchive=()=>{
+ overlay.innerHTML="<div class='modal' onclick='if(event.target===this)closeOverlay()'><div class='sheet'><div class='sheet-head'><div><div class='eyebrow'>Open Era 1968–2025</div><h1>Base historique complète</h1><div class='muted'>13 000+ profils historiques, pas seulement le Hall of Fame.</div></div><button class='close' onclick='closeOverlay()'>✕</button></div><div class='filters' style='margin-top:12px'><input id='historyArchiveInput' class='input' placeholder='Connors, Borg, McEnroe, Lendl…' value='"+esc(historyQuery)+"' onkeydown='if(event.key===\"Enter\")runHistoryArchiveSearch(this.value,0)'><select id='historyArchiveCountry' class='select' onchange='runHistoryArchiveSearch(document.getElementById(\"historyArchiveInput\").value,0)'><option value=''>Toutes nationalités</option>"+countryRows.map(x=>"<option value='"+esc(x.country)+"' "+(historyCountry===x.country?"selected":"")+">"+(flags[x.country]||"🏳️")+" "+esc(x.country)+"</option>").join("")+"</select><button class='primary' onclick='runHistoryArchiveSearch(document.getElementById(\"historyArchiveInput\").value,0)'>Rechercher</button></div><div id='historyArchiveResults' style='margin-top:12px'><div class='loader'>Chargement de l’archive…</div></div></div></div>";
+ runHistoryArchiveSearch(historyQuery||"",historyDbOffset||0);
+}
+window.runHistoryArchiveSearch=async(q,offset=0)=>{
+ historyQuery=String(q||"").trim();historyDbOffset=Math.max(0,Number(offset)||0);
+ const box=document.getElementById("historyArchiveResults");if(!box)return;
+ box.innerHTML="<div class='loader'>Recherche historique…</div>";
+ try{
+  const country=document.getElementById("historyArchiveCountry")?.value||"";
+  const p=new URLSearchParams({offset:String(historyDbOffset),limit:"100"});
+  if(historyQuery)p.set("q",historyQuery);
+  if(country)p.set("country",country);
+  const d=await get("/api/history-players?"+p.toString());
+  historyDbRows=d.rows||[];historyDbCount=d.count||0;
+  const body=historyDbRows.map((x,i)=>"<tr class='click' onclick='openPlayer("+x.id+")'><td class='rank-num'>#"+fmt(historyDbOffset+i+1)+"</td><td><b>"+esc(x.name)+"</b><div class='muted micro'>"+(x.career_status==="retired"?"Retraité":"Actif")+"</div></td><td>"+(flags[x.country]||"🏳️")+" "+esc(x.country||"—")+"</td><td><b>"+(x.career_high_rank?"#"+fmt(x.career_high_rank):"—")+"</b></td><td>"+fmt(x.weeks_at_no1||0)+"</td><td>"+fmt(x.weeks_top10||0)+"</td><td>"+fmt(x.weeks_top100||0)+"</td><td><b>"+fmt(x.grand_slams||0)+"</b></td><td>"+fmt(x.titles||0)+"</td><td>"+fmt(x.wins||0)+"</td><td class='a-good'><b>"+fmt(x.history_score||0)+"</b></td></tr>").join("");
+  box.innerHTML="<div class='row between'><div><div class='eyebrow'>Résultats</div><h2>"+(historyQuery?"Recherche : "+esc(historyQuery):"Archive complète")+"</h2></div><span class='pill'>"+fmt(historyDbCount)+" profils</span></div><div class='table-wrap'><table class='table fm-history-table'><thead><tr><th>#</th><th>Joueur</th><th>Pays</th><th>Peak</th><th>Sem. #1</th><th>Top 10</th><th>Top 100</th><th>GC</th><th>Titres</th><th>Victoires</th><th>Indice</th></tr></thead><tbody>"+body+"</tbody></table></div><div class='pagination'><button "+(historyDbOffset===0?"disabled":"")+" onclick='historyArchivePage(-1)'>←</button><span class='muted mini'>"+(historyDbCount?fmt(historyDbOffset+1):0)+"–"+fmt(Math.min(historyDbOffset+historyDbRows.length,historyDbCount))+" / "+fmt(historyDbCount)+"</span><button "+(historyDbOffset+100>=historyDbCount?"disabled":"")+" onclick='historyArchivePage(1)'>→</button></div>";
+ }catch(e){box.innerHTML="<div class='empty'>Recherche impossible : "+esc(e.message)+"</div>"}
+}
+window.historyArchivePage=d=>runHistoryArchiveSearch(historyQuery,Math.max(0,historyDbOffset+Number(d)*100));
+
 
 function myPlayerPage(){
  const c=career();

@@ -487,7 +487,7 @@ const MAJOR_TOURNAMENT_LOGOS=[
  {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO"},
  {re:/Roland[ -]?Garros/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/RG-Logo.png",label:"RG"},
  {re:/Wimbledon/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/WB-Logo.png",label:"WIM"},
- {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO"}
+ {re:/(^|\b)US Open\b|(^|\b)Us Open\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-horizontal-logo.svg",label:"USO"}
 ];
 function tournamentLogoMeta(t={}){
  const name=String(t.name||t.tournament_name||"");
@@ -502,10 +502,10 @@ function tournamentLogoMeta(t={}){
  if(/ATP 500|^500$/i.test(category))return {url:null,label:"ATP 500",sub:"500",cls:"logo-atp"};
  if(/ATP 250|^250$/i.test(category))return {url:null,label:"ATP 250",sub:"250",cls:"logo-atp"};
  if(/ATP Finals|Finals/i.test(category)&&circuit==="ATP")return {url:null,label:"ATP FINALS",sub:"FINALS",cls:"logo-finals"};
- if(/Challenger/i.test(category)||circuit==="Challenger")return {url:null,label:"ATP CH",sub:category.replace(/Challenger\\s*/i,"")||"CH",cls:"logo-challenger"};
+ if(/Challenger/i.test(category)||circuit==="Challenger")return {url:null,label:"ATP CH",sub:category.replace(/Challenger\s*/i,"")||"CH",cls:"logo-challenger"};
  if(/Junior Grand Slam/i.test(category))return {url:null,label:"JUNIOR GS",sub:"JGS",cls:"logo-junior"};
  if(/^J\\d+/i.test(category)||circuit==="Junior")return {url:null,label:"ITF JUNIOR",sub:category||"J",cls:"logo-junior"};
- if(/^M\\d+|^W\\d+/i.test(category)||circuit==="ITF")return {url:null,label:"ITF",sub:category||"WTT",cls:"logo-itf"};
+ if(/^M\d+|^W\d+/i.test(category)||circuit==="ITF")return {url:null,label:"ITF",sub:category||"WTT",cls:"logo-itf"};
  if(circuit==="NCAA")return {url:null,label:"NCAA",sub:"COLLEGE",cls:"logo-ncaa"};
  if(circuit==="Federation"||/Davis/i.test(name+category))return {url:null,label:"DAVIS CUP",sub:"TEAM",cls:"logo-davis"};
  return {url:null,label:circuit||category||"TENNIS",sub:category&&category!==circuit?category:"TOUR",cls:"logo-generic"};
@@ -517,7 +517,7 @@ function tournamentLogoHtml(t,extraClass=""){
  return "<span class='tm-tour-logo-shell "+esc(extraClass)+"'><img class='tm-tour-logo' src='"+esc(m.url)+"' alt='Logo "+esc(t.name||t.tournament_name||m.label)+"' loading='lazy' onerror=\"this.style.display='none';this.parentElement.nextElementSibling.style.display='grid'\"></span>"+fallback.replace("class='tm-tour-logo-fallback","style='display:none' class='tm-tour-logo-fallback");
 }
 function tournamentLogoByName(name,level="",extraClass=""){
- return tournamentLogoHtml({name,tournament_name:name,category:level,level,circuit:/Challenger/i.test(level)?"Challenger":/^M\\d+|^W\\d+|ITF/i.test(level)?"ITF":""},extraClass);
+ return tournamentLogoHtml({name,tournament_name:name,category:level,level,circuit:/Challenger/i.test(level)?"Challenger":/^M\d+|^W\d+|ITF/i.test(level)?"ITF":""},extraClass);
 }
 function slamLogoHtml(keyOrName,extraClass=""){
  const names={AO:"Australian Open",RG:"Roland-Garros",WIM:"Wimbledon",USO:"US Open"};

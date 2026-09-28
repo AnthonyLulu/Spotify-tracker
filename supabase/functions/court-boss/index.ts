@@ -1855,7 +1855,7 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,scoutingReport,roleSuitability,attributeCeilings,hiddenTraitHistory,advancedMetrics,eloRating,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
@@ -1872,6 +1872,7 @@ Deno.serve(async(req:Request)=>{
       db.from("player_season_plans").select("*").eq("player_id",id).lte("season",Number(referenceDate.slice(0,4))+1).order("season",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_surface_preferences").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_context_traits").select("*").eq("player_id",id).maybeSingle(),
+      db.from("player_psychology_state").select("*").eq("player_id",id).maybeSingle(),
       managedIdForMatchup&&managedIdForMatchup!==id
         ?db.from("player_h2h_records").select("*").eq("player_a_id",Math.min(id,managedIdForMatchup)).eq("player_b_id",Math.max(id,managedIdForMatchup)).maybeSingle()
         :Promise.resolve({data:null,error:null}),
@@ -1913,6 +1914,19 @@ Deno.serve(async(req:Request)=>{
       seasonPlan:seasonPlan.error?null:seasonPlan.data,
       surfacePreference:surfacePreference.error?null:surfacePreference.data,
       contextProfile:contextProfile.error?null:contextProfile.data,
+      psychologyState:psychologyState.error?null:(
+        managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=82
+          ?psychologyState.data
+          :psychologyState.data
+            ?{
+                status_label:psychologyState.data.status_label,
+                win_streak:psychologyState.data.win_streak,
+                loss_streak:psychologyState.data.loss_streak,
+                last_result:psychologyState.data.last_result,
+                last_match_date:psychologyState.data.last_match_date
+              }
+            :null
+      ),
       h2hWithManaged:h2hWithManaged.error?null:h2hWithManaged.data,
       matchupPreviews:{
         hard:hardPreview.error?null:hardPreview.data,
@@ -2799,6 +2813,7 @@ Deno.serve(async(req:Request)=>{
         const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
+        const contextualStars=await db.rpc("refresh_player_contextual_stars",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
         const month=Number(date.slice(5,7));
@@ -2814,6 +2829,7 @@ Deno.serve(async(req:Request)=>{
         developmentSupply={
           ...(developmentSupply||{}),
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
+          contextualStars:contextualStars.error?{error:contextualStars.error.message}:contextualStars.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
           analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,

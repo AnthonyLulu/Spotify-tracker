@@ -3803,8 +3803,11 @@ Deno.serve(async(req:Request)=>{
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const surface=String(body?.surface||"Dur").slice(0,30);
     const tactics=body?.tactics||{};
-    const career=await db.from("career_state").select("managed_player_id,singles_rank,player_name").eq("id","demo").maybeSingle();
+    const career=await db.from("career_state").select("managed_player_id,singles_rank,player_name,career_focus").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
+    if(String(career.data.career_focus||"mixed")==="doubles_only"){
+      return h({error:"Carrière Double exclusivement : le Match Center simple est désactivé. Joue depuis le hub Double ou une fiche tournoi.",doubles_only:true},409);
+    }
 
     let opponentId=Number(body?.opponent_id||0);
     if(!opponentId){
@@ -4993,9 +4996,15 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="davis_role"){
       const role=String(body?.role||"Réserve").slice(0,40);
-      const up=await db.from("davis_squad").update({role}).eq("player_id",id).eq("nation","FRA");
+      if(Number(id)===Number(career.data.managed_player_id||0)
+         && String(career.data.career_focus||"mixed")==="doubles_only"
+         && /^Simple/i.test(role)){
+        return h({error:"Orientation Double exclusivement : ce joueur ne peut pas être aligné en simple en Coupe Davis."},409);
+      }
+      const nation=String(career.data.selected_federation_nation||career.data.federation_nation||"FRA").toUpperCase();
+      const up=await db.from("davis_squad").update({role}).eq("player_id",id).eq("nation",nation);
       if(up.error)return h({error:up.error.message},500);
-      return h({ok:true,role});
+      return h({ok:true,role,nation});
     }
 
 
@@ -5112,7 +5121,7 @@ Deno.serve(async(req:Request)=>{
       const home=String(tie.data.home_nation||"").toUpperCase(),away=String(tie.data.away_nation||"").toUpperCase();
       if(!home||!away||home==="TBD"||away==="TBD")return h({error:"Affiche Davis pas encore déterminée."},409);
 
-      const playerSelect="id,name,country,ranking,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity,doubles)";
+      const playerSelect="id,name,country,ranking,doubles_ranking,career_focus,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity,doubles)";
       const [homeRes,awayRes,homeSquad,awaySquad,homeTeamStaff,awayTeamStaff]=await Promise.all([
         db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",home).order("ranking").limit(6),
         db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",away).order("ranking").limit(6),
@@ -5128,11 +5137,21 @@ Deno.serve(async(req:Request)=>{
         const assigned=(rows??[]).map((x:any)=>({role:x.role,p:flatten(Array.isArray(x.players)?x.players[0]:x.players)})).filter((x:any)=>x.p?.id);
         const role=(r:string)=>assigned.find((x:any)=>x.role===r)?.p;
         const base=(fallback??[]).map(flatten);
+        const singlesPool=base.filter((p:any)=>String(p.career_focus||"mixed")!=="doubles_only");
+        const doublesPool=base.filter((p:any)=>p.doubles_ranking).sort((x:any,y:any)=>{
+          const xf=String(x.career_focus||"mixed")==="doubles_only"?0:1;
+          const yf=String(y.career_focus||"mixed")==="doubles_only"?0:1;
+          return xf-yf||Number(x.doubles_ranking||999999)-Number(y.doubles_ranking||999999);
+        });
+        const singlesRole=(r:string)=>{
+          const p=role(r);
+          return p&&String(p.career_focus||"mixed")!=="doubles_only"?p:null;
+        };
         return {
-          s1:role("Simple 1")||base[0],
-          s2:role("Simple 2")||base[1]||base[0],
-          d1:role("Double A")||base.find((p:any)=>p.doubles_ranking)||base[0],
-          d2:role("Double B")||base.filter((p:any)=>p.doubles_ranking)[1]||base[1]||base[0]
+          s1:singlesRole("Simple 1")||singlesPool[0]||base[0],
+          s2:singlesRole("Simple 2")||singlesPool[1]||singlesPool[0]||base[1]||base[0],
+          d1:role("Double A")||doublesPool[0]||base[0],
+          d2:role("Double B")||doublesPool[1]||doublesPool[0]||base[1]||base[0]
         };
       };
       const H=squad(homeSquad.data??[],homeRes.data??[]),A=squad(awaySquad.data??[],awayRes.data??[]);

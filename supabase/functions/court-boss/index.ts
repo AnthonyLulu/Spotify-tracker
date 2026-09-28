@@ -2845,6 +2845,7 @@ Deno.serve(async(req:Request)=>{
         .eq("player_id",managedId).eq("active",true).maybeSingle()
       :{data:null,error:null};
     const agencyNetwork=await db.rpc("agency_network_overview",{p_limit:12});
+    const staffLeaders=await db.rpc("staff_world_leaderboard",{p_limit:20});
 
     return h({
       contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],
@@ -2856,6 +2857,7 @@ Deno.serve(async(req:Request)=>{
       userStaffTraining:userStaffTraining.error?[]:(userStaffTraining.data??[]),
       managedAgency:managedAgency.error?null:managedAgency.data,
       agencyNetwork:agencyNetwork.error?[]:(agencyNetwork.data??[]),
+      staffLeaders:staffLeaders.error?[]:(staffLeaders.data??[]),
       ownStaffRelations,
       ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[])
     });

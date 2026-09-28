@@ -1594,13 +1594,49 @@ window.historyArchivePage=d=>runHistoryArchiveSearch(historyQuery,Math.max(0,his
 
 function abilityStarValue(score){
  const n=Math.max(0,Math.min(100,Number(score||0)));
- return Math.max(.5,Math.min(5,Math.round(n/10)/2));
+ if(n>=94)return 5;
+ if(n>=89)return 4.5;
+ if(n>=83)return 4;
+ if(n>=77)return 3.5;
+ if(n>=70)return 3;
+ if(n>=63)return 2.5;
+ if(n>=56)return 2;
+ if(n>=49)return 1.5;
+ if(n>=42)return 1;
+ return .5;
 }
 function starRatingHtml(value,label=''){
  const v=Math.max(.5,Math.min(5,Number(value||0)));
  const full=Math.floor(v),half=v-full>=.5;
  const glyph='★'.repeat(full)+(half?'◐':'')+'☆'.repeat(Math.max(0,5-full-(half?1:0)));
  return `<span class="player-star-rating" title="${esc(label||'')}"><span class="player-star-glyph">${glyph}</span><b>${v.toFixed(1)}</b></span>`;
+}
+function renderPlayerRolePanel(roleFit,dev,p,scoutReport,isManaged){
+ if(roleFit){
+  const defs=[
+   ['Serveur-volée','serve_volley'],['Serveur-attaquant','serve_attacker'],
+   ['Attaquant fond de court','attacking_baseliner'],['Contreur','counterpuncher'],
+   ['All-court','all_court'],['Défenseur de fond','clay_grinder'],
+   ['Spécialiste double','doubles_specialist']
+  ];
+  const rows=defs.map(x=>({name:x[0],score:Number(roleFit[x[1]]||0)})).sort((x,y)=>y.score-x.score);
+  let out='<div class="card" style="margin-bottom:12px">';
+  out+='<div class="row between"><div><div class="eyebrow">Rôles dynamiques</div><h2>'+esc(roleFit.preferred_role||dev.preferred_archetype||p.style||'Profil')+'</h2>';
+  out+='<div class="muted mini">Secondaire : '+esc(roleFit.secondary_role||'—')+' · le rôle évolue avec le profil technique, tactique, physique et la carrière.</div></div>';
+  out+='<span class="badge">'+starRatingHtml(roleFit.role_stars||abilityStarValue(roleFit.preferred_role_score||0),'Adéquation au rôle')+'</span></div>';
+  out+='<div class="grid g2" style="margin-top:10px">';
+  for(const x of rows){
+   const stars=abilityStarValue(x.score);
+   out+='<div class="attr-row"><div class="row between"><span>'+esc(x.name)+'</span><b>'+starRatingHtml(stars)+' <span class="muted micro">'+Math.round(x.score)+'/100</span></b></div>';
+   out+='<div class="bar"><i style="width:'+Math.max(0,Math.min(100,x.score))+'%"></i></div></div>';
+  }
+  out+='</div><div class="muted micro" style="margin-top:8px">Ces étoiles décrivent l’adéquation au rôle, pas le niveau global du joueur. Un 5★ mondial peut être moins naturel dans un rôle particulier.</div></div>';
+  return out;
+ }
+ if(scoutReport){
+  return '<div class="card" style="margin-bottom:12px"><div class="eyebrow">Rôle estimé par le scout</div><h2>'+esc(scoutReport.archetype_read||p.style||'À préciser')+'</h2><div class="muted mini">Les compatibilités détaillées par rôle nécessitent une connaissance très élevée du joueur.</div></div>';
+ }
+ return '<div class="card" style="margin-bottom:12px"><div class="eyebrow">Rôle</div><h2>'+esc(p.style||'À observer')+'</h2><div class="muted mini">Mission de scouting requise pour mesurer précisément les rôles naturels.</div></div>';
 }
 function publicLevelStars(p){
  const r=Number(p?.ranking||p?.game_world_rank||999999);
@@ -1753,7 +1789,7 @@ window.openPlayer=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier joueur…</div></div></div>';
  try{
   const d=await get('/api/player?id='+id),p=d.player;if(!p)throw new Error('Joueur introuvable');
-  const a=p.player_attributes||{},dev=d.developmentProfile||{},devHistory=d.developmentHistory||[],attributeCeilings=d.attributeCeilings?.ceilings||{},advanced=d.advancedMetrics||{},elo=d.eloRating||{},surfacePref=d.surfacePreference||{},contextProfile=d.contextProfile||{},h2hManaged=d.h2hWithManaged||null,matchupPreviews=d.matchupPreviews||{},styleHistory=d.styleHistory||[],tacticalProfile=d.tacticalProfile||{},tacticalTraits=d.tacticalTraits||[],seasonPlan=d.seasonPlan||null,scoutReport=d.scoutingReport||null,isManaged=Number(p.id)===Number(career().managed_player_id||0),knownAttrs=isManaged?a:(scoutReport?.attribute_estimates||{}),knownContext=isManaged?contextProfile:(scoutReport?.context_estimates||{}),ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[],primaryDoubles=d.primaryDoublesCommitment||null,doublesPartnerHistory=d.doublesPartnerHistory||[];
+  const a=p.player_attributes||{},dev=d.developmentProfile||{},devHistory=d.developmentHistory||[],roleFit=d.roleSuitability||null,attributeCeilings=d.attributeCeilings?.ceilings||{},advanced=d.advancedMetrics||{},elo=d.eloRating||{},surfacePref=d.surfacePreference||{},contextProfile=d.contextProfile||{},h2hManaged=d.h2hWithManaged||null,matchupPreviews=d.matchupPreviews||{},styleHistory=d.styleHistory||[],tacticalProfile=d.tacticalProfile||{},tacticalTraits=d.tacticalTraits||[],seasonPlan=d.seasonPlan||null,scoutReport=d.scoutingReport||null,isManaged=Number(p.id)===Number(career().managed_player_id||0),knownAttrs=isManaged?a:(scoutReport?.attribute_estimates||{}),knownContext=isManaged?contextProfile:(scoutReport?.context_estimates||{}),ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[],primaryDoubles=d.primaryDoublesCommitment||null,doublesPartnerHistory=d.doublesPartnerHistory||[];
   const currentStars=isManaged?Number(dev.current_star_rating??abilityStarValue(p.current_ability)):Number(scoutReport?.estimated_current_stars??publicLevelStars(p));
   const potentialStars=isManaged?Number(dev.potential_star_rating??abilityStarValue(p.potential)):(scoutReport?.estimated_potential_stars!=null?Number(scoutReport.estimated_potential_stars):null);
   const potentialMin=isManaged?Number(dev.potential_star_min??abilityStarValue(p.potential)):(scoutReport?.estimated_potential_star_min!=null?Number(scoutReport.estimated_potential_star_min):null);
@@ -2012,7 +2048,7 @@ ${p.bio_source?`<div class="muted micro" style="margin-top:6px">Bio : ${esc(p.bi
     </div>
     ${styleHistory.length?`<div class="card" style="margin-top:12px"><div class="row between"><h2>Évolution tactique</h2><span class="badge">${styleHistory.length}</span></div>${styleHistory.slice(0,8).map(x=>`<div class="list-item row between"><div><b>${esc(x.old_style||'—')} → ${esc(x.new_style)}</b><div class="muted micro">${esc(x.reason||'Évolution du profil')}</div></div><span class="badge">${df(x.changed_at)}</span></div>`).join('')}</div>`:''}
    </template>
-   <template id="developmentTpl"><div class="grid g2"><div class="card"><div class="row between"><div><div class="eyebrow">Niveau actuel</div><h2>${starRatingHtml(currentStars,'Capacité actuelle')}</h2></div><b>${isManaged?'CA '+p.current_ability+'/100':scoutReport?scoutReport.estimated_ca_min+'–'+scoutReport.estimated_ca_max:'Public'}</b></div><div class="bar"><i style="width:${Math.round(currentStars/5*100)}%"></i></div><div class="row between" style="margin-top:14px"><div><div class="eyebrow">Potentiel estimé</div><h2>${potentialStars!=null?starRatingHtml(potentialStars,'Potentiel'):'☆☆☆☆☆ ?'}</h2></div><b>${isManaged?'PA '+p.potential+'/100':scoutReport?scoutReport.estimated_pa_min+'–'+scoutReport.estimated_pa_max:'Inconnu'}</b></div><div class="bar"><i style="width:${potentialStars!=null?Math.round(potentialStars/5*100):0}%"></i></div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px"><span class="badge">Fourchette ${potentialMin!=null?potentialMin.toFixed(1):'?'}–${potentialMax!=null?potentialMax.toFixed(1):'?'} ★</span><span class="badge">Confiance ${isManaged?100:scoutReport?.confidence??35}%</span></div><p class="muted mini" style="margin-top:9px">Le potentiel est dynamique et l’estimation dépend du recruteur. Un joueur peut dépasser ou manquer son plafond prévu.</p></div><div class="card"><div class="row between"><div><div class="eyebrow">Courbe & personnalité</div><h2>${isManaged?developmentTypeLabel(dev.development_type||'standard'):esc(scoutReport?.development_type_read||'À observer')}</h2></div><span class="badge">${isManaged?'Pic ~'+(dev.peak_age??25)+' ans':esc(scoutReport?.trajectory_read||'Inconnu')}</span></div>${isManaged?`<p class="muted mini">${developmentTypeDescription(dev.development_type||'standard')}</p><div class="list-item row between"><span>Personnalité</span><b>${esc(dev.personality_label||'Équilibré')}</b></div><div class="list-item row between"><span>Mentalité</span><b>${esc(dev.mentality_profile||'Stable')}</b></div><div class="list-item row between"><span>Attitude entraînement</span><b>${esc(dev.training_attitude||'Correcte')}</b></div><div class="list-item row between"><span>Vitesse développement</span><b>${dev.development_rate??10}/20</b></div><div class="list-item row between"><span>Coachabilité</span><b>${dev.coachability??10}/20</b></div><div class="list-item row between"><span>Résilience</span><b>${dev.resilience??10}/20</b></div><div class="list-item row between"><span>Professionnalisme</span><b>${dev.professionalism??10}/20</b></div><div class="list-item row between"><span>Ambition</span><b>${dev.ambition??10}/20</b></div><div class="list-item row between"><span>Fragilité</span><b>${dev.injury_proneness??10}/20</b></div>
+   <template id="developmentTpl">${renderPlayerRolePanel(roleFit,dev,p,scoutReport,isManaged)}<div class="grid g2"><div class="card"><div class="row between"><div><div class="eyebrow">Niveau actuel</div><h2>${starRatingHtml(currentStars,'Capacité actuelle')}</h2></div><b>${isManaged?'CA '+p.current_ability+'/100':scoutReport?scoutReport.estimated_ca_min+'–'+scoutReport.estimated_ca_max:'Public'}</b></div><div class="bar"><i style="width:${Math.round(currentStars/5*100)}%"></i></div><div class="row between" style="margin-top:14px"><div><div class="eyebrow">Potentiel estimé</div><h2>${potentialStars!=null?starRatingHtml(potentialStars,'Potentiel'):'☆☆☆☆☆ ?'}</h2></div><b>${isManaged?'PA '+p.potential+'/100':scoutReport?scoutReport.estimated_pa_min+'–'+scoutReport.estimated_pa_max:'Inconnu'}</b></div><div class="bar"><i style="width:${potentialStars!=null?Math.round(potentialStars/5*100):0}%"></i></div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px"><span class="badge">Fourchette ${potentialMin!=null?potentialMin.toFixed(1):'?'}–${potentialMax!=null?potentialMax.toFixed(1):'?'} ★</span><span class="badge">Confiance ${isManaged?100:scoutReport?.confidence??35}%</span></div><p class="muted mini" style="margin-top:9px">Le potentiel est dynamique et l’estimation dépend du recruteur. Un joueur peut dépasser ou manquer son plafond prévu.</p></div><div class="card"><div class="row between"><div><div class="eyebrow">Courbe & personnalité</div><h2>${isManaged?developmentTypeLabel(dev.development_type||'standard'):esc(scoutReport?.development_type_read||'À observer')}</h2></div><span class="badge">${isManaged?'Pic ~'+(dev.peak_age??25)+' ans':esc(scoutReport?.trajectory_read||'Inconnu')}</span></div>${isManaged?`<p class="muted mini">${developmentTypeDescription(dev.development_type||'standard')}</p><div class="list-item row between"><span>Personnalité</span><b>${esc(dev.personality_label||'Équilibré')}</b></div><div class="list-item row between"><span>Mentalité</span><b>${esc(dev.mentality_profile||'Stable')}</b></div><div class="list-item row between"><span>Attitude entraînement</span><b>${esc(dev.training_attitude||'Correcte')}</b></div><div class="list-item row between"><span>Vitesse développement</span><b>${dev.development_rate??10}/20</b></div><div class="list-item row between"><span>Coachabilité</span><b>${dev.coachability??10}/20</b></div><div class="list-item row between"><span>Résilience</span><b>${dev.resilience??10}/20</b></div><div class="list-item row between"><span>Professionnalisme</span><b>${dev.professionalism??10}/20</b></div><div class="list-item row between"><span>Ambition</span><b>${dev.ambition??10}/20</b></div><div class="list-item row between"><span>Fragilité</span><b>${dev.injury_proneness??10}/20</b></div>
 <div class="list-item row between"><span>Drive compétitif</span><b>${dev.competitive_drive??10}/20</b></div>
 <div class="list-item row between"><span>Discipline</span><b>${dev.discipline??10}/20</b></div>
 <div class="list-item row between"><span>Gestion pression</span><b>${dev.pressure??10}/20</b></div>

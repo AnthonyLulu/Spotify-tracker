@@ -486,14 +486,15 @@ body{background:
 
 /* Tournament identity: TM-style logos in lists, photos only inside sheets */
 .tm-tour-logo-shell,.tm-tour-logo-fallback{width:58px;height:44px;border-radius:9px;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;flex:0 0 auto}
-.tm-tour-logo-shell{background:#f5f3ed;padding:4px}
+.tm-tour-logo-shell{background:rgba(255,255,255,.04);padding:3px}
 .tm-tour-logo{width:100%;height:100%;object-fit:contain;display:block}
-.tm-tour-logo-shell.logo-official{padding:3px;background:#f7f7f4}
-.tm-tour-logo-shell.logo-ao{padding:2px 3px;background:#149bd7;border-color:#149bd7}
-.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:none}
-.tm-detail-logo.tm-tour-logo-shell.logo-ao{width:92px;height:56px;padding:3px 5px}
-.tm-detail-logo.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:none}
-.tm-tour-logo-shell.logo-rg,.tm-tour-logo-shell.logo-wim,.tm-tour-logo-shell.logo-uso{padding:2px}
+.tm-tour-logo-shell.logo-official{padding:2px;background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.10)}
+.tm-tour-logo-shell.logo-auto{padding:3px;background:rgba(255,255,255,.06)}
+.tm-tour-logo-shell.logo-ao{width:78px;height:44px;padding:3px 5px;background:#149bd7;border-color:#149bd7}
+.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:scale(1.04)}
+.tm-detail-logo.tm-tour-logo-shell.logo-ao{width:104px;height:56px;padding:4px 7px}
+.tm-detail-logo.tm-tour-logo-shell.logo-ao .tm-tour-logo{object-fit:contain;transform:scale(1.04)}
+.tm-tour-logo-shell.logo-rg,.tm-tour-logo-shell.logo-wim,.tm-tour-logo-shell.logo-uso{padding:2px;background:rgba(255,255,255,.035)}
 .tm-tour-logo-fallback{padding:5px;text-align:center;font-size:8px;font-weight:950;line-height:1.02;letter-spacing:.05em;background:#11231b;color:#eef8f2}
 .tm-tour-logo-fallback b{display:block;font-size:8px;max-width:50px;white-space:normal}
 .tm-tour-logo-fallback small{display:block;font-size:7px;font-weight:800;opacity:.72;margin-top:3px;max-width:50px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

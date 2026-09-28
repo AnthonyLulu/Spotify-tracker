@@ -1105,7 +1105,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:11,development_model:"development-v2",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:12,development_model:"development-v3",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2484,7 +2484,7 @@ Deno.serve(async(req:Request)=>{
     if(managed.error||!managed.data)return h({error:managed.error?.message||"Managed player missing"},500);
     const [devRow,staffRows,facilityRows]=await Promise.all([
       db.from("player_development_profiles")
-        .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability")
+        .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability,development_context,burnout_susceptibility,confidence_volatility")
         .eq("player_id",managed.data.id).maybeSingle(),
       db.from("staff").select("skill,role,profile:staff_profiles(*)"),
       db.from("facilities").select("level")
@@ -2553,7 +2553,7 @@ Deno.serve(async(req:Request)=>{
       potential_stars:Math.max(.5,Math.min(5,Math.round(Number(managed.data.potential||0)/10)/2)),
       load,recommended_load:{min:minLoad,max:maxLoad},risk,multiplier:Number(multiplier.toFixed(3)),
       fatigue,fitness,morale,injury_status:injury,career_focus:careerFocus,
-      development:{type:String(dev.development_type||"standard"),development_rate:Number(dev.development_rate||10),professionalism:Number(dev.professionalism||10),coachability:Number(dev.coachability||10),peak_age:Number(dev.peak_age||25),decline_start_age:Number(dev.decline_start_age||30)},
+      development:{type:String(dev.development_type||"standard"),phase:String(dev.development_context?.phase||((playerAge<=21&&Number(managed.data.potential||0)-Number(managed.data.current_ability||0)>=12)?"prospect":playerAge<Number(dev.peak_age||25)?"developing":playerAge>Number(dev.decline_start_age||30)?"decline":Number(managed.data.current_ability||0)>=Number(managed.data.potential||0)-2?"plateau":"prime")),development_rate:Number(dev.development_rate||10),professionalism:Number(dev.professionalism||10),coachability:Number(dev.coachability||10),resilience:Number(dev.resilience||10),discipline:Number(dev.discipline||10),competitive_drive:Number(dev.competitive_drive||10),confidence_volatility:Number(dev.confidence_volatility||10),burnout_susceptibility:Number(dev.burnout_susceptibility||10),peak_age:Number(dev.peak_age||25),decline_start_age:Number(dev.decline_start_age||30)},
       staff_score:Number(avgStaff.toFixed(1)),facility_score:Number(avgFacility.toFixed(1)),
       targets:Object.entries(targetScores).map(([session,score])=>({session,score:Number(Number(score).toFixed(2))})).sort((a:any,b:any)=>b.score-a.score),
       warnings
@@ -2642,7 +2642,7 @@ Deno.serve(async(req:Request)=>{
       const attrs:any=Array.isArray(anthony.data.player_attributes)?anthony.data.player_attributes[0]:anthony.data.player_attributes||{};
       const [devProfile,ceilingRow]=await Promise.all([
         db.from("player_development_profiles")
-          .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability")
+          .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability,development_context,burnout_susceptibility,confidence_volatility")
           .eq("player_id",anthony.data.id).maybeSingle(),
         db.from("player_attribute_ceilings").select("ceilings").eq("player_id",anthony.data.id).maybeSingle()
       ]);
@@ -2664,7 +2664,9 @@ Deno.serve(async(req:Request)=>{
       const conditionMult=Math.max(.72,Math.min(1.08,
         .88+Number(current.data.fitness||90)/500+Number(current.data.morale||70)/700-Number(current.data.fatigue||20)/550
       ));
-      const personalDevMult=personalBase*ageMult*conditionMult;
+      const phase=String(dev.development_context?.phase||"");
+      const phaseMult=phase==="prospect"?1.08:phase==="developing"?1.05:phase==="prime"?1:phase==="plateau"?.95:phase==="decline"?.82:1;
+      const personalDevMult=personalBase*ageMult*conditionMult*phaseMult;
       const map:any={
         "Service":["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety","serve_plus_one"],
         "Retour":["return_game","anticipation","return_aggression","return_consistency","reaction","passing_shot"],
@@ -2717,6 +2719,7 @@ Deno.serve(async(req:Request)=>{
         professionalism:Number(dev.professionalism||10),
         development_rate:Number(dev.development_rate||10),
         staff_environment:Number(dev.coaching_environment||8),
+        phase:phase||null,
         multiplier:Number(personalDevMult.toFixed(3))
       };
       const progressMap=new Map((progressRows.data??[]).map((x:any)=>[x.attribute,Number(x.xp||0)]));
@@ -2787,6 +2790,7 @@ Deno.serve(async(req:Request)=>{
         const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
+        const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const month=Number(date.slice(5,7));
         const analyticsBase=month===1||month===4||month===7||month===10
           ?await db.rpc("refresh_player_advanced_metrics",{p_date:date})
@@ -2800,6 +2804,7 @@ Deno.serve(async(req:Request)=>{
         developmentSupply={
           ...(developmentSupply||{}),
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
+          traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           analyticsBase:analyticsBase.error?{error:analyticsBase.error.message}:analyticsBase.data,
           analyticsExtension:analyticsExtension.error?{error:analyticsExtension.error.message}:analyticsExtension.data,
           contextTraits:contextTraits.error?{error:contextTraits.error.message}:contextTraits.data

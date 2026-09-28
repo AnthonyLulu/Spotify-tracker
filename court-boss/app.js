@@ -1939,7 +1939,8 @@ window.applyStaffWorldFilters=async()=>{
 }
 window.staffWorldPage=async dir=>{
  const total=Number(staffWorldData?.total||0);
- staffWorldOffset=Math.max(0,Math.min(Math.max(0,total-1),staffWorldOffset+Number(dir||0)*50));
+ const lastOffset=Math.max(0,Math.floor(Math.max(0,total-1)/50)*50);
+ staffWorldOffset=Math.max(0,Math.min(lastOffset,staffWorldOffset+Number(dir||0)*50));
  await loadStaffWorld();
  render();
  const el=document.querySelector('.staff-world-filter');

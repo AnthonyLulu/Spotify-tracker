@@ -1183,51 +1183,28 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(kind==="junior_race"){
-      const gameYear=Number(gameDate.slice(0,4))||2025;
-      if(gameYear===2025){
-        let history=db.from("junior_finals_qualification_history")
-          .select("*",{count:"exact"}).eq("season",2025);
-        if(q)history=history.ilike("player_name",`%${q}%`);
-        if(country)history=history.eq("country",country);
-        history=history.order("race_rank",{ascending:true}).range(offset,offset+limit-1);
-        const {data,error,count}=await history;
-        if(error)return h({error:error.message},500);
-        const ids=(data??[]).map((x:any)=>Number(x.player_id)).filter(Boolean);
-        const profile=ids.length
-          ?await db.from("players").select("id,birth_date,age,age_snapshot_date,current_ability,potential").in("id",ids)
-          :{data:[],error:null};
-        if(profile.error)return h({error:profile.error.message},500);
-        const byId=new Map((profile.data??[]).map((p:any)=>[Number(p.id),p]));
-        const rows=(data??[]).map((x:any)=>{
-          const p:any=byId.get(Number(x.player_id))||{};
-          return {
-            id:x.player_id,name:x.player_name,country:x.country,
-            junior_race_ranking:x.race_rank,junior_race_points:null,
-            junior_race_snapshot_date:x.snapshot_date,
-            finals_status:x.status,official_qualification:true,
-            current_ability:p.current_ability??null,potential:p.potential??null,
-            age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)
-          };
-        });
-        return h({
-          kind,offset,limit,count:count??0,rows,rankingDate:"2025-09-08",
-          finalsName:"ITF World Tennis Tour Junior Finals",qualificationPlaces:8,
-          raceType:"player",qualificationWindow:"12 derniers mois",finalsPoints:1000,
-          source:"ITF 2025 Junior Finals qualification list"
-        });
+      const race=await db.rpc("junior_race_for_date",{p_date:gameDate});
+      if(race.error)return h({error:race.error.message},500);
+      let rows=(race.data??[]);
+      if(q){
+        const nq=normalizeName(q);
+        rows=rows.filter((x:any)=>normalizeName(String(x.name||"")).includes(nq));
       }
-      let query=db.from("junior_race_view").select("*",{count:"exact"});
-      if(q)query=query.ilike("name_norm",`%${normalizeName(q)}%`);
-      if(country)query=query.eq("country",country);
-      query=query.order("junior_race_ranking",{ascending:true}).range(offset,offset+limit-1);
-      const {data,error,count}=await query;
-      if(error)return h({error:error.message},500);
-      const rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
+      if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
+      const count=rows.length;
+      rows=rows.slice(offset,offset+limit).map((p:any)=>({
+        ...p,
+        age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)
+      }));
       return h({
-        kind,offset,limit,count:count??0,rows,rankingDate:gameDate,
+        kind,offset,limit,count,rows,rankingDate:gameDate,
         finalsName:"ITF World Tennis Tour Junior Finals",qualificationPlaces:8,
         raceType:"player",qualificationWindow:"12 derniers mois",finalsPoints:1000,
-        source:"Court Boss qualification race basée sur les points Junior"
+        officialPublishedThrough:Number(gameDate.slice(0,4))<=2025?9:null,
+        approximateAfter:Number(gameDate.slice(0,4))<=2025?9:null,
+        source:Number(gameDate.slice(0,4))<=2025
+          ?"ITF 2025 Junior Finals qualification field + Court Boss estimated continuation"
+          :"Court Boss simulated Junior Finals race"
       });
     }
 
@@ -2110,11 +2087,11 @@ Deno.serve(async(req:Request)=>{
           .filter(Boolean)
           .sort((a:any,b:any)=>Number(a.seed||999)-Number(b.seed||999)||Number(a.ranking||9999)-Number(b.ranking||9999));
       }else if(/Junior Finals/i.test(String(t.data.category||""))){
-        const race=await db.from("junior_race_view")
-          .select("id,name,country,birth_date,age,age_snapshot_date,junior_race_ranking,junior_race_points,current_ability,potential,form,fitness,fatigue,style,finals_status")
-          .order("junior_race_ranking",{ascending:true}).limit(8);
+        const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+        const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
+        const race=await db.rpc("junior_race_for_date",{p_date:refDate});
         if(race.error)return h({error:race.error.message},500);
-        main=(race.data??[]).map((p:any)=>({
+        main=(race.data??[]).slice(0,8).map((p:any)=>({
           ...p,
           age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
           ranking:p.junior_race_ranking,
@@ -2410,13 +2387,14 @@ Deno.serve(async(req:Request)=>{
     let finalsRaceRows:any[]=[];
     let rank=Number(c.singles_rank||9999);
     if(isJuniorFinals){
-      const race=await db.from("junior_race_view")
-        .select("id,name,country,junior_race_ranking,junior_race_points")
-        .order("junior_race_ranking",{ascending:true}).limit(8);
+      const race=await db.rpc("junior_race_for_date",{p_date:String(c.career_date||AGE_REFERENCE_DATE)});
       if(race.error)return h({error:race.error.message},500);
-      finalsRaceRows=race.data??[];
+      finalsRaceRows=(race.data??[]).slice(0,8);
       const own=finalsRaceRows.find((x:any)=>Number(x.id)===managedId);
-      if(!own)return h({error:"Non qualifié pour les Junior Finals : il faut terminer dans le Top 8 de la Race Junior.",race_required:8},409);
+      if(!own)return h({
+        error:"Non qualifié pour les Junior Finals : il faut terminer dans le Top 8 de la Race Junior.",
+        finals_locked:true,race_required:8
+      },409);
       rank=Number(own.junior_race_ranking||9999);
     }
     const direct=isJuniorFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);

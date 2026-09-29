@@ -1467,7 +1467,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:27,season_model:"davis-pro-junior-doubles-v3",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:28,season_model:"davis-ncaa-pro-junior-doubles-v4",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -3456,6 +3456,8 @@ Deno.serve(async(req:Request)=>{
     // reserve the week first, then pro singles, juniors and doubles fill around them.
     const davisWorldEvents=await db.rpc("simulate_world_davis_ties",{p_from_date:previousDate,p_to_date:date});
     if(davisWorldEvents.error)return h({error:davisWorldEvents.error.message},500);
+    const ncaaWorldEvents=await db.rpc("simulate_ncaa_duals",{p_from_date:previousDate,p_to_date:date});
+    if(ncaaWorldEvents.error)return h({error:ncaaWorldEvents.error.message},500);
     const worldEvents=await db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date});
     if(worldEvents.error)return h({error:worldEvents.error.message},500);
     const juniorWorldEvents=await db.rpc("simulate_junior_world_tournaments",{p_from_date:previousDate,p_to_date:date});
@@ -3717,7 +3719,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -7697,166 +7699,77 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="play_college_dual"){
-      const dual=await db.from("college_duals").select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)").eq("id",id).maybeSingle();
-      if(dual.error||!dual.data)return h({error:dual.error?.message||"Dual not found"},404);
-      if(dual.data.status==="completed")return h({ok:true,home_score:dual.data.home_score,away_score:dual.data.away_score,already:true});
-
-      const [homeStaff,awayStaff]=await Promise.all([
-        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation,professionalism,workload,burnout,travel_fatigue)").eq("team_id",dual.data.home_team_id).eq("active",true),
-        db.from("college_team_staff").select("role,staff:staff_profiles(coach_rating,technical_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,scouting_rating,youth_rating,communication_rating,reputation,professionalism,workload,burnout,travel_fatigue)").eq("team_id",dual.data.away_team_id).eq("active",true)
-      ]);
-      if(homeStaff.error||awayStaff.error)return h({error:(homeStaff.error||awayStaff.error)?.message},500);
-
-      const collegeStaffPower=(rows:any[])=>{
-        if(!rows?.length)return 0;
-        const vals=rows.map((x:any)=>{
-          const p:any=Array.isArray(x.staff)?x.staff[0]:x.staff||{};
-          const role=String(x.role||"");
-          const eff=Math.max(.68,Math.min(1.06,1-Number(p.burnout||0)*.0032-Number(p.travel_fatigue||0)*.0018-Math.max(0,Number(p.workload||20)-75)*.0015+Math.max(0,Number(p.professionalism||10)-14)*.006));
-          let val=10;
-          if(/Head Coach/i.test(role))val=Number(p.coach_rating||10)*.34+Number(p.tactical_rating||10)*.24+Number(p.mental_rating||10)*.15+Number(p.youth_rating||10)*.15+Number(p.communication_rating||10)*.12;
-          else if(/Assistant/i.test(role))val=Number(p.technical_rating||10)*.35+Number(p.tactical_rating||10)*.30+Number(p.youth_rating||10)*.20+Number(p.communication_rating||10)*.15;
-          else if(/Trainer/i.test(role))val=Number(p.fitness_rating||10)*.45+Number(p.medical_rating||10)*.35+Number(p.communication_rating||10)*.20;
-          else val=Number(p.scouting_rating||10)*.45+Number(p.youth_rating||10)*.30+Number(p.reputation||10)*.25;
-          return val*eff;
-        });
-        return vals.reduce((s:number,v:number)=>s+v,0)/vals.length;
-      };
-      const homeStaffPower=collegeStaffPower(homeStaff.data??[]);
-      const awayStaffPower=collegeStaffPower(awayStaff.data??[]);
-      const homeRank=Math.max(1,Number(dual.data.home?.ita_rank||50));
-      const awayRank=Math.max(1,Number(dual.data.away?.ita_rank||50));
-      const seedHome=((id*17)%13)-6,seedAway=((id*29)%13)-6;
-      const homePower=82-homeRank*.52+homeStaffPower*.95+seedHome;
-      const awayPower=82-awayRank*.52+awayStaffPower*.95+seedAway;
-      const diff=homePower-awayPower;
-      const homeScore=diff>=12?4:diff>=5?4:diff>=0?4:Math.abs(diff)<5?3:Math.abs(diff)<12?2:1;
-      const awayScore=homeScore===4?(Math.abs(diff)>=12?0:Math.abs(diff)>=5?1:3):4;
-
-      const up=await db.from("college_duals").update({home_score:homeScore,away_score:awayScore,status:"completed"}).eq("id",id);
-      if(up.error)return h({error:up.error.message},500);
-      const cs=await db.from("college_career_state").select("*").eq("id","demo").maybeSingle();
-      if(cs.data?.status==="committed"){
-        const managedTeam=Number(cs.data.team_id||0);
-        const won=(managedTeam===Number(dual.data.home_team_id)&&homeScore>awayScore)||(managedTeam===Number(dual.data.away_team_id)&&awayScore>homeScore);
-        await db.from("college_career_state").update({
-          coach_trust:Math.min(100,Number(cs.data.coach_trust||55)+(won?4:1)),
-          academic_progress:Math.min(100,Number(cs.data.academic_progress||72)+1)
-        }).eq("id","demo");
+      const sim=await db.rpc("simulate_ncaa_dual_v2",{p_dual_id:id});
+      if(sim.error)return h({error:sim.error.message},500);
+      if(sim.data?.ok===false){
+        const reason=String(sim.data?.reason||"ncaa_simulation_failed");
+        return h({
+          error:reason==="insufficient_roster"
+            ?"Effectif NCAA insuffisant pour disputer ce dual."
+            :"Ce dual NCAA ne peut pas être joué maintenant.",
+          details:sim.data
+        },409);
       }
-      return h({ok:true,home_score:homeScore,away_score:awayScore,home_staff_power:Number(homeStaffPower.toFixed(1)),away_staff_power:Number(awayStaffPower.toFixed(1))});
+      const dual=await db.from("college_duals")
+        .select("*,home:college_teams!college_duals_home_team_id_fkey(*),away:college_teams!college_duals_away_team_id_fkey(*)")
+        .eq("id",id).maybeSingle();
+      if(dual.error||!dual.data)return h({error:dual.error?.message||"Dual not found"},404);
+      await db.from("inbox_items").insert({
+        kind:"college",
+        title:"Résultat NCAA",
+        body:String(dual.data.home?.name||"Équipe")+" "+dual.data.home_score+"-"+dual.data.away_score+" "+String(dual.data.away?.name||"Équipe")+".",
+        action_route:"university",
+        is_read:false
+      });
+      return h({
+        ok:true,
+        already:Boolean(sim.data?.already),
+        home_score:dual.data.home_score,
+        away_score:dual.data.away_score,
+        winner_team_id:dual.data.winner_team_id,
+        home_win_probability:dual.data.home_win_probability,
+        stage:dual.data.stage,
+        competition:dual.data.competition
+      });
     }
 
 
     if(action==="play_davis_tie"){
-      const tie=await db.from("davis_ties").select("*").eq("id",id).maybeSingle();
-      if(tie.error||!tie.data)return h({error:tie.error?.message||"Tie not found"},404);
-      if(tie.data.status==="completed"){
-        const rub=await db.from("davis_rubbers").select("*").eq("tie_id",id).order("rubber_no");
-        return h({ok:true,already:true,tie:tie.data,rubbers:rub.data??[]});
+      const sim=await db.rpc("simulate_davis_tie_v2",{p_tie_id:id});
+      if(sim.error)return h({error:sim.error.message},500);
+      if(sim.data?.ok===false){
+        const reason=String(sim.data?.reason||"davis_simulation_failed");
+        return h({
+          error:reason==="participants_not_ready"
+            ?"Affiche Davis pas encore déterminée."
+            :reason==="incomplete_squad"
+              ?"Sélection Davis incomplète pour cette rencontre."
+              :"Cette rencontre Davis ne peut pas être jouée maintenant.",
+          details:sim.data
+        },409);
       }
-      const home=String(tie.data.home_nation||"").toUpperCase(),away=String(tie.data.away_nation||"").toUpperCase();
-      if(!home||!away||home==="TBD"||away==="TBD")return h({error:"Affiche Davis pas encore déterminée."},409);
-
-      const playerSelect="id,name,country,ranking,doubles_ranking,career_focus,current_ability,form,fitness,fatigue,player_attributes(hard_affinity,clay_affinity,grass_affinity,doubles)";
-      const [homeRes,awayRes,homeSquad,awaySquad,homeTeamStaff,awayTeamStaff]=await Promise.all([
-        db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",home).order("ranking").limit(6),
-        db.from("players").select(playerSelect).eq("ranking_current",true).eq("country",away).order("ranking").limit(6),
-        db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",home),
-        db.from("davis_squad").select("role,players("+playerSelect+")").eq("nation",away),
-        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation,professionalism,workload,burnout,travel_fatigue)").eq("nation",home).eq("active",true),
-        db.from("davis_team_staff").select("role,staff:staff_profiles(coach_rating,tactical_rating,mental_rating,fitness_rating,medical_rating,communication_rating,pressure_handling,reputation,professionalism,workload,burnout,travel_fatigue)").eq("nation",away).eq("active",true)
+      const [tie,rub]=await Promise.all([
+        db.from("davis_ties").select("*").eq("id",id).maybeSingle(),
+        db.from("davis_rubbers").select("*").eq("tie_id",id).order("rubber_no")
       ]);
-      const err=homeRes.error||awayRes.error||homeSquad.error||awaySquad.error||homeTeamStaff.error||awayTeamStaff.error;
-      if(err)return h({error:err.message},500);
-      const flatten=(x:any)=>({...x,player_attributes:Array.isArray(x.player_attributes)?x.player_attributes[0]:x.player_attributes});
-      const squad=(rows:any[],fallback:any[])=>{
-        const assigned=(rows??[]).map((x:any)=>({role:x.role,p:flatten(Array.isArray(x.players)?x.players[0]:x.players)})).filter((x:any)=>x.p?.id);
-        const role=(r:string)=>assigned.find((x:any)=>x.role===r)?.p;
-        const base=(fallback??[]).map(flatten);
-        const singlesPool=base.filter((p:any)=>String(p.career_focus||"mixed")!=="doubles_only");
-        const doublesPool=base.filter((p:any)=>p.doubles_ranking&&String(p.career_focus||"mixed")!=="singles_only").sort((x:any,y:any)=>{
-          const xf=String(x.career_focus||"mixed")==="doubles_only"?0:1;
-          const yf=String(y.career_focus||"mixed")==="doubles_only"?0:1;
-          return xf-yf||Number(x.doubles_ranking||999999)-Number(y.doubles_ranking||999999);
+      if(tie.error||rub.error||!tie.data)return h({error:(tie.error||rub.error)?.message||"Tie not found"},500);
+      if(!sim.data?.already){
+        await db.from("inbox_items").insert({
+          kind:"davis",
+          title:"Résultat Coupe Davis",
+          body:String(tie.data.home_nation)+" "+tie.data.home_score+"-"+tie.data.away_score+" "+String(tie.data.away_nation)+".",
+          action_route:"davis",
+          is_read:false
         });
-        const singlesRole=(r:string)=>{
-          const p=role(r);
-          return p&&String(p.career_focus||"mixed")!=="doubles_only"?p:null;
-        };
-        const doublesRole=(r:string)=>{
-          const p=role(r);
-          return p&&String(p.career_focus||"mixed")!=="singles_only"?p:null;
-        };
-        return {
-          s1:singlesRole("Simple 1")||singlesPool[0]||null,
-          s2:singlesRole("Simple 2")||singlesPool[1]||singlesPool[0]||null,
-          d1:doublesRole("Double A")||doublesPool[0]||null,
-          d2:doublesRole("Double B")||doublesPool[1]||doublesPool[0]||null
-        };
-      };
-      const H=squad(homeSquad.data??[],homeRes.data??[]),A=squad(awaySquad.data??[],awayRes.data??[]);
-      if(!H.s1||!H.s2||!A.s1||!A.s2)return h({error:"Sélection Davis incomplète pour "+home+" ou "+away},409);
-
-      const surf=String(tie.data.surface||"Dur");
-      const key=surf.includes("Terre")?"clay_affinity":surf.includes("Gazon")?"grass_affinity":"hard_affinity";
-      const nationStaffPower=(rows:any[])=>{
-        if(!rows?.length)return 0;
-        const vals=rows.map((x:any)=>{
-          const p:any=Array.isArray(x.staff)?x.staff[0]:x.staff||{};
-          const role=String(x.role||"");
-          const eff=Math.max(.68,Math.min(1.06,1-Number(p.burnout||0)*.0032-Number(p.travel_fatigue||0)*.0018-Math.max(0,Number(p.workload||20)-75)*.0015+Math.max(0,Number(p.professionalism||10)-14)*.006));
-          let val=10;
-          if(/Captain/i.test(role))val=Number(p.tactical_rating||10)*.30+Number(p.mental_rating||10)*.23+Number(p.communication_rating||10)*.20+Number(p.pressure_handling||10)*.17+Number(p.reputation||10)*.10;
-          else if(/Physio/i.test(role))val=Number(p.medical_rating||10)*.55+Number(p.fitness_rating||10)*.30+Number(p.communication_rating||10)*.15;
-          else val=Number(p.coach_rating||10)*.28+Number(p.tactical_rating||10)*.24+Number(p.fitness_rating||10)*.18+Number(p.mental_rating||10)*.18+Number(p.communication_rating||10)*.12;
-          return val*eff;
-        });
-        return vals.reduce((s:number,v:number)=>s+v,0)/vals.length;
-      };
-      const homeStaffBonus=Math.max(0,(nationStaffPower(homeTeamStaff.data??[])-10)*.14);
-      const awayStaffBonus=Math.max(0,(nationStaffPower(awayTeamStaff.data??[])-10)*.14);
-      const strength=(p:any,staffBonus=0)=>Number(p.current_ability||50)+Number(p.form||70)*.18+Number(p.fitness||85)*.08-Number(p.fatigue||20)*.12+Number(p.player_attributes?.[key]||10)*.7+staffBonus;
-      const one=(ha:any,aa:any)=>{const hs=strength(ha,homeStaffBonus),as=strength(aa,awayStaffBonus);const prob=1/(1+Math.exp(-(hs-as)/7));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(hs-as)<7?"7-6 4-6 6-3":(hw?"6-3 6-4":"4-6 3-6")}};
-      const pair=(a:any,b:any,staffBonus=0)=>strength(a,staffBonus)*.46+strength(b,staffBonus)*.46+Number(a.player_attributes?.doubles||10)*.35+Number(b.player_attributes?.doubles||10)*.35;
-      const dbl=(ha:any,hb:any,aa:any,ab:any)=>{const ph=pair(ha,hb,homeStaffBonus),pa=pair(aa,ab,awayStaffBonus),prob=1/(1+Math.exp(-(ph-pa)/8));const hw=Math.random()<prob;return {winner:hw?home:away,score:Math.abs(ph-pa)<7?"7-6 3-6 6-4":(hw?"6-4 6-3":"4-6 3-6")}};
-
-      const rubs:any[]=[];
-      const push=(no:number,type:string,hn:string,an:string,res:any)=>rubs.push({tie_id:id,rubber_no:no,rubber_type:type,home_names:hn,away_names:an,winner_nation:res.winner,score:res.score});
-      push(1,"Simple",H.s1.name,A.s2.name,one(H.s1,A.s2));
-      push(2,"Simple",H.s2.name,A.s1.name,one(H.s2,A.s1));
-      push(3,"Double",H.d1.name+" / "+H.d2.name,A.d1.name+" / "+A.d2.name,dbl(H.d1,H.d2,A.d1,A.d2));
-      let hs=rubs.filter(x=>x.winner_nation===home).length,as=rubs.filter(x=>x.winner_nation===away).length;
-      if(hs<3&&as<3){push(4,"Simple",H.s1.name,A.s1.name,one(H.s1,A.s1));hs=rubs.filter(x=>x.winner_nation===home).length;as=rubs.filter(x=>x.winner_nation===away).length;}
-      if(hs<3&&as<3){push(5,"Simple",H.s2.name,A.s2.name,one(H.s2,A.s2));hs=rubs.filter(x=>x.winner_nation===home).length;as=rubs.filter(x=>x.winner_nation===away).length;}
-
-      const del=await db.from("davis_rubbers").delete().eq("tie_id",id);
-      if(del.error)return h({error:del.error.message},500);
-      const ins=await db.from("davis_rubbers").insert(rubs);
-      if(ins.error)return h({error:ins.error.message},500);
-      const up=await db.from("davis_ties").update({status:"completed",home_score:hs,away_score:as}).eq("id",id);
-      if(up.error)return h({error:up.error.message},500);
-      const winnerNation=hs>as?home:away;
-      const stage=String(tie.data.stage||"");
-      if(stage==="Final 8 · Quarter-final"){
-        const semis=await db.from("davis_ties").select("*").in("stage",["Final 8 · Semi-final 1","Final 8 · Semi-final 2"]).order("tie_date");
-        if(!semis.error){
-          const s1=(semis.data??[]).find((x:any)=>x.stage==="Final 8 · Semi-final 1");
-          const s2=(semis.data??[]).find((x:any)=>x.stage==="Final 8 · Semi-final 2");
-          if(home==="CZE"&&away==="CAN"&&s1)await db.from("davis_ties").update({away_nation:winnerNation}).eq("id",s1.id);
-          if(home==="ITA"&&away==="KOR"&&s1)await db.from("davis_ties").update({home_nation:winnerNation}).eq("id",s1.id);
-          if(home==="GBR"&&away==="GER"&&s2)await db.from("davis_ties").update({home_nation:winnerNation}).eq("id",s2.id);
-          if(home==="AUT"&&away==="ESP"&&s2)await db.from("davis_ties").update({away_nation:winnerNation}).eq("id",s2.id);
-        }
-      }else if(stage==="Final 8 · Semi-final 1"||stage==="Final 8 · Semi-final 2"){
-        const fin=await db.from("davis_ties").select("*").eq("stage","Final 8 · Final").maybeSingle();
-        if(!fin.error&&fin.data){
-          const patch=stage.endsWith("1")?{home_nation:winnerNation}:{away_nation:winnerNation};
-          await db.from("davis_ties").update(patch).eq("id",fin.data.id);
-        }
       }
-      await db.from("inbox_items").insert({kind:"davis",title:"Résultat Coupe Davis",body:home+" "+hs+"-"+as+" "+away+".",action_route:"davis",is_read:false});
-      return h({ok:true,tie:{...tie.data,status:"completed",home_score:hs,away_score:as},rubbers:rubs,winner_nation:winnerNation});
+      return h({
+        ok:true,
+        already:Boolean(sim.data?.already),
+        tie:tie.data,
+        rubbers:rub.data??[],
+        winner_nation:sim.data?.winner_nation,
+        format:sim.data?.format
+      });
     }
 
     if(action==="set_scouting_assignment"){

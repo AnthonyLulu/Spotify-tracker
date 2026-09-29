@@ -3363,12 +3363,16 @@ Deno.serve(async(req:Request)=>{
       trainingResult.load=trainingSessions.reduce((sum:number,s:any)=>sum+(["Endurance","Match play","Déplacements"].includes(String(s))?3:["Service","Retour","Coup droit","Revers","Double"].includes(String(s))?2:String(s)==="Récupération"?0:-1),0);
     }
 
-    const [worldEvents,juniorWorldEvents,worldDoublesEvents]=await Promise.all([
-      db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date}),
-      db.rpc("simulate_junior_world_tournaments",{p_from_date:previousDate,p_to_date:date}),
-      db.rpc("simulate_world_doubles_tournaments",{p_from_date:previousDate,p_to_date:date})
-    ]);
-    if(worldEvents.error||juniorWorldEvents.error||worldDoublesEvents.error)return h({error:(worldEvents.error||juniorWorldEvents.error||worldDoublesEvents.error)?.message},500);
+    // Season engines run sequentially on purpose. Each circuit must see the
+    // commitments already created by the higher-priority circuit before it
+    // selects its own field, otherwise the same player can be booked into
+    // incompatible events in the same official week.
+    const worldEvents=await db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date});
+    if(worldEvents.error)return h({error:worldEvents.error.message},500);
+    const juniorWorldEvents=await db.rpc("simulate_junior_world_tournaments",{p_from_date:previousDate,p_to_date:date});
+    if(juniorWorldEvents.error)return h({error:juniorWorldEvents.error.message},500);
+    const worldDoublesEvents=await db.rpc("simulate_world_doubles_tournaments",{p_from_date:previousDate,p_to_date:date});
+    if(worldDoublesEvents.error)return h({error:worldDoublesEvents.error.message},500);
     const sim=await db.rpc("simulate_world_week",{p_week:week,p_snapshot_date:date});
     if(sim.error) return h({error:sim.error.message},500);
     const hiddenTraitEvolution=await db.rpc("evolve_player_hidden_traits_from_results",{

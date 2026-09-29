@@ -1922,6 +1922,7 @@ function render(){
 
 function playerStatsAdvancedSections(st,p){
  const exact=st?.elite_exact||{top10_wins:st?.elite_by_rank?.top10?.wins||0,top10_losses:st?.elite_by_rank?.top10?.losses||0,top10_matches:st?.elite_by_rank?.top10?.matches||0,top20_wins:st?.elite_by_rank?.top20?.wins||0,top20_losses:st?.elite_by_rank?.top20?.losses||0,top20_matches:st?.elite_by_rank?.top20?.matches||0,top50_wins:st?.elite_by_rank?.top50?.wins||0,top50_losses:st?.elite_by_rank?.top50?.losses||0,top50_matches:st?.elite_by_rank?.top50?.matches||0,top100_wins:st?.elite_by_rank?.top100?.wins||0,top100_losses:st?.elite_by_rank?.top100?.losses||0,top100_matches:st?.elite_by_rank?.top100?.matches||0},bands=Array.isArray(st?.rank_bands)?st.rank_bands:[],levels=Array.isArray(st?.competition_levels)?st.competition_levels:[],seasons=Array.isArray(st?.season_records)?st.season_records:[],countries=Array.isArray(st?.country_records)?st.country_records:[],hand=st?.handedness_records||{},pressure=st?.pressure_records||{},longest=st?.longest_streaks||{},last10=st?.last10||{},upset=st?.largest_upset||null,worst=st?.worst_ranked_loss||null,leaders=st?.leaders||{},rivalry=st?.rivalry_summary||{};
+ const eliteRank=st?.elite_by_rank||{};
  const pct=r=>{const m=Number(r?.matches||0),w=Number(r?.wins||0);return m?Math.round(w/m*1000)/10:0};
  const wl=r=>'<b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b> · '+pct(r)+'%';
  const mini=(label,r)=>'<div class="statbox"><span class="muted mini">'+esc(label)+'</span><b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b><small class="muted micro">'+Number(r?.matches||0)+' matchs · '+pct(r)+'%</small></div>';
@@ -1951,15 +1952,13 @@ function playerStatsAdvancedSections(st,p){
     '<div class="statbox"><span class="muted mini">Top 20 battus</span><b>'+Number(rivalry.unique_top20_defeated||0)+'</b></div>'+
    '</div>'+
    (rivalry.most_played?'<div class="list-item row between"><span>Rivalité la plus longue</span><span style="text-align:right"><span class="click" onclick="openPlayer('+rivalry.most_played.opponent_id+')"><b>'+esc(rivalry.most_played.opponent_name||'—')+'</b></span><div class="muted micro">'+Number(rivalry.most_played.wins||0)+'-'+Number(rivalry.most_played.losses||0)+' · '+Number(rivalry.most_played.matches||0)+' matchs</div></span></div>':'<div class="empty">Les rivalités se construiront au fil des matchs.</div>')+
+   (rivalry.closest_rivalry?'<div class="list-item row between"><span>Rivalité la plus serrée</span><span style="text-align:right"><span class="click" onclick="openPlayer('+rivalry.closest_rivalry.opponent_id+')"><b>'+esc(rivalry.closest_rivalry.opponent_name||'—')+'</b></span><div class="muted micro">'+Number(rivalry.closest_rivalry.wins||0)+'-'+Number(rivalry.closest_rivalry.losses||0)+' · '+Number(rivalry.closest_rivalry.matches||0)+' matchs</div></span></div>':'')+
   '</div>'+
  '</div>'+
  '<div class="grid g2" style="margin-top:12px">'+
   '<div class="card"><div class="row between"><div><div class="eyebrow">Opposition</div><h2>Classement des adversaires</h2></div><span class="badge">rang au jour J</span></div>'+
    '<div class="statline" style="margin-top:8px">'+
-    '<div class="statbox"><span class="muted mini">Top 10</span><b>'+Number(exact.top10_wins||0)+'-'+Number(exact.top10_losses||0)+'</b><small class="muted micro">'+Number(exact.top10_matches||0)+' matchs</small></div>'+
-    '<div class="statbox"><span class="muted mini">Top 20</span><b>'+Number(exact.top20_wins||0)+'-'+Number(exact.top20_losses||0)+'</b><small class="muted micro">'+Number(exact.top20_matches||0)+' matchs</small></div>'+
-    '<div class="statbox"><span class="muted mini">Top 50</span><b>'+Number(exact.top50_wins||0)+'-'+Number(exact.top50_losses||0)+'</b><small class="muted micro">'+Number(exact.top50_matches||0)+' matchs</small></div>'+
-    '<div class="statbox"><span class="muted mini">Top 100</span><b>'+Number(exact.top100_wins||0)+'-'+Number(exact.top100_losses||0)+'</b><small class="muted micro">'+Number(exact.top100_matches||0)+' matchs</small></div>'+
+    mini('N°1 mondial',eliteRank.top1)+mini('Top 5',eliteRank.top5)+mini('Top 10',eliteRank.top10||{matches:exact.top10_matches,wins:exact.top10_wins,losses:exact.top10_losses})+mini('Top 20',eliteRank.top20||{matches:exact.top20_matches,wins:exact.top20_wins,losses:exact.top20_losses})+mini('Top 50',eliteRank.top50||{matches:exact.top50_matches,wins:exact.top50_wins,losses:exact.top50_losses})+mini('Top 100',eliteRank.top100||{matches:exact.top100_matches,wins:exact.top100_wins,losses:exact.top100_losses})+
    '</div>'+
    (bandsRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Tranche</th><th>M</th><th>V</th><th>D</th><th>%</th></tr></thead><tbody>'+bandsRows+'</tbody></table></div>':'<div class="empty">Les tranches se rempliront à partir des matchs de la sauvegarde.</div>')+
   '</div>'+
@@ -1991,7 +1990,7 @@ function playerStatsAdvancedSections(st,p){
 
 function playerStatsTemplate(st,p){
  const career=st?.career||{},elite=st?.elite_wins||{},adv=st?.advanced||{},surfaces=st?.surfaces||{},streaks=st?.streaks||{};
- const h2h=Array.isArray(st?.h2h)?st.h2h:[],recent=Array.isArray(st?.recent_matches)?st.recent_matches:[];
+ const h2h=Array.isArray(st?.h2h)?st.h2h:[],recent=Array.isArray(st?.recent_matches)?st.recent_matches:[],matchHistory=Array.isArray(st?.match_history)?st.match_history:recent;
  const pctRec=r=>{const w=Number(r?.wins||0),l=Number(r?.losses||0);return w+l?Math.round(w/(w+l)*1000)/10:0};
  const num=v=>v==null||v===''?'—':fmt(Number(v));
  const one=v=>v==null||Number.isNaN(Number(v))?'—':Number(v).toFixed(1);
@@ -2002,9 +2001,10 @@ function playerStatsTemplate(st,p){
  const rival=x=>x?'<span class="click" onclick="openPlayer('+x.opponent_id+')"><b>'+esc(x.opponent_name||'—')+'</b></span><div class="muted micro">'+Number(x.wins||0)+'-'+Number(x.losses||0)+(x.career_high_rank?' · meilleur #'+fmt(x.career_high_rank):'')+'</div>':'<span class="muted">—</span>';
  const h2hRows=h2h.map(r=>{
    const search=String((r.opponent_name||'')+' '+(r.country||'')).toLowerCase();
-   return '<tr data-h2h-search="'+esc(search)+'"><td><span class="click" onclick="openPlayer('+r.opponent_id+')"><b>'+esc(r.opponent_name||'—')+'</b></span><div class="muted micro">'+esc(r.country||'')+(r.current_rank?' · ATP #'+fmt(r.current_rank):'')+(r.career_high_rank?' · peak #'+fmt(r.career_high_rank):'')+'</div></td><td><b>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</b></td><td>'+Number(r.hard_wins||0)+'-'+Number(r.hard_losses||0)+'</td><td>'+Number(r.clay_wins||0)+'-'+Number(r.clay_losses||0)+'</td><td>'+Number(r.grass_wins||0)+'-'+Number(r.grass_losses||0)+'</td><td>'+(r.last_match_date?df(r.last_match_date):'—')+'<div class="muted micro">'+esc(r.last_surface||'')+'</div></td><td><span class="badge">'+Number(r.real_matches||0)+' réel</span> <span class="badge good">'+Number(r.simulated_matches||0)+' sim</span></td></tr>';
+   return '<tr data-h2h-search="'+esc(search)+'" data-h2h-opponent-id="'+Number(r.opponent_id||0)+'"><td><span class="click" onclick="openPlayer('+r.opponent_id+')"><b>'+esc(r.opponent_name||'—')+'</b></span><div class="muted micro">'+esc(r.country||'')+(r.current_rank?' · ATP #'+fmt(r.current_rank):'')+(r.career_high_rank?' · peak #'+fmt(r.career_high_rank):'')+'</div></td><td><b>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</b></td><td>'+Number(r.hard_wins||0)+'-'+Number(r.hard_losses||0)+'</td><td>'+Number(r.clay_wins||0)+'-'+Number(r.clay_losses||0)+'</td><td>'+Number(r.grass_wins||0)+'-'+Number(r.grass_losses||0)+'</td><td>'+(r.last_match_date?df(r.last_match_date):'—')+'<div class="muted micro">'+esc(r.last_surface||'')+'</div></td><td><span class="badge">'+Number(r.real_matches||0)+' réel</span> <span class="badge good">'+Number(r.simulated_matches||0)+' sim</span></td><td><button class="ghost" onclick="filterPlayerMatchHistory('+Number(r.opponent_id||0)+')">Matchs</button></td></tr>';
  }).join('');
  const recentRows=recent.map(r=>'<tr><td>'+df(r.date)+'</td><td><span class="click" onclick="openTournament('+r.tournament_id+')"><b>'+esc(r.tournament_name||'—')+'</b></span><div class="muted micro">'+esc(r.category||'')+' · '+esc(r.round||'')+'</div></td><td><span class="click" onclick="openPlayer('+r.opponent_id+')">'+esc(r.opponent_name||'—')+'</span><div class="muted micro">'+(r.opponent_rank?'ATP #'+fmt(r.opponent_rank):'NR')+'</div></td><td><span class="badge '+(r.won?'good':'bad')+'">'+(r.won?'V':'D')+'</span></td><td><b>'+esc(r.score||'—')+'</b></td></tr>').join('');
+ const matchHistoryRows=matchHistory.map(r=>{const search=String((r.opponent_name||'')+' '+(r.tournament_name||'')+' '+(r.category||'')+' '+(r.surface||'')+' '+(r.round||'')).toLowerCase();return '<tr data-match-opponent-id="'+Number(r.opponent_id||0)+'" data-match-search="'+esc(search)+'"><td>'+df(r.date)+'</td><td><span class="click" onclick="openTournament('+r.tournament_id+')"><b>'+esc(r.tournament_name||'—')+'</b></span><div class="muted micro">'+esc(r.category||'')+' · '+esc(r.round||'')+' · '+esc(r.surface||'')+'</div></td><td><span class="click" onclick="openPlayer('+r.opponent_id+')"><b>'+esc(r.opponent_name||'—')+'</b></span><div class="muted micro">'+(r.opponent_rank?'ATP #'+fmt(r.opponent_rank):'NR')+(r.player_rank?' · joueur #'+fmt(r.player_rank):'')+'</div></td><td><span class="badge '+(r.won?'good':'bad')+'">'+(r.won?'V':'D')+'</span></td><td><b>'+esc(r.score||'—')+'</b><div class="muted micro">'+(r.had_tiebreak?'tie-break · ':'')+(r.first_set_won===false&&r.won?'comeback · ':'')+(Number(r.bagels_for||0)?Number(r.bagels_for)+' bagel gagné · ':'')+(Number(r.bagels_against||0)?Number(r.bagels_against)+' bagel subi':'')+'</div></td></tr>'}).join('');
  const streakLabel=Number(streaks.current_win_streak||0)>0?Number(streaks.current_win_streak)+' V':Number(streaks.current_loss_streak||0)>0?Number(streaks.current_loss_streak)+' D':'—';
  return `
  <div class="notice"><b>Statistiques de match</b> · Inspiré de la page Statistics / H2H de Tennis Manager, avec une couche Court Boss plus précise sur le classement de l’adversaire au jour du match. <span class="muted micro">${esc(st?.coverage?.note||'')}</span></div>
@@ -2013,6 +2013,7 @@ function playerStatsTemplate(st,p){
    <div class="kpi"><span class="muted mini">Taux de victoire</span><b>${one(career.win_pct)}%</b></div>
    <div class="kpi"><span class="muted mini">Adversaires affrontés</span><b>${num(career.opponents_faced)}</b></div>
    <div class="kpi"><span class="muted mini">Série actuelle</span><b>${streakLabel}</b></div>
+   <div class="kpi"><span class="muted mini">10 derniers</span><b>${Number(st?.last10?.wins||0)}-${Number(st?.last10?.losses||0)}</b></div>
  </div>
  <div class="grid g2" style="margin-top:12px">
   <div class="card">
@@ -2052,17 +2053,38 @@ function playerStatsTemplate(st,p){
   </div>
   <div class="muted micro" style="margin-top:8px">Source performance : ${esc(adv.source_label||'Court Boss analytics')} · ces métriques évoluent avec les matchs réellement simulés.</div>
  </div>
+ ${playerStatsAdvancedSections(st,p)}
  <div class="card" style="margin-top:12px">
   <div class="row between"><div><div class="eyebrow">Face-à-face</div><h2>H2H complet</h2></div><span class="badge">${h2h.length} adversaire(s)</span></div>
   <div style="margin-top:9px"><input class="input" placeholder="Chercher un adversaire…" oninput="const q=this.value.toLowerCase();document.querySelectorAll('#playerH2HRows tr').forEach(r=>r.style.display=(r.dataset.h2hSearch||'').includes(q)?'':'none')" /></div>
-  ${h2hRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Adversaire</th><th>H2H</th><th>Dur</th><th>Terre</th><th>Gazon</th><th>Dernier duel</th><th>Couverture</th></tr></thead><tbody id="playerH2HRows">'+h2hRows+'</tbody></table></div>':'<div class="empty">Aucun face-à-face enregistré.</div>'}
+  ${h2hRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Adversaire</th><th>H2H</th><th>Dur</th><th>Terre</th><th>Gazon</th><th>Dernier duel</th><th>Couverture</th><th></th></tr></thead><tbody id="playerH2HRows">'+h2hRows+'</tbody></table></div>':'<div class="empty">Aucun face-à-face enregistré.</div>'}
  </div>
- <div class="card" style="margin-top:12px">
-  <div class="row between"><div><div class="eyebrow">Carrière simulée</div><h2>Historique match par match</h2></div><span class="badge">${recent.length} récent(s)</span></div>
-  ${recentRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Date</th><th>Tournoi</th><th>Adversaire</th><th>Rés.</th><th>Score</th></tr></thead><tbody>'+recentRows+'</tbody></table></div>':'<div class="empty">Le journal détaillé commencera avec les matchs joués après le 01/12/2025. Les H2H historiques restent disponibles au-dessus.</div>'}
+ <div class="card" id="playerMatchHistoryCard" style="margin-top:12px">
+  <div class="row between"><div><div class="eyebrow">Statistics / H2H history</div><h2>Historique match par match</h2><div class="muted micro" id="playerMatchHistoryLabel">Tous les matchs détaillés de la sauvegarde</div></div><span class="badge">${matchHistory.length} match(s)</span></div>
+  <div class="row" style="gap:8px;margin-top:9px;flex-wrap:wrap"><input id="playerMatchHistorySearch" class="input" style="flex:1;min-width:220px" placeholder="Adversaire, tournoi, surface, tour…" oninput="searchPlayerMatchHistory(this.value)"><button class="ghost" onclick="resetPlayerMatchHistory()">Tous les matchs</button></div>
+  ${matchHistoryRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Date</th><th>Tournoi</th><th>Adversaire</th><th>Rés.</th><th>Score / contexte</th></tr></thead><tbody id="playerMatchHistoryRows">'+matchHistoryRows+'</tbody></table></div>':'<div class="empty">Le journal détaillé commencera avec les matchs joués après le 01/12/2025. Les H2H historiques agrégés restent disponibles au-dessus.</div>'}
  </div>`;
 }
 
+window.filterPlayerMatchHistory=id=>{
+ const target=Number(id||0),rows=[...document.querySelectorAll('#playerMatchHistoryRows tr')];
+ rows.forEach(r=>r.style.display=Number(r.dataset.matchOpponentId||0)===target?'':'none');
+ const h=[...document.querySelectorAll('#playerH2HRows tr')].find(r=>Number(r.dataset.h2hOpponentId||0)===target);
+ const name=h?.querySelector('b')?.textContent||'cet adversaire';
+ const label=document.getElementById('playerMatchHistoryLabel');if(label)label.textContent='H2H détaillé vs '+name+' · matchs de la sauvegarde';
+ const input=document.getElementById('playerMatchHistorySearch');if(input)input.value='';
+ document.getElementById('playerMatchHistoryCard')?.scrollIntoView({behavior:'smooth',block:'start'});
+};
+window.resetPlayerMatchHistory=()=>{
+ document.querySelectorAll('#playerMatchHistoryRows tr').forEach(r=>r.style.display='');
+ const label=document.getElementById('playerMatchHistoryLabel');if(label)label.textContent='Tous les matchs détaillés de la sauvegarde';
+ const input=document.getElementById('playerMatchHistorySearch');if(input)input.value='';
+};
+window.searchPlayerMatchHistory=q=>{
+ const s=String(q||'').trim().toLowerCase();
+ document.querySelectorAll('#playerMatchHistoryRows tr').forEach(r=>r.style.display=!s||(r.dataset.matchSearch||'').includes(s)?'':'none');
+ const label=document.getElementById('playerMatchHistoryLabel');if(label)label.textContent=s?'Filtre · '+q:'Tous les matchs détaillés de la sauvegarde';
+};
 window.openPlayer=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier joueur…</div></div></div>';
  try{

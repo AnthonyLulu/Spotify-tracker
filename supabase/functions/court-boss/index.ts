@@ -4365,7 +4365,7 @@ Deno.serve(async(req:Request)=>{
       const payout=tournamentRoundPrize(t,userRound,/^Q\d+$/.test(userRound)?"qualifying":"singles");
       userPrize=payout.amount;
     }
-    const runIns=await db.from("tournament_runs").insert({tournament_id:tid,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
+    const runIns=await db.from("tournament_runs").insert({tournament_id:tid,entry_method:entryMode,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
     if(runIns.error)return h({error:runIns.error.message},500);
     const runId=runIns.data.id;
 

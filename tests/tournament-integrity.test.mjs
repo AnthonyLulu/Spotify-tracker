@@ -195,3 +195,9 @@ test('Tournament engine simulates the full qualifying field and protects qualifi
  assert.match(code,/seedEligibleEntrants=rankedEntrants\.filter/);
  assert.match(code,/\["qualifier","lucky_loser"\]/);
 });
+
+
+test('Tournament runs persist the actual entry method for later calendar checks',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/tournament_runs"\)\.insert\(\{tournament_id:tid,entry_method:entryMode/);
+});

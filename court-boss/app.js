@@ -110,6 +110,39 @@ function tournamentEconomicsHtml(e,t,fr={}){
  if(Number(fr.qualifying_points?.Q)>0)html+="<div class='notice mini' style='margin-top:10px'>Qualification acquise : +"+fmt(fr.qualifying_points.Q)+" points en plus du résultat dans le tableau principal.</div>";
  return html;
 }
+function qualifyingStructureClient(fr,t){
+ const qDraw=Math.max(0,Number(t?.qualifying_draw_size||fr?.qualifying_draw_size||0));
+ const qSlots=Math.max(0,Number(fr?.qualifier_count||0));
+ if(!qDraw||!qSlots)return null;
+ let wildcards=0,seeds=Math.min(qDraw,Math.max(qSlots*2,8));
+ const circuit=String(t?.circuit||''),cat=String(t?.category||'');
+ if(circuit==='ATP'&&cat==='ATP 250'){
+  wildcards=qDraw===16?2:Math.max(2,Math.round(qDraw*.125));
+  seeds=qDraw===16?8:Math.min(qDraw,Math.max(qSlots*2,8));
+ }else if(circuit==='ATP'&&(cat==='ATP 500'||cat==='Masters 1000')){
+  wildcards=qDraw===16?3:qDraw===24?4:qDraw===28?4:qDraw===48?5:Math.max(2,Math.round(qDraw*.11));
+  seeds=qDraw===16?8:qDraw===24?12:qDraw===28?14:qDraw===48?24:Math.min(qDraw,Math.max(qSlots*2,8));
+ }else if(circuit==='Challenger'){
+  wildcards=qDraw===24?4:Math.max(2,Math.round(qDraw*.167));
+  seeds=qDraw===24?12:Math.min(qDraw,Math.max(qSlots*2,8));
+ }else if(circuit==='ITF'&&['M15','M25'].includes(cat)){
+  wildcards=qDraw===32?(cat==='M15'?6:5):qDraw===48?7:qDraw===64?8:Math.max(4,Math.round(qDraw*.14));
+  seeds=Math.min(16,qDraw);
+ }else if(cat==='Grand Chelem'){
+  wildcards=0;seeds=Math.min(32,qDraw);
+ }else{
+  wildcards=Math.max(0,Math.round(qDraw*.125));
+ }
+ const sectionPlayers=Math.ceil(qDraw/qSlots);
+ const sectionBracket=2**Math.ceil(Math.log2(Math.max(2,sectionPlayers)));
+ return {
+  draw_size:qDraw,qualifier_slots:qSlots,wildcards,
+  direct_acceptances:Math.max(0,qDraw-wildcards),seed_count:seeds,
+  section_players:sectionPlayers,section_bracket:sectionBracket,
+  bracket_total:sectionBracket*qSlots,
+  bye_count:Math.max(0,sectionBracket*qSlots-qDraw)
+ };
+}
 function tournamentFormatHtml(fr,t,qs=null){
  if(!Array.isArray(fr.rounds)||fr.format_type!=='knockout')return '';
  const draw=Number(t.singles_draw_size||t.draw_size||fr.main_draw_size||0),bracket=Number(fr.bracket_size||draw),byes=Math.max(0,bracket-draw);
@@ -160,7 +193,7 @@ function tournamentFormatHtml(fr,t,qs=null){
   </div>`;
 }
 function tournamentEntryRowsHtml(rows,isJunior=false){
- const labels={direct:'Admission directe',protected:'Classement protégé',wildcard:'WC',wildcard_a_plus:'WC A+',qualifying:'Qualifications',protected_qualifying:'Qualifs · classement protégé',qualifying_wildcard:'WC qualifs',qualifier:'Qualifié',qualifier_slot:'Qualifié à déterminer',lucky_loser:'Lucky Loser',alternate:'Alternate',special_exempt:'SE',late_entry:'Late Entry',performance_bye:'Performance Bye',junior_accelerator:'Next Gen Accelerator',junior_accelerator_qualifier:'Next Gen Accelerator · Q',college_accelerator:'College Accelerator',junior_reserved:'Place junior réservée'};
+ const labels={direct:'Admission directe',protected:'Classement protégé',wildcard:'WC',wildcard_a_plus:'WC A+',qualifying:'Qualifications',protected_qualifying:'Qualifs · classement protégé',qualifying_wildcard:'WC qualifs',qualifier:'Qualifié',qualifier_slot:'Qualifié à déterminer',lucky_loser:'Lucky Loser',alternate:'Alternate',special_exempt:'SE',late_entry:'Late Entry',performance_bye:'Performance Bye',junior_accelerator:'Next Gen Accelerator',junior_accelerator_qualifier:'Next Gen Accelerator · Q',college_accelerator:'College Accelerator',junior_reserved:'Place junior réservée',special_exempt_slot:'SE réservé',late_entry_slot:'Late Entry réservé',junior_reserved_slot:'Place junior réservée',junior_accelerator_slot:'Next Gen Accelerator réservé',college_accelerator_slot:'College Accelerator réservé',direct_fallback_slot:'Entry list / alternate'};
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 
@@ -2715,7 +2748,29 @@ window.openTournament=async id=>{
   const serverRun=d.run||null,doublesRun=d.doubles_run||null;
   const activePartner=activeDoublesPartner();
   const played=local.playedTournaments?.[t.id]||(serverRun?{user_round:serverRun.user_round,user_points:serverRun.user_points,user_prize:serverRun.user_prize}:null);
-  const pairs=d.main||[];
+  const formatRule=d.format_rule||{};
+  const qStructure=d.qualifying_structure||qualifyingStructureClient(formatRule,t);
+  const pairs=[...(d.main||[])];
+  if(formatRule.format_type==='knockout'&&['ATP','Challenger','ITF'].includes(String(t.circuit||''))){
+    const expected=Math.max(0,Number(t.singles_draw_size||t.draw_size||formatRule.main_draw_size||0));
+    let missing=Math.max(0,expected-pairs.length);
+    const reserved=[
+      [Math.max(0,Number(formatRule.special_exempt_slots||0)),'special_exempt_slot','Special Exempt / direct fallback'],
+      [Math.max(0,Number(t.late_entry_slots||0)),'late_entry_slot','Late Entry / direct fallback'],
+      [Math.max(0,Number(formatRule.junior_reserved_slots||0)),'junior_reserved_slot','Place junior réservée'],
+      [Math.max(0,Number(formatRule.junior_accelerator_slots||0)),'junior_accelerator_slot','Next Gen Accelerator'],
+      [Math.max(0,Number(formatRule.college_accelerator_slots||0)),'college_accelerator_slot','College Accelerator']
+    ];
+    for(const [count,method,label] of reserved){
+      for(let i=1;i<=Number(count)&&missing>0;i++,missing--){
+        pairs.push({id:null,name:String(label)+(Number(count)>1?' '+i:''),country:null,ranking:null,points:null,entry_method:String(method),projected:true,reserved_slot:true});
+      }
+    }
+    while(missing>0){
+      pairs.push({id:null,name:'Entry list / alternate',country:null,ranking:null,points:null,entry_method:'direct_fallback_slot',projected:true,reserved_slot:true});
+      missing--;
+    }
+  }
   const ncaaPlayers=d.ncaa_players||[];
   const forfeits=d.forfeits||[];
   const completedDraw=d.completed_draw||[];
@@ -2806,9 +2861,9 @@ window.openTournament=async id=>{
 
    <template id="tourNcaaTpl"><div class="card"><div class="row between"><div><div class="eyebrow">Circuit universitaire</div><h2>Vivier NCAA · ITA + UTR</h2></div><span class="badge">${fmt(ncaaPlayers.length)} profils</span></div><p class="muted mini">ITA = classement universitaire. UTR = niveau individuel séparé. Le symbole ~ indique une estimation Court Boss quand aucune valeur UTR sourcée n’est disponible.</p><div class="table-wrap" style="margin-top:10px"><table class="table"><thead><tr><th>ITA</th><th>Joueur</th><th>Université</th><th>UTR</th><th>ATP</th><th>Statut</th></tr></thead><tbody>${ncaaPlayers.slice(0,125).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ita_rank?'#'+fmt(p.ita_rank):'—'}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${esc(p.school||p.ncaa_school||'—')}</td><td>${p.utr_rating!=null?'<b>'+(p.utr_verified?'':'~')+Number(p.utr_rating).toFixed(2)+'</b>':'—'}</td><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td><span class="badge good">${esc(p.ncaa_status||'Active')}</span></td></tr>`).join('')}</tbody></table></div>${!ncaaPlayers.length?'<div class="empty">Aucun profil NCAA relié à ce snapshot.</div>':''}</div></template>
 
-   <template id="tourDrawTpl"><div class="card"><div class="row between"><h2>${isJunior?'Engagés juniors':'Liste d’acceptation / tableau projeté'}</h2><span class="badge">${pairs.length} places</span></div><p class="muted mini">${drawIntro}</p><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur / entrée</th><th>Points</th><th>${isJunior?'Résultat':'Forme'}</th></tr></thead><tbody>${tournamentEntryRowsHtml(pairs,isJunior)}</tbody></table></div></div>${tournamentFormatHtml(d.format_rule||{},t,d.qualifying_structure||null)}</template>
+   <template id="tourDrawTpl"><div class="card"><div class="row between"><h2>${isJunior?'Engagés juniors':'Liste d’acceptation / tableau projeté'}</h2><span class="badge">${pairs.length} places</span></div><p class="muted mini">${drawIntro}</p><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur / entrée</th><th>Points</th><th>${isJunior?'Résultat':'Forme'}</th></tr></thead><tbody>${tournamentEntryRowsHtml(pairs,isJunior)}</tbody></table></div></div>${tournamentFormatHtml(formatRule,t,qStructure)}</template>
 
-   <template id="tourQualTpl">${tournamentFormatHtml(d.format_rule||{},t,d.qualifying_structure||null)}<div class="card"><div class="row between"><h2>Qualifications</h2>${d.qualifying_structure?.seed_count!=null?`<span class="badge">${fmt(d.qualifying_structure.seed_count)} TDS</span>`:''}</div>${t.qualifying_start_date?`<p class="muted mini">Du ${df(t.qualifying_start_date)} au ${df(t.qualifying_end_date||t.qualifying_start_date)} · à prévoir avant le tableau principal.</p>`:''}${d.qualifying_structure?`<div class="kpi-strip" style="margin:10px 0"><div class="kpi"><span class="muted mini">Tableau Q</span><b>${fmt(d.qualifying_structure.draw_size||0)}</b></div><div class="kpi"><span class="muted mini">Directs Q</span><b>${fmt(d.qualifying_structure.direct_acceptances||0)}</b></div><div class="kpi"><span class="muted mini">WC Q</span><b>${fmt(d.qualifying_structure.wildcards||0)}</b></div><div class="kpi"><span class="muted mini">Qualifiés</span><b>${fmt(d.qualifying_structure.qualifier_slots||0)}</b></div></div>`:''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Condition</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.fitness??'—'}% / fatigue ${p.fatigue??'—'}%</td></tr>`).join('')}</tbody></table></div></div></template>
+   <template id="tourQualTpl">${tournamentFormatHtml(formatRule,t,qStructure)}<div class="card"><div class="row between"><h2>Qualifications</h2>${qStructure?.seed_count!=null?`<span class="badge">${fmt(qStructure.seed_count)} TDS</span>`:''}</div>${t.qualifying_start_date?`<p class="muted mini">Du ${df(t.qualifying_start_date)} au ${df(t.qualifying_end_date||t.qualifying_start_date)} · à prévoir avant le tableau principal.</p>`:''}${qStructure?`<div class="kpi-strip" style="margin:10px 0"><div class="kpi"><span class="muted mini">Tableau Q</span><b>${fmt(qStructure.draw_size||0)}</b></div><div class="kpi"><span class="muted mini">Directs Q</span><b>${fmt(qStructure.direct_acceptances||0)}</b></div><div class="kpi"><span class="muted mini">WC Q</span><b>${fmt(qStructure.wildcards||0)}</b></div><div class="kpi"><span class="muted mini">Qualifiés</span><b>${fmt(qStructure.qualifier_slots||0)}</b></div></div>`:''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Condition</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.fitness??'—'}% / fatigue ${p.fatigue??'—'}%</td></tr>`).join('')}</tbody></table></div></div></template>
 
    <template id="tourDoubleTpl">
     <div class="grid g2"><div class="card"><div class="eyebrow">Partenariat</div><h2>${activePartner?flags[activePartner.country]||'🏳️':''} ${activePartner?esc(activePartner.name):'Aucun partenaire'}</h2><div class="list-item row between"><span>Ton classement</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)}</b></div><div class="list-item row between"><span>Chimie</span><b>${pairScore(activePartner,'chem')}%</b></div>`:''}</div><div class="card"><div class="eyebrow">Tournoi</div><h2>${esc(t.name)} · Double</h2><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div>${doublesRun?`<div class="notice good"><b>Résultat :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts</div>`:isDoublesFinals?(doubleRule.can&&activePartner?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler les Finals double</button><div class="notice good mini" style="margin-top:8px">Top 8 Race · paire qualifiée automatiquement.</div>`:`<div class="notice bad mini" style="margin-top:8px">${esc(doubleRule.label)}</div><button class="soft-btn" style="width:100%;margin-top:8px" onclick="setRankKind('${isJuniorDoubleFinals?'junior_doubles_race':'doubles_race'}');closeOverlay();nav('rankings')">Voir la Race</button>`):activePartner?(dJoined?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler le double</button>`:`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="toggleDoublesEntry(${t.id})">Inscrire la paire avant de jouer</button>`):`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="closeOverlay();nav('doubles')">Choisir un partenaire</button>`}</div></div>

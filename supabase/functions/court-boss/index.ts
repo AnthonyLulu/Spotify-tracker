@@ -1345,71 +1345,19 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:23,tournament_model:"entry-calendar-prize-v6+doubles-tier-fields",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:24,tournament_model:"entry-calendar-prize-v7+frozen-baseline",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
-  if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
-    const kind=(u.searchParams.get("kind")||"both").toLowerCase();
-    const snapshot=String(u.searchParams.get("date")||new Date().toISOString().slice(0,10)).slice(0,10);
-    const results:any={snapshot,kind};
-    const refreshOne=async(type:"singles"|"doubles")=>{
-      const url=type==="singles"
-        ?"https://live-tennis.eu/en/official-atp-ranking.html"
-        :"https://live-tennis.eu/en/official-atp-doubles-ranking.html";
-      if(type==="singles"&&snapshot!=="2025-12-01"){
-        return {
-          url,
-          locked:true,
-          snapshot:"2025-12-01",
-          reason:"Le classement ATP simple de départ est figé au 1er décembre 2025; la carrière le fait ensuite évoluer."
-        };
-      }
-      const parsed=await parseLiveTennisRanking(url);
-      const applied=await db.rpc("apply_live_rankings",{p_kind:type,p_snapshot:snapshot,p_rows:parsed});
-      if(applied.error)throw applied.error;
-      return {url,parsed:parsed.length,applied:applied.data,top:parsed.slice(0,10),last:parsed.slice(-3)};
-    };
-    try{
-      if(kind==="singles"||kind==="both")results.singles=await refreshOne("singles");
-      if(kind==="doubles"||kind==="both")results.doubles=await refreshOne("doubles");
-      return h({ok:true,...results});
-    }catch(e){return h({error:String((e as any)?.message||e),...results},500)}
-  }
-
-  if(path.endsWith("/api/refresh-doubles-race")&&req.method==="GET"){
-    const snapshot=String(u.searchParams.get("date")||new Date().toISOString().slice(0,10)).slice(0,10);
-    try{
-      const url="https://live-tennis.eu/en/atp-doubles-race.html";
-      const rows=await parseLiveTennisDoublesRace(url);
-      if(!rows.length)return h({error:"Doubles race parser returned 0 rows",url},500);
-      const uniq=[...new Map(rows.filter((x:any)=>x.rank&&x.player_one&&x.player_two).map((x:any)=>[Number(x.rank),x])).values()]
-        .sort((a:any,b:any)=>Number(a.rank)-Number(b.rank));
-      const del=await db.from("doubles_race_teams").delete().eq("snapshot_date",snapshot);
-      if(del.error)return h({error:del.error.message},500);
-      const payload=uniq.map((x:any)=>({
-        rank:x.rank,player_one:x.player_one,player_two:x.player_two,points:x.points,
-        snapshot_date:snapshot,source:"Live-Tennis ATP Doubles Race · "+snapshot
-      }));
-      const ins=await db.from("doubles_race_teams").insert(payload);
-      if(ins.error)return h({error:ins.error.message},500);
-      return h({ok:true,url,snapshot,count:payload.length,rows:payload.slice(0,40)});
-    }catch(e){return h({error:String((e as any)?.message||e)},500)}
-  }
-
-  if(path.endsWith("/api/refresh-races")&&req.method==="GET"){
-    const snapshot=String(u.searchParams.get("date")||new Date().toISOString().slice(0,10)).slice(0,10);
-    try{
-      const [raceRows,nextRows]=await Promise.all([
-        parseLiveTennisRanking("https://live-tennis.eu/en/atp-race.html"),
-        parseLiveTennisRanking("https://live-tennis.eu/en/atp-race-next-gen.html")
-      ]);
-      // Apply sequentially so a player missing from the DB is created once by Race
-      // and immediately reused by Next Gen, instead of creating two parallel identities.
-      const raceApplied=await db.rpc("apply_secondary_live_ranking",{p_kind:"race",p_snapshot:snapshot,p_rows:raceRows});
-      const nextApplied=await db.rpc("apply_secondary_live_ranking",{p_kind:"nextgen",p_snapshot:snapshot,p_rows:nextRows});
-      const err=raceApplied.error||nextApplied.error;
-      if(err)return h({error:err.message},500);
-      return h({ok:true,snapshot,race:{parsed:raceRows.length,applied:raceApplied.data,top:raceRows.slice(0,10)},nextgen:{parsed:nextRows.length,applied:nextApplied.data,top:nextRows.slice(0,15)}});
-    }catch(e){return h({error:String((e as any)?.message||e)},500)}
+  if((
+    path.endsWith("/api/refresh-live-rankings")
+    ||path.endsWith("/api/refresh-doubles-race")
+    ||path.endsWith("/api/refresh-races")
+  )&&req.method==="GET"){
+    return h({
+      ok:true,
+      locked:true,
+      baseline_snapshot:AGE_REFERENCE_DATE,
+      reason:"Les classements de départ Court Boss sont figés au 01/12/2025. Les classements live postérieurs ne peuvent pas écraser la carrière; l'évolution après cette date est simulée par le moteur du jeu."
+    });
   }
 
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){

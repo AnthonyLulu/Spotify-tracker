@@ -515,7 +515,7 @@ window.startCareerWithPlayer=async function(id,name){
   if(!confirm("Démarrer une nouvelle carrière avec "+name+" ? Les résultats de la carrière actuelle seront réinitialisés."))return;
   overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création de la nouvelle carrière…</div></div></div>';
   try{
-    const d=await managerAction('take_over_player',id,{date:local.date||RANKING_SNAPSHOT});
+    const d=await managerAction('take_over_player',id,{date:RANKING_SNAPSHOT});
     Object.assign(local,{
       date:d.career?.career_date||local.date||RANKING_SNAPSHOT,
       week:1,

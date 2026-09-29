@@ -227,3 +227,21 @@ test('Frontend checks doubles entry with server before scheduling and before pla
  assert.match(code,/managed_doubles_entry_status/);
  assert.match(code,/Inscrire la paire avant de jouer/);
 });
+
+test('Doubles fields are tier-aware so small events do not reuse elite fields',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/function doublesFieldBand/);
+ assert.match(code,/model:"grand_slam"/);
+ assert.match(code,/model:"atp_250"/);
+ assert.match(code,/model:"challenger_75"/);
+ assert.match(code,/model:"itf_m25"/);
+ assert.match(code,/model:"itf_m15"/);
+ assert.match(code,/projectedDoublesTournamentRows/);
+});
+
+test('Doubles acceptance tolerates missing individual rank data with race based estimate',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/const raceEstimate=Math\.max\(1,Math\.round\(raceRank\*2\)\)/);
+ assert.match(code,/Math\.min\(aKnown,raceEstimate\)/);
+ assert.match(code,/field_band:cut\.band/);
+});

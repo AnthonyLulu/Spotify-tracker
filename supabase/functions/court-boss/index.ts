@@ -2652,12 +2652,26 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(String(t.data.circuit)==="Junior"){
-      const entered=await db.from("junior_tournament_entries")
-        .select("id,seed,result,snapshot_date,source_url,players(id,name,country,age,age_snapshot_date,birth_date,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style)")
-        .eq("tournament_id",id);
-      if(entered.error)return h({error:entered.error.message},500);
+      const [entered,juniorFormatRes]=await Promise.all([
+        db.from("junior_tournament_entries")
+          .select("id,seed,result,snapshot_date,source_url,players(id,name,country,age,age_snapshot_date,birth_date,junior_ranking,junior_points,current_ability,potential,form,fitness,fatigue,style)")
+          .eq("tournament_id",id),
+        db.from("tournament_format_rules")
+          .select("rule_key,format_type,main_draw_size,bracket_size,qualifying_draw_size,doubles_draw_size,seed_count,qualifier_count,wildcard_count,rounds,points_by_result,qualifying_points,source_label,source_url")
+          .eq("circuit","Junior")
+          .eq("category",String(t.data.category||""))
+          .eq("main_draw_size",drawSize)
+          .limit(1).maybeSingle()
+      ]);
+      if(entered.error||juniorFormatRes.error)return h({error:(entered.error||juniorFormatRes.error)?.message},500);
+      const jfr:any=juniorFormatRes.data||{};
+      const juniorQDraw=Math.max(0,Number(t.data.qualifying_draw_size||jfr.qualifying_draw_size||0));
+      const juniorQSlots=Math.max(0,Number(jfr.qualifier_count||0));
+      const juniorWcSlots=Math.max(0,Number(jfr.wildcard_count||0));
+      const juniorDirectSlots=Math.max(0,drawSize-juniorQSlots-juniorWcSlots);
 
       let main:any[]=[];
+      let qualifying:any[]=[];
       if((entered.data??[]).length){
         const entryIds=(entered.data??[])
           .map((x:any)=>Array.isArray(x.players)?x.players[0]?.id:x.players?.id)
@@ -2676,7 +2690,8 @@ Deno.serve(async(req:Request)=>{
               age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
               ranking:rankMap.get(Number(p.id))??p.junior_ranking,
               points:p.junior_points,
-              seed:x.seed,result:x.result,entry_source:x.source_url
+              seed:x.seed,result:x.result,entry_source:x.source_url,
+              entry_method:"direct"
             }:null;
           })
           .filter(Boolean)
@@ -2692,26 +2707,48 @@ Deno.serve(async(req:Request)=>{
           ranking:p.junior_race_ranking,
           points:p.junior_race_points,
           seed:p.junior_race_ranking,
-          qualification:"Junior Finals Race"
+          qualification:"Junior Finals Race",
+          entry_method:"direct"
         }));
       }else{
+        const wanted=Math.min(400,Math.max(drawSize+juniorQDraw+juniorWcSlots+40,120));
         const pool=await db.from("junior_display_pool_view")
           .select("id,name,country,age,age_snapshot_date,birth_date,display_rank,junior_points,current_ability,potential,form,fitness,fatigue,style")
-          .order("display_order",{ascending:true}).limit(drawSize);
+          .order("display_order",{ascending:true}).limit(wanted);
         if(pool.error)return h({error:pool.error.message},500);
-        main=(pool.data??[]).map((p:any)=>({
+        const projected=(pool.data??[]).map((p:any)=>({
           ...p,
           age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
           ranking:p.display_rank,
           points:p.junior_points
         }));
+        const directCount=juniorDirectSlots||Math.max(0,drawSize-juniorQSlots-juniorWcSlots);
+        main=projected.slice(0,directCount).map((p:any,i:number)=>({
+          ...p,
+          seed:i<Number(jfr.seed_count||0)?i+1:null,
+          result:"Projeté",
+          entry_method:"direct"
+        }));
+        qualifying=projected.slice(directCount,directCount+juniorQDraw).map((p:any)=>({
+          ...p,
+          result:"Qualifs projetées",
+          entry_method:"qualifying"
+        }));
+        for(let i=0;i<juniorQSlots;i++){
+          main.push({id:null,name:"Qualifié "+(i+1),country:null,ranking:null,points:null,seed:null,result:"À déterminer",entry_method:"qualifier_slot"});
+        }
+        for(let i=0;i<juniorWcSlots;i++){
+          main.push({id:null,name:"Wild card "+(i+1),country:String(t.data.country||""),ranking:null,points:null,seed:null,result:"À attribuer",entry_method:"wildcard"});
+        }
       }
       return h({
-        tournament:t.data,main,qualifying:[],junior_entries:entered.data??[],
+        tournament:t.data,main,qualifying,junior_entries:entered.data??[],
         wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,doubles_run:doublesRun.data??null,
         doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,completed_draw:completedDraw,
         tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
-        ranking_kind:"junior"
+        format_rule:jfr,
+        qualifying_window:{start:t.data.qualifying_start_date||null,end:t.data.qualifying_end_date||null,draw_size:juniorQDraw,qualifier_slots:juniorQSlots},
+        ranking_kind:"junior",entry_preview_model:"junior_qualifying_v1"
       });
     }
 
@@ -3750,6 +3787,8 @@ Deno.serve(async(req:Request)=>{
     let entryProjectionModel=t.direct_cut!=null||t.qual_cut!=null?"official_cut":"stored_projection";
     let entryRankingDate:string|null=null;
     let qualifyingCandidateIdsForRun=new Set<number>();
+    const structuredJuniorEntry=isJuniorSingles&&!isJuniorFinals&&direct>0&&qual>direct&&Number(formatRule?.qualifier_count||0)>0;
+    if(structuredJuniorEntry)entryProjectionModel="junior_rank_projection";
     if(!isSinglesFinals&&!isJuniorSingles){
       const entrySnapshot=await db.rpc("tournament_entry_eligibility",{
         p_player_id:managedId,p_tournament_id:tid,p_entry_method:"direct"
@@ -3795,7 +3834,7 @@ Deno.serve(async(req:Request)=>{
       specialExemptInfo=se.data||null;
     }
 
-    const alternateEligible=!isSinglesFinals&&!specialExempt&&direct&&qual&&rank>qual&&rank<=qual+50;
+    const alternateEligible=!isSinglesFinals&&!isJuniorSingles&&!specialExempt&&direct&&qual&&rank>qual&&rank<=qual+50;
     if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible&&!specialExempt){
       return h({
         error:"Classement insuffisant. Demande une wild card.",
@@ -3813,7 +3852,7 @@ Deno.serve(async(req:Request)=>{
       alternateEntered=true;
     }
 
-    const entryMode=isSinglesFinals?"direct":isJuniorSingles?"junior":specialExempt?"special_exempt":wildcardGranted?"wildcard":alternateEntered?"alternate":(direct&&rank<=direct?"direct":"qualifying");
+    const entryMode=isSinglesFinals?"direct":isJuniorSingles?(structuredJuniorEntry?(wildcardGranted?"wildcard":direct&&rank<=direct?"direct":"qualifying"):"junior"):specialExempt?"special_exempt":wildcardGranted?"wildcard":alternateEntered?"alternate":(direct&&rank<=direct?"direct":"qualifying");
 
     if(!isSinglesFinals&&!isJuniorSingles){
       const eligibilityMode=specialExempt?"direct":entryMode;
@@ -3847,6 +3886,17 @@ Deno.serve(async(req:Request)=>{
           error:"Conflit de calendrier : ce tournoi chevauche un engagement déjà joué dans la sauvegarde.",
           schedule_conflict:schedule.data,
           special_exempt:specialExemptInfo
+        },409);
+      }
+    }else if(!isSinglesFinals&&isJuniorSingles){
+      const schedule=await db.rpc("managed_tournament_schedule_status",{
+        p_target_tournament_id:tid,p_entry_mode:entryMode
+      });
+      if(schedule.error)return h({error:schedule.error.message},500);
+      if(schedule.data?.available===false){
+        return h({
+          error:"Conflit de calendrier : ce tournoi junior chevauche un engagement déjà joué dans la sauvegarde.",
+          schedule_conflict:schedule.data
         },409);
       }
     }
@@ -3885,6 +3935,16 @@ Deno.serve(async(req:Request)=>{
       .filter((p:any)=>!blockedIds.has(Number(p.id))&&Number(p.id)!==managedId)
       .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):isJuniorSingles?Number(p.junior_ranking||999999):(candidateRankOrder.get(Number(p.id))??Number(p.ranking||999999)),player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
       .sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||Number(b.current_ability||0)-Number(a.current_ability||0));
+    if(structuredJuniorEntry){
+      const qDraw=Math.max(0,Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0));
+      qualifyingCandidateIdsForRun=new Set(
+        pool
+          .filter((p:any)=>Number(p.ranking||999999)>Number(direct)&&Number(p.ranking||999999)<=Number(qual))
+          .slice(0,qDraw)
+          .map((p:any)=>Number(p.id))
+          .filter(Boolean)
+      );
+    }
     const surface=String(t.surface||"Dur");
     const surfaceNorm=surface.toLowerCase();
     const indoor=Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor";
@@ -4416,9 +4476,37 @@ Deno.serve(async(req:Request)=>{
       }
 
       const qualifierIds=new Set(qualifierWinners.map((p:any)=>Number(p.id)).filter(Boolean));
-      const mainBase=pool
-        .filter((p:any)=>!qualifyingCandidateIdsForRun.has(Number(p.id))&&!qualifierIds.has(Number(p.id)))
-        .map((p:any)=>({...p,isUser:false,entry_method:"direct"}));
+      let mainBase:any[];
+      if(structuredJuniorEntry){
+        const wcSlots=Math.max(0,Number(formatRule?.wildcard_count||0));
+        const targetMainBase=Math.max(0,drawSize-qualifierWinners.length);
+        const directMain=pool
+          .filter((p:any)=>Number(p.ranking||999999)<=Number(direct))
+          .map((p:any)=>({...p,isUser:false,entry_method:"direct"}));
+        const usedMainIds=new Set(directMain.map((p:any)=>Number(p.id)).filter(Boolean));
+        const wildcardPool=pool
+          .filter((p:any)=>!qualifyingCandidateIdsForRun.has(Number(p.id))&&!qualifierIds.has(Number(p.id))&&!usedMainIds.has(Number(p.id))&&Number(p.ranking||999999)>Number(qual))
+          .sort((a:any,b:any)=>{
+            const ah=String(a.country||"")===String(t.country||"")?0:1;
+            const bh=String(b.country||"")===String(t.country||"")?0:1;
+            return ah-bh||Number(a.ranking||999999)-Number(b.ranking||999999);
+          })
+          .slice(0,wcSlots)
+          .map((p:any)=>({...p,isUser:false,entry_method:"wildcard"}));
+        wildcardPool.forEach((p:any)=>usedMainIds.add(Number(p.id)));
+        mainBase=[...directMain,...wildcardPool];
+        if(mainBase.length<targetMainBase){
+          const fillers=pool
+            .filter((p:any)=>!qualifyingCandidateIdsForRun.has(Number(p.id))&&!qualifierIds.has(Number(p.id))&&!usedMainIds.has(Number(p.id)))
+            .slice(0,targetMainBase-mainBase.length)
+            .map((p:any)=>({...p,isUser:false,entry_method:"wildcard"}));
+          mainBase.push(...fillers);
+        }
+      }else{
+        mainBase=pool
+          .filter((p:any)=>!qualifyingCandidateIdsForRun.has(Number(p.id))&&!qualifierIds.has(Number(p.id)))
+          .map((p:any)=>({...p,isUser:false,entry_method:"direct"}));
+      }
       let participants=[
         ...mainBase.slice(0,Math.max(0,drawSize-qualifierWinners.length)),
         ...qualifierWinners

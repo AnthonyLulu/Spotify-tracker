@@ -1467,7 +1467,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:40,season_model:"priority-national-teams-pro-atp-finals-doubles-junior-ncaa-fatigue-v16",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:41,season_model:"priority-national-teams-laver-pro-atp-finals-junior-ncaa-fatigue-v17",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -3479,6 +3479,11 @@ Deno.serve(async(req:Request)=>{
     const juniorDavisEvents=await db.rpc("simulate_junior_davis_cup",{p_from_date:previousDate,p_to_date:date});
     if(juniorDavisEvents.error)return h({error:juniorDavisEvents.error.message},500);
 
+    const laverCupPreparation=await db.rpc("prepare_laver_cup_window",{p_from_date:previousDate,p_to_date:date});
+    if(laverCupPreparation.error)return h({error:laverCupPreparation.error.message},500);
+    const laverCupEvents=await db.rpc("simulate_laver_cup",{p_from_date:previousDate,p_to_date:date});
+    if(laverCupEvents.error)return h({error:laverCupEvents.error.message},500);
+
     // Reserve the official ITA team calendar first, but resolve lineups only
     // after pro singles has had a chance to claim Grand Slam-level players.
     const ncaaTeamPreparation=await db.rpc("prepare_ita_team_events",{p_from_date:previousDate,p_to_date:date});
@@ -3799,7 +3804,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,juniorDavisCup:juniorDavisEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){

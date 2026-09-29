@@ -1921,7 +1921,7 @@ function render(){
 
 
 function playerStatsAdvancedSections(st,p){
- const exact=st?.elite_exact||{},bands=Array.isArray(st?.rank_bands)?st.rank_bands:[],levels=Array.isArray(st?.competition_levels)?st.competition_levels:[],seasons=Array.isArray(st?.season_records)?st.season_records:[],countries=Array.isArray(st?.country_records)?st.country_records:[],hand=st?.handedness_records||{},pressure=st?.pressure_records||{},longest=st?.longest_streaks||{},upset=st?.largest_upset||null,worst=st?.worst_ranked_loss||null;
+ const exact=st?.elite_exact||{},bands=Array.isArray(st?.rank_bands)?st.rank_bands:[],levels=Array.isArray(st?.competition_levels)?st.competition_levels:[],seasons=Array.isArray(st?.season_records)?st.season_records:[],countries=Array.isArray(st?.country_records)?st.country_records:[],hand=st?.handedness_records||{},pressure=st?.pressure_records||{},longest=st?.longest_streaks||{},upset=st?.largest_upset||null,worst=st?.worst_ranked_loss||null,leaders=st?.leaders||{},rivalry=st?.rivalry_summary||{};
  const pct=r=>{const m=Number(r?.matches||0),w=Number(r?.wins||0);return m?Math.round(w/m*1000)/10:0};
  const wl=r=>'<b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b> · '+pct(r)+'%';
  const mini=(label,r)=>'<div class="statbox"><span class="muted mini">'+esc(label)+'</span><b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b><small class="muted micro">'+Number(r?.matches||0)+' matchs · '+pct(r)+'%</small></div>';
@@ -1931,6 +1931,28 @@ function playerStatsAdvancedSections(st,p){
  const seasonRows=seasons.map(r=>'<tr><td class="rank-num">'+r.season+'</td><td>'+Number(r.matches||0)+'</td><td>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</td><td><b>'+Number(r.win_pct||0).toFixed(1)+'%</b></td></tr>').join('');
  const countryRows=countries.map(r=>'<div class="list-item row between"><span>'+(flags[r.country]||'🏳️')+' '+esc(r.country||'—')+'</span><span><b>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</b> · '+Number(r.win_pct||0).toFixed(1)+'%</span></div>').join('');
  return ''+
+ '<div class="grid g2" style="margin-top:12px">'+
+  '<div class="card"><div class="row between"><div><div class="eyebrow">Leaders & Classes</div><h2>Rang analytique mondial</h2></div><span class="badge">'+fmt(leaders.population||0)+' joueurs</span></div>'+
+   '<div class="statline" style="margin-top:8px">'+
+    '<div class="statbox"><span class="muted mini">Service</span><b>#'+fmt(leaders.serve?.rank||0)+'</b><small class="muted micro">'+(leaders.serve?.value==null?'—':Number(leaders.serve.value).toFixed(1))+'</small></div>'+
+    '<div class="statbox"><span class="muted mini">Retour</span><b>#'+fmt(leaders.return?.rank||0)+'</b><small class="muted micro">'+(leaders.return?.value==null?'—':Number(leaders.return.value).toFixed(1))+'</small></div>'+
+    '<div class="statbox"><span class="muted mini">Pression</span><b>#'+fmt(leaders.pressure?.rank||0)+'</b><small class="muted micro">'+(leaders.pressure?.value==null?'—':Number(leaders.pressure.value).toFixed(1))+'</small></div>'+
+    '<div class="statbox"><span class="muted mini">Hold</span><b>#'+fmt(leaders.hold?.rank||0)+'</b><small class="muted micro">'+(leaders.hold?.value==null?'—':Number(leaders.hold.value).toFixed(1)+'%')+'</small></div>'+
+    '<div class="statbox"><span class="muted mini">Break</span><b>#'+fmt(leaders.break?.rank||0)+'</b><small class="muted micro">'+(leaders.break?.value==null?'—':Number(leaders.break.value).toFixed(1)+'%')+'</small></div>'+
+    '<div class="statbox"><span class="muted mini">Tie-break</span><b>#'+fmt(leaders.tiebreak?.rank||0)+'</b><small class="muted micro">'+(leaders.tiebreak?.value==null?'—':Number(leaders.tiebreak.value).toFixed(1)+'%')+'</small></div>'+
+   '</div><div class="muted micro" style="margin-top:8px">Comparaison dynamique avec les joueurs actifs disposant d\'un profil analytique Court Boss.</div></div>'+
+  '<div class="card"><div class="row between"><div><div class="eyebrow">Rivalités</div><h2>Carte H2H</h2></div><span class="badge">historique + simulation</span></div>'+
+   '<div class="statline" style="margin-top:8px">'+
+    '<div class="statbox"><span class="muted mini">H2H positifs</span><b>'+Number(rivalry.winning_h2h||0)+'</b></div>'+
+    '<div class="statbox"><span class="muted mini">H2H négatifs</span><b>'+Number(rivalry.losing_h2h||0)+'</b></div>'+
+    '<div class="statbox"><span class="muted mini">H2H à égalité</span><b>'+Number(rivalry.tied_h2h||0)+'</b></div>'+
+    '<div class="statbox"><span class="muted mini">N°1 mondiaux battus</span><b>'+Number(rivalry.unique_no1_defeated||0)+'</b></div>'+
+    '<div class="statbox"><span class="muted mini">Top 5 battus</span><b>'+Number(rivalry.unique_top5_defeated||0)+'</b></div>'+
+    '<div class="statbox"><span class="muted mini">Top 20 battus</span><b>'+Number(rivalry.unique_top20_defeated||0)+'</b></div>'+
+   '</div>'+
+   (rivalry.most_played?'<div class="list-item row between"><span>Rivalité la plus longue</span><span style="text-align:right"><span class="click" onclick="openPlayer('+rivalry.most_played.opponent_id+')"><b>'+esc(rivalry.most_played.opponent_name||'—')+'</b></span><div class="muted micro">'+Number(rivalry.most_played.wins||0)+'-'+Number(rivalry.most_played.losses||0)+' · '+Number(rivalry.most_played.matches||0)+' matchs</div></span></div>':'<div class="empty">Les rivalités se construiront au fil des matchs.</div>')+
+  '</div>'+
+ '</div>'+
  '<div class="grid g2" style="margin-top:12px">'+
   '<div class="card"><div class="row between"><div><div class="eyebrow">Opposition</div><h2>Classement des adversaires</h2></div><span class="badge">rang au jour J</span></div>'+
    '<div class="statline" style="margin-top:8px">'+

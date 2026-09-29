@@ -1966,7 +1966,9 @@ function playerStatsAdvancedSections(st,p){
    '<div class="statline" style="margin-top:8px">'+
     mini('Finales',pressure.finals)+mini('Demi-finales',pressure.semifinals)+mini('Quarts',pressure.quarterfinals)+mini('Qualifications',pressure.qualifying)+mini('Best of 5',pressure.best_of_five)+mini('Avec tie-break',pressure.matches_with_tiebreak)+mini('Set décisif',pressure.deciding_set_matches)+mini('Comeback après 1er set',pressure.comeback_after_losing_first_set)+mini('10 derniers',last10)+
    '</div>'+
-   '<div class="list-item row between"><span>Victoires en sets secs</span><b>'+Number(pressure.straight_set_wins||0)+'</b></div>'+\n   '<div class="list-item row between"><span>Bagels gagnés / concédés</span><b>'+Number(pressure.bagel_sets_won||0)+' / '+Number(pressure.bagel_sets_lost||0)+'</b></div>'+\n   '<div class="list-item row between"><span>Défaites après gain du 1er set</span><b>'+Number(pressure.lost_after_winning_first_set||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Victoires en sets secs</span><b>'+Number(pressure.straight_set_wins||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Bagels gagnés / concédés</span><b>'+Number(pressure.bagel_sets_won||0)+' / '+Number(pressure.bagel_sets_lost||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Défaites après gain du 1er set</span><b>'+Number(pressure.lost_after_winning_first_set||0)+'</b></div>'+
    '<div class="list-item row between"><span>Défaites en sets secs</span><b>'+Number(pressure.straight_set_losses||0)+'</b></div>'+
    '<div class="list-item row between"><span>Plus longue série de victoires</span><b>'+Number(longest.win||0)+'</b></div>'+
    '<div class="list-item row between"><span>Plus longue série de défaites</span><b>'+Number(longest.loss||0)+'</b></div>'+

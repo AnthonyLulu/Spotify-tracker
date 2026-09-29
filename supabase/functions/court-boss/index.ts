@@ -4339,10 +4339,30 @@ Deno.serve(async(req:Request)=>{
         const secondary=qField.slice(qPlan.sectionCount,qPlan.sectionCount*2).reverse();
         primary.forEach((p:any,i:number)=>{if(p)sections[i][0]=p});
         secondary.forEach((p:any,i:number)=>{if(p)sections[i][qPlan.sectionSize-1]=p});
+
+        // Non-power-of-two qualifying sections (e.g. ITF 48Q / 8 qualifiers)
+        // live inside the next power-of-two mini bracket. Put the byes beside
+        // the two seeds first, then fill the interior draw positions.
         const rest=qField.slice(qPlan.sectionCount*2);
         let restIndex=0;
-        for(let pos=1;pos<qPlan.sectionSize-1;pos++){
-          for(let section=0;section<qPlan.sectionCount;section++){
+        for(let section=0;section<qPlan.sectionCount;section++){
+          const sectionPlayers=Math.max(
+            2,
+            Math.min(
+              qPlan.sectionSize,
+              Number(qPlan.sectionPlayers||Math.ceil(qPlan.drawSize/qPlan.sectionCount))
+            )
+          );
+          let byes=Math.max(0,qPlan.sectionSize-sectionPlayers);
+          const reservedBye=new Set<number>();
+          if(byes>0){reservedBye.add(1);byes--}
+          if(byes>0){reservedBye.add(qPlan.sectionSize-2);byes--}
+          for(let pos=2;byes>0&&pos<qPlan.sectionSize-2;pos++){
+            if(!reservedBye.has(pos)){reservedBye.add(pos);byes--}
+          }
+
+          for(let pos=1;pos<qPlan.sectionSize-1;pos++){
+            if(reservedBye.has(pos))continue;
             if(restIndex<rest.length)sections[section][pos]=rest[restIndex++];
           }
         }

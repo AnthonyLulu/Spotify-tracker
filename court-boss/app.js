@@ -646,9 +646,16 @@ function singlesEligibility(t){
  if(String(t.circuit)==="Junior"){
   if(age>18)return {label:"Non éligible U18",cls:"bad",can:false};
   const jr=Number(c.junior_rank||c.junior_ranking||99999);
+  if(mainClosed){
+    if(cuts.qual&&jr<=cuts.qual&&!qualClosed)return {label:"Qualifs junior",method:"qualifying",cls:"warn",can:true};
+    return {label:"Inscriptions juniors closes",method:"closed",cls:"bad",can:false,canWildcard:false};
+  }
   if(cuts.direct&&jr<=cuts.direct)return {label:"Tableau direct junior",method:"direct",cls:"good",can:true};
-  if(cuts.qual&&jr<=cuts.qual)return {label:"Qualifs junior",method:"qualifying",cls:"warn",can:true};
-  return {label:"Alternate junior",method:"alternate",cls:"",can:true};
+  if(cuts.qual&&jr<=cuts.qual){
+    if(qualClosed)return {label:"Qualifs juniors closes",method:"closed",cls:"bad",can:false,canWildcard:false};
+    return {label:"Qualifs junior",method:"qualifying",cls:"warn",can:true};
+  }
+  return {label:"Hors cut junior · wild card requise",method:"alternate",cls:"bad",can:false,canWildcard:!mainClosed};
  }
  if(t.singles===false)return {label:'Pas de simple',can:false,cls:'bad'};
 
@@ -2612,14 +2619,14 @@ window.openTournament=async id=>{
       ?{label:'Qualifié Race #'+fmt(racePair.race_rank||racePair.seed||'—'),cls:'good',can:true,phase:'finals'}
       :{label:'Non qualifié · Top 8 Race requis',cls:'bad',can:false,phase:'finals'};
   }
-  const rawElig=managedJunior&&!isSinglesFinals?'Engagé officiel':singleRule.label;
+  const rawElig=managedJunior&&!isSinglesFinals?(managedJunior.entry_method==='direct'?'Tableau direct junior':'Engagé junior'):singleRule.label;
   const elig=rawElig;
-  const canAttempt=(isSinglesFinals||(!isJunior&&!isNcaa&&!isFed))&&singleRule.can;
+  const canAttempt=(isSinglesFinals||(!isNcaa&&!isFed))&&singleRule.can;
   const cuts=tmCuts(t);
 
   const rankTitle=isJunior?'Junior':'ATP';
   const drawIntro=isJunior
-    ?((d.junior_entries||[]).length?'Engagés/résultats vérifiés pour ce tournoi junior.':'Projection à partir du classement junior vérifié.')
+    ?((d.junior_entries||[]).length?'Engagés/résultats vérifiés pour ce tournoi junior.':'Projection ITF Junior : admissions directes, places issues des qualifs et wild cards séparées.')
     :'Avant le tirage officiel, Court Boss affiche une projection à partir du classement et du cut.';
   const sourceLink=t.source_url?'<a class="soft-btn" href="'+esc(t.source_url)+'" target="_blank" rel="noopener noreferrer">Source officielle</a>':'';
   const detailPhoto=String(t.image_url||"").trim()||(t.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):'');
@@ -2632,7 +2639,7 @@ window.openTournament=async id=>{
 
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div class="tm-title-with-logo">${tournamentLogoHtml(t,'tm-detail-logo')}<div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div></div><button class="close" onclick="closeOverlay()">✕</button></div>
    ${detailPhoto?`<div class="tm-tour-hero"><img src="${esc(detailPhoto)}" alt="${esc(t.name)}" onerror="this.parentElement.style.display='none'"><div class="tm-tour-hero-overlay"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span><span class="badge good">${esc(detailPhotoLabel)}</span></div></div>`:''}
-   <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button>${(Number(economics.total||0)>0||economics.format==='none'||economics.note)?'<button onclick="tourSection(\'prize\')">Dotations</button>':''}${editionHistory.length?'<button onclick="tourSection(\'history\')">Histoire '+editionHistory.length+'</button>':''}${isNcaa?`<button onclick="tourSection('ncaa')">NCAA / ITA</button>`:`<button onclick="tourSection('draw')">${isJunior?'Engagés':'Tableau'}</button>${!isJunior?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}`}</div>
+   <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button>${(Number(economics.total||0)>0||economics.format==='none'||economics.note)?'<button onclick="tourSection(\'prize\')">Dotations</button>':''}${editionHistory.length?'<button onclick="tourSection(\'history\')">Histoire '+editionHistory.length+'</button>':''}${isNcaa?`<button onclick="tourSection('ncaa')">NCAA / ITA</button>`:`<button onclick="tourSection('draw')">${isJunior?'Tableau junior':'Tableau'}</button>${Number(t.qualifying_draw_size||0)>0?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}`}</div>
    <div id="tourBody">
     <div class="grid g2">
       <div class="card"><div class="row between"><h2>${isNcaa?'Accès NCAA':isFed?'Sélection':isJunior?'Circuit Junior':'Inscription simple'}</h2><span class="badge ${singleRule.cls}">${esc(elig)}</span></div>
@@ -2641,7 +2648,7 @@ window.openTournament=async id=>{
         <div class="list-item row between"><span>Deadline simple</span><b>${t.singles_entry_deadline?df(t.singles_entry_deadline):'—'}</b></div>
         <div class="list-item row between"><span>Deadline qualifs</span><b>${t.qualifying_entry_deadline?df(t.qualifying_entry_deadline):'—'}</b></div>
         ${Number(t.late_entry_slots||0)>0?`<div class="list-item row between"><span>Late Entry</span><b>${t.late_entry_deadline?df(t.late_entry_deadline):'—'} · ${fmt(t.late_entry_slots)} slot</b></div>`:''}
-        ${wc&&!isJunior&&!isNcaa&&!isFed?`<div class="list-item row between"><span>Wild card</span><span class="badge ${wc.status==='accepted'?'good':wc.status==='declined'?'bad':''}">${esc(wc.status)}</span></div>`:''}
+        ${wc&&!isNcaa&&!isFed?`<div class="list-item row between"><span>Wild card</span><span class="badge ${wc.status==='accepted'?'good':wc.status==='declined'?'bad':''}">${esc(wc.status)}</span></div>`:''}
         ${t.entry_rule_note?`<div class="notice mini" style="margin-top:9px"><b>Règle :</b> ${esc(t.entry_rule_note)}</div>`:''}
         <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:isSinglesFinals?(singleRule.can?`${!played?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler les Finals</button>`:''}<span class="badge good">Qualification automatique par la Race</span>`:`<span class="badge bad">${esc(singleRule.label)}</span>`):(singleRule.can||joined)?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id}).then(()=>closeOverlay())">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>${singleRule.canWildcard?`<button class="soft-btn" onclick="requestWildcard(${t.id})">Demander une wild card</button>`:''}`}</div>
         ${played?`<div class="notice" style="margin-top:10px"><b>Résultat :</b> ${esc(played.user_round)} · +${played.user_points} pts · +${money(played.user_prize,t.prize_currency||'USD')}</div>`:''}
@@ -2664,7 +2671,7 @@ window.openTournament=async id=>{
 
    <template id="tourDrawTpl"><div class="card"><div class="row between"><h2>${isJunior?'Engagés juniors':'Liste d’acceptation / tableau projeté'}</h2><span class="badge">${pairs.length} places</span></div><p class="muted mini">${drawIntro}</p><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur / entrée</th><th>Points</th><th>${isJunior?'Résultat':'Forme'}</th></tr></thead><tbody>${tournamentEntryRowsHtml(pairs,isJunior)}</tbody></table></div></div>${tournamentFormatHtml(d.format_rule||{},t)}</template>
 
-   <template id="tourQualTpl">${tournamentFormatHtml(d.format_rule||{},t)}<div class="card"><h2>Qualifications</h2>${t.qualifying_start_date?`<p class="muted mini">Du ${df(t.qualifying_start_date)} au ${df(t.qualifying_end_date||t.qualifying_start_date)} · à prévoir avant le tableau principal.</p>`:''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Condition</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.fitness}% / fatigue ${p.fatigue}%</td></tr>`).join('')}</tbody></table></div></div></template>
+   <template id="tourQualTpl">${tournamentFormatHtml(d.format_rule||{},t)}<div class="card"><h2>Qualifications</h2>${t.qualifying_start_date?`<p class="muted mini">Du ${df(t.qualifying_start_date)} au ${df(t.qualifying_end_date||t.qualifying_start_date)} · à prévoir avant le tableau principal.</p>`:''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Condition</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.fitness??'—'}% / fatigue ${p.fatigue??'—'}%</td></tr>`).join('')}</tbody></table></div></div></template>
 
    <template id="tourDoubleTpl">
     <div class="grid g2"><div class="card"><div class="eyebrow">Partenariat</div><h2>${activePartner?flags[activePartner.country]||'🏳️':''} ${activePartner?esc(activePartner.name):'Aucun partenaire'}</h2><div class="list-item row between"><span>Ton classement</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)}</b></div><div class="list-item row between"><span>Chimie</span><b>${pairScore(activePartner,'chem')}%</b></div>`:''}</div><div class="card"><div class="eyebrow">Tournoi</div><h2>${esc(t.name)} · Double</h2><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div>${doublesRun?`<div class="notice good"><b>Résultat :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts</div>`:isDoublesFinals?(doubleRule.can&&activePartner?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler les Finals double</button><div class="notice good mini" style="margin-top:8px">Top 8 Race · paire qualifiée automatiquement.</div>`:`<div class="notice bad mini" style="margin-top:8px">${esc(doubleRule.label)}</div><button class="soft-btn" style="width:100%;margin-top:8px" onclick="setRankKind('${isJuniorDoubleFinals?'junior_doubles_race':'doubles_race'}');closeOverlay();nav('rankings')">Voir la Race</button>`):activePartner?(dJoined?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler le double</button>`:`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="toggleDoublesEntry(${t.id})">Inscrire la paire avant de jouer</button>`):`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="closeOverlay();nav('doubles')">Choisir un partenaire</button>`}</div></div>

@@ -1345,7 +1345,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:24,tournament_model:"entry-calendar-prize-v7+frozen-baseline",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:25,tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -2597,6 +2597,24 @@ Deno.serve(async(req:Request)=>{
           }
         }
       }
+    }
+
+    if(t.data.doubles&&doublesMain.length){
+      const pairKey=(x:any)=>[Number(x?.player_a?.id||0),Number(x?.player_b?.id||0)].sort((a,b)=>a-b).join(":");
+      const seedMetric=(x:any)=>{
+        const rr=Number(x?.race_rank);
+        if(Number.isFinite(rr)&&rr>0&&rr<9999)return rr;
+        const cr=Number(x?.combined_rank);
+        return Number.isFinite(cr)&&cr>0?cr:999999;
+      };
+      const seedOrder=doublesMain.slice().sort((a:any,c:any)=>
+        seedMetric(a)-seedMetric(c)
+        ||Number(a?.player_a?.doubles_ranking||99999)+Number(a?.player_b?.doubles_ranking||99999)
+          -Number(c?.player_a?.doubles_ranking||99999)-Number(c?.player_b?.doubles_ranking||99999)
+        ||pairKey(a).localeCompare(pairKey(c))
+      );
+      const seedMap=new Map(seedOrder.slice(0,Math.min(doublesSeedCount,seedOrder.length)).map((x:any,i:number)=>[pairKey(x),i+1]));
+      for(const pair of doublesMain)pair.seed=seedMap.get(pairKey(pair))||null;
     }
 
     if(String(t.data.circuit)==="Junior"){

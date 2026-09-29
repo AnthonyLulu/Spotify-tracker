@@ -1975,7 +1975,26 @@ Deno.serve(async(req:Request)=>{
     const visibleFinals=(finals.data??[]).filter((x:any)=>dateOk(x.final_date));
     const visibleJuniorEntries=(juniorEntries.data??[]).filter((x:any)=>dateOk(x.snapshot_date)&&dateOk(x?.tournaments?.start_date));
     const visibleTournamentHistoryAll=(tournamentHistory.data??[]).filter((x:any)=>dateOk(x.tournament_date));
-    const visibleTournamentHistory=visibleTournamentHistoryAll.filter((x:any)=>String(x.event_type||"singles")!=="doubles");
+    const rawSinglesTournamentHistory=visibleTournamentHistoryAll.filter((x:any)=>String(x.event_type||"singles")!=="doubles");
+    const legacyRoundRows=rawSinglesTournamentHistory.filter((x:any)=>/^R(?:16|32|64|128)$/.test(String(x.result_code||"")));
+    const legacyRoundKeys=[...new Set(legacyRoundRows.map((x:any)=>String(x.season||"")+"|"+String(x.tournament_id||"")).filter(Boolean))];
+    const historicalRoundFormats=legacyRoundKeys.length
+      ?await db.from("historical_tournament_round_formats").select("event_key,first_round_code").in("event_key",legacyRoundKeys)
+      :{data:[],error:null};
+    if(historicalRoundFormats.error)return h({error:historicalRoundFormats.error.message},500);
+    const historicalRoundMap=new Map((historicalRoundFormats.data??[]).map((x:any)=>[String(x.event_key),Number(x.first_round_code||0)]));
+    const canonicalHistoryRound=(x:any)=>{
+      const code=String(x.result_code||"");
+      const match=code.match(/^R(16|32|64|128)$/);
+      if(!match)return x;
+      const bracketRound=Number(match[1]);
+      const firstRound=historicalRoundMap.get(String(x.season||"")+"|"+String(x.tournament_id||""))||0;
+      if(!firstRound||bracketRound>firstRound)return x;
+      const ordinal=Math.round(Math.log2(firstRound)-Math.log2(bracketRound)+1);
+      if(ordinal<1||ordinal>7)return x;
+      return {...x,result_code:"R"+ordinal,result_label:ordinal===1?"1er tour":ordinal+"e tour",legacy_result_code:code};
+    };
+    const visibleTournamentHistory=rawSinglesTournamentHistory.map(canonicalHistoryRound);
     const doublesHistorySeen=new Set<string>();
     const visibleDoublesTournamentHistory=visibleTournamentHistoryAll
       .filter((x:any)=>String(x.event_type||"")==="doubles")

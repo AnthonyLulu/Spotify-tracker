@@ -648,11 +648,11 @@ function tournamentEntryRestriction(t,c,method){
  return null;
 }
 function tournamentEntryReason(reason){
- const labels={itf_play_down_top200:'M15/M25 interdits au Top 200 ATP',ch50_top50_prohibited:'Challenger 50 interdit au Top 50',ch50_top150_no_direct_or_qualifying:'Challenger 50 : wild card obligatoire pour le Top 150',ch50_wc_51_100_home_nation_only:'Wild card réservée à la nation hôte pour les rangs 51–100',challenger_top10_prohibited:'Challenger 75–125 interdit au Top 10',ch75_11_50_prohibited:'Challenger 75 interdit au Top 50',challenger_11_50_wildcard_only:'Wild card obligatoire pour les rangs 11–50',atp_advanced_entry_top500_required:'ATP : Top 500 requis pour l’entrée avancée',challenger_175_125_direct_top500_required:'Challenger 125/175 : Top 500 requis en entrée directe',inactive_player:'Joueur inactif',injured:'Joueur blessé',doubles_only:'Double exclusivement'};
+ const labels={itf_play_down_top200:'M15/M25 interdits au Top 200 ATP',ch50_top50_prohibited:'Challenger 50 interdit au Top 50',ch50_top150_no_direct_or_qualifying:'Challenger 50 : wild card obligatoire pour le Top 150',ch50_wc_51_100_home_nation_only:'Wild card réservée à la nation hôte pour les rangs 51–100',challenger_top10_prohibited:'Challenger 75–125 interdit au Top 10',ch75_11_50_prohibited:'Challenger 75 interdit au Top 50',challenger_11_50_wildcard_only:'Wild card obligatoire pour les rangs 11–50',atp_advanced_entry_top500_required:'ATP : Top 500 requis pour l’entrée avancée',challenger_175_125_direct_top500_required:'Challenger 125/175 : Top 500 requis en entrée directe',inactive_player:'Joueur inactif',injured:'Joueur blessé',doubles_only:'Double exclusivement',no_active_entry_protection:'Aucun classement protégé actif'};
  return labels[reason]||'Entrée non autorisée par le règlement';
 }
 function tournamentParticipationWindow(t,elig={},discipline='singles'){
- const qualifying=discipline==='singles'&&['qualifying','alternate'].includes(elig.method);
+ const qualifying=discipline==='singles'&&['qualifying','protected_qualifying','alternate'].includes(elig.method);
  return {start_date:(qualifying?t.qualifying_start_date:null)||t.main_draw_start_date||t.start_date,end_date:t.end_date||t.start_date,deadline:(qualifying?t.qualifying_entry_deadline:null)||t.singles_entry_deadline||t.main_entry_deadline||t.deadline};
 }
 function existingEntryWindow(id,e,discipline='singles'){
@@ -698,11 +698,27 @@ function singlesEligibility(t){
  }
  if(t.singles===false)return {label:'Pas de simple',can:false,cls:'bad'};
 
- let method=t.entry_rule_context===tournamentEntryContext(c)&&t.managed_wildcard_status==='accepted'
+ const authoritative=t.entry_rule_context===tournamentEntryContext(c);
+ const rules=authoritative?(t.managed_entry_rules||{}):{};
+ const prDirect=rules.protected||null;
+ const prQual=rules.protected_qualifying||null;
+ const prInfo=prDirect?.protected_ranking||prQual?.protected_ranking||null;
+ const protectedRank=Number(prDirect?.ranking||prQual?.ranking||prInfo?.protected_rank||0);
+ const protectedAvailable=Boolean(prInfo?.available)&&protectedRank>0&&protectedRank<rank;
+
+ let method=authoritative&&t.managed_wildcard_status==='accepted'
    ?'wildcard'
    :cuts.direct&&rank<=cuts.direct?'direct'
    :cuts.qual&&rank<=cuts.qual?'qualifying'
    :'alternate';
+
+ if(method!=='wildcard'&&protectedAvailable){
+  if(!mainClosed&&cuts.direct&&rank>cuts.direct&&prDirect?.eligible!==false&&protectedRank<=cuts.direct){
+    method='protected';
+  }else if(!qualClosed&&cuts.qual&&rank>cuts.qual&&prQual?.eligible!==false&&protectedRank<=cuts.qual){
+    method='protected_qualifying';
+  }
+ }
 
  if(lateWindow&&cuts.direct&&rank<cuts.direct){
   const leReason=tournamentEntryRestriction(t,c,'direct');
@@ -715,8 +731,10 @@ function singlesEligibility(t){
   }
  }
 
- if(mainClosed&&method==='direct'){
-  if(cuts.qual&&rank<=cuts.qual&&!qualClosed){
+ if(mainClosed&&(method==='direct'||method==='protected')){
+  if(method==='protected'&&cuts.qual&&protectedRank<=cuts.qual&&!qualClosed&&prQual?.eligible!==false){
+    method='protected_qualifying';
+  }else if(method==='direct'&&cuts.qual&&rank<=cuts.qual&&!qualClosed){
     method='qualifying';
   }else if(method!=='wildcard'){
     return {
@@ -727,7 +745,7 @@ function singlesEligibility(t){
   }
  }
 
- if(method==='qualifying'&&qualClosed){
+ if((method==='qualifying'||method==='protected_qualifying')&&qualClosed){
   return {
     label:'Qualifs closes'+(qualSignin?' · sign-in '+df(qualSignin):''),
     method:'closed',cls:'bad',can:false,phase:'closed',
@@ -742,6 +760,12 @@ function singlesEligibility(t){
  }
  if(reason)return {label:tournamentEntryReason(reason),reason,method,cls:'bad',can:false,canWildcard:!tournamentEntryRestriction(t,c,'wildcard')};
  if(method==='wildcard')return {label:'Wild Card accordée',method,cls:'good',can:true};
+ if(method==='protected'){
+  return {label:'Classement protégé #'+fmt(protectedRank)+' · tableau direct',method,cls:'good',can:true,protectedRanking:prInfo,protectedRank};
+ }
+ if(method==='protected_qualifying'){
+  return {label:'Classement protégé #'+fmt(protectedRank)+' · qualifications',method,cls:'warn',can:true,protectedRanking:prInfo,protectedRank};
+ }
  if(method==='direct')return {label:'Tableau direct',method,cls:'good',can:true};
  if(method==='qualifying')return {label:'Qualifications'+(qualDeadline?' · deadline '+df(qualDeadline):''),method,cls:'warn',can:true};
  return {label:t.circuit==='ITF'?'Alternate / WTN':'Alternate / hors cut',method,cls:'warn',can:true};
@@ -2628,6 +2652,7 @@ window.openTournament=async id=>{
   const editionHistory=d.tournament_history||[],doublesEditionHistory=d.tournament_doubles_history||[],historyRecords=d.tournament_history_records||{};
   const historyMajor=['Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Challenger 175','Challenger 125'].includes(String(t.category||''));
   const economics=d.economics||{currency:t.prize_currency||'USD',total:Number(t.prize_money||0),total_is_estimate:t.prize_money_is_estimate,format:t.prize_format,special:t.special_prize_components||{},singles_is_estimate:t.singles_prize_is_estimate,qualifying_is_estimate:t.qualifying_prize_is_estimate,doubles_is_estimate:t.doubles_prize_is_estimate,singles:t.singles_prize_by_result||{},qualifying:t.qualifying_prize_by_result||{},doubles:t.doubles_prize_by_result||{},source_label:t.prize_source_label||null,source_url:t.prize_source_url||null,note:t.prize_note||null};
+  const entryProtection=t.managed_entry_rules?.protected?.protected_ranking||t.managed_entry_rules?.protected_qualifying?.protected_ranking||null;
 
   const managedId=Number(cr.managed_player_id||boot?.career?.managed_player_id||0);
   const managedJunior=pairs.find(p=>Number(p.id)===managedId);
@@ -2702,7 +2727,7 @@ window.openTournament=async id=>{
     ${t.doubles&&!isNcaa?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Inscription double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge ${doubleRule.cls}">${esc(doubleRule.label)}</span></div><div class="list-item row between"><span>Ton rang double</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)} · ${esc(activePartner.name)}</b></div>`:''}<div class="list-item row between"><span>Advance entry double</span><b>${t.doubles_entry_deadline?df(t.doubles_entry_deadline):String(t.entry_rule_code)==='ITF_M15'?'Aucune':'—'}</b></div><div class="list-item row between"><span>On-site sign-in</span><b>${t.doubles_onsite_deadline?df(t.doubles_onsite_deadline):'—'}</b></div>${doubleRule.bestCombinedRank?`<div class="list-item row between"><span>Rang combiné best-of</span><b>${fmt(doubleRule.bestCombinedRank)}</b></div><div class="list-item row between"><span>Cut projeté</span><b>${doubleRule.projectedCut?fmt(doubleRule.projectedCut):'—'}</b></div>`:''}${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:isDoublesFinals?(doubleRule.can?`<button class="primary" style="width:100%;margin-top:8px" onclick="playDoublesTournament(${t.id})">Jouer / simuler les Finals double</button><div class="notice good mini" style="margin-top:8px">Qualification automatique par la Race de la paire.</div>`:`<div class="notice bad mini" style="margin-top:8px">${esc(doubleRule.label)}</div><button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">Voir la Race Double</button>`):doubleRule.can?`<button class="${dJoined?'danger-btn':'primary'}" style="width:100%;margin-top:8px" onclick="toggleDoublesEntry(${t.id});closeOverlay()">${dJoined?'Retirer le double':'Inscrire la paire'}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">${activePartner?'Voir le hub Double':'Choisir un partenaire'}</button>`}</div>`:''}
    </div>
 
-   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isNcaa?'Accès NCAA / ITA':isJunior?'Circuit Junior':'Entrée'}</h2>${isNcaa?`<div class="list-item row between"><span>Mode d’accès</span><b>${esc(singleRule.label)}</b></div><div class="list-item row between"><span>Inscription libre</span><b>Non</b></div><div class="list-item row between"><span>Profils NCAA indexés</span><b>${fmt(ncaaPlayers.length)}</b></div>${t.entry_rule_note?`<div class="notice mini" style="margin-top:8px">${esc(t.entry_rule_note)}</div>`:''}`:isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${cuts.qual?'#'+fmt(cuts.qual)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau / champ</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div><div class="list-item row between"><span>Simple / Double</span><b>${t.singles?'S':''}${t.singles&&t.doubles?' + ':''}${t.doubles?'D':''}</b></div></div></div></template>
+   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isNcaa?'Accès NCAA / ITA':isJunior?'Circuit Junior':'Entrée'}</h2>${isNcaa?`<div class="list-item row between"><span>Mode d’accès</span><b>${esc(singleRule.label)}</b></div><div class="list-item row between"><span>Inscription libre</span><b>Non</b></div><div class="list-item row between"><span>Profils NCAA indexés</span><b>${fmt(ncaaPlayers.length)}</b></div>${t.entry_rule_note?`<div class="notice mini" style="margin-top:8px">${esc(t.entry_rule_note)}</div>`:''}`:isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${cuts.qual?'#'+fmt(cuts.qual)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>${entryProtection?.available?`<div class="list-item row between"><span>Classement protégé</span><b>#${fmt(entryProtection.protected_rank)} · ${fmt(entryProtection.uses_remaining)} utilisation(s)</b></div><div class="muted micro">Activation jusqu’au ${entryProtection.activation_deadline?df(entryProtection.activation_deadline):'—'}${entryProtection.active_until?' · actif jusqu’au '+df(entryProtection.active_until):''}</div>`:''}`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau / champ</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div><div class="list-item row between"><span>Simple / Double</span><b>${t.singles?'S':''}${t.singles&&t.doubles?' + ':''}${t.doubles?'D':''}</b></div></div></div></template>
 
    <template id="tourPrizeTpl">${tournamentEconomicsHtml(economics,t,d.format_rule||{})}</template>
 

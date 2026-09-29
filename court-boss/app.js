@@ -1850,6 +1850,54 @@ function render(){
  shell((views[route]||more)());
 }
 
+
+function playerStatsAdvancedSections(st,p){
+ const exact=st?.elite_exact||{},bands=Array.isArray(st?.rank_bands)?st.rank_bands:[],levels=Array.isArray(st?.competition_levels)?st.competition_levels:[],seasons=Array.isArray(st?.season_records)?st.season_records:[],countries=Array.isArray(st?.country_records)?st.country_records:[],hand=st?.handedness_records||{},pressure=st?.pressure_records||{},longest=st?.longest_streaks||{},upset=st?.largest_upset||null,worst=st?.worst_ranked_loss||null;
+ const pct=r=>{const m=Number(r?.matches||0),w=Number(r?.wins||0);return m?Math.round(w/m*1000)/10:0};
+ const wl=r=>'<b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b> · '+pct(r)+'%';
+ const mini=(label,r)=>'<div class="statbox"><span class="muted mini">'+esc(label)+'</span><b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b><small class="muted micro">'+Number(r?.matches||0)+' matchs · '+pct(r)+'%</small></div>';
+ const event=x=>x?'<span class="click" onclick="openPlayer('+x.opponent_id+')"><b>#'+fmt(x.opponent_rank)+' '+esc(x.opponent_name||'—')+'</b></span><div class="muted micro">'+df(x.date)+' · '+esc(x.tournament_name||'')+' · '+esc(x.round||'')+' · '+esc(x.score||'')+(x.rank_gap?' · écart '+fmt(x.rank_gap):'')+'</div>':'<span class="muted">—</span>';
+ const bandsRows=bands.map(r=>'<tr><td><b>'+esc(r.band)+'</b></td><td>'+Number(r.matches||0)+'</td><td class="a-good">'+Number(r.wins||0)+'</td><td class="a-bad">'+Number(r.losses||0)+'</td><td><b>'+Number(r.win_pct||0).toFixed(1)+'%</b></td></tr>').join('');
+ const levelRows=levels.map(r=>'<tr><td><b>'+esc(r.level)+'</b></td><td>'+Number(r.matches||0)+'</td><td>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</td><td><b>'+Number(r.win_pct||0).toFixed(1)+'%</b></td></tr>').join('');
+ const seasonRows=seasons.map(r=>'<tr><td class="rank-num">'+r.season+'</td><td>'+Number(r.matches||0)+'</td><td>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</td><td><b>'+Number(r.win_pct||0).toFixed(1)+'%</b></td></tr>').join('');
+ const countryRows=countries.map(r=>'<div class="list-item row between"><span>'+(flags[r.country]||'🏳️')+' '+esc(r.country||'—')+'</span><span><b>'+Number(r.wins||0)+'-'+Number(r.losses||0)+'</b> · '+Number(r.win_pct||0).toFixed(1)+'%</span></div>').join('');
+ return ''+
+ '<div class="grid g2" style="margin-top:12px">'+
+  '<div class="card"><div class="row between"><div><div class="eyebrow">Opposition</div><h2>Classement des adversaires</h2></div><span class="badge">rang au jour J</span></div>'+
+   '<div class="statline" style="margin-top:8px">'+
+    '<div class="statbox"><span class="muted mini">Top 10</span><b>'+Number(exact.top10_wins||0)+'-'+Number(exact.top10_losses||0)+'</b><small class="muted micro">'+Number(exact.top10_matches||0)+' matchs</small></div>'+
+    '<div class="statbox"><span class="muted mini">Top 20</span><b>'+Number(exact.top20_wins||0)+'-'+Number(exact.top20_losses||0)+'</b><small class="muted micro">'+Number(exact.top20_matches||0)+' matchs</small></div>'+
+    '<div class="statbox"><span class="muted mini">Top 50</span><b>'+Number(exact.top50_wins||0)+'-'+Number(exact.top50_losses||0)+'</b><small class="muted micro">'+Number(exact.top50_matches||0)+' matchs</small></div>'+
+    '<div class="statbox"><span class="muted mini">Top 100</span><b>'+Number(exact.top100_wins||0)+'-'+Number(exact.top100_losses||0)+'</b><small class="muted micro">'+Number(exact.top100_matches||0)+' matchs</small></div>'+
+   '</div>'+
+   (bandsRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Tranche</th><th>M</th><th>V</th><th>D</th><th>%</th></tr></thead><tbody>'+bandsRows+'</tbody></table></div>':'<div class="empty">Les tranches se rempliront à partir des matchs de la sauvegarde.</div>')+
+  '</div>'+
+  '<div class="card"><div class="row between"><div><div class="eyebrow">Matchs à pression</div><h2>Moments qui comptent</h2></div><span class="badge">simulation</span></div>'+
+   '<div class="statline" style="margin-top:8px">'+
+    mini('Finales',pressure.finals)+mini('Demi-finales',pressure.semifinals)+mini('Quarts',pressure.quarterfinals)+mini('Qualifications',pressure.qualifying)+mini('Best of 5',pressure.best_of_five)+mini('Avec tie-break',pressure.matches_with_tiebreak)+mini('Set décisif',pressure.deciding_set_matches)+
+   '</div>'+
+   '<div class="list-item row between"><span>Victoires en sets secs</span><b>'+Number(pressure.straight_set_wins||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Défaites en sets secs</span><b>'+Number(pressure.straight_set_losses||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Plus longue série de victoires</span><b>'+Number(longest.win||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Plus longue série de défaites</span><b>'+Number(longest.loss||0)+'</b></div>'+
+  '</div>'+
+ '</div>'+
+ '<div class="grid g2" style="margin-top:12px">'+
+  '<div class="card"><div class="row between"><div><div class="eyebrow">Tournois</div><h2>Bilan par niveau</h2></div><span class="badge">carrière simulée</span></div>'+
+   (levelRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Niveau</th><th>M</th><th>V-D</th><th>%</th></tr></thead><tbody>'+levelRows+'</tbody></table></div>':'<div class="empty">Aucun match détaillé encore joué.</div>')+
+   '<div class="list-item row between"><span>Plus gros upset</span><span style="text-align:right">'+event(upset)+'</span></div>'+
+   '<div class="list-item row between"><span>Pire défaite au classement</span><span style="text-align:right">'+event(worst)+'</span></div>'+
+  '</div>'+
+  '<div class="card"><div class="row between"><div><div class="eyebrow">Profil d’opposition</div><h2>Qui il affronte</h2></div><span class="badge">scouting carrière</span></div>'+
+   '<div class="statline" style="margin-top:8px">'+mini('Vs gauchers',hand.left)+mini('Vs droitiers',hand.right)+'</div>'+
+   (countryRows?'<div style="margin-top:8px">'+countryRows+'</div>':'<div class="empty">Aucun bilan par pays encore disponible.</div>')+
+  '</div>'+
+ '</div>'+
+ '<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Évolution</div><h2>Saison par saison</h2></div><span class="badge">'+seasons.length+' saison(s)</span></div>'+
+  (seasonRows?'<div class="table-wrap" style="margin-top:9px"><table class="table"><thead><tr><th>Saison</th><th>Matchs</th><th>V-D</th><th>%</th></tr></thead><tbody>'+seasonRows+'</tbody></table></div>':'<div class="empty">La première ligne apparaîtra dès les premiers matchs de la carrière.</div>')+
+ '</div>';
+}
+
 function playerStatsTemplate(st,p){
  const career=st?.career||{},elite=st?.elite_wins||{},adv=st?.advanced||{},surfaces=st?.surfaces||{},streaks=st?.streaks||{};
  const h2h=Array.isArray(st?.h2h)?st.h2h:[],recent=Array.isArray(st?.recent_matches)?st.recent_matches:[];

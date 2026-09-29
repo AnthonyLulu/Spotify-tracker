@@ -1467,7 +1467,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:32,season_model:"split-reservation-priority-davis-ita-pro-ncaa-v8",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:34,season_model:"priority-scheduler-calendar-qualifying-fatigue-v10",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -3466,6 +3466,12 @@ Deno.serve(async(req:Request)=>{
     const ncaaPriorityEntries=await db.rpc("prepare_ncaa_priority_individual_events",{p_from_date:previousDate,p_to_date:date});
     if(ncaaPriorityEntries.error)return h({error:ncaaPriorityEntries.error.message},500);
 
+    // Qualifying reserves players on the real qualifying dates, before main draws.
+    const worldQualifyingEvents=await db.rpc("simulate_world_qualifying_window",{p_from_date:previousDate,p_to_date:date});
+    if(worldQualifyingEvents.error)return h({error:worldQualifyingEvents.error.message},500);
+    const worldDoublesQualifyingEvents=await db.rpc("simulate_world_doubles_qualifying_window",{p_from_date:previousDate,p_to_date:date});
+    if(worldDoublesQualifyingEvents.error)return h({error:worldDoublesQualifyingEvents.error.message},500);
+
     // Pro singles outranks ordinary college duals and can override ITA team duty for a Grand Slam.
     const worldEvents=await db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date});
     if(worldEvents.error)return h({error:worldEvents.error.message},500);
@@ -3693,11 +3699,18 @@ Deno.serve(async(req:Request)=>{
 
     const academyDev=await db.rpc("simulate_academy_roster_week",{p_week:week,p_date:date});
     if(academyDev.error)return h({error:academyDev.error.message},500);
-    const [injurySim,forfeitSim]=await Promise.all([
-      db.rpc("simulate_injuries_week",{p_date:date,p_week:week}),
-      db.rpc("refresh_tournament_forfeits",{p_date:date})
-    ]);
-    if(injurySim.error||forfeitSim.error)return h({error:(injurySim.error||forfeitSim.error)?.message},500);
+
+    // Injury risk is evaluated on the post-match load before weekly recovery.
+    // New injuries are then converted into withdrawals before fatigue is reduced.
+    const injurySim=await db.rpc("simulate_injuries_week",{p_date:date,p_week:week});
+    if(injurySim.error)return h({error:injurySim.error.message},500);
+
+    const forfeitSim=await db.rpc("refresh_tournament_forfeits",{p_date:date});
+    if(forfeitSim.error)return h({error:forfeitSim.error.message},500);
+
+    const recoverySim=await db.rpc("apply_world_recovery_week",{p_date:date,p_week:week});
+    if(recoverySim.error)return h({error:recoverySim.error.message},500);
+
     const medical=await db.rpc("apply_managed_medical_week",{p_date:date});
     if(medical.error)return h({error:medical.error.message},500);
     const scouts=await db.from("scouting_assignments")
@@ -3741,7 +3754,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){

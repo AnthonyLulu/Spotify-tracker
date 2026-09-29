@@ -7845,6 +7845,7 @@ Deno.serve(async(req:Request)=>{
       const p:any=target.data;
       const attrs:any=Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes||{};
       const startDate=String(body?.date||AGE_REFERENCE_DATE).slice(0,10);
+      const scoutingEtaDate=(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+28);return d.toISOString().slice(0,10)})();
       const basePoints=Math.max(0,Number(p.points||0));
       const startingFocus=String(p.career_focus||"mixed");
       const baseDoubleRank=p.doubles_ranking==null?3000:Math.max(1,Number(p.doubles_ranking));
@@ -7859,7 +7860,7 @@ Deno.serve(async(req:Request)=>{
         db.from("scouting_reports").delete().gte("id",0),
         db.from("scouting_assignments").update({
           progress:0,status:"active",confidence:45,report_quality:40,
-          started_at:startDate,last_update:startDate,eta_date:null
+          started_at:startDate,last_update:startDate,eta_date:scoutingEtaDate
         }).gte("id",0),
         db.from("user_ranking_points").delete().eq("owner_id","demo"),
         db.from("user_doubles_points").delete().eq("owner_id","demo"),

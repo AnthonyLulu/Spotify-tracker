@@ -3773,7 +3773,7 @@ Deno.serve(async(req:Request)=>{
       if(prStatus.error)return h({error:prStatus.error.message},500);
       protectedRankingInfo=prStatus.data||null;
 
-      const qDraw=Math.max(0,Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0));
+      const qDraw=Math.max(0,Number(t.qualifying_draw_size??formatRule?.qualifying_draw_size??0));
       const qSlots=Math.max(0,Number(formatRule?.qualifier_count||0));
       const wcSlots=Math.max(0,Number(formatRule?.wildcard_count||0));
       const directSlots=Math.max(0,mainDrawSizeConfigured-qSlots-wcSlots);
@@ -3926,7 +3926,7 @@ Deno.serve(async(req:Request)=>{
       .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):isJuniorSingles?Number(p.junior_ranking||999999):(candidateRankOrder.get(Number(p.id))??Number(p.ranking||999999)),player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
       .sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||Number(b.current_ability||0)-Number(a.current_ability||0));
     if(structuredJuniorEntry){
-      const qDraw=Math.max(0,Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0));
+      const qDraw=Math.max(0,Number(t.qualifying_draw_size??formatRule?.qualifying_draw_size??0));
       qualifyingCandidateIdsForRun=new Set(
         pool
           .filter((p:any)=>Number(p.ranking||999999)>Number(direct)&&Number(p.ranking||999999)<=Number(qual))
@@ -4356,7 +4356,7 @@ Deno.serve(async(req:Request)=>{
       champion=finalRes.winner;
     }else{
       qualifier=entryMode==="qualifying"||entryMode==="protected_qualifying";
-      const qDraw=Math.max(0,Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0));
+      const qDraw=Math.max(0,Number(t.qualifying_draw_size??formatRule?.qualifying_draw_size??0));
       const qSlots=Math.max(0,Number(formatRule?.qualifier_count||0));
       const qPlan=qualifyingSectionPlan(qDraw,qSlots);
       const qualifierWinners:any[]=[];
@@ -4470,8 +4470,10 @@ Deno.serve(async(req:Request)=>{
       if(structuredJuniorEntry){
         const wcSlots=Math.max(0,Number(formatRule?.wildcard_count||0));
         const targetMainBase=Math.max(0,drawSize-qualifierWinners.length);
+        const juniorDirectSlots=Math.max(0,drawSize-Math.max(0,Number(formatRule?.qualifier_count||0))-wcSlots);
         const directMain=pool
           .filter((p:any)=>Number(p.ranking||999999)<=Number(direct))
+          .slice(0,juniorDirectSlots)
           .map((p:any)=>({...p,isUser:false,entry_method:"direct"}));
         const usedMainIds=new Set(directMain.map((p:any)=>Number(p.id)).filter(Boolean));
         const wildcardPool=pool

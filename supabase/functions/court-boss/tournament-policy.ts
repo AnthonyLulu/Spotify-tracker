@@ -51,9 +51,24 @@ export function projectedTournamentCuts(t: any, main: any[] = [], qualifying: an
 export function qualifyingSectionPlan(drawSize: number, qualifierSlots: number) {
   const draw = Math.max(0, Math.floor(Number(drawSize) || 0));
   const slots = Math.max(0, Math.floor(Number(qualifierSlots) || 0));
-  if (!draw || !slots || draw < slots) return { drawSize: draw, qualifierSlots: slots, sectionCount: 0, sectionSize: 0, rounds: 0 };
-  const rawSection = draw / slots;
-  const sectionSize = Math.max(2, Math.round(rawSection));
-  const rounds = Math.max(1, Math.ceil(Math.log2(sectionSize)));
-  return { drawSize: draw, qualifierSlots: slots, sectionCount: slots, sectionSize, rounds };
+  if (!draw || !slots || draw < slots) {
+    return {
+      drawSize: draw, qualifierSlots: slots, sectionCount: 0,
+      sectionPlayers: 0, sectionSize: 0, bracketTotal: 0, byeCount: 0, rounds: 0
+    };
+  }
+  const sectionPlayers = Math.max(2, Math.ceil(draw / slots));
+  const rounds = Math.max(1, Math.ceil(Math.log2(sectionPlayers)));
+  const sectionSize = 2 ** rounds;
+  const bracketTotal = sectionSize * slots;
+  return {
+    drawSize: draw,
+    qualifierSlots: slots,
+    sectionCount: slots,
+    sectionPlayers,
+    sectionSize,
+    bracketTotal,
+    byeCount: Math.max(0, bracketTotal - draw),
+    rounds
+  };
 }

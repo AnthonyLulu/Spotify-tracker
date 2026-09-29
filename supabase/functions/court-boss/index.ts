@@ -1,3 +1,4 @@
+import { tournamentRoundPrize } from "./tournament-policy.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 const supabaseUrl=Deno.env.get("SUPABASE_URL")!;
 const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -1099,13 +1100,24 @@ async function getManagedPlayer(select="*"){
   return await db.from("players").select(select).eq("id",c.data.managed_player_id).maybeSingle();
 }
 
+async function managedTournamentEntryRules(t:any){
+  if(!["ATP","Challenger","ITF"].includes(String(t.circuit))||/Finals|Next Gen/i.test(String(t.category)))return null;
+  const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+  if(managed.error)throw managed.error;
+  if(!managed.data?.managed_player_id)return null;
+  const methods=["direct","qualifying","wildcard","alternate"];
+  const checks=await Promise.all(methods.map(method=>db.rpc("tournament_entry_eligibility",{p_player_id:managed.data.managed_player_id,p_tournament_id:t.id,p_entry_method:method})));
+  const error=checks.find(x=>x.error)?.error;if(error)throw error;
+  return Object.fromEntries(checks.map((result,index)=>[methods[index],result.data]));
+}
+
 Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:19,development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:20,tournament_model:"entry-calendar-prize-v3",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -1855,7 +1867,7 @@ Deno.serve(async(req:Request)=>{
       .slice(0,12);
 
     const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
-    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,attributeTrend,mentorshipOverview,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,trainingLoad,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
+    const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,attributeTrend,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,trainingLoad,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
       managedIdForMatchup===id
@@ -1865,7 +1877,6 @@ Deno.serve(async(req:Request)=>{
       db.from("player_role_suitability").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_ceilings").select("ceilings,ability_snapshot,potential_snapshot,development_type,last_review_date").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_trends").select("*").eq("player_id",id).maybeSingle(),
-      db.rpc("player_mentorship_overview",{p_player_id:id}),
       managedIdForMatchup===id
         ?db.from("player_hidden_trait_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30)
         :Promise.resolve({data:[],error:null}),
@@ -1894,6 +1905,8 @@ Deno.serve(async(req:Request)=>{
         :Promise.resolve({data:null,error:null})
     ]);
 
+    const statisticsDashboard=await db.rpc("player_statistics_dashboard_v2",{p_player_id:id,p_as_of:referenceDate});
+
     return h({
       player,sponsors:sp.data??[],titles:visibleTitles,history:visibleHistory,shortlist:short.data??null,
       matches:visibleMatches,careerStats:careerStats.data??null,finals:visibleFinals,juniorEntries:visibleJuniorEntries,
@@ -1914,9 +1927,9 @@ Deno.serve(async(req:Request)=>{
       roleSuitability:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=80)&&!roleSuitability.error?roleSuitability.data:null,
       attributeCeilings:managedIdForMatchup===id&&!attributeCeilings.error?attributeCeilings.data:null,
       attributeTrend:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=85)&&!attributeTrend.error?attributeTrend.data:null,
-      mentorship:mentorshipOverview.error?null:mentorshipOverview.data,
       hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
+      statisticsDashboard:statisticsDashboard.error?null:statisticsDashboard.data,
       eloRating:eloRating.error?null:eloRating.data,
       dynamicRatings:dynamicRatings.error?null:dynamicRatings.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
@@ -2156,6 +2169,18 @@ Deno.serve(async(req:Request)=>{
   }
 
 
+  if(path.endsWith("/api/tournament-entry-status")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const [t,wc]=await Promise.all([
+      db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
+      db.from("wildcard_requests").select("status").eq("tournament_id",id).maybeSingle()
+    ]);
+    if(t.error||wc.error)return h({error:(t.error||wc.error)?.message},500);
+    if(!t.data)return h({error:"Tournoi introuvable"},404);
+    try{return h({tournament:t.data,entry_rules:await managedTournamentEntryRules(t.data),wildcard_status:wc.data?.status||null})}
+    catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
   if(path.endsWith("/api/tournament-detail")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
     const [t,wc,forfeits]=await Promise.all([
@@ -2203,7 +2228,7 @@ Deno.serve(async(req:Request)=>{
       if(!doublesHist.error)tournamentDoublesHistory=doublesHist.data??[];
     }
 
-    const drawSize=Math.max(8,Math.min(128,Number(t.data.draw_size||32)));
+    const drawSize=Math.max(8,Math.min(128,Number(t.data.singles_draw_size||t.data.draw_size||32)));
     const [run,doublesRun] = await Promise.all([
       db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle(),
       db.from("doubles_runs").select("*,partner:players(id,name,country,doubles_ranking)").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle()
@@ -2475,23 +2500,102 @@ Deno.serve(async(req:Request)=>{
         ranking_kind:"race",finals_qualification:{required:8,name:"ATP Finals Race"}
       });
     }
-    const cut=Math.max(drawSize,qualCut||directCut||drawSize*4);
-    const pool=await db.from("players")
-      .select("id,name,country,ranking,points,current_ability,potential,form,fitness,fatigue,style")
-      .eq("ranking_current",true)
-      .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-      .lte("ranking",Math.max(cut,drawSize*5))
-      .order("ranking",{ascending:true})
-      .limit(Math.min(220,drawSize*3));
-    if(pool.error) return h({error:pool.error.message},500);
+    const formatPreview=await db.from("tournament_format_rules")
+      .select("rule_key,format_type,main_draw_size,bracket_size,qualifying_draw_size,doubles_draw_size,seed_count,qualifier_count,wildcard_count,rounds,points_by_result,qualifying_points,source_label,source_url")
+      .eq("circuit",String(t.data.circuit||""))
+      .eq("category",String(t.data.category||""))
+      .eq("main_draw_size",drawSize)
+      .limit(1).maybeSingle();
+    if(formatPreview.error)return h({error:formatPreview.error.message},500);
+    const fr:any=formatPreview.data||{};
+    const qSlots=Math.max(0,Number(fr.qualifier_count||0));
+    const wcSlots=Math.max(0,Number(fr.wildcard_count||0));
+    const directSlots=Math.max(0,drawSize-qSlots-wcSlots);
+    const qDraw=Math.max(0,Number(t.data.qualifying_draw_size||fr.qualifying_draw_size||0));
     const blocked=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
-    const available=(pool.data??[]).filter((p:any)=>!blocked.has(Number(p.id)));
-    const main=available.slice(0,drawSize);
-    const qualifying=available.slice(drawSize,drawSize+Math.min(32,drawSize));
+
+    const [directIds,wildcardIds,qualIds]=await Promise.all([
+      db.rpc("tournament_candidate_player_ids",{p_tournament_id:id,p_entry_method:"direct",p_limit:Math.max(64,directSlots+40)}),
+      wcSlots?db.rpc("tournament_candidate_player_ids",{p_tournament_id:id,p_entry_method:"wildcard",p_limit:Math.max(80,wcSlots*20)}):Promise.resolve({data:[],error:null} as any),
+      qDraw?db.rpc("tournament_candidate_player_ids",{p_tournament_id:id,p_entry_method:"qualifying",p_limit:Math.max(96,qDraw+80)}):Promise.resolve({data:[],error:null} as any)
+    ]);
+    if(directIds.error||wildcardIds.error||qualIds.error)return h({error:(directIds.error||wildcardIds.error||qualIds.error)?.message},500);
+
+    const rankMap=new Map<number,number>();
+    const orderedDirect=(directIds.data??[]).map((x:any)=>{rankMap.set(Number(x.player_id),Number(x.effective_rank||999999));return Number(x.player_id)}).filter(Boolean);
+    const orderedWild=(wildcardIds.data??[]).map((x:any)=>{rankMap.set(Number(x.player_id),Number(x.effective_rank||999999));return Number(x.player_id)}).filter(Boolean);
+    const orderedQual=(qualIds.data??[]).map((x:any)=>{rankMap.set(Number(x.player_id),Number(x.effective_rank||999999));return Number(x.player_id)}).filter(Boolean);
+
+    const allIds=[...new Set([...orderedDirect,...orderedWild,...orderedQual])];
+    const playerRows=allIds.length
+      ?await db.from("players").select("id,name,country,ranking,points,current_ability,potential,form,fitness,fatigue,style").in("id",allIds)
+      :{data:[],error:null};
+    if(playerRows.error)return h({error:playerRows.error.message},500);
+    const byId=new Map<number,any>((playerRows.data??[]).map((p:any)=>[Number(p.id),{...p,ranking:rankMap.get(Number(p.id))??Number(p.ranking||999999)}]));
+
+    const used=new Set<number>();
+    const main:any[]=[];
+    for(const pid of orderedDirect){
+      if(main.length>=directSlots)break;
+      if(blocked.has(pid)||used.has(pid)||!byId.has(pid))continue;
+      main.push({...byId.get(pid),entry_method:"direct"});used.add(pid);
+    }
+    const wcPool=orderedWild
+      .filter((pid:number)=>!blocked.has(pid)&&!used.has(pid)&&byId.has(pid))
+      .map((pid:number)=>byId.get(pid))
+      .sort((a:any,b:any)=>
+        Number(b.country===t.data.country)-Number(a.country===t.data.country)
+        ||Number(b.potential||0)-Number(a.potential||0)
+        ||Number(a.ranking||999999)-Number(b.ranking||999999)
+      );
+    for(const p of wcPool.slice(0,wcSlots)){
+      main.push({...p,entry_method:"wildcard"});used.add(Number(p.id));
+    }
+
+    const qualifying:any[]=[];
+    for(const pid of orderedQual){
+      if(qualifying.length>=qDraw)break;
+      if(blocked.has(pid)||used.has(pid)||!byId.has(pid))continue;
+      qualifying.push({...byId.get(pid),entry_method:"qualifying"});used.add(pid);
+    }
+
+    for(let qi=1;qi<=qSlots;qi++){
+      main.push({
+        id:null,name:"Qualifier "+qi,country:null,ranking:null,points:null,
+        current_ability:null,potential:null,form:null,fitness:null,fatigue:null,style:null,
+        entry_method:"qualifier_slot",projected:true
+      });
+    }
+
+    const projectedSeeds=new Map(main.filter((p:any)=>p.id).sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)).slice(0,Number(fr.seed_count||0)).map((p:any,i:number)=>[Number(p.id),i+1]));
+    for(const p of main)p.seed=p.id?projectedSeeds.get(Number(p.id))||null:null;
+
+    const economics={
+      currency:t.data.prize_currency||"USD",
+      total:Number(t.data.prize_money||0),
+      total_is_estimate:Boolean(t.data.prize_money_is_estimate),
+      total_kind:t.data.prize_total_kind||"event_total",
+      format:t.data.prize_format||"rounds",
+      singles:t.data.singles_prize_by_result||{},
+      qualifying:t.data.qualifying_prize_by_result||{},
+      doubles:t.data.doubles_prize_by_result||{},
+      special:t.data.special_prize_components||{},
+      singles_is_estimate:Boolean(t.data.singles_prize_is_estimate),
+      qualifying_is_estimate:Boolean(t.data.qualifying_prize_is_estimate),
+      doubles_is_estimate:Boolean(t.data.doubles_prize_is_estimate),
+      breakdown_is_estimate:Boolean(t.data.prize_breakdown_is_estimate),
+      source_label:t.data.prize_source_label||null,
+      source_url:t.data.prize_source_url||null,
+      note:t.data.prize_note||null
+    };
+
     return h({
       tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
+      format_rule:fr,economics,entry_rules:await managedTournamentEntryRules(t.data),
+      qualifying_window:{start:t.data.qualifying_start_date||null,end:t.data.qualifying_end_date||null,draw_size:qDraw,qualifier_slots:qSlots},
       run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
-      completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,ranking_kind:"singles"
+      completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
+      ranking_kind:"singles",entry_preview_model:"circuit_eligibility_v2"
     });
   }
 
@@ -2804,9 +2908,6 @@ Deno.serve(async(req:Request)=>{
     if(hiddenTraitEvolution.error)return h({error:hiddenTraitEvolution.error.message},500);
     const psychology=await db.rpc("refresh_player_psychology_week",{p_date:date});
     if(psychology.error)return h({error:psychology.error.message},500);
-    const weeklyPlayerDevelopment=Number(date.slice(0,4))>2025
-      ?await db.rpc("progress_player_development_weekly",{p_date:date})
-      :{data:{date,processed:0,historical_cutoff:true},error:null};
 
     // Maintain the development pyramids monthly instead of every click/week.
     // This keeps NCAA / ITF / Junior fields full without hammering Disk IO.
@@ -2837,14 +2938,13 @@ Deno.serve(async(req:Request)=>{
         const quarterly=month===1||month===4||month===7||month===10;
         const physicalMaturation=await db.rpc("progress_player_physical_maturation",{p_date:date});
         const coachingEnvironmentRefresh=await db.rpc("refresh_player_coaching_environment",{p_date:date});
-        const playerDevelopment=weeklyPlayerDevelopment;
+        const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
         const traitEvolution=await db.rpc("evolve_player_development_traits",{p_date:date});
         const aiTraining=await db.rpc("apply_player_ai_training",{p_date:date});
+        const aiFocusTraining=await db.rpc("run_ai_training_focus_cycle",{p_date:date});
         const archetypeRefresh=await db.rpc("refresh_player_archetypes",{p_date:date});
         const coachingDevelopment=await db.rpc("apply_player_coaching_development",{p_date:date});
         const coachingEnvironment=await db.rpc("apply_coaching_development_effects",{p_date:date});
-        const mentorshipRefresh=await db.rpc("refresh_player_mentorships",{p_date:date});
-        const mentorshipEffects=await db.rpc("apply_player_mentorship_effects",{p_date:date});
         const attributeTrends=await db.rpc("refresh_player_attribute_trends",{p_date:date});
         const ceilingRefresh=await db.rpc("refresh_changed_player_attribute_ceilings",{p_date:date});
         const tacticalPreferences=await db.rpc("refresh_player_tactical_preferences",{p_date:date});
@@ -2878,11 +2978,10 @@ Deno.serve(async(req:Request)=>{
           playerDevelopment:playerDevelopment.error?{error:playerDevelopment.error.message}:playerDevelopment.data,
           traitEvolution:traitEvolution.error?{error:traitEvolution.error.message}:traitEvolution.data,
           aiTraining:aiTraining.error?{error:aiTraining.error.message}:aiTraining.data,
+          aiFocusTraining:aiFocusTraining.error?{error:aiFocusTraining.error.message}:aiFocusTraining.data,
           archetypeRefresh:archetypeRefresh.error?{error:archetypeRefresh.error.message}:archetypeRefresh.data,
           coachingDevelopment:coachingDevelopment.error?{error:coachingDevelopment.error.message}:coachingDevelopment.data,
           coachingEnvironment:coachingEnvironment.error?{error:coachingEnvironment.error.message}:coachingEnvironment.data,
-          mentorshipRefresh:mentorshipRefresh.error?{error:mentorshipRefresh.error.message}:mentorshipRefresh.data,
-          mentorshipEffects:mentorshipEffects.error?{error:mentorshipEffects.error.message}:mentorshipEffects.data,
           attributeTrends:attributeTrends.error?{error:attributeTrends.error.message}:attributeTrends.data,
           ceilingRefresh:ceilingRefresh.error?{error:ceilingRefresh.error.message}:ceilingRefresh.data,
           tacticalPreferences:tacticalPreferences.error?{error:tacticalPreferences.error.message}:tacticalPreferences.data,
@@ -2962,7 +3061,7 @@ Deno.serve(async(req:Request)=>{
           careerFocus:careerFocus.error?{error:careerFocus.error.message}:careerFocus.data,
           careerLifecycle:careerLifecycle.error?{error:careerLifecycle.error.message}:careerLifecycle.data
         };
-        const pairs=await db.rpc("refresh_world_doubles_partnerships",{
+        const pairs=await db.rpc("refresh_world_doubles_partnerships_fast",{
           p_date:date,
           p_target_pairs:2000
         });
@@ -3055,7 +3154,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,weeklyPlayerDevelopment:weeklyPlayerDevelopment.error?{error:weeklyPlayerDevelopment.error.message}:weeklyPlayerDevelopment.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,worldTournaments:worldEvents.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -3263,13 +3362,22 @@ Deno.serve(async(req:Request)=>{
       db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
-      getManagedPlayer("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)"),
+      getManagedPlayer("id,name,country,ranking,junior_ranking,birth_date,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)"),
       db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy,operational_status,rest_until)")
     ]);
     if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
+    const mainDrawSizeConfigured=Math.max(8,Math.min(128,Number(t.singles_draw_size||t.draw_size||32)));
+    const formatRuleRes=await db.from("tournament_format_rules")
+      .select("*")
+      .eq("circuit",String(t.circuit||""))
+      .eq("category",String(t.category||""))
+      .eq("main_draw_size",mainDrawSizeConfigured)
+      .maybeSingle();
+    if(formatRuleRes.error)return h({error:formatRuleRes.error.message},500);
+    const formatRule:any=formatRuleRes.data||null;
     if(String(c.career_focus||"mixed")==="doubles_only"){
       return h({
         error:"Orientation Double exclusivement : ce joueur ne participe plus aux tableaux de simple.",
@@ -3320,6 +3428,16 @@ Deno.serve(async(req:Request)=>{
     const isSinglesFinals=isJuniorFinals||isAtpSinglesFinals;
     let finalsRaceRows:any[]=[];
     let rank=Number(c.singles_rank||9999);
+    if(isJuniorSingles&&!isJuniorFinals){
+      rank=Number(managedPlayer.data.junior_ranking||9999);
+      const juniorAge=ageAt(managedPlayer.data.birth_date,String(t.start_date||c.career_date||AGE_REFERENCE_DATE),null,null);
+      if(juniorAge!=null&&(juniorAge<13||juniorAge>18)){
+        return h({
+          error:"Âge non éligible au circuit Junior : il faut avoir au moins 13 ans et rester éligible jusqu’à l’année des 18 ans.",
+          age:juniorAge,junior_locked:true
+        },409);
+      }
+    }
     if(isJuniorFinals){
       const race=await db.rpc("junior_race_for_date",{p_date:String(c.career_date||AGE_REFERENCE_DATE)});
       if(race.error)return h({error:race.error.message},500);
@@ -3350,8 +3468,24 @@ Deno.serve(async(req:Request)=>{
     const direct=isSinglesFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);
     const qual=isSinglesFinals?8:Number(t.qual_cut??t.projected_qual_cut??0);
     const wildcardGranted=!isSinglesFinals&&wc.data?.status==="accepted";
-    const alternateEligible=!isSinglesFinals&&direct&&qual&&rank>qual&&rank<=qual+50;
-    if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible)return h({error:"Classement insuffisant. Demande une wild card."},409);
+
+    let specialExempt=false,specialExemptInfo:any=null;
+    if(!isSinglesFinals&&!isJuniorSingles&&direct&&rank>direct&&!wildcardGranted){
+      const se=await db.rpc("managed_special_exempt_status",{p_target_tournament_id:tid});
+      if(se.error)return h({error:se.error.message},500);
+      specialExempt=Boolean(se.data?.eligible);
+      specialExemptInfo=se.data||null;
+    }
+
+    const alternateEligible=!isSinglesFinals&&!specialExempt&&direct&&qual&&rank>qual&&rank<=qual+50;
+    if(direct&&qual&&rank>qual&&!wildcardGranted&&!alternateEligible&&!specialExempt){
+      return h({
+        error:"Classement insuffisant. Demande une wild card.",
+        entry_deadline:t.singles_entry_deadline,
+        qualifying_start:t.qualifying_start_date
+      },409);
+    }
+
     let alternateEntered=false;
     if(alternateEligible&&!wildcardGranted){
       const gap=Math.max(1,rank-qual);
@@ -3360,8 +3494,47 @@ Deno.serve(async(req:Request)=>{
       if(availableSpots<needed)return h({error:"Pas assez de forfaits pour remonter depuis la liste alternate.",alternate:true,forfeits:availableSpots},409);
       alternateEntered=true;
     }
-    const drawSize=isSinglesFinals?8:Math.max(8,Math.min(128,Number(t.draw_size||32)));
+
+    const entryMode=isSinglesFinals?"direct":isJuniorSingles?"junior":specialExempt?"special_exempt":wildcardGranted?"wildcard":alternateEntered?"alternate":(direct&&rank<=direct?"direct":"qualifying");
+
+    if(!isSinglesFinals&&!isJuniorSingles){
+      const eligibilityMode=specialExempt?"direct":entryMode;
+      const eligible=await db.rpc("tournament_entry_eligibility",{
+        p_player_id:managedId,p_tournament_id:tid,p_entry_method:eligibilityMode
+      });
+      if(eligible.error)return h({error:eligible.error.message},500);
+      if(eligible.data?.eligible===false){
+        const reason=String(eligible.data?.reason||"ineligible");
+        const labels:any={
+          atp_advanced_entry_top500_required:"Entrée avancée ATP refusée : le joueur doit être classé dans le Top 500 pour entrer directement ou en qualifications ATP Tour.",
+          challenger_175_125_direct_top500_required:"Entrée directe refusée : en Challenger 175/125, l'advance entry est réservée aux joueurs Top 500. Les joueurs au-delà peuvent viser les qualifications, une wild card ou l'alternate list.",
+          itf_play_down_top200:"Classement trop élevé : les joueurs ATP 1-200 ne peuvent pas disputer un M15/M25.",
+          ch50_top150_no_direct_or_qualifying:"Classement trop élevé : les joueurs ATP 1-150 ne peuvent pas entrer normalement dans un Challenger 50.",
+          ch50_top50_prohibited:"Les joueurs ATP 1-50 ne peuvent pas disputer un Challenger 50, même avec wild card.",
+          ch50_wc_51_100_home_nation_only:"Pour un joueur classé 51-100, la wild card Challenger 50 est limitée à un joueur de la nation hôte.",
+          ch75_top50_prohibited:"Les joueurs du Top 50 ne peuvent pas disputer un Challenger 75.",
+          ch75_11_50_prohibited:"Les joueurs ATP 11-50 ne peuvent pas disputer un Challenger 75.",
+          challenger_top10_prohibited:"Les joueurs ATP 1-10 ne peuvent pas disputer un Challenger 75/100/125.",
+          challenger_11_50_wildcard_only:"Un joueur ATP 11-50 ne peut entrer en Challenger 100/125 que via une wild card ATP approuvée (ou WC de qualifs lorsqu'elle est autorisée)."
+        };
+        return h({error:labels[reason]||"Joueur non éligible à ce tournoi selon le règlement du circuit.",entry_rule:eligible.data},409);
+      }
+
+      const schedule=await db.rpc("managed_tournament_schedule_status",{
+        p_target_tournament_id:tid,p_entry_mode:entryMode
+      });
+      if(schedule.error)return h({error:schedule.error.message},500);
+      if(schedule.data?.available===false){
+        return h({
+          error:"Conflit de calendrier : ce tournoi chevauche un engagement déjà joué dans la sauvegarde.",
+          schedule_conflict:schedule.data,
+          special_exempt:specialExemptInfo
+        },409);
+      }
+    }
+    const drawSize=isSinglesFinals?8:mainDrawSizeConfigured;
     let playersRes:any;
+    const candidateRankOrder=new Map<number,number>();
     if(isSinglesFinals){
       const ids=finalsRaceRows.map((x:any)=>Number(x.id)).filter(Boolean);
       playersRes=ids.length
@@ -3369,20 +3542,31 @@ Deno.serve(async(req:Request)=>{
           .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
           .in("id",ids)
         :{data:[],error:null};
-    }else{
+    }else if(isJuniorSingles){
       playersRes=await db.from("players")
-        .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
-        .eq("ranking_current",true)
+        .select("id,name,country,ranking,junior_ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,birth_date,player_attributes(*)")
+        .not("junior_ranking","is",null)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
-        .order("ranking",{ascending:true}).limit(Math.min(200,Math.max(drawSize+40,80)));
+        .order("junior_ranking",{ascending:true})
+        .limit(Math.min(300,Math.max(drawSize+80,120)));
+    }else{
+      const wanted=Math.min(1000,Math.max(drawSize+Number(t.qualifying_draw_size||0)+120,220));
+      const candidateIds=await db.rpc("tournament_candidate_player_ids",{p_tournament_id:tid,p_entry_method:"candidate",p_limit:wanted});
+      if(candidateIds.error)return h({error:candidateIds.error.message},500);
+      const ids=(candidateIds.data??[]).map((x:any)=>{const id=Number(x.player_id);candidateRankOrder.set(id,Number(x.effective_rank||999999));return id;}).filter(Boolean);
+      playersRes=ids.length
+        ?await db.from("players")
+          .select("id,name,country,ranking,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
+          .in("id",ids)
+        :{data:[],error:null};
     }
     if(playersRes.error)return h({error:playersRes.error.message},500);
     const blockedIds=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
     const raceOrder=new Map(finalsRaceRows.map((x:any)=>[Number(x.id),Number(x.finals_rank??x.junior_race_ranking??x.race_ranking??9999)]));
     const pool:any[]=(playersRes.data??[])
       .filter((p:any)=>!blockedIds.has(Number(p.id))&&Number(p.id)!==managedId)
-      .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):p.ranking,player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
-      .sort((a:any,b:any)=>Number(a.ranking||9999)-Number(b.ranking||9999));
+      .map((p:any)=>({...p,ranking:isSinglesFinals?(raceOrder.get(Number(p.id))??9999):isJuniorSingles?Number(p.junior_ranking||999999):(candidateRankOrder.get(Number(p.id))??Number(p.ranking||999999)),player_attributes:Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes}))
+      .sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||Number(b.current_ability||0)-Number(a.current_ability||0));
     const surface=String(t.surface||"Dur");
     const surfaceNorm=surface.toLowerCase();
     const indoor=Boolean(t.indoor)||String(t.environment||"").toLowerCase()==="indoor";
@@ -3645,10 +3829,112 @@ Deno.serve(async(req:Request)=>{
       return {winner,loser,score:generateScore(model.probA,aWon,bestOf),model};
     };
     const matchRows:any[]=[];
-    let userAlive=true,userRound=wildcardGranted?"Wild Card":alternateEntered?"Alternate entré":"Non joué",qualifier=false,luckyLoser=false;
+    let performanceBye=false,performanceByeInfo:any=null,performanceByePlayers:any[]=[];
+    let userAlive=true,userRound=specialExempt?"Special Exempt":wildcardGranted?"Wild Card":alternateEntered?"Alternate entré":"Non joué",qualifier=false,luckyLoser=false;
+    let userHadBye=false,userMainWins=0;
+    let juniorGroupPosition:number|null=null,juniorGroupWins=0;
     let champion:any=null;
 
-    if(isJuniorFinals){
+    if(isJuniorSingles&&String(t.junior_draw_format||"")==="round_robin_to_elimination"&&drawSize===32&&!isJuniorFinals){
+      const seeded=[user,...pool.slice(0,31)]
+        .sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||strength(b)-strength(a));
+      if(seeded.length<32)return h({error:"Tableau Junior RR incomplet : 32 joueurs requis.",qualified:seeded.length},409);
+
+      const groups:any[][]=Array.from({length:8},()=>[]);
+      for(let g=0;g<8;g++)groups[g].push(seeded[g]);
+      for(let wave=0;wave<3;wave++){
+        const chunk=seeded.slice(8+wave*8,16+wave*8);
+        chunk.forEach((p:any,idx:number)=>{
+          const groupIndex=wave%2===0?idx:7-idx;
+          groups[groupIndex].push(p);
+        });
+      }
+
+      const table=new Map<number,{player:any,wins:number,losses:number,group:number}>();
+      for(let gi=0;gi<groups.length;gi++){
+        for(const p of groups[gi])table.set(Number(p.id),{player:p,wins:0,losses:0,group:gi});
+      }
+
+      let rrNo=1;
+      for(let gi=0;gi<groups.length;gi++){
+        const g=groups[gi];
+        for(let i=0;i<g.length;i++)for(let j=i+1;j<g.length;j++){
+          const a=g[i],b=g[j],res=play(a,b);
+          const w=table.get(Number(res.winner.id)),l=table.get(Number(res.loser.id));
+          if(w)w.wins++;
+          if(l)l.losses++;
+          matchRows.push({
+            round_no:rrNo++,round_name:"Groupe "+String.fromCharCode(65+gi),
+            player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+            winner_id:res.winner.id,winner_name:res.winner.name,score:res.score
+          });
+        }
+      }
+
+      const rankedGroups=groups.map((g:any[])=>g.slice().sort((a:any,b:any)=>{
+        const ta=table.get(Number(a.id)),tb=table.get(Number(b.id));
+        return Number(tb?.wins||0)-Number(ta?.wins||0)
+          ||strength(b)-strength(a)
+          ||Number(a.ranking||999999)-Number(b.ranking||999999);
+      }));
+
+      for(const rg of rankedGroups){
+        const idx=rg.findIndex((p:any)=>p.isUser);
+        if(idx>=0){
+          juniorGroupPosition=idx+1;
+          juniorGroupWins=Number(table.get(Number(user.id))?.wins||0);
+        }
+      }
+
+      const qfPlayers=[
+        rankedGroups[0][0],rankedGroups[4][0],
+        rankedGroups[2][0],rankedGroups[6][0],
+        rankedGroups[1][0],rankedGroups[5][0],
+        rankedGroups[3][0],rankedGroups[7][0]
+      ];
+
+      if(!qfPlayers.some((p:any)=>p.isUser)){
+        userAlive=false;
+        userRound="Phase de groupes";
+      }
+
+      const qfWinners:any[]=[];
+      for(let qfi=0;qfi<4;qfi++){
+        const a=qfPlayers[qfi*2],b=qfPlayers[qfi*2+1],res=play(a,b);
+        matchRows.push({
+          round_no:100+qfi,round_name:"QF",
+          player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+          winner_id:res.winner.id,winner_name:res.winner.name,score:res.score
+        });
+        if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound="QF";}
+        if(res.winner.isUser)userRound="QF";
+        qfWinners.push(res.winner);
+      }
+
+      const sfWinners:any[]=[];
+      for(let sfi=0;sfi<2;sfi++){
+        const a=qfWinners[sfi*2],b=qfWinners[sfi*2+1],res=play(a,b);
+        matchRows.push({
+          round_no:200+sfi,round_name:"SF",
+          player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+          winner_id:res.winner.id,winner_name:res.winner.name,score:res.score
+        });
+        if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound="SF";}
+        if(res.winner.isUser)userRound="SF";
+        sfWinners.push(res.winner);
+      }
+
+      const finalRes=play(sfWinners[0],sfWinners[1]);
+      matchRows.push({
+        round_no:300,round_name:"F",
+        player_a_id:sfWinners[0].id,player_b_id:sfWinners[1].id,
+        player_a_name:sfWinners[0].name,player_b_name:sfWinners[1].name,
+        winner_id:finalRes.winner.id,winner_name:finalRes.winner.name,score:finalRes.score
+      });
+      if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser){userAlive=false;userRound="F";}
+      if(finalRes.winner.isUser)userRound="Champion";
+      champion=finalRes.winner;
+    }else if(isJuniorFinals){
       const ordered=[user,...pool].slice(0,8).sort((a:any,b:any)=>Number(a.ranking||999)-Number(b.ranking||999));
       if(ordered.length<8)return h({error:"Junior Finals : 8 qualifiés requis dans la Race.",qualified:ordered.length},409);
       const groups:any[][]=[
@@ -3701,16 +3987,22 @@ Deno.serve(async(req:Request)=>{
       if(finalRes.winner.isUser)userRound="Champion";
       champion=finalRes.winner;
     }else{
-      if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered){
+      if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered&&!specialExempt){
         qualifier=true;
         const qOpp=pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80)).slice(0,6);
-        for(let qi=0;qi<2;qi++){
+        const qDraw=Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0);
+        const qSlots=Math.max(1,Number(formatRule?.qualifier_count||4));
+        const qRatio=qDraw>0?qDraw/qSlots:4;
+        const qRounds=Math.max(1,Math.min(3,Math.round(Math.log2(Math.max(2,qRatio)))));
+        for(let qi=0;qi<qRounds;qi++){
           const opp=qOpp[qi]||pool[Math.min(pool.length-1,drawSize+qi)];
           const res=play(user,opp);
           matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:user.id,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
           if(!res.winner.isUser){
             userAlive=false;userRound="Q"+(qi+1);
-            if(qi===1&&Math.random()<0.18){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
+            const llSpots=(forfeits.data??[]).length;
+            const llChance=llSpots>0?Math.min(.80,llSpots/Math.max(1,qSlots)):0;
+            if(qi===qRounds-1&&llChance>0&&Math.random()<llChance){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
             break
           }
         }
@@ -3718,52 +4010,166 @@ Deno.serve(async(req:Request)=>{
       }
       let participants=pool.slice(0,drawSize).map(x=>({...x,isUser:false}));
       if(userAlive){
-        const replaceIndex=(qualifier||wildcardGranted||luckyLoser||alternateEntered)?participants.length-1:Math.min(participants.length-1,Math.max(0,Math.floor((rank-1)%participants.length)));
+        const replaceIndex=(qualifier||wildcardGranted||luckyLoser||alternateEntered||specialExempt)?participants.length-1:Math.min(participants.length-1,Math.max(0,Math.floor((rank-1)%participants.length)));
         participants[replaceIndex]=user;
       }
-      const roundName=(n:number)=>n>=128?"R128":n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+
+      const pbSlots=Math.max(0,Number(t.performance_bye_slots||0));
+      let pbCandidateSet=new Set<number>();
+      if(pbSlots>0){
+        const [pbCandidates,managedPb]=await Promise.all([
+          db.rpc("tournament_performance_bye_candidate_ids",{p_target_tournament_id:tid}),
+          db.rpc("managed_performance_bye_status",{p_target_tournament_id:tid})
+        ]);
+        if(pbCandidates.error||managedPb.error)return h({error:(pbCandidates.error||managedPb.error)?.message},500);
+        pbCandidateSet=new Set((pbCandidates.data??[]).map((x:any)=>Number(x.player_id)).filter(Boolean));
+        performanceBye=Boolean(managedPb.data?.eligible);
+        performanceByeInfo=managedPb.data||null;
+        if(pbCandidateSet.has(managedId)&&!performanceBye)pbCandidateSet.delete(managedId);
+      }
+
+      const bracketSize=drawSize<=8?8:drawSize<=16?16:drawSize<=32?32:drawSize<=64?64:128;
+      const seedSlot=(bracket:number,seed:number)=>{
+        const slots=bracket>=128?[1,128,65,64,33,96,97,32,17,112,81,48,49,80,113,16,9,120,73,56,41,88,105,24,25,104,89,40,57,72,121,8]
+          :bracket>=64?[1,64,33,32,17,48,49,16,9,56,41,24,25,40,57,8]
+          :bracket>=32?[1,32,17,16,9,24,25,8]
+          :bracket>=16?[1,16,9,8]:[1,8];
+        return seed>=1&&seed<=slots.length?slots[seed-1]-1:null;
+      };
+
+      let rankedEntrants=[...participants].sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||Number(b.current_ability||0)-Number(a.current_ability||0));
+      const configuredSeedCount=Math.min(Number(formatRule?.seed_count||Math.min(32,Math.max(2,bracketSize/4))),rankedEntrants.length);
+      let pbEntrants=rankedEntrants
+        .filter((p:any,idx:number)=>idx>=configuredSeedCount&&pbCandidateSet.has(Number(p.id)))
+        .slice(0,pbSlots);
+
+      if(pbEntrants.length){
+        const pbIds=new Set(pbEntrants.map((p:any)=>Number(p.id)));
+        for(let k=0;k<pbEntrants.length;k++){
+          let drop=-1;
+          for(let j=rankedEntrants.length-1;j>=0;j--){
+            const candidate=rankedEntrants[j];
+            if(!pbIds.has(Number(candidate.id))&&!candidate.isUser){drop=j;break}
+          }
+          if(drop>=0)rankedEntrants.splice(drop,1);
+        }
+        pbEntrants=pbEntrants.filter((p:any)=>rankedEntrants.some((x:any)=>Number(x.id)===Number(p.id)));
+        performanceByePlayers=pbEntrants.map((p:any)=>({id:Number(p.id),name:String(p.name||""),is_user:Boolean(p.isUser)}));
+        performanceBye=performanceByePlayers.some((p:any)=>p.is_user);
+      }
+
+      const bracket:any[]=Array(bracketSize).fill(null);
+      const placed=new Set<number>();
+      const seedCount=Math.min(configuredSeedCount,rankedEntrants.length);
+      for(let s=1;s<=seedCount;s++){
+        const slot=seedSlot(bracketSize,s);
+        if(slot==null)continue;
+        bracket[slot]=rankedEntrants[s-1];
+        placed.add(Number(rankedEntrants[s-1].id));
+      }
+
+      const regularByeCount=Math.max(0,bracketSize-drawSize);
+      const byeSlots=new Set<number>();
+      for(let s=1;s<=Math.min(regularByeCount,seedCount);s++){
+        const slot=seedSlot(bracketSize,s);
+        if(slot==null)continue;
+        const bye=slot%2===0?slot+1:slot-1;
+        byeSlots.add(bye);
+      }
+
+      for(const pb of pbEntrants){
+        if(placed.has(Number(pb.id)))continue;
+        let chosen=-1;
+        for(let s=0;s<bracketSize;s+=2){
+          if(bracket[s]==null&&bracket[s+1]==null&&!byeSlots.has(s)&&!byeSlots.has(s+1)){
+            chosen=s;break;
+          }
+        }
+        if(chosen>=0){
+          bracket[chosen]=pb;
+          placed.add(Number(pb.id));
+          byeSlots.add(chosen+1);
+        }
+      }
+
+      const remaining=rankedEntrants.filter((x:any)=>!placed.has(Number(x.id)));
+      const available:number[]=[];
+      for(let i=0;i<bracketSize;i++)if(bracket[i]==null&&!byeSlots.has(i))available.push(i);
+      remaining.forEach((p:any,i:number)=>{if(i<available.length)bracket[available[i]]=p;});
+
+      const roundName=(n:number,roundNo:number)=>{
+        if(roundNo===1&&drawSize!==bracketSize)return "R"+drawSize;
+        return n>=128?"R128":n>=64?"R64":n>=32?"R32":n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
+      };
       let roundNo=1;
-      while(participants.length>1){
-        const rn=roundName(participants.length),next:any[]=[];
-        for(let i=0;i<participants.length;i+=2){
-          const a=participants[i],b=participants[i+1];
-          if(!b){next.push(a);continue}
+      userHadBye=false;userMainWins=0;
+      let current:any[]=bracket;
+      while(current.length>1){
+        const rn=roundName(current.length,roundNo),next:any[]=[];
+        for(let i=0;i<current.length;i+=2){
+          const a=current[i],b=current[i+1];
+          if(!a&&!b){next.push(null);continue}
+          if(!a||!b){
+            const adv=a||b;
+            if(adv?.isUser&&roundNo===1)userHadBye=true;
+            next.push(adv);
+            continue;
+          }
           const res=play(a,b);
           matchRows.push({round_no:roundNo,round_name:rn,player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
           if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound=rn}
-          if(res.winner.isUser)userRound=rn==="F"?"Champion":rn;
+          if(res.winner.isUser){userMainWins++;userRound=rn==="F"?"Champion":rn}
           next.push(res.winner);
         }
-        participants=next;roundNo++;
+        current=next;
+        roundNo++;
       }
-      champion=participants[0];
+      champion=current[0];
     }
 
     let userPoints=0;
     if(isJuniorSingles){
-      const roundCode=userRound==="Champion"?"W":userRound==="Phase de groupes"?"QF":userRound;
-      const jp=await db.rpc("junior_points_for",{p_event_type:"singles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
-      if(jp.error)return h({error:jp.error.message},500);
-      userPoints=Number(jp.data||0);
+      if(String(t.junior_draw_format||"")==="round_robin_to_elimination"&&userRound==="Phase de groupes"){
+        const cat=String(t.category||t.level||"J30");
+        if(juniorGroupPosition===2)userPoints=cat==="J60"?5:2;
+        else if((juniorGroupPosition===3||juniorGroupPosition===4)&&juniorGroupWins>0)userPoints=cat==="J60"?2:1;
+        else userPoints=0;
+      }else{
+        const roundCode=userRound==="Champion"?"W":userRound==="Phase de groupes"?"QF":userRound;
+        const jp=await db.rpc("junior_points_for",{p_event_type:"singles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
+        if(jp.error)return h({error:jp.error.message},500);
+        userPoints=Number(jp.data||0);
+      }
     }else if(isAtpSinglesFinals){
-      const rrWins=matchRows.filter((m:any)=>String(m.round_name||"").startsWith("Groupe ")&&Number(m.winner_id)===managedId).length;
-      const sfWin=matchRows.some((m:any)=>m.round_name==="SF"&&Number(m.winner_id)===managedId)?1:0;
-      const finalWin=matchRows.some((m:any)=>m.round_name==="F"&&Number(m.winner_id)===managedId)?1:0;
-      userPoints=rrWins*200+sfWin*400+finalWin*500;
+      const groupWins=matchRows.filter((m:any)=>String(m.round_name||"").startsWith("Groupe")&&m.winner_name===user.name).length;
+      const sfWin=matchRows.some((m:any)=>m.round_name==="SF"&&m.winner_name===user.name)?1:0;
+      const fWin=matchRows.some((m:any)=>m.round_name==="F"&&m.winner_name===user.name)?1:0;
+      userPoints=groupWins*200+sfWin*400+fWin*500;
     }else{
-      const roundCode=userRound==="Champion"?"W":userRound;
-      const rp=await db.rpc("world_tournament_round_points",{
-        p_category:String(t.category||t.level||""),
-        p_winner_points:Number(t.winner_points||0),
-        p_draw_size:Number(t.singles_draw_size||t.draw_size||32),
-        p_round:roundCode
-      });
-      if(rp.error)return h({error:rp.error.message},500);
-      userPoints=Math.max(0,Number(rp.data||0));
+      let pointsCode=userRound==="Champion"?"W":userRound;
+      if(userHadBye&&userMainWins===0&&Array.isArray(formatRule?.rounds)&&formatRule.rounds.length)pointsCode=String(formatRule.rounds[0]);
+      const pointsRes=await db.rpc("tournament_points_for_result",{p_tournament_id:tid,p_result_code:pointsCode,p_was_qualifier:qualifier});
+      if(pointsRes.error)return h({error:pointsRes.error.message},500);
+      userPoints=Math.max(0,Number(pointsRes.data||0));
+      if(wildcardGranted&&userMainWins===0&&/Grand Chelem|Masters 1000/i.test(String(t.category||"")))userPoints=0;
     }
-    const prizePool=Number(t.prize_money||0);
-    const prizeMult=userRound==="Champion"?.18:userRound==="F"?.10:userRound==="SF"?.055:(userRound==="QF"||userRound==="Phase de groupes")?.03:userRound==="R16"?.015:userRound==="R32"?.008:.003;
-    const userPrize=Math.max(0,Math.round(prizePool*prizeMult));
+
+    let userPrize=0;
+    if(isAtpSinglesFinals&&String(t.prize_format||"")==="round_robin_components"){
+      const comp:any=t.special_prize_components?.singles||{};
+      const groupWins=matchRows.filter((m:any)=>String(m.round_name||"").startsWith("Groupe")&&m.winner_name===user.name).length;
+      const sfWin=matchRows.some((m:any)=>m.round_name==="SF"&&m.winner_name===user.name)?1:0;
+      const fWin=matchRows.some((m:any)=>m.round_name==="F"&&m.winner_name===user.name)?1:0;
+      userPrize=Math.max(0,Math.round(
+        Number(comp.PARTICIPATION||0)
+        +groupWins*Number(comp.RR_WIN||0)
+        +sfWin*Number(comp.SF_WIN||0)
+        +fWin*Number(comp.F_WIN||0)
+      ));
+    }else{
+      const payout=tournamentRoundPrize(t,userRound,/^Q\d+$/.test(userRound)?"qualifying":"singles");
+      userPrize=payout.amount;
+    }
     const runIns=await db.from("tournament_runs").insert({tournament_id:tid,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
     if(runIns.error)return h({error:runIns.error.message},500);
     const runId=runIns.data.id;
@@ -3814,10 +4220,6 @@ Deno.serve(async(req:Request)=>{
         p_match_date:String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE)
       });
       matchLearning=learning.error?{error:learning.error.message}:learning.data;
-      if(!isJuniorSingles){
-        const worldSync=await db.rpc("populate_world_results_from_tournament_run",{p_run_id:Number(runId)});
-        if(worldSync.error)return h({error:worldSync.error.message},500);
-      }
     }
 
     const userAnalytics:any=advBy.get(Number(user.id))||{};
@@ -3988,7 +4390,7 @@ Deno.serve(async(req:Request)=>{
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 
@@ -4016,8 +4418,33 @@ Deno.serve(async(req:Request)=>{
     }
 
     const t:any=tour.data,c:any=career.data;
+    const doubleSchedule=await db.rpc("managed_tournament_schedule_status",{
+      p_target_tournament_id:tid,p_entry_mode:"direct"
+    });
+    if(doubleSchedule.error)return h({error:doubleSchedule.error.message},500);
+    if(doubleSchedule.data?.available===false){
+      return h({
+        error:"Conflit de calendrier : ce double chevauche un autre engagement de la sauvegarde.",
+        schedule_conflict:doubleSchedule.data
+      },409);
+    }
     const partner:any={...partnership.data.partner,player_attributes:Array.isArray(partnership.data.partner.player_attributes)?partnership.data.partner.player_attributes[0]:partnership.data.partner.player_attributes};
     const anthony:any={...anth.data,player_attributes:Array.isArray(anth.data.player_attributes)?anth.data.player_attributes[0]:anth.data.player_attributes,isUser:true};
+
+    const [managedDoubleSchedule,partnerDoubleSchedule]=await Promise.all([
+      db.rpc("player_tournament_calendar_conflict",{p_player_id:Number(anthony.id),p_tournament_id:tid,p_entry_method:"direct"}),
+      db.rpc("player_tournament_calendar_conflict",{p_player_id:Number(partner.id),p_tournament_id:tid,p_entry_method:"direct"})
+    ]);
+    if(managedDoubleSchedule.error||partnerDoubleSchedule.error){
+      return h({error:(managedDoubleSchedule.error||partnerDoubleSchedule.error)?.message},500);
+    }
+    if(managedDoubleSchedule.data?.conflict===true){
+      return h({error:"Conflit de calendrier : tu es déjà engagé dans un autre tournoi cette semaine.",schedule_conflict:managedDoubleSchedule.data},409);
+    }
+    if(partnerDoubleSchedule.data?.conflict===true){
+      return h({error:"Ton partenaire est déjà engagé dans un autre tournoi incompatible avec ce double.",partner_schedule_conflict:partnerDoubleSchedule.data,partner:{id:partner.id,name:partner.name}},409);
+    }
+
     const isJuniorDouble=String(t.circuit)==="Junior";
     const isJuniorDoubleFinals=/Junior Double Finals/i.test(String(t.category||""));
     const isAtpDoubleFinals=String(t.circuit)==="ATP"&&/ATP Finals/i.test(String(t.category||""));
@@ -4191,15 +4618,19 @@ Deno.serve(async(req:Request)=>{
           world_pair_id:Number((row as any).id||0)
         });
         used.add(aid);used.add(bid);
-        if(pairs.length>=30)break;
+        if(pairs.length>=96)break;
       }
     }else{
-      for(let i=0;i+1<Math.min(pool.length,30);i+=2){
+      for(let i=0;i+1<Math.min(pool.length,160);i+=2){
         const a=pool[i],b=pool[i+1];
         pairs.push({a,b,name:a.name+" / "+b.name,isUser:false,strength:pairStrength(a,b,68+((a.id+b.id)%20))});
       }
     }
-    const drawSize=finalsPairRows.length?8:Math.min(16,Math.max(8,2**Math.floor(Math.log2(Math.max(8,pairs.length+1)))));
+    const configuredDoubleDraw=Math.max(8,Math.min(64,Number(t.doubles_draw_size||16)));
+    const drawSize=finalsPairRows.length?8:configuredDoubleDraw;
+    if(!finalsPairRows.length&&pairs.length<drawSize-1){
+      return h({error:"Tableau double incomplet : pas assez de paires éligibles.",required:drawSize,available:pairs.length+1},409);
+    }
     const matches:any[]=[];
     let userRound=finalsPairRows.length?"Phase de groupes":"R16";
     const playPair=(A:any,B:any)=>{
@@ -4259,36 +4690,91 @@ Deno.serve(async(req:Request)=>{
       if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser)userRound="F";
       if(finalRes.winner.isUser)userRound="Champion";
     }else{
-      let participants=[userPair,...pairs].slice(0,drawSize);
-      const roundName=(n:number)=>n>=16?"R16":n>=8?"QF":n>=4?"SF":"F";
-      while(participants.length>1){
-        const rn=roundName(participants.length),next:any[]=[];
-        for(let i=0;i<participants.length;i+=2){
-          const A=participants[i],B=participants[i+1];
-          if(!B){next.push(A);continue}
+      const entrants=[userPair,...pairs].slice(0,drawSize).sort((a:any,b:any)=>Number(b.strength||0)-Number(a.strength||0));
+      const bracketSize=drawSize<=8?8:drawSize<=16?16:drawSize<=32?32:64;
+      const slots:any[]=Array(bracketSize).fill(null);
+      const byeCount=Math.max(0,bracketSize-drawSize);
+      const seedSlot=(bracket:number,seed:number)=>{
+        const ss=bracket>=64?[1,64,33,32,17,48,49,16,9,56,41,24,25,40,57,8]
+          :bracket>=32?[1,32,17,16,9,24,25,8]
+          :bracket>=16?[1,16,9,8]:[1,8];
+        return seed>=1&&seed<=ss.length?ss[seed-1]-1:null;
+      };
+      const seedCount=Math.min(bracketSize>=64?16:bracketSize>=32?8:bracketSize>=16?4:2,entrants.length);
+      const placed=new Set<string>();
+      for(let s=1;s<=seedCount;s++){
+        const slot=seedSlot(bracketSize,s);
+        if(slot==null)continue;
+        slots[slot]=entrants[s-1];
+        placed.add(String(entrants[s-1].name));
+      }
+      const byeSlots=new Set<number>();
+      for(let s=1;s<=Math.min(byeCount,seedCount);s++){
+        const slot=seedSlot(bracketSize,s);
+        if(slot==null)continue;
+        byeSlots.add(slot%2===0?slot+1:slot-1);
+      }
+      const rest=entrants.filter((x:any)=>!placed.has(String(x.name)));
+      const avail:number[]=[];
+      for(let i=0;i<bracketSize;i++)if(slots[i]==null&&!byeSlots.has(i))avail.push(i);
+      rest.forEach((p:any,i:number)=>{if(i<avail.length)slots[avail[i]]=p;});
+
+      let current:any[]=slots;
+      let roundNo=1;
+      while(current.length>1){
+        const rn=roundNo===1&&drawSize!==bracketSize?"R"+drawSize:(current.length>=64?"R64":current.length>=32?"R32":current.length>=16?"R16":current.length>=8?"QF":current.length>=4?"SF":"F");
+        const next:any[]=[];
+        for(let i=0;i<current.length;i+=2){
+          const A=current[i],B=current[i+1];
+          if(!A&&!B){next.push(null);continue}
+          if(!A||!B){next.push(A||B);continue}
           const res=playPair(A,B);
           pushPairMatch(rn,A,B,res);
           if((A.isUser||B.isUser)&&!res.winner.isUser)userRound=rn;
           if(res.winner.isUser)userRound=rn==="F"?"Champion":rn;
           next.push(res.winner);
         }
-        participants=next;
+        current=next;
+        roundNo++;
       }
     }
 
     const cat=String(t.category||t.level||"");
-    const base= /Grand Chelem/i.test(cat)?2000:/Masters 1000/i.test(cat)?1000:/ATP 500/i.test(cat)?500:/ATP 250/i.test(cat)?250:(cat.match(/Challenger\s+(175|125|100|75|50)/i)?.[1]?Number(cat.match(/Challenger\s+(175|125|100|75|50)/i)![1]):/M25/i.test(cat)?25:/M15/i.test(cat)?15:50);
     let pts=0;
     if(isJuniorDouble){
       const roundCode=userRound==="Champion"?"W":userRound==="Phase de groupes"?"QF":userRound;
       const jp=await db.rpc("junior_points_for",{p_event_type:"doubles",p_category:String(t.category||t.level||"J30"),p_round:roundCode});
       if(jp.error)return h({error:jp.error.message},500);
       pts=Number(jp.data||0);
+    }else if(isAtpDoubleFinals){
+      const groupWins=matches.filter((m:any)=>String(m.round_name||"").startsWith("Groupe")&&m.winner_pair===userPair.name).length;
+      const sfWin=matches.some((m:any)=>m.round_name==="SF"&&m.winner_pair===userPair.name)?1:0;
+      const fWin=matches.some((m:any)=>m.round_name==="F"&&m.winner_pair===userPair.name)?1:0;
+      pts=groupWins*200+sfWin*400+fWin*500;
     }else{
-      const mult=userRound==="Champion"?1:userRound==="F"?.65:userRound==="SF"?.4:(userRound==="QF"||userRound==="Phase de groupes")?.2:.08;
-      pts=Math.max(1,Math.round(base*mult));
+      const roundCode=userRound==="Champion"?"W":userRound;
+      const rankingCode=/^R(?:24|28)$/.test(roundCode)?"R32":roundCode;
+      const dp=await db.rpc("doubles_points_for_result",{p_category:cat,p_draw_size:drawSize,p_result:rankingCode});
+      if(dp.error)return h({error:dp.error.message},500);
+      pts=Math.max(0,Number(dp.data||0));
     }
-    const prize=Math.max(0,Math.round(Number(t.prize_money||0)*(userRound==="Champion"?.09:userRound==="F"?.055:userRound==="SF"?.032:(userRound==="QF"||userRound==="Phase de groupes")?.018:.007)));
+
+    let teamPrize=0;
+    if(isAtpDoubleFinals&&String(t.prize_format||"")==="round_robin_components"){
+      const comp:any=t.special_prize_components?.doubles_team||{};
+      const groupWins=matches.filter((m:any)=>String(m.round_name||"").startsWith("Groupe")&&m.winner_pair===userPair.name).length;
+      const sfWin=matches.some((m:any)=>m.round_name==="SF"&&m.winner_pair===userPair.name)?1:0;
+      const fWin=matches.some((m:any)=>m.round_name==="F"&&m.winner_pair===userPair.name)?1:0;
+      teamPrize=Math.max(0,Math.round(
+        Number(comp.PARTICIPATION||0)
+        +groupWins*Number(comp.RR_WIN||0)
+        +sfWin*Number(comp.SF_WIN||0)
+        +fWin*Number(comp.F_WIN||0)
+      ));
+    }else{
+      teamPrize=tournamentRoundPrize(t,userRound,"doubles").amount;
+    }
+    const prize=Math.round(teamPrize/2*100)/100;
 
     const run=await db.from("doubles_runs").insert({tournament_id:tid,partnership_id:partnership.data.id,partner_id:partner.id,user_round:userRound,user_points:pts,user_prize:prize,status:"completed"}).select("id").single();
     if(run.error)return h({error:run.error.message},500);
@@ -6435,6 +6921,11 @@ Deno.serve(async(req:Request)=>{
         db.from("academies").select("reputation").eq("id","demo").maybeSingle()
       ]);
       if(t.error||a.error||!t.data)return h({error:(t.error||a.error)?.message||"Tournoi introuvable"},404);
+      if(["ATP","Challenger","ITF"].includes(String(t.data.circuit))){
+        const eligibility=await db.rpc("tournament_entry_eligibility",{p_player_id:career.data.managed_player_id,p_tournament_id:id,p_entry_method:"wildcard"});
+        if(eligibility.error)return h({error:eligibility.error.message},500);
+        if(eligibility.data?.eligible===false)return h({error:"Wild card impossible : le règlement de ce circuit interdit l'entrée de ce joueur.",entry_rule:eligibility.data},409);
+      }
       const rank=Number(career.data.singles_rank||9999),qual=Number(t.data.qual_cut??t.data.projected_qual_cut??t.data.direct_cut??t.data.projected_direct_cut??rank);
       const rep=Number(a.data?.reputation||48);
       const proximity=Math.max(0,35-Math.max(0,rank-qual)/12);
@@ -6943,3 +7434,4 @@ Deno.serve(async(req:Request)=>{
 
   return h({error:"Not found"},404);
 });
+

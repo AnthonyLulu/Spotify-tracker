@@ -703,6 +703,13 @@ function existingEntryWindow(id,e,discipline='singles'){
  const method=e.entry_method||(/qualif|alternate/i.test(e.status||'')?'qualifying':'direct');
  return tournamentParticipationWindow(t,{method},discipline);
 }
+function specialTeamEventMeta(t){
+ const code=String(t?.entry_rule_code||''),category=String(t?.category||'');
+ if(code==='UNITED_CUP_TEAM'||/United Cup/i.test(category))return {code:'united_cup',label:'Sélection nationale mixte',teams:18,format:'6 groupes de 3 · 8 équipes en quarts · demi-finales et finale',tie:'1 simple ATP · 1 simple WTA · 1 double mixte',selection:'Qualification du pays + sélection nationale'};
+ if(code==='LAVER_CUP_INVITE'||/Laver Cup/i.test(category))return {code:'laver_cup',label:'Invitation / sélection',teams:2,format:'Team Europe vs Team World · premier à 13 points',tie:'12 matches maximum sur 3 jours',scoring:'1 pt vendredi · 2 samedi · 3 dimanche',selection:'Qualification et choix des capitaines'};
+ if(code==='JUNIOR_DAVIS_SELECTION'||/Junior Davis Cup/i.test(category))return {code:'junior_davis',label:'Sélection nationale junior',teams:16,format:'4 groupes de 4 · round robin · repos · phase finale',tie:'Rencontres par équipes nationales juniors',selection:'Qualifications régionales + sélection fédérale'};
+ return null;
+}
 function singlesEligibility(t){
  const c=career(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
  const now=String(local.date||c.career_date||'2025-12-01');
@@ -714,6 +721,8 @@ function singlesEligibility(t){
  const qualClosed=Boolean(qualDeadline&&now>qualDeadline);
  const lateWindow=Number(t.late_entry_slots||0)>0&&mainClosed&&lateDeadline&&now<=lateDeadline;
  if(String(c.career_focus||'mixed')==='doubles_only')return {label:"Double exclusivement",cls:"bad",can:false,phase:"career_focus"};
+ const teamEvent=specialTeamEventMeta(t);
+ if(teamEvent)return {label:teamEvent.label,cls:"info",can:false,phase:"team_selection",teamEvent};
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
  if(String(t.circuit)==="NCAA"){
   const mode=String(t.registration_mode||"");
@@ -826,6 +835,8 @@ function doublesEligibility(t){
  }
  const now=String(local.date||"2025-12-01"),advance=String(t.doubles_entry_deadline||""),onsite=String(t.doubles_onsite_deadline||"");
  if(String(c.career_focus||'mixed')==='singles_only')return {label:"Simple exclusivement",cls:"bad",can:false,phase:"career_focus"};
+ const teamEvent=specialTeamEventMeta(t);
+ if(teamEvent)return {label:teamEvent.label,cls:"info",can:false,phase:"team_selection",teamEvent};
  if(!t.doubles)return {label:"Pas de double",cls:"",can:false,phase:"none"};
  if(String(t.circuit)==="NCAA")return {label:"Via lineup NCAA",cls:"info",can:false,phase:"selection"};
  if(String(t.circuit)==="Federation")return {label:"Par sélection",cls:"info",can:false,phase:"selection"};

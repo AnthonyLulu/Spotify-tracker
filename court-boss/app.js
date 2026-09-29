@@ -271,6 +271,48 @@ function playerPhotoMarkup(p){
 }
 
 function attrClass(v){return v>=18?'a-elite':v>=15?'a-good':v<=8?'a-low':'a-mid'}
+function publicAttributeKnowledge(p,attrs,report){
+ const source=(report?.attribute_estimates&&typeof report.attribute_estimates==='object')?report.attribute_estimates:{};
+ const rank=Number(p?.ranking??p?.game_world_rank??99999);
+ const publicConfidence=rank<=20?92:rank<=100?82:rank<=500?70:rank<=2000?56:42;
+ const confidence=Math.max(20,Math.min(100,Number(report?.confidence??publicConfidence)));
+ let radius=report
+  ?(confidence>=90?1:confidence>=80?2:confidence>=65?3:confidence>=50?4:5)
+  :(rank<=20?1:rank<=100?2:rank<=500?3:rank<=2000?4:5);
+ if(report?.attribute_uncertainty!=null&&Number.isFinite(Number(report.attribute_uncertainty))){
+  radius=Math.max(1,Math.min(5,Math.round(Number(report.attribute_uncertainty))));
+ }
+ const clamp20=v=>Math.max(1,Math.min(20,Math.round(Number(v)||1)));
+ const values={},ranges={};
+ Object.entries(attrs||{}).forEach(([key,raw])=>{
+  if(key==='player_id'||!Number.isFinite(Number(raw)))return;
+  const actual=clamp20(raw),provided=source[key];
+  let low=null,high=null,center=null;
+  if(provided&&typeof provided==='object'){
+   low=Number(provided.min??provided.low??provided.from);
+   high=Number(provided.max??provided.high??provided.to);
+   center=Number(provided.value??provided.estimate??provided.mid);
+  }else if(Number.isFinite(Number(provided))){
+   center=Number(provided);
+  }
+  if(!Number.isFinite(low)||!Number.isFinite(high)){
+   const base=clamp20(Number.isFinite(center)?center:actual);
+   const hash=(String(p?.id??'0')+'|'+key).split('').reduce((acc,ch)=>(acc*33+ch.charCodeAt(0))>>>0,5381);
+   const skew=(hash%3)-1;
+   const approx=clamp20(base+skew);
+   low=clamp20(approx-radius);
+   high=clamp20(approx+radius);
+  }else{
+   low=clamp20(low);high=clamp20(high);
+  }
+  if(actual<low)low=actual;
+  if(actual>high)high=actual;
+  if(low>high){const tmp=low;low=high;high=tmp;}
+  values[key]=Math.round((low+high)/2);
+  ranges[key]={min:low,max:high};
+ });
+ return {values,ranges,confidence,radius,source:report?'scouting':'public'};
+}
 function header(){
  const cr=local.career||boot?.career||{};
  return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||cr.career_date)}</span><div class="grow"></div><button class="ghost icon-btn" onclick="openGlobalSearch()" aria-label="Recherche">⌕</button><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" ${simulating?'disabled':''} onclick="simulateWeek()">${simulating?'Simulation…':'+ 1 semaine'}</button></header>`
@@ -798,7 +840,7 @@ const MAJOR_TOURNAMENT_LOGOS=[
  {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO",cls:"logo-ao"},
  {re:/Roland[ -]?Garros/i,url:"https://static.cdnlogo.com/logos/r/52/roland-garros.svg",label:"RG",cls:"logo-rg"},
  {re:/Wimbledon/i,url:"https://static.cdnlogo.com/logos/w/73/wimbledon.svg",label:"WIM",cls:"logo-wim"},
- {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
+ {re:/(^|\\b)US Open\\b|(^|\\b)Us Open\\b/i,url:"https://upload.wikimedia.org/wikipedia/commons/c/cd/Usopen-horizontal-logo.svg",label:"USO",cls:"logo-uso"}
 ];
 const CURATED_TOURNAMENT_LOGOS=[
  {re:/Millennium Estoril Open|Estoril Open/i,url:"https://assets.stickpng.com/images/635644eea54eeda751217031.png",label:"EST"},
@@ -1936,7 +1978,7 @@ function playerKnowledgeLabel(isManaged,report){
   ));
   return level+' · '+Number(report.confidence||0)+'%';
  }
- return 'Connaissance publique';
+ return 'Connaissance publique · fourchettes';
 }
 function attrTrendMarkup(key,trend){
  const d=Number(trend?.deltas?.[key]||0);
@@ -2247,7 +2289,10 @@ window.openPlayer=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier joueur…</div></div></div>';
  try{
   const d=await get('/api/player?id='+id),p=d.player;if(!p)throw new Error('Joueur introuvable');
-  const a=p.player_attributes||{},dev=d.developmentProfile||{},devHistory=d.developmentHistory||[],devTraitHistory=d.developmentTraitHistory||[],psych=d.psychologyState||{},hiddenTraitHistory=d.hiddenTraitHistory||[],roleFit=d.roleSuitability||null,attributeCeilings=d.attributeCeilings?.ceilings||{},attributeTrend=d.attributeTrend||null,mentorship=d.mentorship||{},mentor=mentorship.mentor||null,mentees=mentorship.mentees||[],mentorshipEvents=mentorship.events||[],advanced=d.advancedMetrics||{},elo=d.eloRating||{},dynamicRatings=d.dynamicRatings||{},surfacePref=d.surfacePreference||{},contextProfile=d.contextProfile||{},h2hManaged=d.h2hWithManaged||null,matchupPreviews=d.matchupPreviews||{},styleHistory=d.styleHistory||[],tacticalProfile=d.tacticalProfile||{},tacticalTraits=d.tacticalTraits||[],seasonPlan=d.seasonPlan||null,trainingLoad=d.trainingLoad||null,scoutReport=d.scoutingReport||null,isManaged=Number(p.id)===Number(career().managed_player_id||0),knownAttrs=isManaged?a:(scoutReport?.attribute_estimates||{}),knownContext=isManaged?contextProfile:(scoutReport?.context_estimates||{}),ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[],primaryDoubles=d.primaryDoublesCommitment||null,doublesPartnerHistory=d.doublesPartnerHistory||[];
+  const a=p.player_attributes||{},dev=d.developmentProfile||{},devHistory=d.developmentHistory||[],devTraitHistory=d.developmentTraitHistory||[],psych=d.psychologyState||{},hiddenTraitHistory=d.hiddenTraitHistory||[],roleFit=d.roleSuitability||null,attributeCeilings=d.attributeCeilings?.ceilings||{},attributeTrend=d.attributeTrend||null,mentorship=d.mentorship||{},mentor=mentorship.mentor||null,mentees=mentorship.mentees||[],mentorshipEvents=mentorship.events||[],advanced=d.advancedMetrics||{},elo=d.eloRating||{},dynamicRatings=d.dynamicRatings||{},surfacePref=d.surfacePreference||{},contextProfile=d.contextProfile||{},h2hManaged=d.h2hWithManaged||null,matchupPreviews=d.matchupPreviews||{},styleHistory=d.styleHistory||[],tacticalProfile=d.tacticalProfile||{},tacticalTraits=d.tacticalTraits||[],seasonPlan=d.seasonPlan||null,trainingLoad=d.trainingLoad||null,scoutReport=d.scoutingReport||null,isManaged=Number(p.id)===Number(career().managed_player_id||0),knownContext=isManaged?contextProfile:(scoutReport?.context_estimates||{}),ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[],primaryDoubles=d.primaryDoublesCommitment||null,doublesPartnerHistory=d.doublesPartnerHistory||[];
+  const attrKnowledge=isManaged?{values:a,ranges:{},confidence:100,source:'managed'}:publicAttributeKnowledge(p,a,scoutReport);
+  const knownAttrs=attrKnowledge.values||{},attrRanges=attrKnowledge.ranges||{};
+  const attrDisplayValue=key=>isManaged?(knownAttrs[key]??'?'):(attrRanges[key]?attrRanges[key].min+'–'+attrRanges[key].max:(knownAttrs[key]??'?'));
   const currentStars=isManaged?Number(dev.world_current_stars??dev.current_star_rating??abilityStarValue(p.current_ability)):Number(scoutReport?.estimated_world_current_stars??scoutReport?.estimated_current_stars??publicLevelStars(p));
   const potentialStars=isManaged?Number(dev.world_potential_stars??dev.potential_star_rating??abilityStarValue(p.potential)):(scoutReport?.estimated_world_potential_stars!=null?Number(scoutReport.estimated_world_potential_stars):scoutReport?.estimated_potential_stars!=null?Number(scoutReport.estimated_potential_stars):null);
   const circuitCurrentStars=isManaged?Number(dev.circuit_current_stars??currentStars):Number(scoutReport?.estimated_circuit_current_stars??currentStars);
@@ -2465,7 +2510,7 @@ ${p.bio_source?`<div class="muted micro" style="margin-top:6px">Bio : ${esc(p.bi
     <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Bilan historique</h2>${realMatches?`<div class="kpi-strip"><div class="kpi"><span class="muted mini">Matchs</span><b>${fmt(realMatches)}</b></div><div class="kpi"><span class="muted mini">Victoires</span><b>${fmt(cs.wins||0)}</b></div><div class="kpi"><span class="muted mini">Défaites</span><b>${fmt(cs.losses||0)}</b></div><div class="kpi"><span class="muted mini">% victoires</span><b>${realWinPct}%</b></div></div><div class="list-item row between"><span>Dur</span><b>${cs.hard_wins==null||cs.hard_losses==null?'Non renseigné':cs.hard_wins+'-'+cs.hard_losses+' · '+surfacePct(cs.hard_wins,cs.hard_losses)}</b></div><div class="list-item row between"><span>Terre battue</span><b>${cs.clay_wins==null||cs.clay_losses==null?'Non renseigné':cs.clay_wins+'-'+cs.clay_losses+' · '+surfacePct(cs.clay_wins,cs.clay_losses)}</b></div><div class="list-item row between"><span>Gazon</span><b>${cs.grass_wins==null||cs.grass_losses==null?'Non renseigné':cs.grass_wins+'-'+cs.grass_losses+' · '+surfacePct(cs.grass_wins,cs.grass_losses)}</b></div><div class="muted mini" style="margin-top:8px">Source : ${esc(cs.source||'Archives de matchs')} · relevé du ${cs.source_snapshot?df(cs.source_snapshot):'—'}${String(cs.source||'').startsWith('https://')?' · <a href="'+esc(cs.source)+'" target="_blank" rel="noopener noreferrer">Consulter la source</a>':' · Agrégat importé, périmètre non certifié ATP'}</div>`:'<div class="empty">Historique match réel non disponible pour ce joueur.</div>'}</div><div class="card"><h2>Scouting</h2><div class="notice">Les notes 1–20 sont des évaluations de jeu, pas des statistiques officielles ATP.</div><p class="muted mini" style="margin-top:10px">Confiance : ${p.scouting_confidence}% · Source : ${esc(p.data_source||'Court Boss')} ${p.data_snapshot?'· snapshot '+df(p.data_snapshot):''}</p><div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="soft-btn" onclick="toggleShortlist(${p.id})">${(d.shortlist||(local.shortlist||[]).includes(p.id))?'Retirer de la shortlist':'Ajouter à la shortlist'}</button><button class="soft-btn" onclick="addComparePlayerV2(${p.id})">Comparer</button>${p.doubles_ranking!=null&&!isRetired?`<button class="soft-btn" onclick="approachPartner(${p.id});closeOverlay()">Approcher en double</button>`:''}${p.is_real&&!isRetired?`<button class="primary" onclick="startCareerWithPlayer(${p.id},'${esc(p.name).replaceAll("'","&#39;")}')">Gérer ce joueur</button>`:isRetired?'<span class="badge">Carrière terminée</span>':''}</div></div></div>
    </div>
    <template id="statsTpl">${playerStatsTemplate(d.statisticsDashboard||{},p)}</template>
-   <template id="attrsTpl"><div class="notice"><b>${playerKnowledgeLabel(isManaged,scoutReport)}</b> · Les attributs 1–20 d’un autre joueur sont des estimations de scouting. Pour ton joueur, « plafond » représente la limite naturelle actuelle de la compétence : elle peut encore bouger avec le potentiel et la courbe de développement.</div><div class="attr-sections" style="margin-top:12px">${groups.map(g=>`<div class="attr-group"><h3>${g[0]}</h3>${g[1].map(x=>{const v=knownAttrs[x[1]],cap=isManaged?attributeCeilings[x[1]]:null;return `<div class="attr-row"><div class="row"><span>${x[0]}</span><span><b class="${v!=null?attrClass(v):''}">${v??'?'}</b>${isManaged?attrTrendMarkup(x[1],attributeTrend):''}${cap!=null?`<small class="muted micro"> / plafond ${cap}</small>`:''}</span></div><div class="bar"><i style="width:${v!=null?Number(v)*5:0}%"></i></div></div>`}).join('')}</div>`).join('')}</div></template>
+   <template id="attrsTpl"><div class="notice"><b>${playerKnowledgeLabel(isManaged,scoutReport)}</b> · ${isManaged?'Ton joueur est connu précisément : les notes 1–20 sont exactes dans la sauvegarde.':'Comme dans TM24, les joueurs que tu ne gères pas sont affichés en fourchettes. Au début d’une nouvelle partie, elles viennent de la connaissance publique ; le scouting les resserre progressivement sans révéler immédiatement la note exacte.'} Pour ton joueur, « plafond » représente la limite naturelle actuelle de la compétence : elle peut encore bouger avec le potentiel et la courbe de développement.</div><div class="attr-sections" style="margin-top:12px">${groups.map(g=>`<div class="attr-group"><h3>${g[0]}</h3>${g[1].map(x=>{const v=knownAttrs[x[1]],range=!isManaged?attrRanges[x[1]]:null,display=attrDisplayValue(x[1]),barValue=isManaged?Number(v):(range?(Number(range.min)+Number(range.max))/2:Number(v)),cap=isManaged?attributeCeilings[x[1]]:null;return `<div class="attr-row"><div class="row"><span>${x[0]}</span><span><b class="${Number.isFinite(barValue)?attrClass(barValue):''}">${display}</b>${isManaged?attrTrendMarkup(x[1],attributeTrend):''}${cap!=null?`<small class="muted micro"> / plafond ${cap}</small>`:''}</span></div><div class="bar"><i style="width:${Number.isFinite(barValue)?barValue*5:0}%"></i></div></div>`}).join('')}</div>`).join('')}</div></template>
    <template id="analyticsTpl">
     <div class="notice"><b>Analytics avancées</b> · Le moteur utilise les mêmes familles de lecture que Tennis Abstract / Match Charting Project : service, retour, pression, rally length, filet, directions et Elo. Ici, les valeurs « modelled » sont calculées par Court Boss à partir du profil joueur et évoluent ensuite dans la sauvegarde.</div>
     <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">État mental dynamique</div><h2>${esc(psych.status_label||'Stable')}</h2></div><span class="badge ${String(psych.status_label||'').includes('feu')||String(psych.status_label||'').includes('confiant')?'good':String(psych.status_label||'').includes('crise')||String(psych.status_label||'').includes('doute')?'bad':'warn'}">${psych.last_result?esc(psych.last_result):'Forme mentale'}</span></div>${psych.confidence!=null?`<div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted micro">Confiance</span><b>${psych.confidence}</b></div><div class="kpi"><span class="muted micro">Momentum</span><b>${psych.momentum}</b></div><div class="kpi"><span class="muted micro">Rythme</span><b>${psych.match_rhythm}</b></div><div class="kpi"><span class="muted micro">Motivation</span><b>${psych.motivation}</b></div><div class="kpi"><span class="muted micro">Pression</span><b>${psych.pressure_load}</b></div><div class="kpi"><span class="muted micro">Burnout</span><b>${psych.burnout}</b></div></div>`:`<div class="muted mini" style="margin-top:8px">Les métriques mentales détaillées nécessitent une connaissance complète ou un rapport scout de haute confiance.</div>`}<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><span class="badge">Série V ${psych.win_streak??0}</span><span class="badge">Série D ${psych.loss_streak??0}</span>${psych.hot_streak!=null?`<span class="badge good">Hot streak ${psych.hot_streak}</span><span class="badge ${Number(psych.slump||0)>=40?'bad':''}">Slump ${psych.slump}</span>`:''}</div><div class="muted micro" style="margin-top:7px">Confiance, momentum, pression et fatigue mentale influencent légèrement les matchs. Ils ne remplacent jamais le niveau, l’Elo ou la surface.</div></div>
@@ -2572,7 +2617,7 @@ ${isManaged&&attributeTrend?`<div class="card"><div class="row between"><div><di
    <template id="doubleTpl">
     <div class="grid g2">
       <div class="card"><div class="row between"><div><div class="eyebrow">Classement individuel</div><h2>ATP Double</h2></div><span class="badge ${p.doubles_source?'good':''}">${p.doubles_source?'Sourcé':'Index DB'}</span></div>
-        <div class="statline"><div class="statbox"><span class="muted mini">Rang actuel</span><b>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'NR'}</b></div><div class="statbox"><span class="muted mini">Meilleur carrière</span><b>${p.career_high_doubles_rank?'#'+fmt(p.career_high_doubles_rank):'—'}</b><small class="muted micro">${p.career_high_doubles_rank_date?df(p.career_high_doubles_rank_date):''}</small></div><div class="statbox"><span class="muted mini">Points</span><b>${p.doubles_points==null?'—':fmt(p.doubles_points)}</b></div><div class="statbox"><span class="muted mini">Aptitude double</span><b>${knownAttrs.doubles??'?'}/20</b></div></div>
+        <div class="statline"><div class="statbox"><span class="muted mini">Rang actuel</span><b>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'NR'}</b></div><div class="statbox"><span class="muted mini">Meilleur carrière</span><b>${p.career_high_doubles_rank?'#'+fmt(p.career_high_doubles_rank):'—'}</b><small class="muted micro">${p.career_high_doubles_rank_date?df(p.career_high_doubles_rank_date):''}</small></div><div class="statbox"><span class="muted mini">Points</span><b>${p.doubles_points==null?'—':fmt(p.doubles_points)}</b></div><div class="statbox"><span class="muted mini">Aptitude double</span><b>${attrDisplayValue('doubles')}/20</b></div></div>
         <div class="muted mini" style="margin-top:8px">${p.doubles_source?esc(p.doubles_source):'Classement indexé Court Boss'}${p.doubles_snapshot_date?' · '+df(p.doubles_snapshot_date):''}</div>
         ${p.doubles_ranking!=null&&!isRetired?`<button class="primary" style="width:100%;margin-top:10px" onclick="approachPartner(${p.id});closeOverlay()">Approcher comme partenaire</button>`:''}
       </div>
@@ -2592,7 +2637,7 @@ ${isManaged&&attributeTrend?`<div class="card"><div class="row between"><div><di
       ${doublesTitles.length?doublesTitles.map(t=>`<div class="list-item row between"><div><b>${esc(t.tournament_name)}</b><div class="muted mini">${df(t.title_date)} · ${esc(t.level||'Double')} · ${esc(t.surface||'—')}</div>${t.partner_name?`<div class="muted mini">Partenaire : ${t.partner_player_id?`<span class="click" onclick="openPlayer(${t.partner_player_id})">${esc(t.partner_name)}</span>`:esc(t.partner_name)}</div>`:''}</div><div style="text-align:right">${t.verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Carrière</span>'}${t.source_url?`<div style="margin-top:5px"><a class="soft-btn" href="${esc(t.source_url)}" target="_blank" rel="noopener noreferrer">Source</a></div>`:''}</div></div>`).join(''):'<div class="empty">Aucun titre double enregistré.</div>'}
     </div>
     <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Scouting double</div><h2>Lecture du profil</h2></div><button class="ghost" onclick="closeOverlay();nav('doubles')">Hub Double</button></div>
-      <div class="kpi-strip"><div class="kpi"><span class="muted mini">Volée</span><b>${knownAttrs.volley??'?'}</b></div><div class="kpi"><span class="muted mini">Retour</span><b>${knownAttrs.return_game??'?'}</b></div><div class="kpi"><span class="muted mini">Service</span><b>${knownAttrs.serve_power??'?'}</b></div><div class="kpi"><span class="muted mini">Toucher</span><b>${knownAttrs.touch??'?'}</b></div></div><div class="muted micro" style="margin-top:7px">${playerKnowledgeLabel(isManaged,scoutReport)}</div>
+      <div class="kpi-strip"><div class="kpi"><span class="muted mini">Volée</span><b>${attrDisplayValue('volley')}</b></div><div class="kpi"><span class="muted mini">Retour</span><b>${attrDisplayValue('return_game')}</b></div><div class="kpi"><span class="muted mini">Service</span><b>${attrDisplayValue('serve_power')}</b></div><div class="kpi"><span class="muted mini">Toucher</span><b>${attrDisplayValue('touch')}</b></div></div><div class="muted micro" style="margin-top:7px">${playerKnowledgeLabel(isManaged,scoutReport)}</div>
     </div>
    </template>
    <template id="careerTpl">

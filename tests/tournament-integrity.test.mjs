@@ -209,6 +209,19 @@ test('Qualifying formats split into independent sections with one main-draw plac
  assert.deepEqual(qualifyingSectionPlan(48,12),{drawSize:48,qualifierSlots:12,sectionCount:12,sectionPlayers:4,sectionSize:4,bracketTotal:48,byeCount:0,rounds:2});
  assert.deepEqual(qualifyingSectionPlan(128,16),{drawSize:128,qualifierSlots:16,sectionCount:16,sectionPlayers:8,sectionSize:8,bracketTotal:128,byeCount:0,rounds:3});
 });
+test('Uneven junior qualifying sections preserve all qualifier places',()=>{
+ const j200=qualifyingSectionPlan(32,6);
+ assert.deepEqual(j200,{drawSize:32,qualifierSlots:6,sectionCount:6,sectionPlayers:6,sectionSize:8,bracketTotal:48,byeCount:16,rounds:3});
+ const orangeBowl=qualifyingSectionPlan(64,8);
+ assert.deepEqual(orangeBowl,{drawSize:64,qualifierSlots:8,sectionCount:8,sectionPlayers:8,sectionSize:8,bracketTotal:64,byeCount:0,rounds:3});
+});
+test('Tournament-specific qualifying size overrides the generic category rule',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.equal((code.match(/t\\.qualifying_draw_size\\?\\?formatRule\\?\\.qualifying_draw_size/g)||[]).length,3);
+ assert.equal((code.match(/formatRule\\?\\.qualifying_draw_size\\?\\?t\\.qualifying_draw_size/g)||[]).length,0);
+ assert.match(code,/const juniorDirectSlots=Math\.max\(0,drawSize-Math\.max\(0,Number\(formatRule\?\.qualifier_count\|\|0\)\)-wcSlots\)/);
+});
+
 test('Tournament engine simulates the full qualifying field and protects qualifiers from seeding',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/const sections:any\[\]\[\]=Array\.from/);

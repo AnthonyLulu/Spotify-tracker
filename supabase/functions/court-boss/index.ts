@@ -1974,7 +1974,20 @@ Deno.serve(async(req:Request)=>{
     const visibleMatches=(matches.data??[]).filter((x:any)=>dateOk(x?.tournament_runs?.tournaments?.start_date));
     const visibleFinals=(finals.data??[]).filter((x:any)=>dateOk(x.final_date));
     const visibleJuniorEntries=(juniorEntries.data??[]).filter((x:any)=>dateOk(x.snapshot_date)&&dateOk(x?.tournaments?.start_date));
-    const visibleTournamentHistory=(tournamentHistory.data??[]).filter((x:any)=>dateOk(x.tournament_date));
+    const visibleTournamentHistoryAll=(tournamentHistory.data??[]).filter((x:any)=>dateOk(x.tournament_date));
+    const visibleTournamentHistory=visibleTournamentHistoryAll.filter((x:any)=>String(x.event_type||"singles")!=="doubles");
+    const doublesHistorySeen=new Set<string>();
+    const visibleDoublesTournamentHistory=visibleTournamentHistoryAll
+      .filter((x:any)=>String(x.event_type||"")==="doubles")
+      .sort((a:any,b:any)=>Number(Boolean(b.last_opponent))-Number(Boolean(a.last_opponent)))
+      .filter((x:any)=>{
+        const canonicalTournament=String(x.tournament_id||"").replace(/^D-/,"");
+        const key=String(x.season||"")+"|"+canonicalTournament;
+        if(doublesHistorySeen.has(key))return false;
+        doublesHistorySeen.add(key);
+        return true;
+      })
+      .sort((a:any,b:any)=>String(b.tournament_date||"").localeCompare(String(a.tournament_date||"")));
     const visibleNcaa=(ncaa.data??[]).filter((x:any)=>dateOk(x.snapshot_date));
     const visibleNcaaTransfers=(ncaaTransfers.data??[]).filter((x:any)=>dateOk(x.verified_at));
     const visibleHistoricalSeasons=(historicalSeasons.data??[]).filter((x:any)=>Number(x.season||0)<=referenceYear);
@@ -2229,7 +2242,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       player,sponsors:sp.data??[],titles:visibleTitles,history:visibleHistory,shortlist:short.data??null,
       matches:visibleMatches,careerStats:careerStats.data??null,finals:visibleFinals,juniorEntries:visibleJuniorEntries,
-      tournamentHistory:visibleTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons,
+      tournamentHistory:visibleTournamentHistory,doublesTournamentHistory:visibleDoublesTournamentHistory,ncaa:visibleNcaa,ncaaCareer:ncaaCareer.data??null,ncaaTransfers:visibleNcaaTransfers,doublesTeams:doublesTeams.data??[],races:raceCards,legend:legend.data??null,historicalSeasons:visibleHistoricalSeasons,
       staff:staffLinks.error?[]:(staffLinks.data??[]),
       staffHistory:staffHistory.error?[]:(staffHistory.data??[]),
       staffBonds:staffBonds.error?[]:(staffBonds.data??[]),

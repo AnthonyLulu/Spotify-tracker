@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
-import { projectedTournamentCuts, qualifyingSectionPlan, tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
+import { juniorTournamentFormatRule, projectedTournamentCuts, qualifyingSectionPlan, tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
 
 const source=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8').replace(/\ninit\(\);\s*$/,'');
 function frontend(){
@@ -310,4 +310,35 @@ test('Player profiles expose simulated prize money for AI and managed careers',(
  assert.match(backend,/prize_awarded\|\|0\)\/2/);
  assert.match(app,/Prize money sauvegarde/);
  assert.match(app,/Économie de carrière simulée/);
+});
+
+
+test('Junior 48-draw fallback follows ITF 2026 composition',()=>{
+ const r=juniorTournamentFormatRule({circuit:'Junior',category:'J500',singles_draw_size:48,qualifying_draw_size:48,doubles_draw_size:24,junior_draw_format:'elimination'});
+ assert.equal(r.main_draw_size,48);
+ assert.equal(r.bracket_size,64);
+ assert.equal(r.seed_count,16);
+ assert.equal(r.qualifier_count,6);
+ assert.equal(r.wildcard_count,6);
+ assert.equal(r.qualifying_draw_size,48);
+ assert.equal(r.doubles_draw_size,24);
+ assert.deepEqual(r.rounds,['R48','R32','R16','QF','SF','F']);
+});
+
+test('Junior 64-draw and J30/J60 round-robin composition are distinct',()=>{
+ const slam=juniorTournamentFormatRule({circuit:'Junior',category:'Junior Grand Slam',singles_draw_size:64,qualifying_draw_size:32,doubles_draw_size:32,junior_draw_format:'elimination'});
+ assert.equal(slam.seed_count,16);
+ assert.equal(slam.qualifier_count,8);
+ assert.equal(slam.wildcard_count,8);
+ const rr=juniorTournamentFormatRule({circuit:'Junior',category:'J60',singles_draw_size:32,qualifying_draw_size:32,doubles_draw_size:16,junior_draw_format:'round_robin_to_elimination'});
+ assert.equal(rr.format_type,'round_robin');
+ assert.equal(rr.qualifier_count,8);
+ assert.equal(rr.wildcard_count,4);
+ assert.deepEqual(rr.rounds,['RR','QF','SF','F']);
+});
+
+test('Backend uses the ITF junior fallback when no explicit format row exists',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/juniorFormatRes\.data\|\|juniorTournamentFormatRule\(t\.data\)/);
+ assert.match(code,/String\(t\.circuit\|\|""\)===\"Junior\"\?juniorTournamentFormatRule\(t\):null/);
 });

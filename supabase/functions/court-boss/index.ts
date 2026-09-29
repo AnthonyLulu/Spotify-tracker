@@ -1111,13 +1111,43 @@ async function managedTournamentEntryRules(t:any){
   return Object.fromEntries(checks.map((result,index)=>[methods[index],result.data]));
 }
 
+async function projectedDoublesRaceRows(refDate:string,wanted:number,excludedIds:number[]=[]){
+  const date=String(refDate||AGE_REFERENCE_DATE).slice(0,10);
+  const year=Number(date.slice(0,4));
+  const fetchLimit=Math.min(2000,Math.max(160,Math.ceil(Math.max(1,wanted))*8));
+  let rows:any[]=[];
+  if(year<=2025){
+    const race=await db.from("doubles_race_2025_full")
+      .select("doubles_race_ranking,doubles_race_points,doubles_race_snapshot_date,source,player_one,player_two,player_one_id,player_two_id,name,country,is_team,finals_status")
+      .order("doubles_race_ranking",{ascending:true})
+      .limit(fetchLimit);
+    if(race.error)return {rows:[],error:race.error};
+    rows=race.data??[];
+  }else{
+    const race=await db.rpc("doubles_race_for_date",{p_date:date});
+    if(race.error)return {rows:[],error:race.error};
+    rows=(race.data??[]).slice(0,fetchLimit);
+  }
+
+  const used=new Set<number>(excludedIds.map(Number).filter(Boolean));
+  const selected:any[]=[];
+  for(const row of rows){
+    const aid=Number(row.player_one_id||0),bid=Number(row.player_two_id||0);
+    if(!aid||!bid||aid===bid||used.has(aid)||used.has(bid))continue;
+    selected.push(row);
+    used.add(aid);used.add(bid);
+    if(selected.length>=wanted)break;
+  }
+  return {rows:selected,error:null};
+}
+
 Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:20,tournament_model:"entry-calendar-prize-v3",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:21,tournament_model:"entry-calendar-prize-v4+doubles-race-fields",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2333,6 +2363,38 @@ Deno.serve(async(req:Request)=>{
                 affinity_score:x.affinity_score,
                 source:"affinity-pair"
               }));
+            }
+          }
+        }
+
+        if(!isJuniorDouble&&doublesMain.length<doublesDrawSize){
+          const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+          const refDate=String(careerNow.data?.career_date||AGE_REFERENCE_DATE);
+          const existingIds=doublesMain.flatMap((x:any)=>[Number(x.player_a?.id||0),Number(x.player_b?.id||0)]).filter(Boolean);
+          const projected=await projectedDoublesRaceRows(refDate,doublesDrawSize-doublesMain.length,existingIds);
+          if(!projected.error&&projected.rows.length){
+            const ids=[...new Set(projected.rows.flatMap((x:any)=>[Number(x.player_one_id),Number(x.player_two_id)]).filter(Boolean))];
+            const profiles=ids.length
+              ?await db.from("players").select("id,name,country,doubles_ranking,current_ability,potential").in("id",ids)
+              :{data:[],error:null};
+            if(!profiles.error){
+              const byId=new Map((profiles.data??[]).map((p:any)=>[Number(p.id),p]));
+              for(const row of projected.rows){
+                const a:any=byId.get(Number(row.player_one_id));
+                const c:any=byId.get(Number(row.player_two_id));
+                if(!a||!c)continue;
+                doublesMain.push({
+                  seed:doublesMain.length<doublesSeedCount?doublesMain.length+1:null,
+                  player_a:a,
+                  player_b:c,
+                  team_name:String(row.name||a.name+" / "+c.name),
+                  combined_rank:Number(a.doubles_ranking||9999)+Number(c.doubles_ranking||9999),
+                  race_rank:Number(row.doubles_race_ranking||9999),
+                  race_points:Number(row.doubles_race_points||0),
+                  source:"doubles-race-projection"
+                });
+                if(doublesMain.length>=doublesDrawSize)break;
+              }
             }
           }
         }
@@ -4532,6 +4594,7 @@ Deno.serve(async(req:Request)=>{
     const drawSize=finalsPairRows.length?8:configuredDoubleDraw;
     let poolRes:any;
     let worldPairRows:any[]=[];
+    let projectedRacePairRows:any[]=[];
     if(finalsPairRows.length){
       const ids=[...new Set(finalsPairRows.flatMap((x:any)=>[Number(x.player_one_id),Number(x.player_two_id)]).filter(Boolean))];
       poolRes=await db.from("players")
@@ -4554,12 +4617,29 @@ Deno.serve(async(req:Request)=>{
         if(!wp.error)worldPairRows=wp.data??[];
       }
 
-      if(worldPairRows.length){
+      const projected=await projectedDoublesRaceRows(
+        refDate,
+        Math.max(96,drawSize*2),
+        [Number(anthony.id),Number(partner.id)]
+      );
+      if(!projected.error)projectedRacePairRows=projected.rows;
+
+      if(worldPairRows.length||projectedRacePairRows.length){
         const byId=new Map<number,any>();
         for(const x of worldPairRows){
           const a:any=(x as any).player_a,b:any=(x as any).player_b;
           if(a?.id)byId.set(Number(a.id),a);
           if(b?.id)byId.set(Number(b.id),b);
+        }
+        const projectedIds=[...new Set(projectedRacePairRows.flatMap((x:any)=>[
+          Number(x.player_one_id||0),Number(x.player_two_id||0)
+        ]).filter(Boolean))].filter((id:number)=>!byId.has(id));
+        if(projectedIds.length){
+          const projectedPool=await db.from("players")
+            .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity,net_positioning,volley,doubles_communication,poaching,return_consistency,return_game,first_serve_quality,serve_precision,big_points,composure)")
+            .in("id",projectedIds);
+          if(projectedPool.error)return h({error:projectedPool.error.message},500);
+          for(const p of projectedPool.data??[])if((p as any)?.id)byId.set(Number((p as any).id),p);
         }
         const rankedPool=await db.from("players")
           .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
@@ -4637,7 +4717,9 @@ Deno.serve(async(req:Request)=>{
       a:anthony,b:partner,name:anthony.name+" / "+partner.name,isUser:true,
       strength:pairStrength(anthony,partner,Number(partnership.data.chemistry||70)),
       race_rank:Number(ownRaceRow?.doubles_race_ranking??ownRaceRow?.junior_doubles_race_ranking??999),
-      race_points:Number(ownRaceRow?.doubles_race_points??ownRaceRow?.junior_doubles_race_points??0)
+      race_points:Number(ownRaceRow?.doubles_race_points??ownRaceRow?.junior_doubles_race_points??0),
+      entry_rank:Number(ownRaceRow?.doubles_race_ranking??ownRaceRow?.junior_doubles_race_ranking)
+        ||(Number(anthony.doubles_ranking||9999)+Number(partner.doubles_ranking||9999))
     };
     const pairs:any[]=[];
     if(finalsPairRows.length){
@@ -4660,47 +4742,79 @@ Deno.serve(async(req:Request)=>{
           race_points:Number(row.doubles_race_points??row.junior_doubles_race_points??0)
         });
       }
-    }else if(worldPairRows.length){
+    }else{
       const used=new Set<number>([Number(anthony.id),Number(partner.id)]);
-      for(const row of worldPairRows){
-        const a0:any=(row as any).player_a,b0:any=(row as any).player_b;
-        if(!a0?.id||!b0?.id)continue;
-        const aid=Number(a0.id),bid=Number(b0.id);
-        if(aid===bid||used.has(aid)||used.has(bid))continue;
-        const a:any={...a0,player_attributes:Array.isArray(a0.player_attributes)?a0.player_attributes[0]:a0.player_attributes};
-        const b:any={...b0,player_attributes:Array.isArray(b0.player_attributes)?b0.player_attributes[0]:b0.player_attributes};
+      const addPair=(a:any,c:any,meta:any={})=>{
+        const aid=Number(a?.id||0),bid=Number(c?.id||0);
+        if(!aid||!bid||aid===bid||used.has(aid)||used.has(bid)||pairs.length>=drawSize-1)return false;
+        const raceRank=Number(meta.race_rank||9999);
         pairs.push({
-          a,b,name:a.name+" / "+b.name,isUser:false,
-          strength:pairStrength(a,b,Number((row as any).chemistry||70)),
+          a,b:c,name:String(meta.name||a.name+" / "+c.name),isUser:false,
+          strength:pairStrength(a,c,Number(meta.chemistry||70)),
+          race_rank:raceRank,
+          race_points:Number(meta.race_points||0),
+          chemistry:Number(meta.chemistry||70),
+          compatibility:Number(meta.compatibility||70),
+          world_pair_id:Number(meta.world_pair_id||0),
+          entry_rank:raceRank<9999?raceRank:Number(a.doubles_ranking||9999)+Number(c.doubles_ranking||9999),
+          projected:Boolean(meta.projected),
+          source:String(meta.source||"")
+        });
+        used.add(aid);used.add(bid);
+        return true;
+      };
+
+      for(const row of worldPairRows){
+        const a0:any=(row as any).player_a,c0:any=(row as any).player_b;
+        if(!a0?.id||!c0?.id)continue;
+        const a:any={...a0,player_attributes:Array.isArray(a0.player_attributes)?a0.player_attributes[0]:a0.player_attributes};
+        const c:any={...c0,player_attributes:Array.isArray(c0.player_attributes)?c0.player_attributes[0]:c0.player_attributes};
+        addPair(a,c,{
+          name:a.name+" / "+c.name,
           race_rank:Number((row as any).race_rank||9999),
           race_points:Number((row as any).race_points||0),
           chemistry:Number((row as any).chemistry||70),
           compatibility:Number((row as any).compatibility||70),
-          world_pair_id:Number((row as any).id||0)
+          world_pair_id:Number((row as any).id||0),
+          source:"active-world-pair"
         });
-        used.add(aid);used.add(bid);
-        if(pairs.length>=Math.max(96,drawSize-1))break;
+        if(pairs.length>=drawSize-1)break;
       }
+
+      if(pairs.length<drawSize-1&&projectedRacePairRows.length){
+        const byId=new Map<number,any>(pool.map((p:any)=>[Number(p.id),p]));
+        for(const row of projectedRacePairRows){
+          const a:any=byId.get(Number(row.player_one_id));
+          const c:any=byId.get(Number(row.player_two_id));
+          if(!a||!c)continue;
+          addPair(a,c,{
+            name:String(row.name||a.name+" / "+c.name),
+            race_rank:Number(row.doubles_race_ranking||9999),
+            race_points:Number(row.doubles_race_points||0),
+            chemistry:72,
+            projected:true,
+            source:"doubles-race-projection"
+          });
+          if(pairs.length>=drawSize-1)break;
+        }
+      }
+
       if(pairs.length<drawSize-1){
         let pending:any=null;
         for(const candidate of pool){
           const cid=Number(candidate?.id||0);
           if(!cid||used.has(cid))continue;
           if(!pending){pending=candidate;continue}
-          const a:any=pending,b:any=candidate;pending=null;
-          pairs.push({
-            a,b,name:a.name+" / "+b.name,isUser:false,
-            strength:pairStrength(a,b,66),
-            race_rank:9999,race_points:0,projected:true
+          const a:any=pending,c:any=candidate;pending=null;
+          addPair(a,c,{
+            name:a.name+" / "+c.name,
+            race_rank:9999,
+            chemistry:66,
+            projected:true,
+            source:"ranking-projection"
           });
-          used.add(Number(a.id));used.add(Number(b.id));
           if(pairs.length>=drawSize-1)break;
         }
-      }
-    }else{
-      for(let i=0;i+1<Math.min(pool.length,160);i+=2){
-        const a=pool[i],b=pool[i+1];
-        pairs.push({a,b,name:a.name+" / "+b.name,isUser:false,strength:pairStrength(a,b,68+((a.id+b.id)%20))});
       }
     }
     if(!finalsPairRows.length&&pairs.length<drawSize-1){
@@ -4765,7 +4879,7 @@ Deno.serve(async(req:Request)=>{
       if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser)userRound="F";
       if(finalRes.winner.isUser)userRound="Champion";
     }else{
-      const entrants=[userPair,...pairs].slice(0,drawSize).sort((a:any,b:any)=>Number(b.strength||0)-Number(a.strength||0));
+      const entrants=[userPair,...pairs].slice(0,drawSize);
       const bracketSize=drawSize<=8?8:drawSize<=16?16:drawSize<=32?32:64;
       const slots:any[]=Array(bracketSize).fill(null);
       const byeCount=Math.max(0,bracketSize-drawSize);
@@ -4776,12 +4890,17 @@ Deno.serve(async(req:Request)=>{
         return seed>=1&&seed<=ss.length?ss[seed-1]-1:null;
       };
       const seedCount=Math.min(bracketSize>=64?16:bracketSize>=32?8:bracketSize>=16?4:2,entrants.length);
+      const seedOrder=entrants.slice().sort((a:any,c:any)=>
+        Number(a.entry_rank||999999)-Number(c.entry_rank||999999)
+        ||Number(c.strength||0)-Number(a.strength||0)
+      );
       const placed=new Set<string>();
       for(let s=1;s<=seedCount;s++){
         const slot=seedSlot(bracketSize,s);
         if(slot==null)continue;
-        slots[slot]=entrants[s-1];
-        placed.add(String(entrants[s-1].name));
+        const seeded=seedOrder[s-1];
+        slots[slot]=seeded;
+        placed.add(String(seeded.name));
       }
       const byeSlots=new Set<number>();
       for(let s=1;s<=Math.min(byeCount,seedCount);s++){
@@ -4789,7 +4908,11 @@ Deno.serve(async(req:Request)=>{
         if(slot==null)continue;
         byeSlots.add(slot%2===0?slot+1:slot-1);
       }
-      const rest=entrants.filter((x:any)=>!placed.has(String(x.name)));
+      const drawKey=(p:any)=>{
+        const aId=Number(p?.a?.id||0),bId=Number(p?.b?.id||0);
+        return Math.abs(((aId*73856093)^(bId*19349663)^(tid*83492791))>>>0);
+      };
+      const rest=entrants.filter((x:any)=>!placed.has(String(x.name))).sort((a:any,c:any)=>drawKey(a)-drawKey(c));
       const avail:number[]=[];
       for(let i=0;i<bracketSize;i++)if(slots[i]==null&&!byeSlots.has(i))avail.push(i);
       rest.forEach((p:any,i:number)=>{if(i<avail.length)slots[avail[i]]=p;});

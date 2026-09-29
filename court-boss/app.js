@@ -624,6 +624,14 @@ function existingEntryWindow(id,e,discipline='singles'){
 }
 function singlesEligibility(t){
  const c=career(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
+ const now=String(local.date||c.career_date||'2025-12-01');
+ const mainDeadline=String(t.main_entry_deadline||t.singles_entry_deadline||'');
+ const qualDeadline=String(t.qualifying_entry_deadline||'');
+ const qualSignin=String(t.qualifying_signin_date||t.qualifying_start_date||'');
+ const lateDeadline=String(t.late_entry_deadline||'');
+ const mainClosed=Boolean(mainDeadline&&now>mainDeadline);
+ const qualClosed=Boolean(qualDeadline&&now>qualDeadline);
+ const lateWindow=Number(t.late_entry_slots||0)>0&&mainClosed&&lateDeadline&&now<=lateDeadline;
  if(String(c.career_focus||'mixed')==='doubles_only')return {label:"Double exclusivement",cls:"bad",can:false,phase:"career_focus"};
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
  if(String(t.circuit)==="NCAA"){
@@ -643,13 +651,53 @@ function singlesEligibility(t){
   return {label:"Alternate junior",method:"alternate",cls:"",can:true};
  }
  if(t.singles===false)return {label:'Pas de simple',can:false,cls:'bad'};
- let method=t.entry_rule_context===tournamentEntryContext(c)&&t.managed_wildcard_status==='accepted'?'wildcard':cuts.direct&&rank<=cuts.direct?'direct':cuts.qual&&rank<=cuts.qual?'qualifying':'alternate';
- let reason=tournamentEntryRestriction(t,c,method);
- if(reason==='challenger_175_125_direct_top500_required'&&cuts.qual&&rank<=cuts.qual){method='qualifying';reason=tournamentEntryRestriction(t,c,method)}
+
+ let method=t.entry_rule_context===tournamentEntryContext(c)&&t.managed_wildcard_status==='accepted'
+   ?'wildcard'
+   :cuts.direct&&rank<=cuts.direct?'direct'
+   :cuts.qual&&rank<=cuts.qual?'qualifying'
+   :'alternate';
+
+ if(lateWindow&&cuts.direct&&rank<cuts.direct){
+  const leReason=tournamentEntryRestriction(t,c,'direct');
+  if(!leReason){
+    return {
+      label:'Late Entry'+(lateDeadline?' · '+df(lateDeadline):''),
+      method:'late_entry',cls:'good',can:true,phase:'late_entry',
+      late_entry_deadline:lateDeadline
+    };
+  }
+ }
+
+ if(mainClosed&&method==='direct'){
+  if(cuts.qual&&rank<=cuts.qual&&!qualClosed){
+    method='qualifying';
+  }else if(method!=='wildcard'){
+    return {
+      label:'Entry list close'+(lateDeadline&&Number(t.late_entry_slots||0)>0?' · LE jusqu’au '+df(lateDeadline):''),
+      method:'closed',cls:'bad',can:false,phase:'closed',
+      canWildcard:!tournamentEntryRestriction(t,c,'wildcard')
+    };
+  }
+ }
+
+ if(method==='qualifying'&&qualClosed){
+  return {
+    label:'Qualifs closes'+(qualSignin?' · sign-in '+df(qualSignin):''),
+    method:'closed',cls:'bad',can:false,phase:'closed',
+    canWildcard:!tournamentEntryRestriction(t,c,'wildcard')
+  };
+ }
+
+ let reason=tournamentEntryRestriction(t,c,method==='late_entry'?'direct':method);
+ if(reason==='challenger_175_125_direct_top500_required'&&cuts.qual&&rank<=cuts.qual&&!qualClosed){
+  method='qualifying';
+  reason=tournamentEntryRestriction(t,c,method);
+ }
  if(reason)return {label:tournamentEntryReason(reason),reason,method,cls:'bad',can:false,canWildcard:!tournamentEntryRestriction(t,c,'wildcard')};
  if(method==='wildcard')return {label:'Wild Card accordée',method,cls:'good',can:true};
  if(method==='direct')return {label:'Tableau direct',method,cls:'good',can:true};
- if(method==='qualifying')return {label:'Qualifications',method,cls:'warn',can:true};
+ if(method==='qualifying')return {label:'Qualifications'+(qualDeadline?' · deadline '+df(qualDeadline):''),method,cls:'warn',can:true};
  return {label:t.circuit==='ITF'?'Alternate / WTN':'Alternate / hors cut',method,cls:'warn',can:true};
 }
 function doublesEligibility(t){
@@ -2576,6 +2624,7 @@ window.openTournament=async id=>{
         <div class="list-item row between"><span>Cut qualifs</span><b>${cuts.qual?'#'+fmt(cuts.qual)+(cuts.projected?' · projeté':''):'—'}</b></div>
         <div class="list-item row between"><span>Deadline simple</span><b>${t.singles_entry_deadline?df(t.singles_entry_deadline):'—'}</b></div>
         <div class="list-item row between"><span>Deadline qualifs</span><b>${t.qualifying_entry_deadline?df(t.qualifying_entry_deadline):'—'}</b></div>
+        ${Number(t.late_entry_slots||0)>0?`<div class="list-item row between"><span>Late Entry</span><b>${t.late_entry_deadline?df(t.late_entry_deadline):'—'} · ${fmt(t.late_entry_slots)} slot</b></div>`:''}
         ${wc&&!isJunior&&!isNcaa&&!isFed?`<div class="list-item row between"><span>Wild card</span><span class="badge ${wc.status==='accepted'?'good':wc.status==='declined'?'bad':''}">${esc(wc.status)}</span></div>`:''}
         ${t.entry_rule_note?`<div class="notice mini" style="margin-top:9px"><b>Règle :</b> ${esc(t.entry_rule_note)}</div>`:''}
         <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:isSinglesFinals?(singleRule.can?`${!played?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler les Finals</button>`:''}<span class="badge good">Qualification automatique par la Race</span>`:`<span class="badge bad">${esc(singleRule.label)}</span>`):(singleRule.can||joined)?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id}).then(()=>closeOverlay())">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>${singleRule.canWildcard?`<button class="soft-btn" onclick="requestWildcard(${t.id})">Demander une wild card</button>`:''}`}</div>

@@ -19,11 +19,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Check JavaScript syntax
         run: |
           node --check court-boss/app.js
           node --check court-boss/tactics.js
           node --check court-boss/modules.js
+
+      - name: Run tournament integrity tests
+        run: node --test tests/tournament-integrity.test.mjs
 
       - name: Wait for Render static deploy
         env:

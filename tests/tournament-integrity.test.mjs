@@ -278,3 +278,11 @@ test('Live ranking imports cannot overwrite the frozen 2025 baseline',()=>{
  assert.match(code,/locked:true/);
  assert.doesNotMatch(code,/apply_live_rankings.*p_snapshot:snapshot/s);
 });
+
+test('Doubles projection seeds are recomputed from race or combined ranking',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/const seedMetric=\(x:any\)=>/);
+ assert.match(code,/const seedOrder=doublesMain\.slice\(\)\.sort/);
+ assert.match(code,/const seedMap=new Map/);
+ assert.match(code,/for\(const pair of doublesMain\)pair\.seed=seedMap/);
+});

@@ -1,4 +1,4 @@
-import { tournamentRoundPrize } from "./tournament-policy.ts";
+import { tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 const supabaseUrl=Deno.env.get("SUPABASE_URL")!;
 const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -2229,6 +2229,9 @@ Deno.serve(async(req:Request)=>{
     }
 
     const drawSize=Math.max(8,Math.min(128,Number(t.data.singles_draw_size||t.data.draw_size||32)));
+    const doublesDrawConfig=tournamentDoublesDrawConfig(t.data);
+    const doublesDrawSize=doublesDrawConfig.drawSize;
+    const doublesSeedCount=doublesDrawConfig.seedCount;
     const [run,doublesRun] = await Promise.all([
       db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle(),
       db.from("doubles_runs").select("*,partner:players(id,name,country,doubles_ranking)").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle()
@@ -2304,11 +2307,11 @@ Deno.serve(async(req:Request)=>{
               .eq("season",refYear)
               .eq("active",true)
               .order("race_rank",{ascending:true})
-              .limit(Math.min(256,Math.max(64,drawSize*8)));
+              .limit(Math.min(512,Math.max(128,doublesDrawSize*8)));
             if(!wp.error){
               const selected:any[]=[];
               const used=new Set<number>();
-              const wanted=Math.min(32,drawSize);
+              const wanted=doublesDrawSize;
               for(const x of wp.data??[]){
                 const aid=Number((x as any).player_a?.id||0);
                 const bid=Number((x as any).player_b?.id||0);
@@ -2317,7 +2320,7 @@ Deno.serve(async(req:Request)=>{
                 if(selected.length>=wanted)break;
               }
               doublesMain=selected.map((x:any,i:number)=>({
-                seed:i+1,
+                seed:i<doublesSeedCount?i+1:null,
                 player_a:x.player_a,
                 player_b:x.player_b,
                 team_name:String(x.player_a?.name||"")+" / "+String(x.player_b?.name||""),
@@ -2334,7 +2337,7 @@ Deno.serve(async(req:Request)=>{
           }
         }
 
-        if(!doublesMain.length){
+        if(doublesMain.length<doublesDrawSize){
           let dpool:any;
           if(isJuniorDouble){
             dpool=await db.from("players")
@@ -2342,7 +2345,7 @@ Deno.serve(async(req:Request)=>{
               .not("junior_doubles_ranking","is",null)
               .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
               .order("junior_doubles_ranking",{ascending:true})
-              .limit(Math.min(128,Math.max(16,drawSize*2)));
+              .limit(Math.min(256,Math.max(32,doublesDrawSize*2)));
           }else{
             dpool=await db.from("players")
               .select("id,name,country,doubles_ranking,doubles_points,doubles_snapshot_date,doubles_source,current_ability,potential")
@@ -2350,22 +2353,29 @@ Deno.serve(async(req:Request)=>{
               .not("doubles_ranking","is",null)
               .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
               .order("doubles_ranking",{ascending:true})
-              .limit(Math.min(128,Math.max(16,drawSize*2)));
+              .limit(Math.min(256,Math.max(32,doublesDrawSize*2)));
           }
           if(!dpool.error){
             const arr=dpool.data??[];
-            for(let i=0;i+1<arr.length&&doublesMain.length<Math.min(32,drawSize);i+=2){
-              const a:any=arr[i],b:any=arr[i+1];
+            const used=new Set<number>(doublesMain.flatMap((x:any)=>[Number(x.player_a?.id||0),Number(x.player_b?.id||0)]).filter(Boolean));
+            let pending:any=null;
+            for(const candidate of arr){
+              const cid=Number(candidate?.id||0);
+              if(!cid||used.has(cid))continue;
+              if(!pending){pending=candidate;continue}
+              const a:any=pending,b:any=candidate;pending=null;
               const ar=isJuniorDouble?a.junior_doubles_ranking:a.doubles_ranking;
               const br=isJuniorDouble?b.junior_doubles_ranking:b.doubles_ranking;
               doublesMain.push({
-                seed:doublesMain.length+1,
+                seed:doublesMain.length<doublesSeedCount?doublesMain.length+1:null,
                 player_a:{...a,doubles_ranking:ar},
                 player_b:{...b,doubles_ranking:br},
                 team_name:String(a.name)+" / "+String(b.name),
                 combined_rank:Number(ar||9999)+Number(br||9999),
-                source:isJuniorDouble?"junior-simulated":((a.doubles_source&&b.doubles_source)?"official":"indexed")
+                source:isJuniorDouble?"junior-ranking-projection":"ranking-projection"
               });
+              used.add(Number(a.id));used.add(Number(b.id));
+              if(doublesMain.length>=doublesDrawSize)break;
             }
           }
         }
@@ -4476,6 +4486,8 @@ Deno.serve(async(req:Request)=>{
       if(!own)return h({error:"Paire non qualifiée pour les ATP Finals : Top 8 de la Race Double requis.",race_required:8},409);
     }
 
+    const configuredDoubleDraw=tournamentDoublesDrawConfig(t).drawSize;
+    const drawSize=finalsPairRows.length?8:configuredDoubleDraw;
     let poolRes:any;
     let worldPairRows:any[]=[];
     if(finalsPairRows.length){
@@ -4507,6 +4519,13 @@ Deno.serve(async(req:Request)=>{
           if(a?.id)byId.set(Number(a.id),a);
           if(b?.id)byId.set(Number(b.id),b);
         }
+        const rankedPool=await db.from("players")
+          .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+          .eq("is_real",true).not("doubles_ranking","is",null)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+          .order("doubles_ranking",{ascending:true}).limit(Math.min(256,Math.max(160,drawSize*3)));
+        if(rankedPool.error)return h({error:rankedPool.error.message},500);
+        for(const p of rankedPool.data??[])if((p as any)?.id&&!byId.has(Number((p as any).id)))byId.set(Number((p as any).id),p);
         poolRes={data:[...byId.values()],error:null};
       }else{
         poolRes=await db.from("players")
@@ -4618,7 +4637,23 @@ Deno.serve(async(req:Request)=>{
           world_pair_id:Number((row as any).id||0)
         });
         used.add(aid);used.add(bid);
-        if(pairs.length>=96)break;
+        if(pairs.length>=Math.max(96,drawSize-1))break;
+      }
+      if(pairs.length<drawSize-1){
+        let pending:any=null;
+        for(const candidate of pool){
+          const cid=Number(candidate?.id||0);
+          if(!cid||used.has(cid))continue;
+          if(!pending){pending=candidate;continue}
+          const a:any=pending,b:any=candidate;pending=null;
+          pairs.push({
+            a,b,name:a.name+" / "+b.name,isUser:false,
+            strength:pairStrength(a,b,66),
+            race_rank:9999,race_points:0,projected:true
+          });
+          used.add(Number(a.id));used.add(Number(b.id));
+          if(pairs.length>=drawSize-1)break;
+        }
       }
     }else{
       for(let i=0;i+1<Math.min(pool.length,160);i+=2){
@@ -4626,8 +4661,6 @@ Deno.serve(async(req:Request)=>{
         pairs.push({a,b,name:a.name+" / "+b.name,isUser:false,strength:pairStrength(a,b,68+((a.id+b.id)%20))});
       }
     }
-    const configuredDoubleDraw=Math.max(8,Math.min(64,Number(t.doubles_draw_size||16)));
-    const drawSize=finalsPairRows.length?8:configuredDoubleDraw;
     if(!finalsPairRows.length&&pairs.length<drawSize-1){
       return h({error:"Tableau double incomplet : pas assez de paires éligibles.",required:drawSize,available:pairs.length+1},409);
     }

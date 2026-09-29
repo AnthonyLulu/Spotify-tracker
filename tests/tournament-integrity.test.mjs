@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
-import { tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
+import { tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
 
 const source=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8').replace(/\ninit\(\);\s*$/,'');
 function frontend(){
@@ -106,4 +106,18 @@ test('Entry API returns authoritative decisions for four modes without writes',a
 test('Wildcard request is rejected before saving any decision when the player is ineligible',async()=>{
  const b=backend();const r=await b.handler(new Request('https://example.test/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request_wildcard',id:7})}));
  assert.equal(r.status,409);assert.equal((await r.json()).entry_rule.reason,'itf_play_down_top200');assert.equal(b.writes.length,0);
+});
+
+
+test('Doubles draw config supports full 64-team Slams and realistic seed counts',()=>{
+ assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:128,doubles_draw_size:64}),{drawSize:64,seedCount:16});
+ assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:48,doubles_draw_size:24}),{drawSize:24,seedCount:8});
+ assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:128}),{drawSize:32,seedCount:8});
+});
+test('Backend fills a partial active doubles field instead of capping projections at 32',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.doesNotMatch(code,/wanted=Math\.min\(32,drawSize\)/);
+ assert.match(code,/doublesMain\.length<doublesDrawSize/);
+ assert.match(code,/pairs\.length<drawSize-1/);
+ assert.match(code,/source:isJuniorDouble\?"junior-ranking-projection":"ranking-projection"/);
 });

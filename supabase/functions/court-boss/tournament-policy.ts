@@ -20,3 +20,11 @@ export function tournamentRoundPrize(t: any, result: string, eventType = "single
     : { W: .18, F: .10, SF: .055, QF: .03, R16: .015, R32: .008, R64: .003, R128: .0015 };
   return { amount: Math.max(0, Math.round(Number(t.prize_money || 0) * (weights[code] ?? weights[aliases[code]] ?? 0))), estimated: true, phase };
 }
+
+
+export function tournamentDoublesDrawConfig(t: any) {
+  const singlesDraw = Math.max(8, Math.min(128, Number(t?.singles_draw_size || t?.draw_size || 32)));
+  const drawSize = Math.max(4, Math.min(64, Number(t?.doubles_draw_size || Math.min(32, singlesDraw))));
+  const seedCount = drawSize >= 64 ? 16 : drawSize >= 24 ? 8 : drawSize >= 16 ? 4 : Math.min(2, drawSize);
+  return { drawSize, seedCount };
+}

@@ -77,6 +77,11 @@ jobs:
           done
           curl --fail --silent --show-error "$API/api/player?id=14405" -o /tmp/federer.json
           curl --fail --silent --show-error "$API/api/player?id=14406" -o /tmp/nadal.json
+          curl --fail --silent --show-error "$API/api/tournament-detail?id=3266" -o /tmp/ao-junior.json
+          curl --fail --silent --show-error "$API/api/tournament-detail?id=3269" -o /tmp/uso-junior.json
+          curl --fail --silent --show-error "$API/api/tournament-detail?id=2078" -o /tmp/united-cup.json
+          curl --fail --silent --show-error "$API/api/tournament-detail?id=2040" -o /tmp/laver-cup.json
+          curl --fail --silent --show-error "$API/api/tournament-detail?id=3396" -o /tmp/junior-davis.json
           node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
           node <<'EOF'
           const fs=require('fs');
@@ -92,6 +97,24 @@ jobs:
           if(db.rows[0]?.name!=='Lloyd Glasspool')throw new Error('Doubles #1 invalid');
           const fed=JSON.parse(fs.readFileSync('/tmp/federer.json','utf8'));
           const nadal=JSON.parse(fs.readFileSync('/tmp/nadal.json','utf8'));
+          const aoj=JSON.parse(fs.readFileSync('/tmp/ao-junior.json','utf8'));
+          const usoj=JSON.parse(fs.readFileSync('/tmp/uso-junior.json','utf8'));
+          const united=JSON.parse(fs.readFileSync('/tmp/united-cup.json','utf8'));
+          const laver=JSON.parse(fs.readFileSync('/tmp/laver-cup.json','utf8'));
+          const juniorDavis=JSON.parse(fs.readFileSync('/tmp/junior-davis.json','utf8'));
+          if(aoj.tournament?.singles_draw_size!==64||aoj.tournament?.qualifying_draw_size!==32||aoj.tournament?.doubles_draw_size!==32)throw new Error('AO Junior draw sizes invalid');
+          if(aoj.tournament?.main_draw_start_date!=='2026-01-24'||aoj.tournament?.qualifying_start_date!=='2026-01-21')throw new Error('AO Junior dates invalid');
+          if(aoj.format_rule?.qualifier_count!==8||aoj.main?.length!==64||aoj.qualifying?.length!==32)throw new Error('AO Junior field composition invalid');
+          if(usoj.tournament?.main_draw_start_date!=='2026-09-06'||usoj.tournament?.qualifying_start_date!=='2026-09-03'||usoj.tournament?.doubles_draw_size!==32)throw new Error('USO Junior dates/doubles invalid');
+          for(const [label,payload,code,teams] of [
+            ['United Cup',united,'united_cup',18],
+            ['Laver Cup',laver,'laver_cup',2],
+            ['Junior Davis',juniorDavis,'junior_davis',16]
+          ]){
+            if(payload.special_team_event?.code!==code||payload.special_team_event?.teams!==teams)throw new Error(label+' team format invalid');
+            if((payload.main||[]).length||(payload.qualifying||[]).length)throw new Error(label+' leaked into individual draw');
+            if(payload.entry_preview_model!=='team_selection_v1')throw new Error(label+' entry mode invalid');
+          }
           if(fed.player?.career_status!=='retired'||fed.tournamentHistory?.length<300)throw new Error('Federer history invalid');
           if(nadal.player?.career_status!=='retired'||nadal.tournamentHistory?.length<300)throw new Error('Nadal history invalid');
           if(fed.tournamentHistory.filter(x=>x.is_grand_slam&&x.result_code==='W').length!==20)throw new Error('Federer slam count invalid');

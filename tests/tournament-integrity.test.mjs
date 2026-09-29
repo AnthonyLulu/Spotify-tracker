@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
-import { tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
+import { projectedTournamentCuts, tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
 
 const source=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8').replace(/\ninit\(\);\s*$/,'');
 function frontend(){
@@ -120,4 +120,30 @@ test('Backend fills a partial active doubles field instead of capping projection
  assert.match(code,/doublesMain\.length<doublesDrawSize/);
  assert.match(code,/pairs\.length<drawSize-1/);
  assert.match(code,/source:isJuniorDouble\?"junior-ranking-projection":"ranking-projection"/);
+});
+
+
+test('Projected cuts follow the last actually eligible projected entrant',()=>{
+ const t=projectedTournamentCuts(
+  {direct_cut:null,qual_cut:null,projected_direct_cut:75,projected_qual_cut:165},
+  [
+   {ranking:12,entry_method:'direct'},
+   {ranking:87,entry_method:'direct'},
+   {ranking:140,entry_method:'wildcard'},
+   {ranking:null,entry_method:'qualifier_slot'}
+  ],
+  [{ranking:103},{ranking:221},{ranking:190}]
+ );
+ assert.equal(t.projected_direct_cut,87);
+ assert.equal(t.projected_qual_cut,221);
+ assert.equal(t.projected_cut_model,'eligible_field_v1');
+});
+test('Official tournament cuts are never overwritten by the projected field',()=>{
+ const t=projectedTournamentCuts(
+  {direct_cut:55,qual_cut:120,projected_direct_cut:80,projected_qual_cut:180},
+  [{ranking:99,entry_method:'direct'}],
+  [{ranking:250}]
+ );
+ assert.equal(t.projected_direct_cut,80);
+ assert.equal(t.projected_qual_cut,180);
 });

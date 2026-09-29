@@ -1,4 +1,4 @@
-import { tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
+import { projectedTournamentCuts, tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 const supabaseUrl=Deno.env.get("SUPABASE_URL")!;
 const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -2580,6 +2580,7 @@ Deno.serve(async(req:Request)=>{
     const projectedSeeds=new Map(main.filter((p:any)=>p.id).sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)).slice(0,Number(fr.seed_count||0)).map((p:any,i:number)=>[Number(p.id),i+1]));
     for(const p of main)p.seed=p.id?projectedSeeds.get(Number(p.id))||null:null;
 
+    const tournamentView=projectedTournamentCuts(t.data,main,qualifying);
     const economics={
       currency:t.data.prize_currency||"USD",
       total:Number(t.data.prize_money||0),
@@ -2600,12 +2601,12 @@ Deno.serve(async(req:Request)=>{
     };
 
     return h({
-      tournament:t.data,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
+      tournament:tournamentView,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
       format_rule:fr,economics,entry_rules:await managedTournamentEntryRules(t.data),
       qualifying_window:{start:t.data.qualifying_start_date||null,end:t.data.qualifying_end_date||null,draw_size:qDraw,qualifier_slots:qSlots},
       run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
       completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
-      ranking_kind:"singles",entry_preview_model:"circuit_eligibility_v2"
+      ranking_kind:"singles",entry_preview_model:"circuit_eligibility_v3",projected_cut_model:tournamentView.projected_cut_model
     });
   }
 

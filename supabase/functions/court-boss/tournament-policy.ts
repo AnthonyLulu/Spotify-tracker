@@ -28,3 +28,21 @@ export function tournamentDoublesDrawConfig(t: any) {
   const seedCount = drawSize >= 64 ? 16 : drawSize >= 24 ? 8 : drawSize >= 16 ? 4 : Math.min(2, drawSize);
   return { drawSize, seedCount };
 }
+
+
+export function projectedTournamentCuts(t: any, main: any[] = [], qualifying: any[] = []) {
+  const ranks = (rows: any[], method?: string) => rows
+    .filter((x: any) => !method || String(x?.entry_method || "") === method)
+    .map((x: any) => Number(x?.ranking))
+    .filter((x: number) => Number.isFinite(x) && x > 0);
+  const directRanks = ranks(main, "direct");
+  const qualRanks = ranks(qualifying);
+  const direct = directRanks.length ? Math.max(...directRanks) : null;
+  const qual = qualRanks.length ? Math.max(...qualRanks) : null;
+  return {
+    ...t,
+    projected_direct_cut: t?.direct_cut == null && direct != null ? direct : t?.projected_direct_cut ?? null,
+    projected_qual_cut: t?.qual_cut == null && qual != null ? qual : t?.projected_qual_cut ?? null,
+    projected_cut_model: direct != null || qual != null ? "eligible_field_v1" : t?.projected_cut_model ?? null
+  };
+}

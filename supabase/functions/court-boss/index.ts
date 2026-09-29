@@ -1467,7 +1467,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:34,season_model:"priority-scheduler-calendar-qualifying-fatigue-v10",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:35,season_model:"priority-scheduler-calendar-identity-fatigue-v11",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -3595,11 +3595,16 @@ Deno.serve(async(req:Request)=>{
           ?await db.rpc("refine_player_season_plans",{p_date:date})
           :{data:null,error:null};
         const seasonPlanPsychology=await db.rpc("adapt_player_season_plans_to_psychology",{p_date:date});
+        const seasonPlanRebalance=await db.rpc("rebalance_player_season_plans",{
+          p_season:Number(date.slice(0,4)),
+          p_reference_date:date
+        });
         developmentSupply={
           ...(developmentSupply||{}),
           seasonPlans:seasonPlans.error?{error:seasonPlans.error.message}:seasonPlans.data,
           seasonPlanRefine:seasonPlanRefine.error?{error:seasonPlanRefine.error.message}:seasonPlanRefine.data,
-          seasonPlanPsychology:seasonPlanPsychology.error?{error:seasonPlanPsychology.error.message}:seasonPlanPsychology.data
+          seasonPlanPsychology:seasonPlanPsychology.error?{error:seasonPlanPsychology.error.message}:seasonPlanPsychology.data,
+          seasonPlanRebalance:seasonPlanRebalance.error?{error:seasonPlanRebalance.error.message}:seasonPlanRebalance.data
         };
         const meta=month===1||month===4||month===7||month===10
           ?await db.rpc("ensure_staff_meta_ecosystem",{p_date:date})

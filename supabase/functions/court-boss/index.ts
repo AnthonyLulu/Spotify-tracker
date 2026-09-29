@@ -1601,8 +1601,8 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(kind==="ncaa"){
-      const playerSelect="id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_rank,ncaa_school,ncaa_division,ncaa_status,ncaa_last_school,ncaa_verified,ranking_snapshot_date";
-      const [currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3]=await Promise.all([
+      const playerSelect="id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_team_id,ncaa_rank,ncaa_school,ncaa_division,ncaa_status,ncaa_last_school,ncaa_verified,ranking_snapshot_date";
+      const [currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3,collegeTeams,schoolAliases]=await Promise.all([
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .lte("snapshot_date",gameDate)
@@ -1625,10 +1625,30 @@ Deno.serve(async(req:Request)=>{
           .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(2000,2999),
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
-          .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(3000,3999)
+          .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(3000,3999),
+        db.from("college_teams").select("id,name").limit(500),
+        db.from("ncaa_school_team_aliases").select("school_name,team_id,is_active").eq("is_active",true).limit(1000)
       ]);
-      const e=currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool0.error||registryPool1.error||registryPool2.error||registryPool3.error;
+      const e=currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool0.error||registryPool1.error||registryPool2.error||registryPool3.error||collegeTeams.error||schoolAliases.error;
       if(e)return h({error:e.message},500);
+
+      const ncaaSchoolKey=(v:any)=>String(v||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
+      const teamNameById=new Map<number,string>((collegeTeams.data??[]).map((x:any)=>[Number(x.id),String(x.name||"")]));
+      const teamIdBySchoolKey=new Map<string,number>();
+      for(const x of collegeTeams.data??[]){
+        const k=ncaaSchoolKey((x as any).name);
+        if(k)teamIdBySchoolKey.set(k,Number((x as any).id));
+      }
+      for(const x of schoolAliases.data??[]){
+        const k=ncaaSchoolKey((x as any).school_name);
+        if(k)teamIdBySchoolKey.set(k,Number((x as any).team_id));
+      }
+      const canonicalNcaaSchool=(p:any,raw:any)=>{
+        const direct=teamNameById.get(Number(p?.ncaa_team_id||0));
+        if(direct)return direct;
+        const id=teamIdBySchoolKey.get(ncaaSchoolKey(raw));
+        return (id?teamNameById.get(id):null)||raw||p?.ncaa_school||p?.ncaa_last_school||null;
+      };
 
       const byId=new Map<number,any>();
       const put=(p:any,meta:any,priority:number)=>{
@@ -1640,7 +1660,7 @@ Deno.serve(async(req:Request)=>{
         byId.set(id,{
           ...p,
           ncaa_rank:metaHasRank?meta.ita_rank:(p.ncaa_rank??null),
-          ncaa_school:meta?.school??p.ncaa_school??p.ncaa_last_school??null,
+          ncaa_school:canonicalNcaaSchool(p,meta?.school??p.ncaa_school??p.ncaa_last_school??null),
           ncaa_division:meta?.division??p.ncaa_division??"NCAA Division I",
           ncaa_season:meta?.season??(p.ncaa_current?"2025-26":null),
           ncaa_status:meta?.status??p.ncaa_status??(p.ncaa_current?"Active":"NCAA profile"),

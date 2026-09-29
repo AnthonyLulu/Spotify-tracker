@@ -1277,11 +1277,21 @@ async function managedDoublesEntryStatus(t:any){
   if(["NCAA","Federation"].includes(String(t?.circuit)))return {can_schedule:false,projected_acceptance:false,label:"Par sélection",phase:"selection",composition};
   if(!partner)return {can_schedule:false,projected_acceptance:false,label:"Partenaire requis",phase:"partner",composition};
 
+  const protectedDoubleRes=await db.rpc("player_entry_protection_status",{
+    p_player_id:Number(managed.data?.id||0),p_event_type:"doubles",p_tournament_id:Number(t?.id||0)
+  });
+  if(protectedDoubleRes.error)throw protectedDoubleRes.error;
+  const protectedDoubleInfo:any=protectedDoubleRes.data||null;
+
   const mine:any=managed.data;
   const mineBest=bestDoublesEntryRank(mine),partnerBest=bestDoublesEntryRank(partner);
   const mineDouble=validEntryRank(mine?.doubles_ranking),partnerDouble=validEntryRank(partner?.doubles_ranking);
+  const protectedDoubleRank=protectedDoubleInfo?.available?validEntryRank(protectedDoubleInfo.protected_rank):null;
+  const mineProtectedBest=protectedDoubleRank==null?mineBest:Math.min(validEntryRank(mine?.ranking)??protectedDoubleRank,protectedDoubleRank);
   const bestCombined=mineBest!=null&&partnerBest!=null?mineBest+partnerBest:null;
   const doublesCombined=mineDouble!=null&&partnerDouble!=null?mineDouble+partnerDouble:null;
+  const protectedBestCombined=mineProtectedBest!=null&&partnerBest!=null?mineProtectedBest+partnerBest:null;
+  const protectedDoublesCombined=protectedDoubleRank!=null&&partnerDouble!=null?protectedDoubleRank+partnerDouble:null;
   const advance=String(t?.doubles_entry_deadline||"");
   const onsite=String(t?.doubles_onsite_deadline||"");
   const ruleCode=String(t?.entry_rule_code||"");
@@ -1316,23 +1326,36 @@ async function managedDoublesEntryStatus(t:any){
     };
   }
 
-  const score=rankMode==="doubles_only"?doublesCombined:bestCombined;
-  if(score==null){
+  const currentScore=rankMode==="doubles_only"?doublesCombined:bestCombined;
+  const protectedScore=rankMode==="doubles_only"?protectedDoublesCombined:protectedBestCombined;
+  if(currentScore==null&&protectedScore==null){
     return {
       can_schedule:phase==="onsite",projected_acceptance:false,
       label:phase==="onsite"?"Sign-in sur site · paire non classée":"Classement requis pour l’advance entry",
       phase,best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,composition,
+      protected_ranking:protectedDoubleInfo,protected_combined_rank:protectedScore,
       advance_deadline:advance||null,onsite_deadline:onsite||null,method,ranking_mode:rankMode,projected_cut:null
     };
   }
   const cut=await projectedDoublesAcceptanceCut(t,now,slots,rankMode,[Number(mine?.id||0),Number(partner?.id||0)]);
-  const accepted=cut.cut==null?true:Number(score)<=Number(cut.cut);
+  const acceptedCurrent=currentScore!=null&&(cut.cut==null||Number(currentScore)<=Number(cut.cut));
+  const protectedCanHelp=!acceptedCurrent
+    &&protectedDoubleInfo?.available===true
+    &&protectedScore!=null
+    &&currentScore!==protectedScore
+    &&(cut.cut==null||Number(protectedScore)<=Number(cut.cut));
+  const score=protectedCanHelp?protectedScore:currentScore;
+  const accepted=protectedCanHelp||acceptedCurrent;
   const label=accepted
-    ?(phase==="advance"?"Direct projeté · rang combiné "+score:"On-site projeté · rang combiné "+score)
+    ?(protectedCanHelp
+      ?(phase==="advance"?"Classement protégé double · direct projeté "+score:"Classement protégé double · on-site projeté "+score)
+      :(phase==="advance"?"Direct projeté · rang combiné "+score:"On-site projeté · rang combiné "+score))
     :(phase==="advance"?"Alternate projeté · rang combiné "+score:"Hors cut projeté · rang combiné "+score);
   return {
     can_schedule:true,projected_acceptance:accepted,label,phase,
     best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,score,
+    protected_ranking:protectedDoubleInfo,protected_combined_rank:protectedScore,
+    use_protected_ranking:protectedCanHelp,
     projected_cut:cut.cut,projected_field:cut.field,ranking_mode:rankMode,field_band:cut.band,
     composition,advance_deadline:advance||null,onsite_deadline:onsite||null,method,
     partner:{id:partner.id,name:partner.name,ranking:partner.ranking,doubles_ranking:partner.doubles_ranking}
@@ -1345,7 +1368,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:26,tournament_model:"entry-calendar-prize-v9+ai-financials",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:25,tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -2081,97 +2104,6 @@ Deno.serve(async(req:Request)=>{
         :Promise.resolve({data:null,error:null})
     ]);
 
-    const managedProfile=Number(careerDate.data?.managed_player_id||0)===Number(id);
-    const bySeason=new Map<number,{season:number,singles_eur:number,doubles_eur:number,total_eur:number,events:number}>();
-    const addFinancial=(dateValue:any,singles:number,doubles:number)=>{
-      const season=Number(String(dateValue||referenceDate).slice(0,4))||referenceYear;
-      const current=bySeason.get(season)||{season,singles_eur:0,doubles_eur:0,total_eur:0,events:0};
-      current.singles_eur=Math.round((current.singles_eur+Number(singles||0))*100)/100;
-      current.doubles_eur=Math.round((current.doubles_eur+Number(doubles||0))*100)/100;
-      current.total_eur=Math.round((current.singles_eur+current.doubles_eur)*100)/100;
-      current.events+=1;
-      bySeason.set(season,current);
-    };
-    let singlesPrizeEur=0,doublesPrizeEur=0,financialEvents=0,estimatedPrizeEvents=0;
-
-    if(managedProfile){
-      const [managedSingles,managedDoubles]=await Promise.all([
-        db.from("tournament_runs")
-          .select("user_prize_eur,user_prize,played_at,tournaments(start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
-          .eq("status","completed").order("played_at",{ascending:true}).limit(1000),
-        db.from("doubles_runs")
-          .select("user_prize_eur,user_prize,played_at,tournaments(start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
-          .eq("status","completed").order("played_at",{ascending:true}).limit(1000)
-      ]);
-      if(!managedSingles.error){
-        for(const row of managedSingles.data??[]){
-          const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
-          const dateValue=tour?.end_date||tour?.start_date||(row as any).played_at;
-          if(dateValue&&String(dateValue).slice(0,10)>referenceDate)continue;
-          const amount=Number((row as any).user_prize_eur??prizeToBaseEur((row as any).user_prize,tour?.prize_currency||"USD"));
-          singlesPrizeEur+=amount;financialEvents++;if(tour?.prize_breakdown_is_estimate)estimatedPrizeEvents++;
-          addFinancial(dateValue,amount,0);
-        }
-      }
-      if(!managedDoubles.error){
-        for(const row of managedDoubles.data??[]){
-          const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
-          const dateValue=tour?.end_date||tour?.start_date||(row as any).played_at;
-          if(dateValue&&String(dateValue).slice(0,10)>referenceDate)continue;
-          const amount=Number((row as any).user_prize_eur??prizeToBaseEur((row as any).user_prize,tour?.prize_currency||"USD"));
-          doublesPrizeEur+=amount;financialEvents++;if(tour?.prize_breakdown_is_estimate)estimatedPrizeEvents++;
-          addFinancial(dateValue,0,amount);
-        }
-      }
-    }else{
-      const [worldSingles,pairRows]=await Promise.all([
-        db.from("world_tournament_entries")
-          .select("result_code,simulated_on,tournaments(id,name,start_date,end_date,prize_currency,singles_prize_by_result,prize_breakdown_is_estimate)")
-          .eq("player_id",id).lte("simulated_on",referenceDate).order("simulated_on",{ascending:true}).limit(1000),
-        db.from("world_doubles_partnerships")
-          .select("id").or(`player_a_id.eq.${id},player_b_id.eq.${id}`).limit(500)
-      ]);
-      if(!worldSingles.error){
-        for(const row of worldSingles.data??[]){
-          const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
-          if(!tour)continue;
-          const payout=tournamentRoundPrize(tour,String((row as any).result_code||""),"singles");
-          const amount=prizeToBaseEur(payout.amount,tour.prize_currency||"USD");
-          singlesPrizeEur+=amount;financialEvents++;if(payout.estimated||tour.prize_breakdown_is_estimate)estimatedPrizeEvents++;
-          addFinancial((row as any).simulated_on||tour.end_date||tour.start_date,amount,0);
-        }
-      }
-      const pairIds=(pairRows.error?[]:(pairRows.data??[])).map((x:any)=>Number(x.id)).filter(Boolean);
-      if(pairIds.length){
-        const worldDoubles=await db.from("world_doubles_tournament_entries")
-          .select("pair_id,prize_awarded,simulated_on,tournaments(id,name,start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
-          .in("pair_id",pairIds).lte("simulated_on",referenceDate).order("simulated_on",{ascending:true}).limit(1000);
-        if(!worldDoubles.error){
-          for(const row of worldDoubles.data??[]){
-            const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
-            const playerShare=Math.round(Number((row as any).prize_awarded||0)/2*100)/100;
-            const amount=prizeToBaseEur(playerShare,tour?.prize_currency||"USD");
-            doublesPrizeEur+=amount;financialEvents++;if(tour?.prize_breakdown_is_estimate)estimatedPrizeEvents++;
-            addFinancial((row as any).simulated_on||tour?.end_date||tour?.start_date,0,amount);
-          }
-        }
-      }
-    }
-    singlesPrizeEur=Math.round(singlesPrizeEur*100)/100;
-    doublesPrizeEur=Math.round(doublesPrizeEur*100)/100;
-    const careerFinancials={
-      base_currency:BASE_CURRENCY,
-      from_date:AGE_REFERENCE_DATE,
-      through_date:referenceDate,
-      singles_prize_eur:singlesPrizeEur,
-      doubles_prize_eur:doublesPrizeEur,
-      total_prize_eur:Math.round((singlesPrizeEur+doublesPrizeEur)*100)/100,
-      events:financialEvents,
-      estimated_events:estimatedPrizeEvents,
-      seasons:[...bySeason.values()].sort((x,y)=>y.season-x.season),
-      scope:"Court Boss simulated career only"
-    };
-
     const statisticsDashboard=await db.rpc("player_statistics_dashboard_v2",{p_player_id:id,p_as_of:referenceDate});
 
     return h({
@@ -2196,7 +2128,6 @@ Deno.serve(async(req:Request)=>{
       attributeTrend:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=85)&&!attributeTrend.error?attributeTrend.data:null,
       hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
-      careerFinancials,
       statisticsDashboard:statisticsDashboard.error?null:statisticsDashboard.data,
       eloRating:eloRating.error?null:eloRating.data,
       dynamicRatings:dynamicRatings.error?null:dynamicRatings.data,
@@ -5028,8 +4959,11 @@ Deno.serve(async(req:Request)=>{
     }
 
     const t:any=tour.data,c:any=career.data;
+    let doublesEntryStatus:any=null;
+    let protectedDoubleUse:any=null;
     if(["ATP","Challenger","ITF"].includes(String(t.circuit))||/Grand Chelem/i.test(String(t.category||""))){
-      const entryStatus=await managedDoublesEntryStatus(t);
+      doublesEntryStatus=await managedDoublesEntryStatus(t);
+      const entryStatus=doublesEntryStatus;
       if(entryStatus.can_schedule===false){
         return h({error:entryStatus.label||"Inscription double impossible.",doubles_entry_status:entryStatus},409);
       }
@@ -5490,6 +5424,18 @@ Deno.serve(async(req:Request)=>{
       user_prize:prize,user_prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
     }).select("id").single();
     if(run.error)return h({error:run.error.message},500);
+
+    if(doublesEntryStatus?.use_protected_ranking===true){
+      const used=await db.rpc("consume_player_entry_protection",{
+        p_player_id:Number(anthony.id),p_event_type:"doubles",p_tournament_id:tid
+      });
+      if(used.error||used.data?.ok===false){
+        await db.from("doubles_runs").delete().eq("id",run.data.id);
+        return h({error:used.error?.message||"Impossible de consommer le classement protégé double.",protected_ranking:used.data||null},500);
+      }
+      protectedDoubleUse=used.data;
+    }
+
     if(matches.length){
       const rows=matches.filter((m:any)=>m.user_pair===userPair.name).map((m:any)=>({...m,run_id:run.data.id}));
       if(rows.length){
@@ -5608,7 +5554,7 @@ Deno.serve(async(req:Request)=>{
 
     const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:Number(run.data.id),p_date:earned});
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
+    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",doubles_entry_status:doublesEntryStatus,protected_ranking_use:protectedDoubleUse,fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }
 
   if(path.endsWith("/api/season-summary")&&req.method==="GET"){

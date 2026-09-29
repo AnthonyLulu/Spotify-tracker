@@ -1108,8 +1108,35 @@ async function getManagedPlayer(select="*"){
   return await db.from("players").select(select).eq("id",c.data.managed_player_id).maybeSingle();
 }
 
+function specialTeamEventMeta(t:any){
+  const code=String(t?.entry_rule_code||""),category=String(t?.category||"");
+  if(code==="UNITED_CUP_TEAM"||/United Cup/i.test(category))return {
+    code:"united_cup",label:"Sélection nationale mixte",teams:18,
+    format:"6 groupes de 3 · round robin · 8 équipes en quarts · demi-finales et finale",
+    tie:"1 simple ATP · 1 simple WTA · 1 double mixte",
+    selection:"Qualification du pays par classements ATP/WTA et sélection de l'équipe",
+    playable:false
+  };
+  if(code==="LAVER_CUP_INVITE"||/Laver Cup/i.test(category))return {
+    code:"laver_cup",label:"Invitation / sélection d'équipe",teams:2,
+    format:"Team Europe vs Team World · 3 jours · premier à 13 points",
+    tie:"4 matches vendredi · 4 samedi · jusqu'à 4 dimanche · au moins un double par jour",
+    selection:"Six joueurs par équipe, via qualification et choix des capitaines",
+    scoring:"1 point vendredi · 2 samedi · 3 dimanche",
+    playable:false
+  };
+  if(code==="JUNIOR_DAVIS_SELECTION"||/Junior Davis Cup/i.test(category))return {
+    code:"junior_davis",label:"Sélection nationale junior",teams:16,
+    format:"4 groupes de 4 · round robin · jour de repos · phase à élimination directe",
+    tie:"Rencontres par équipes nationales juniors",
+    selection:"Qualification régionale puis sélection de la fédération",
+    playable:false
+  };
+  return null;
+}
+
 async function managedTournamentEntryRules(t:any){
-  if(!["ATP","Challenger","ITF"].includes(String(t.circuit))||/Finals|Next Gen/i.test(String(t.category)))return null;
+  if(specialTeamEventMeta(t)||!["ATP","Challenger","ITF"].includes(String(t.circuit))||/Finals|Next Gen/i.test(String(t.category)))return null;
   const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
   if(managed.error)throw managed.error;
   if(!managed.data?.managed_player_id)return null;
@@ -2640,6 +2667,17 @@ Deno.serve(async(req:Request)=>{
       for(const pair of doublesMain)pair.seed=seedMap.get(pairKey(pair))||null;
     }
 
+    const specialTeamEvent=specialTeamEventMeta(t.data);
+    if(specialTeamEvent){
+      return h({
+        tournament:t.data,main:[],qualifying:[],wildcard:null,forfeits:forfeits.data??[],
+        run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:[],doubles_completed_draw:[],completed_draw:completedDraw,
+        tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
+        format_rule:null,entry_rules:null,doubles_entry_status:null,
+        ranking_kind:"team",special_team_event:specialTeamEvent,entry_preview_model:"team_selection_v1"
+      });
+    }
+
     if(String(t.data.circuit)==="Junior"){
       const [entered,juniorFormatRes]=await Promise.all([
         db.from("junior_tournament_entries")
@@ -3675,6 +3713,11 @@ Deno.serve(async(req:Request)=>{
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
+    const specialTeamEvent=specialTeamEventMeta(t);
+    if(specialTeamEvent)return h({
+      error:"Cette compétition se joue par équipes et par sélection. Le tableau individuel standard est désactivé.",
+      team_event:specialTeamEvent,registration_mode:t.registration_mode||null
+    },409);
     const mainDrawSizeConfigured=Math.max(8,Math.min(128,Number(t.singles_draw_size||t.draw_size||32)));
     const formatRuleRes=await db.from("tournament_format_rules")
       .select("*")

@@ -7849,6 +7849,11 @@ Deno.serve(async(req:Request)=>{
         db.from("match_history").delete().eq("user_involved",true),
         db.from("wildcard_requests").delete().gte("id",0),
         db.from("shortlist").delete().gte("player_id",0),
+        db.from("scouting_reports").delete().gte("id",0),
+        db.from("scouting_assignments").update({
+          progress:0,status:"active",confidence:45,report_quality:40,
+          started_at:startDate,last_update:startDate,eta_date:null
+        }).gte("id",0),
         db.from("user_ranking_points").delete().eq("owner_id","demo"),
         db.from("user_doubles_points").delete().eq("owner_id","demo"),
         db.from("user_training_progress").update({xp:0,updated_at:new Date().toISOString()}).neq("attribute","")

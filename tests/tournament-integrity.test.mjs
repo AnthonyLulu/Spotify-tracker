@@ -203,11 +203,11 @@ test('Doubles seeding uses race or pair ranking rather than hidden match strengt
 
 
 test('Qualifying formats split into independent sections with one main-draw place each',()=>{
- assert.deepEqual(qualifyingSectionPlan(16,4),{drawSize:16,qualifierSlots:4,sectionCount:4,sectionSize:4,rounds:2});
- assert.deepEqual(qualifyingSectionPlan(24,6),{drawSize:24,qualifierSlots:6,sectionCount:6,sectionSize:4,rounds:2});
- assert.deepEqual(qualifyingSectionPlan(28,7),{drawSize:28,qualifierSlots:7,sectionCount:7,sectionSize:4,rounds:2});
- assert.deepEqual(qualifyingSectionPlan(48,12),{drawSize:48,qualifierSlots:12,sectionCount:12,sectionSize:4,rounds:2});
- assert.deepEqual(qualifyingSectionPlan(128,16),{drawSize:128,qualifierSlots:16,sectionCount:16,sectionSize:8,rounds:3});
+ assert.deepEqual(qualifyingSectionPlan(16,4),{drawSize:16,qualifierSlots:4,sectionCount:4,sectionPlayers:4,sectionSize:4,bracketTotal:16,byeCount:0,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(24,6),{drawSize:24,qualifierSlots:6,sectionCount:6,sectionPlayers:4,sectionSize:4,bracketTotal:24,byeCount:0,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(28,7),{drawSize:28,qualifierSlots:7,sectionCount:7,sectionPlayers:4,sectionSize:4,bracketTotal:28,byeCount:0,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(48,12),{drawSize:48,qualifierSlots:12,sectionCount:12,sectionPlayers:4,sectionSize:4,bracketTotal:48,byeCount:0,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(128,16),{drawSize:128,qualifierSlots:16,sectionCount:16,sectionPlayers:8,sectionSize:8,bracketTotal:128,byeCount:0,rounds:3});
 });
 test('Tournament engine simulates the full qualifying field and protects qualifiers from seeding',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
@@ -222,7 +222,7 @@ test('Tournament engine simulates the full qualifying field and protects qualifi
 
 test('Tournament runs persist the actual entry method for later calendar checks',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.match(code,/tournament_runs"\)\.insert\(\{tournament_id:tid,entry_method:entryMode/);
+ assert.match(code,/tournament_runs"\)\.insert\(\{\s*tournament_id:tid,entry_method:entryMode/);
 });
 
 test('Doubles entry status is server authoritative and uses combined best rankings',()=>{
@@ -237,7 +237,8 @@ test('Doubles draw composition follows ATP Challenger ITF and Grand Slam slots',
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/model:"atp_250_500_2026"/);
  assert.match(code,/model:"masters_1000_2026"/);
- assert.match(code,/advance:Math\.min\(10,draw\)/);
+ assert.match(code,/const advance=Math\.min\(10,draw\),onsite=/);
+ assert.match(code,/return \{draw,direct:advance\+onsite,advance,onsite,wildcards:/);
  assert.match(code,/model:"itf_m25"/);
  assert.match(code,/model:"itf_m15"/);
  assert.match(code,/model:"grand_slam_2026"/);

@@ -1141,13 +1141,158 @@ async function projectedDoublesRaceRows(refDate:string,wanted:number,excludedIds
   return {rows:selected,error:null};
 }
 
+const validEntryRank=(v:any)=>{
+  const x=Number(v);
+  return Number.isFinite(x)&&x>0&&x<99999?x:null;
+};
+const bestDoublesEntryRank=(p:any)=>{
+  const singles=validEntryRank(p?.ranking),doubles=validEntryRank(p?.doubles_ranking);
+  if(singles==null)return doubles;
+  if(doubles==null)return singles;
+  return Math.min(singles,doubles);
+};
+function doublesDrawComposition(t:any){
+  const draw=tournamentDoublesDrawConfig(t).drawSize;
+  const category=String(t?.category||"");
+  const circuit=String(t?.circuit||"");
+  if(/ATP Finals|Junior Double Finals/i.test(category))return {draw,direct:draw,advance:draw,onsite:0,wildcards:0,model:"finals"};
+  if(/Grand Chelem/i.test(category))return {draw,direct:Math.max(0,draw-7),advance:Math.max(0,draw-7),onsite:0,wildcards:Math.min(7,draw),model:"grand_slam_2026"};
+  if(circuit==="ITF"){
+    const direct=Math.min(13,draw);
+    if(/M25/i.test(category)||String(t?.entry_rule_code)==="ITF_M25"){
+      return {draw,direct,advance:Math.min(7,direct),onsite:Math.max(0,direct-Math.min(7,direct)),wildcards:Math.max(0,draw-direct),model:"itf_m25"};
+    }
+    return {draw,direct,advance:0,onsite:direct,wildcards:Math.max(0,draw-direct),model:"itf_m15"};
+  }
+  if(circuit==="Challenger"){
+    const advance=Math.min(10,draw),onsite=Math.min(4,Math.max(0,draw-advance));
+    return {draw,direct:advance+onsite,advance,onsite,wildcards:Math.max(0,draw-advance-onsite),model:"challenger_2026"};
+  }
+  if(circuit==="ATP"&&/Masters 1000/i.test(category)){
+    const wildcards=draw>=28?3:2;
+    return {draw,direct:Math.max(0,draw-wildcards),advance:Math.max(0,draw-wildcards),onsite:0,wildcards,model:"masters_1000_2026"};
+  }
+  if(circuit==="ATP"&&/ATP (?:250|500)/i.test(category)){
+    const wildcards=Math.min(2,draw);
+    return {draw,direct:Math.max(0,draw-wildcards),advance:Math.max(0,draw-wildcards),onsite:0,wildcards,model:"atp_250_500_2026"};
+  }
+  return {draw,direct:draw,advance:draw,onsite:0,wildcards:0,model:"generic"};
+}
+async function projectedDoublesAcceptanceCut(t:any,refDate:string,slots:number,mode:"best"|"doubles_only",excludedIds:number[]=[]){
+  if(slots<=0)return {cut:null,field:0,slots,mode};
+  const projected=await projectedDoublesRaceRows(refDate,Math.max(96,slots*4),excludedIds);
+  if(projected.error)throw projected.error;
+  const ids=[...new Set(projected.rows.flatMap((x:any)=>[Number(x.player_one_id||0),Number(x.player_two_id||0)]).filter(Boolean))];
+  const profiles=ids.length
+    ?await db.from("players").select("id,ranking,doubles_ranking").in("id",ids)
+    :{data:[],error:null};
+  if(profiles.error)throw profiles.error;
+  const byId=new Map((profiles.data??[]).map((p:any)=>[Number(p.id),p]));
+  const scores:number[]=[];
+  for(const row of projected.rows){
+    const pa:any=byId.get(Number(row.player_one_id)),pb:any=byId.get(Number(row.player_two_id));
+    if(!pa||!pb)continue;
+    let ra:any,rb:any;
+    if(mode==="doubles_only"){
+      ra=validEntryRank(pa.doubles_ranking);rb=validEntryRank(pb.doubles_ranking);
+    }else{
+      ra=bestDoublesEntryRank(pa);rb=bestDoublesEntryRank(pb);
+    }
+    if(ra==null||rb==null)continue;
+    scores.push(Number(ra)+Number(rb));
+  }
+  scores.sort((x,y)=>x-y);
+  const idx=Math.min(slots,scores.length)-1;
+  return {cut:idx>=0?scores[idx]:null,field:scores.length,slots,mode};
+}
+async function managedDoublesEntryStatus(t:any){
+  const [career,managed,partnership]=await Promise.all([
+    db.from("career_state").select("career_date,career_focus,managed_player_id").eq("id","demo").maybeSingle(),
+    getManagedPlayer("id,name,ranking,doubles_ranking"),
+    db.from("doubles_partnerships")
+      .select("id,player_a_id,player_b_id,partner:players!doubles_partnerships_player_b_id_fkey(id,name,ranking,doubles_ranking)")
+      .order("id",{ascending:false}).limit(1).maybeSingle()
+  ]);
+  const error=career.error||managed.error||partnership.error;
+  if(error)throw error;
+  const now=String(career.data?.career_date||AGE_REFERENCE_DATE);
+  const focus=String(career.data?.career_focus||"mixed");
+  const partner:any=partnership.data?.partner;
+  const composition=doublesDrawComposition(t);
+  if(focus==="singles_only")return {can_schedule:false,projected_acceptance:false,label:"Simple exclusivement",phase:"career_focus",composition};
+  if(!t?.doubles)return {can_schedule:false,projected_acceptance:false,label:"Pas de double",phase:"none",composition};
+  if(["NCAA","Federation"].includes(String(t?.circuit)))return {can_schedule:false,projected_acceptance:false,label:"Par sélection",phase:"selection",composition};
+  if(!partner)return {can_schedule:false,projected_acceptance:false,label:"Partenaire requis",phase:"partner",composition};
+
+  const mine:any=managed.data;
+  const mineBest=bestDoublesEntryRank(mine),partnerBest=bestDoublesEntryRank(partner);
+  const mineDouble=validEntryRank(mine?.doubles_ranking),partnerDouble=validEntryRank(partner?.doubles_ranking);
+  const bestCombined=mineBest!=null&&partnerBest!=null?mineBest+partnerBest:null;
+  const doublesCombined=mineDouble!=null&&partnerDouble!=null?mineDouble+partnerDouble:null;
+  const advance=String(t?.doubles_entry_deadline||"");
+  const onsite=String(t?.doubles_onsite_deadline||"");
+  const ruleCode=String(t?.entry_rule_code||"");
+  const category=String(t?.category||"");
+  const method=String(t?.doubles_entry_method||(
+    String(t?.circuit)==="ITF"&&(/M15/i.test(category)||ruleCode==="ITF_M15")?"onsite_only":
+    String(t?.circuit)==="ITF"&&(/M25/i.test(category)||ruleCode==="ITF_M25")?"limited_advance_then_onsite":
+    ["ATP","Challenger"].includes(String(t?.circuit))?"advance_then_onsite":""
+  ));
+
+  if(onsite&&now>onsite)return {
+    can_schedule:false,projected_acceptance:false,label:"Double clos",phase:"closed",
+    best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,composition,advance_deadline:advance||null,onsite_deadline:onsite||null,method
+  };
+
+  let phase="advance",slots=composition.advance,rankMode:"best"|"doubles_only"="best";
+  if(method==="onsite_only"){
+    phase="onsite";slots=composition.direct;
+  }else if(method==="limited_advance_then_onsite"){
+    if(advance&&now<=advance&&doublesCombined!=null){
+      phase="advance";slots=Math.max(1,composition.advance);rankMode="doubles_only";
+    }else{
+      phase="onsite";slots=composition.direct;rankMode="best";
+    }
+  }else if(advance&&now>advance){
+    phase="onsite";slots=composition.direct;
+  }
+  if(/Finals/i.test(category)){
+    return {
+      can_schedule:true,projected_acceptance:true,label:"Qualification par la Race",phase:"race",
+      best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,composition,advance_deadline:advance||null,onsite_deadline:onsite||null,method
+    };
+  }
+
+  const score=rankMode==="doubles_only"?doublesCombined:bestCombined;
+  if(score==null){
+    return {
+      can_schedule:phase==="onsite",projected_acceptance:false,
+      label:phase==="onsite"?"Sign-in sur site · paire non classée":"Classement requis pour l’advance entry",
+      phase,best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,composition,
+      advance_deadline:advance||null,onsite_deadline:onsite||null,method,ranking_mode:rankMode,projected_cut:null
+    };
+  }
+  const cut=await projectedDoublesAcceptanceCut(t,now,slots,rankMode,[Number(mine?.id||0),Number(partner?.id||0)]);
+  const accepted=cut.cut==null?true:Number(score)<=Number(cut.cut);
+  const label=accepted
+    ?(phase==="advance"?"Direct projeté · rang combiné "+score:"On-site projeté · rang combiné "+score)
+    :(phase==="advance"?"Alternate projeté · rang combiné "+score:"Hors cut projeté · rang combiné "+score);
+  return {
+    can_schedule:true,projected_acceptance:accepted,label,phase,
+    best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,score,
+    projected_cut:cut.cut,projected_field:cut.field,ranking_mode:rankMode,
+    composition,advance_deadline:advance||null,onsite_deadline:onsite||null,method,
+    partner:{id:partner.id,name:partner.name,ranking:partner.ranking,doubles_ranking:partner.doubles_ranking}
+  };
+}
+
 Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:21,tournament_model:"entry-calendar-prize-v4+doubles-race-fields",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:22,tournament_model:"entry-calendar-prize-v5+doubles-acceptance",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if(path.endsWith("/api/refresh-live-rankings")&&req.method==="GET"){
     const kind=(u.searchParams.get("kind")||"both").toLowerCase();
@@ -2211,6 +2356,15 @@ Deno.serve(async(req:Request)=>{
     catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
+  if(path.endsWith("/api/doubles-entry-status")&&req.method==="GET"){
+    const id=n(u.searchParams.get("id"),0,1,99999999);
+    const tr=await db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle();
+    if(tr.error)return h({error:tr.error.message},500);
+    if(!tr.data)return h({error:"Tournoi introuvable"},404);
+    try{return h({tournament:tr.data,doubles_entry_status:await managedDoublesEntryStatus(tr.data)})}
+    catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
   if(path.endsWith("/api/tournament-detail")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
     const [t,wc,forfeits]=await Promise.all([
@@ -2664,7 +2818,7 @@ Deno.serve(async(req:Request)=>{
 
     return h({
       tournament:tournamentView,main,qualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
-      format_rule:fr,economics,entry_rules:await managedTournamentEntryRules(t.data),
+      format_rule:fr,economics,entry_rules:await managedTournamentEntryRules(t.data),doubles_entry_status:await managedDoublesEntryStatus(t.data),
       qualifying_window:{start:t.data.qualifying_start_date||null,end:t.data.qualifying_end_date||null,draw_size:qDraw,qualifier_slots:qSlots},
       run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
       completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
@@ -4613,6 +4767,18 @@ Deno.serve(async(req:Request)=>{
     }
 
     const t:any=tour.data,c:any=career.data;
+    if(["ATP","Challenger","ITF"].includes(String(t.circuit))||/Grand Chelem/i.test(String(t.category||""))){
+      const entryStatus=await managedDoublesEntryStatus(t);
+      if(entryStatus.can_schedule===false){
+        return h({error:entryStatus.label||"Inscription double impossible.",doubles_entry_status:entryStatus},409);
+      }
+      if(entryStatus.projected_acceptance===false){
+        return h({
+          error:"Paire hors de la ligne d’acceptation projetée pour ce tableau. Reste sur la liste d’alternates ou vise un tournoi adapté.",
+          doubles_entry_status:entryStatus
+        },409);
+      }
+    }
     const doubleSchedule=await db.rpc("managed_tournament_schedule_status",{
       p_target_tournament_id:tid,p_entry_mode:"direct"
     });

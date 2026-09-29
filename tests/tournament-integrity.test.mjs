@@ -99,9 +99,13 @@ function backend(){
  vm.runInNewContext(code,{console,URL,Request,Response,Headers,Date,Intl,crypto,TextEncoder,TextDecoder,fetch,createClient:()=>db,tournamentRoundPrize,Deno:{env:{get:()=>''},serve:fn=>{handler=fn}}});
  return {handler,calls,writes};
 }
-test('Entry API returns authoritative decisions for four modes without writes',async()=>{
+test('Entry API returns authoritative decisions for all supported modes without writes',async()=>{
  const b=backend();const r=await b.handler(new Request('https://example.test/api/tournament-entry-status?id=7'));const result=await r.json();
- assert.equal(r.status,200);assert.equal(Object.keys(result.entry_rules).length,4);assert.equal(result.entry_rules.wildcard.eligible,false);assert.equal(b.writes.length,0);
+ assert.equal(r.status,200);
+ assert.deepEqual(Object.keys(result.entry_rules),['direct','qualifying','wildcard','alternate','protected','protected_qualifying']);
+ assert.equal(result.entry_rules.wildcard.eligible,false);
+ assert.equal(result.entry_rules.protected.entry_method,'protected');
+ assert.equal(b.writes.length,0);
 });
 test('Wildcard request is rejected before saving any decision when the player is ineligible',async()=>{
  const b=backend();const r=await b.handler(new Request('https://example.test/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request_wildcard',id:7})}));
@@ -241,8 +245,8 @@ test('Uneven junior qualifying sections preserve all qualifier places',()=>{
 });
 test('Tournament-specific qualifying size overrides the generic category rule',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.equal((code.match(/t\\.qualifying_draw_size\\?\\?formatRule\\?\\.qualifying_draw_size/g)||[]).length,3);
- assert.equal((code.match(/formatRule\\?\\.qualifying_draw_size\\?\\?t\\.qualifying_draw_size/g)||[]).length,0);
+ assert.equal(code.split('t.qualifying_draw_size??formatRule?.qualifying_draw_size').length-1,3);
+ assert.equal(code.split('formatRule?.qualifying_draw_size??t.qualifying_draw_size').length-1,0);
  assert.match(code,/const juniorDirectSlots=Math\.max\(0,drawSize-Math\.max\(0,Number\(formatRule\?\.qualifier_count\|\|0\)\)-wcSlots\)/);
 });
 

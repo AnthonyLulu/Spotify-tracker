@@ -147,3 +147,17 @@ test('Official tournament cuts are never overwritten by the projected field',()=
  assert.equal(t.projected_direct_cut,80);
  assert.equal(t.projected_qual_cut,180);
 });
+
+
+test('Tournament simulation uses deadline ranking and eligible-field cuts before choosing direct or qualifying',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/entryRankingDate/);
+ assert.match(code,/projectedTournamentCuts\(\s*t,/);
+ assert.match(code,/qualifyingCandidateIdsForRun/);
+ assert.match(code,/entry_projection_model:entryProjectionModel/);
+});
+test('Tournament result UI keeps the event currency instead of forcing euros',()=>{
+ const code=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8');
+ assert.match(code,/money\(d\.user_prize,d\.tournament\?\.prize_currency\|\|'USD'\)/);
+ assert.match(code,/money\(d\.prize\|\|0,d\.tournament\?\.prize_currency\|\|'USD'\)/);
+});

@@ -3476,8 +3476,46 @@ Deno.serve(async(req:Request)=>{
       },409);
       rank=Number(own.race_ranking||9999);
     }
-    const direct=isSinglesFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);
-    const qual=isSinglesFinals?8:Number(t.qual_cut??t.projected_qual_cut??0);
+    let direct=isSinglesFinals?8:Number(t.direct_cut??t.projected_direct_cut??0);
+    let qual=isSinglesFinals?8:Number(t.qual_cut??t.projected_qual_cut??0);
+    let entryProjectionModel=t.direct_cut!=null||t.qual_cut!=null?"official_cut":"stored_projection";
+    let entryRankingDate:string|null=null;
+    let qualifyingCandidateIdsForRun=new Set<number>();
+    if(!isSinglesFinals&&!isJuniorSingles){
+      const entrySnapshot=await db.rpc("tournament_entry_eligibility",{
+        p_player_id:managedId,p_tournament_id:tid,p_entry_method:"direct"
+      });
+      if(entrySnapshot.error)return h({error:entrySnapshot.error.message},500);
+      if(Number(entrySnapshot.data?.ranking)>0)rank=Number(entrySnapshot.data.ranking);
+      entryRankingDate=entrySnapshot.data?.ranking_date?String(entrySnapshot.data.ranking_date):null;
+
+      const qDraw=Math.max(0,Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0));
+      const qSlots=Math.max(0,Number(formatRule?.qualifier_count||0));
+      const wcSlots=Math.max(0,Number(formatRule?.wildcard_count||0));
+      const directSlots=Math.max(0,mainDrawSizeConfigured-qSlots-wcSlots);
+      const [directField,qualField]=await Promise.all([
+        db.rpc("tournament_candidate_player_ids",{p_tournament_id:tid,p_entry_method:"direct",p_limit:Math.max(96,directSlots+80)}),
+        qDraw?db.rpc("tournament_candidate_player_ids",{p_tournament_id:tid,p_entry_method:"qualifying",p_limit:Math.max(160,qDraw+120)}):Promise.resolve({data:[],error:null} as any)
+      ]);
+      if(directField.error||qualField.error)return h({error:(directField.error||qualField.error)?.message},500);
+      const blockedForEntry=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
+      const directRows=(directField.data??[])
+        .filter((x:any)=>!blockedForEntry.has(Number(x.player_id)))
+        .slice(0,directSlots);
+      const directIds=new Set(directRows.map((x:any)=>Number(x.player_id)));
+      const qualRows=(qualField.data??[])
+        .filter((x:any)=>!blockedForEntry.has(Number(x.player_id))&&!directIds.has(Number(x.player_id)))
+        .slice(0,qDraw);
+      qualifyingCandidateIdsForRun=new Set(qualRows.map((x:any)=>Number(x.player_id)).filter(Boolean));
+      const projected=projectedTournamentCuts(
+        t,
+        directRows.map((x:any)=>({ranking:Number(x.effective_rank||0),entry_method:"direct"})),
+        qualRows.map((x:any)=>({ranking:Number(x.effective_rank||0),entry_method:"qualifying"}))
+      );
+      if(t.direct_cut==null&&Number(projected.projected_direct_cut)>0)direct=Number(projected.projected_direct_cut);
+      if(t.qual_cut==null&&Number(projected.projected_qual_cut)>0)qual=Number(projected.projected_qual_cut);
+      entryProjectionModel=String(projected.projected_cut_model||entryProjectionModel);
+    }
     const wildcardGranted=!isSinglesFinals&&wc.data?.status==="accepted";
 
     let specialExempt=false,specialExemptInfo:any=null;
@@ -4000,7 +4038,10 @@ Deno.serve(async(req:Request)=>{
     }else{
       if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered&&!specialExempt){
         qualifier=true;
-        const qOpp=pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80)).slice(0,6);
+        const fieldOpp=qualifyingCandidateIdsForRun.size
+          ?pool.filter((p:any)=>qualifyingCandidateIdsForRun.has(Number(p.id)))
+          :[];
+        const qOpp=(fieldOpp.length?fieldOpp:pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80))).slice(0,6);
         const qDraw=Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0);
         const qSlots=Math.max(1,Number(formatRule?.qualifier_count||4));
         const qRatio=qDraw>0?qDraw/qSlots:4;
@@ -4401,7 +4442,7 @@ Deno.serve(async(req:Request)=>{
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:rank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 

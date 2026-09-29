@@ -113,11 +113,50 @@ function tournamentEconomicsHtml(e,t,fr={}){
 function tournamentFormatHtml(fr,t){
  if(!Array.isArray(fr.rounds)||fr.format_type!=='knockout')return '';
  const draw=Number(t.singles_draw_size||t.draw_size||fr.main_draw_size||0),bracket=Number(fr.bracket_size||draw),byes=Math.max(0,bracket-draw);
- const qDraw=Number(t.qualifying_draw_size||fr.qualifying_draw_size||0),slots=Number(fr.qualifier_count||0),qRounds=qDraw&&slots?Math.ceil(Math.log2(qDraw/slots)):0;
- return `<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Parcours dans le tournoi</div><h2>${draw} joueurs · ${fr.rounds.length} tours</h2></div><span class="badge">${Number(fr.seed_count||0)} têtes de série</span></div><p class="muted mini">${byes?byes+' exemptions au premier tour · '+Math.max(0,draw-bracket/2)+' matchs au premier tour.':'Tous les joueurs disputent le premier tour.'}</p><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px">${fr.rounds.map(r=>`<span class="badge">${esc(tournamentRoundLabels[r]||r)}</span>`).join('<span aria-hidden="true">→</span>')}</div>${qRounds?`<p class="muted mini" style="margin-top:10px">Qualifications : ${qDraw} joueurs · ${qRounds} tours · ${slots} places dans le tableau principal.</p>`:''}</div>`;
+ const qDraw=Number(t.qualifying_draw_size||fr.qualifying_draw_size||0),qSlots=Number(fr.qualifier_count||0),qRounds=qDraw&&qSlots?Math.ceil(Math.log2(qDraw/qSlots)):0;
+ const wcMin=Math.max(0,Number(fr.wildcard_count||0)),wcMax=Math.max(wcMin,Number(fr.wildcard_count_max??wcMin));
+ const seMax=Math.max(0,Number(fr.special_exempt_slots||0)),le=Math.max(0,Number(t.late_entry_slots||0));
+ const pathway=Math.max(0,Number(fr.junior_reserved_slots||0))+Math.max(0,Number(fr.junior_accelerator_slots||0))+Math.max(0,Number(fr.college_accelerator_slots||0));
+ const directMin=Math.max(0,draw-qSlots-wcMax-seMax-le-pathway);
+ const directMax=Math.max(directMin,draw-qSlots-wcMin-le-pathway);
+ const directText=directMin===directMax?String(directMin):directMin+'–'+directMax;
+ const wcText=wcMin===wcMax?String(wcMin):wcMin+'–'+wcMax;
+ const comp=[
+  ['Directs',directText],
+  ['Qualifiés',qSlots],
+  ['WC',wcText],
+  seMax?['SE','0–'+seMax]:null,
+  le?['Late Entry',le]:null,
+  pathway?['Accelerator / réservés',pathway]:null
+ ].filter(Boolean);
+ const qWc=t.circuit==='Challenger'?4:t.circuit==='ATP'&&t.category==='ATP 250'&&qDraw===16?2:qDraw===16?3:qDraw===24?4:qDraw===28?4:qDraw===48?5:null;
+ const qDirect=qWc!=null?Math.max(0,qDraw-qWc):null;
+ let doubleComp='';
+ const dd=Number(t.doubles_draw_size||fr.doubles_draw_size||0);
+ if(dd){
+  if(t.circuit==='Challenger'&&dd===16)doubleComp='Double : 16 équipes · 10 advance entry + 4 on-site + 2 WC.';
+  else if(t.category==='Masters 1000'){
+   const dwc=dd===32?3:dd===28?(draw===48?3:3):dd===24?2:null;
+   if(dwc!=null)doubleComp='Double : '+dd+' équipes · '+(dd-dwc)+' admissions + '+dwc+' WC.';
+  }else if(t.circuit==='ATP'&&['ATP 250','ATP 500'].includes(String(t.category||''))){
+   const dwc=2;
+   doubleComp='Double : '+dd+' équipes · '+Math.max(0,dd-dwc)+' admissions + '+dwc+' WC'+(t.category==='ATP 500'?' · qualifs double possibles selon format':'')+'.';
+  }
+ }
+ return `<div class="card" style="margin-top:12px">
+   <div class="row between"><div><div class="eyebrow">Format officiel / moteur</div><h2>${draw} joueurs · ${fr.rounds.length} tours</h2></div><span class="badge">${Number(fr.seed_count||0)} têtes de série</span></div>
+   <div class="kpi-strip" style="margin-top:10px">${comp.map(([label,value])=>`<div class="kpi"><span class="muted mini">${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
+   <p class="muted mini" style="margin-top:10px">${byes?byes+' exemptions au premier tour · '+Math.max(0,draw-bracket/2)+' matchs au premier tour.':'Tous les joueurs disputent le premier tour.'}</p>
+   <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px">${fr.rounds.map(r=>`<span class="badge">${esc(tournamentRoundLabels[r]||r)}</span>`).join('<span aria-hidden="true">→</span>')}</div>
+   ${qRounds?`<div class="notice mini" style="margin-top:10px"><b>Qualifications :</b> ${qDraw} joueurs · ${qRounds} tours · ${qSlots} places dans le tableau principal.${qDirect!=null?' Composition : '+qDirect+' directs + '+qWc+' WC.':''}</div>`:''}
+   ${fr.conditional_wildcard_rule==='ATP500_A_PLUS'?`<div class="notice mini" style="margin-top:8px"><b>WC A+ ATP 500 :</b> la WC supplémentaire n’est utilisée que pour un profil Premier Player admissible ; sinon la place revient à l’entry list.</div>`:''}
+   ${le?`<div class="notice mini" style="margin-top:8px"><b>Late Entry :</b> ${le} place réservée jusqu’au ${t.late_entry_deadline?df(t.late_entry_deadline):'deadline réglementaire'} ; si elle n’est pas utilisée, elle revient à l’entry list.</div>`:''}
+   ${doubleComp?`<p class="muted mini" style="margin-top:8px">${esc(doubleComp)}</p>`:''}
+   ${fr.source_label?`<div class="muted micro" style="margin-top:8px">Référence : ${esc(fr.source_label)}</div>`:''}
+  </div>`;
 }
 function tournamentEntryRowsHtml(rows,isJunior=false){
- const labels={direct:'Admission directe',wildcard:'WC',qualifying:'Qualifications',qualifier_slot:'Qualifié à déterminer',alternate:'Alternate',special_exempt:'SE'};
+ const labels={direct:'Admission directe',wildcard:'WC',wildcard_a_plus:'WC A+',qualifying:'Qualifications',qualifier:'Qualifié',qualifier_slot:'Qualifié à déterminer',lucky_loser:'Lucky Loser',alternate:'Alternate',special_exempt:'SE',late_entry:'Late Entry',performance_bye:'Performance Bye',junior_accelerator:'Next Gen Accelerator',junior_accelerator_qualifier:'Next Gen Accelerator · Q',college_accelerator:'College Accelerator',junior_reserved:'Place junior réservée'};
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 

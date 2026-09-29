@@ -1,4 +1,4 @@
-import { projectedTournamentCuts, qualifyingSectionPlan, tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
+import { juniorTournamentFormatRule, projectedTournamentCuts, qualifyingSectionPlan, tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 const supabaseUrl=Deno.env.get("SUPABASE_URL")!;
 const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -2653,7 +2653,7 @@ Deno.serve(async(req:Request)=>{
           .limit(1).maybeSingle()
       ]);
       if(entered.error||juniorFormatRes.error)return h({error:(entered.error||juniorFormatRes.error)?.message},500);
-      const jfr:any=juniorFormatRes.data||{};
+      const jfr:any=juniorFormatRes.data||juniorTournamentFormatRule(t.data);
       const juniorQDraw=Math.max(0,Number(t.data.qualifying_draw_size||jfr.qualifying_draw_size||0));
       const juniorQSlots=Math.max(0,Number(jfr.qualifier_count||0));
       const juniorWcSlots=Math.max(0,Number(jfr.wildcard_count||0));
@@ -3683,7 +3683,7 @@ Deno.serve(async(req:Request)=>{
       .eq("main_draw_size",mainDrawSizeConfigured)
       .maybeSingle();
     if(formatRuleRes.error)return h({error:formatRuleRes.error.message},500);
-    const formatRule:any=formatRuleRes.data||null;
+    const formatRule:any=formatRuleRes.data||(String(t.circuit||"")==="Junior"?juniorTournamentFormatRule(t):null);
     if(String(c.career_focus||"mixed")==="doubles_only"){
       return h({
         error:"Orientation Double exclusivement : ce joueur ne participe plus aux tableaux de simple.",

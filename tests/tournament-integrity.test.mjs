@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
-import { projectedTournamentCuts, tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
+import { projectedTournamentCuts, qualifyingSectionPlan, tournamentDoublesDrawConfig, tournamentRoundPrize } from '../supabase/functions/court-boss/tournament-policy.ts';
 
 const source=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8').replace(/\ninit\(\);\s*$/,'');
 function frontend(){
@@ -176,4 +176,22 @@ test('Doubles seeding uses race or pair ranking rather than hidden match strengt
  assert.match(code,/const seedOrder=entrants\.slice\(\)\.sort/);
  assert.match(code,/Number\(a\.entry_rank\|\|999999\)-Number\(c\.entry_rank\|\|999999\)/);
  assert.doesNotMatch(code,/const entrants=\[userPair,\.\.\.pairs\]\.slice\(0,drawSize\)\.sort\(\(a:any,b:any\)=>Number\(b\.strength/);
+});
+
+
+test('Qualifying formats split into independent sections with one main-draw place each',()=>{
+ assert.deepEqual(qualifyingSectionPlan(16,4),{drawSize:16,qualifierSlots:4,sectionCount:4,sectionSize:4,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(24,6),{drawSize:24,qualifierSlots:6,sectionCount:6,sectionSize:4,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(28,7),{drawSize:28,qualifierSlots:7,sectionCount:7,sectionSize:4,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(48,12),{drawSize:48,qualifierSlots:12,sectionCount:12,sectionSize:4,rounds:2});
+ assert.deepEqual(qualifyingSectionPlan(128,16),{drawSize:128,qualifierSlots:16,sectionCount:16,sectionSize:8,rounds:3});
+});
+test('Tournament engine simulates the full qualifying field and protects qualifiers from seeding',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/const sections:any\[\]\[\]=Array\.from/);
+ assert.match(code,/qualifyingFinalLosers/);
+ assert.match(code,/qualifierWinners/);
+ assert.match(code,/entry_method:"qualifier"/);
+ assert.match(code,/seedEligibleEntrants=rankedEntrants\.filter/);
+ assert.match(code,/\["qualifier","lucky_loser"\]/);
 });

@@ -46,3 +46,14 @@ export function projectedTournamentCuts(t: any, main: any[] = [], qualifying: an
     projected_cut_model: direct != null || qual != null ? "eligible_field_v1" : t?.projected_cut_model ?? null
   };
 }
+
+
+export function qualifyingSectionPlan(drawSize: number, qualifierSlots: number) {
+  const draw = Math.max(0, Math.floor(Number(drawSize) || 0));
+  const slots = Math.max(0, Math.floor(Number(qualifierSlots) || 0));
+  if (!draw || !slots || draw < slots) return { drawSize: draw, qualifierSlots: slots, sectionCount: 0, sectionSize: 0, rounds: 0 };
+  const rawSection = draw / slots;
+  const sectionSize = Math.max(2, Math.round(rawSection));
+  const rounds = Math.max(1, Math.ceil(Math.log2(sectionSize)));
+  return { drawSize: draw, qualifierSlots: slots, sectionCount: slots, sectionSize, rounds };
+}

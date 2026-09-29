@@ -1,4 +1,4 @@
-import { projectedTournamentCuts, tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
+import { projectedTournamentCuts, qualifyingSectionPlan, tournamentDoublesDrawConfig, tournamentRoundPrize } from "./tournament-policy.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 const supabaseUrl=Deno.env.get("SUPABASE_URL")!;
 const serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -4098,35 +4098,114 @@ Deno.serve(async(req:Request)=>{
       if(finalRes.winner.isUser)userRound="Champion";
       champion=finalRes.winner;
     }else{
-      if(direct&&rank>direct&&!wildcardGranted&&!alternateEntered&&!specialExempt){
-        qualifier=true;
-        const fieldOpp=qualifyingCandidateIdsForRun.size
-          ?pool.filter((p:any)=>qualifyingCandidateIdsForRun.has(Number(p.id)))
-          :[];
-        const qOpp=(fieldOpp.length?fieldOpp:pool.filter(p=>Number(p.ranking)>=Math.max(direct+1,rank-80)&&Number(p.ranking)<=Math.max(qual,rank+80))).slice(0,6);
-        const qDraw=Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0);
-        const qSlots=Math.max(1,Number(formatRule?.qualifier_count||4));
-        const qRatio=qDraw>0?qDraw/qSlots:4;
-        const qRounds=Math.max(1,Math.min(3,Math.round(Math.log2(Math.max(2,qRatio)))));
-        for(let qi=0;qi<qRounds;qi++){
-          const opp=qOpp[qi]||pool[Math.min(pool.length-1,drawSize+qi)];
-          const res=play(user,opp);
-          matchRows.push({round_no:-2+qi,round_name:"Q"+(qi+1),player_a_id:user.id,player_b_id:opp?.id??null,player_a_name:user.name,player_b_name:opp?.name||"Qualifier",winner_id:res.winner.id,winner_name:res.winner.name,score:res.score});
-          if(!res.winner.isUser){
-            userAlive=false;userRound="Q"+(qi+1);
-            const llSpots=(forfeits.data??[]).length;
-            const llChance=llSpots>0?Math.min(.80,llSpots/Math.max(1,qSlots)):0;
-            if(qi===qRounds-1&&llChance>0&&Math.random()<llChance){userAlive=true;luckyLoser=true;userRound="Lucky Loser"}
-            break
+      qualifier=entryMode==="qualifying";
+      const qDraw=Math.max(0,Number(formatRule?.qualifying_draw_size??t.qualifying_draw_size??0));
+      const qSlots=Math.max(0,Number(formatRule?.qualifier_count||0));
+      const qPlan=qualifyingSectionPlan(qDraw,qSlots);
+      const qualifierWinners:any[]=[];
+      const qualifyingFinalLosers:any[]=[];
+      if(qPlan.sectionCount>0&&qualifyingCandidateIdsForRun.size){
+        const qIds=new Set(qualifyingCandidateIdsForRun);
+        const targetOpponents=Math.max(0,qPlan.drawSize-(qualifier?1:0));
+        const qField:any[]=pool
+          .filter((p:any)=>qIds.has(Number(p.id)))
+          .slice(0,targetOpponents)
+          .map((p:any)=>({...p,isUser:false,entry_method:"qualifying"}));
+        const qUsed=new Set(qField.map((p:any)=>Number(p.id)));
+        if(qualifier){
+          qField.push({...user,entry_method:"qualifying"});
+          qUsed.add(Number(user.id));
+        }
+        if(qField.length<qPlan.drawSize){
+          for(const p of pool){
+            const pid=Number(p.id);
+            if(!pid||qUsed.has(pid)||Number(p.ranking||999999)<=Number(direct||0))continue;
+            qField.push({...p,isUser:false,entry_method:"qualifying"});
+            qUsed.add(pid);
+            if(qField.length>=qPlan.drawSize)break;
           }
         }
-        if(userAlive)userRound="Qualifié";
+        qField.sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||strength(b)-strength(a));
+
+        const sections:any[][]=Array.from({length:qPlan.sectionCount},()=>Array(qPlan.sectionSize).fill(null));
+        const primary=qField.slice(0,qPlan.sectionCount);
+        const secondary=qField.slice(qPlan.sectionCount,qPlan.sectionCount*2).reverse();
+        primary.forEach((p:any,i:number)=>{if(p)sections[i][0]=p});
+        secondary.forEach((p:any,i:number)=>{if(p)sections[i][qPlan.sectionSize-1]=p});
+        const rest=qField.slice(qPlan.sectionCount*2);
+        let restIndex=0;
+        for(let pos=1;pos<qPlan.sectionSize-1;pos++){
+          for(let section=0;section<qPlan.sectionCount;section++){
+            if(restIndex<rest.length)sections[section][pos]=rest[restIndex++];
+          }
+        }
+
+        for(let section=0;section<sections.length;section++){
+          let current:any[]=sections[section];
+          let qr=1;
+          while(current.length>1){
+            const next:any[]=[];
+            const rn="Q"+qr;
+            for(let qi=0;qi<current.length;qi+=2){
+              const a=current[qi],b=current[qi+1];
+              if(!a&&!b){next.push(null);continue}
+              if(!a||!b){next.push(a||b);continue}
+              const res=play(a,b);
+              matchRows.push({
+                round_no:-Math.max(1,qPlan.rounds-qr+1),round_name:rn,
+                player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+                winner_id:res.winner.id,winner_name:res.winner.name,score:res.score
+              });
+              if(qr===qPlan.rounds)qualifyingFinalLosers.push(res.loser);
+              if((a.isUser||b.isUser)&&!res.winner.isUser){
+                userAlive=false;userRound=rn;
+              }
+              if(res.winner.isUser){
+                userAlive=true;userRound=rn;
+              }
+              next.push(res.winner);
+            }
+            current=next;
+            qr++;
+          }
+          if(current[0])qualifierWinners.push({...current[0],entry_method:"qualifier"});
+        }
+
+        if(qualifier){
+          const qualified=qualifierWinners.some((p:any)=>p.isUser);
+          if(qualified){
+            userAlive=true;userRound="Qualifié";
+          }else{
+            const lostFinal=userRound==="Q"+qPlan.rounds;
+            const llSpots=Math.max(0,(forfeits.data??[]).length);
+            if(lostFinal&&llSpots>0){
+              const luckyOrder=qualifyingFinalLosers.slice().sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999));
+              if(luckyOrder.slice(0,llSpots).some((p:any)=>p.isUser)){
+                userAlive=true;luckyLoser=true;userRound="Lucky Loser";
+              }
+            }
+          }
+        }
       }
-      let participants=pool.slice(0,drawSize).map(x=>({...x,isUser:false}));
-      if(userAlive){
-        const replaceIndex=(qualifier||wildcardGranted||luckyLoser||alternateEntered||specialExempt)?participants.length-1:Math.min(participants.length-1,Math.max(0,Math.floor((rank-1)%participants.length)));
-        participants[replaceIndex]=user;
+
+      const qualifierIds=new Set(qualifierWinners.map((p:any)=>Number(p.id)).filter(Boolean));
+      const mainBase=pool
+        .filter((p:any)=>!qualifyingCandidateIdsForRun.has(Number(p.id))&&!qualifierIds.has(Number(p.id)))
+        .map((p:any)=>({...p,isUser:false,entry_method:"direct"}));
+      let participants=[
+        ...mainBase.slice(0,Math.max(0,drawSize-qualifierWinners.length)),
+        ...qualifierWinners
+      ];
+      if(userAlive&&!participants.some((p:any)=>p?.isUser)){
+        const taggedUser={...user,entry_method:luckyLoser?"lucky_loser":entryMode};
+        let replaceIndex=participants.length-1;
+        for(let pi=participants.length-1;pi>=0;pi--){
+          if(String(participants[pi]?.entry_method||"")!=="qualifier"){replaceIndex=pi;break}
+        }
+        if(replaceIndex>=0)participants[replaceIndex]=taggedUser;
+        else participants.push(taggedUser);
       }
+      participants=participants.slice(0,drawSize);
 
       const pbSlots=Math.max(0,Number(t.performance_bye_slots||0));
       let pbCandidateSet=new Set<number>();
@@ -4152,9 +4231,11 @@ Deno.serve(async(req:Request)=>{
       };
 
       let rankedEntrants=[...participants].sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||Number(b.current_ability||0)-Number(a.current_ability||0));
-      const configuredSeedCount=Math.min(Number(formatRule?.seed_count||Math.min(32,Math.max(2,bracketSize/4))),rankedEntrants.length);
+      const seedEligibleEntrants=rankedEntrants.filter((p:any)=>!["qualifier","lucky_loser"].includes(String(p.entry_method||"")));
+      const configuredSeedCount=Math.min(Number(formatRule?.seed_count||Math.min(32,Math.max(2,bracketSize/4))),seedEligibleEntrants.length);
+      const seededIds=new Set(seedEligibleEntrants.slice(0,configuredSeedCount).map((p:any)=>Number(p.id)).filter(Boolean));
       let pbEntrants=rankedEntrants
-        .filter((p:any,idx:number)=>idx>=configuredSeedCount&&pbCandidateSet.has(Number(p.id)))
+        .filter((p:any)=>!seededIds.has(Number(p.id))&&pbCandidateSet.has(Number(p.id)))
         .slice(0,pbSlots);
 
       if(pbEntrants.length){
@@ -4178,8 +4259,8 @@ Deno.serve(async(req:Request)=>{
       for(let s=1;s<=seedCount;s++){
         const slot=seedSlot(bracketSize,s);
         if(slot==null)continue;
-        bracket[slot]=rankedEntrants[s-1];
-        placed.add(Number(rankedEntrants[s-1].id));
+        bracket[slot]=seedEligibleEntrants[s-1];
+        placed.add(Number(seedEligibleEntrants[s-1].id));
       }
 
       const regularByeCount=Math.max(0,bracketSize-drawSize);

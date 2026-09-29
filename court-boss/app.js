@@ -1921,7 +1921,7 @@ function render(){
 
 
 function playerStatsAdvancedSections(st,p){
- const exact=st?.elite_exact||{},bands=Array.isArray(st?.rank_bands)?st.rank_bands:[],levels=Array.isArray(st?.competition_levels)?st.competition_levels:[],seasons=Array.isArray(st?.season_records)?st.season_records:[],countries=Array.isArray(st?.country_records)?st.country_records:[],hand=st?.handedness_records||{},pressure=st?.pressure_records||{},longest=st?.longest_streaks||{},upset=st?.largest_upset||null,worst=st?.worst_ranked_loss||null,leaders=st?.leaders||{},rivalry=st?.rivalry_summary||{};
+ const exact=st?.elite_exact||{top10_wins:st?.elite_by_rank?.top10?.wins||0,top10_losses:st?.elite_by_rank?.top10?.losses||0,top10_matches:st?.elite_by_rank?.top10?.matches||0,top20_wins:st?.elite_by_rank?.top20?.wins||0,top20_losses:st?.elite_by_rank?.top20?.losses||0,top20_matches:st?.elite_by_rank?.top20?.matches||0,top50_wins:st?.elite_by_rank?.top50?.wins||0,top50_losses:st?.elite_by_rank?.top50?.losses||0,top50_matches:st?.elite_by_rank?.top50?.matches||0,top100_wins:st?.elite_by_rank?.top100?.wins||0,top100_losses:st?.elite_by_rank?.top100?.losses||0,top100_matches:st?.elite_by_rank?.top100?.matches||0},bands=Array.isArray(st?.rank_bands)?st.rank_bands:[],levels=Array.isArray(st?.competition_levels)?st.competition_levels:[],seasons=Array.isArray(st?.season_records)?st.season_records:[],countries=Array.isArray(st?.country_records)?st.country_records:[],hand=st?.handedness_records||{},pressure=st?.pressure_records||{},longest=st?.longest_streaks||{},last10=st?.last10||{},upset=st?.largest_upset||null,worst=st?.worst_ranked_loss||null,leaders=st?.leaders||{},rivalry=st?.rivalry_summary||{};
  const pct=r=>{const m=Number(r?.matches||0),w=Number(r?.wins||0);return m?Math.round(w/m*1000)/10:0};
  const wl=r=>'<b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b> · '+pct(r)+'%';
  const mini=(label,r)=>'<div class="statbox"><span class="muted mini">'+esc(label)+'</span><b>'+Number(r?.wins||0)+'-'+Number(r?.losses||0)+'</b><small class="muted micro">'+Number(r?.matches||0)+' matchs · '+pct(r)+'%</small></div>';
@@ -1965,9 +1965,9 @@ function playerStatsAdvancedSections(st,p){
   '</div>'+
   '<div class="card"><div class="row between"><div><div class="eyebrow">Matchs à pression</div><h2>Moments qui comptent</h2></div><span class="badge">simulation</span></div>'+
    '<div class="statline" style="margin-top:8px">'+
-    mini('Finales',pressure.finals)+mini('Demi-finales',pressure.semifinals)+mini('Quarts',pressure.quarterfinals)+mini('Qualifications',pressure.qualifying)+mini('Best of 5',pressure.best_of_five)+mini('Avec tie-break',pressure.matches_with_tiebreak)+mini('Set décisif',pressure.deciding_set_matches)+
+    mini('Finales',pressure.finals)+mini('Demi-finales',pressure.semifinals)+mini('Quarts',pressure.quarterfinals)+mini('Qualifications',pressure.qualifying)+mini('Best of 5',pressure.best_of_five)+mini('Avec tie-break',pressure.matches_with_tiebreak)+mini('Set décisif',pressure.deciding_set_matches)+mini('Comeback après 1er set',pressure.comeback_after_losing_first_set)+mini('10 derniers',last10)+
    '</div>'+
-   '<div class="list-item row between"><span>Victoires en sets secs</span><b>'+Number(pressure.straight_set_wins||0)+'</b></div>'+
+   '<div class="list-item row between"><span>Victoires en sets secs</span><b>'+Number(pressure.straight_set_wins||0)+'</b></div>'+\n   '<div class="list-item row between"><span>Bagels gagnés / concédés</span><b>'+Number(pressure.bagel_sets_won||0)+' / '+Number(pressure.bagel_sets_lost||0)+'</b></div>'+\n   '<div class="list-item row between"><span>Défaites après gain du 1er set</span><b>'+Number(pressure.lost_after_winning_first_set||0)+'</b></div>'+
    '<div class="list-item row between"><span>Défaites en sets secs</span><b>'+Number(pressure.straight_set_losses||0)+'</b></div>'+
    '<div class="list-item row between"><span>Plus longue série de victoires</span><b>'+Number(longest.win||0)+'</b></div>'+
    '<div class="list-item row between"><span>Plus longue série de défaites</span><b>'+Number(longest.loss||0)+'</b></div>'+

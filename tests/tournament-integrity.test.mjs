@@ -201,3 +201,29 @@ test('Tournament runs persist the actual entry method for later calendar checks'
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/tournament_runs"\)\.insert\(\{tournament_id:tid,entry_method:entryMode/);
 });
+
+test('Doubles entry status is server authoritative and uses combined best rankings',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/\/api\/doubles-entry-status/);
+ assert.match(code,/bestDoublesEntryRank/);
+ assert.match(code,/projectedDoublesAcceptanceCut/);
+ assert.match(code,/Paire hors de la ligne d’acceptation projetée/);
+});
+
+test('Doubles draw composition follows ATP Challenger ITF and Grand Slam slots',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/model:"atp_250_500_2026"/);
+ assert.match(code,/model:"masters_1000_2026"/);
+ assert.match(code,/advance:Math\.min\(10,draw\)/);
+ assert.match(code,/model:"itf_m25"/);
+ assert.match(code,/model:"itf_m15"/);
+ assert.match(code,/model:"grand_slam_2026"/);
+});
+
+test('Frontend checks doubles entry with server before scheduling and before play',()=>{
+ const code=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8');
+ assert.match(code,/window\.toggleDoublesEntry=async id=>/);
+ assert.match(code,/\/api\/doubles-entry-status\?id=/);
+ assert.match(code,/managed_doubles_entry_status/);
+ assert.match(code,/Inscrire la paire avant de jouer/);
+});

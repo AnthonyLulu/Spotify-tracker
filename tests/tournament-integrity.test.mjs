@@ -287,3 +287,14 @@ test('Doubles projection seeds are recomputed from race or combined ranking',()=
  assert.match(code,/const seedMap=new Map/);
  assert.match(code,/for\(const pair of doublesMain\)pair\.seed=seedMap/);
 });
+
+test('Player profiles expose simulated prize money for AI and managed careers',()=>{
+ const backend=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ const app=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8');
+ assert.match(backend,/careerFinancials/);
+ assert.match(backend,/world_tournament_entries/);
+ assert.match(backend,/world_doubles_tournament_entries/);
+ assert.match(backend,/prize_awarded\|\|0\)\/2/);
+ assert.match(app,/Prize money sauvegarde/);
+ assert.match(app,/Économie de carrière simulée/);
+});

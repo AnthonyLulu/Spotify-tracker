@@ -944,16 +944,18 @@ window.slamLogoHtml=slamLogoHtml;
 function tournamentThumb(t){return tournamentLogoHtml(t,"tm-list-logo")}
 function tournamentTmRow(t){
  const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
+ const teamEvent=specialTeamEventMeta(t);
  const window=tournamentParticipationWindow(t,se);
  const deadline=window.deadline;
  const raceFinals=/^(ATP Finals|Junior Finals|Junior Double Finals)$/i.test(String(t.category||''));
- const sBtn=raceFinals&&t.singles?"<button class='ghost tm-entry-btn' disabled>Race S</button>":se.can?"<button class='"+(joined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleSinglesEntry("+t.id+")'>"+(joined?"S ✓":"S +")+"</button>":"<button class='ghost tm-entry-btn' disabled>S —</button>";
- const dBtn=raceFinals&&t.doubles?"<button class='ghost tm-entry-btn' disabled>Race D</button>":de.can?"<button class='"+(dJoined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleDoublesEntry("+t.id+")'>"+(dJoined?"D ✓":"D +")+"</button>":"<button class='ghost tm-entry-btn' disabled>D —</button>";
+ const selectionEvent=Boolean(teamEvent);
+ const sBtn=selectionEvent?"<button class='ghost tm-entry-btn' disabled>Sélection</button>":raceFinals&&t.singles?"<button class='ghost tm-entry-btn' disabled>Race S</button>":se.can?"<button class='"+(joined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleSinglesEntry("+t.id+")'>"+(joined?"S ✓":"S +")+"</button>":"<button class='ghost tm-entry-btn' disabled>S —</button>";
+ const dBtn=selectionEvent?"":raceFinals&&t.doubles?"<button class='ghost tm-entry-btn' disabled>Race D</button>":de.can?"<button class='"+(dJoined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleDoublesEntry("+t.id+")'>"+(dJoined?"D ✓":"D +")+"</button>":"<button class='ghost tm-entry-btn' disabled>D —</button>";
  return "<tr class='click "+(joined||dJoined?"tm-entered":"")+"' onclick='openTournament("+t.id+")'>"+
   "<td>"+tournamentThumb(t)+"</td>"+
   "<td><b>"+(flags[t.country]||"🏳️")+" "+esc(t.name)+"</b><div class='muted micro'>"+esc(t.city||"")+" · "+df(t.start_date)+"–"+df(t.end_date||t.start_date)+(t.qualifying_start_date?" · Qualifs dès le "+df(t.qualifying_start_date):"")+" · <span class='badge "+circuitClass(t.circuit)+"'>"+esc(t.category||t.circuit)+"</span>"+(t.is_verified?" <span class='badge good'>Officiel</span>":" <span class='badge warn'>Fictif</span>")+"</div></td>"+
   "<td><span class='"+surfaceClass(surfaceLabel(t))+"'>"+esc(surfaceLabel(t))+"</span></td>"+
-  "<td><b>S "+(t.singles_draw_size||t.draw_size||"—")+"</b><div class='muted micro'>D "+(t.doubles?(t.doubles_draw_size||"—"):"—")+" · Q "+(t.qualifying_draw_size||"—")+"</div></td>"+
+  "<td>"+(teamEvent?"<b>"+esc(teamEvent.teams)+" équipes</b><div class='muted micro'>"+esc(teamEvent.code==='laver_cup'?'Europe vs Monde':'Compétition par nations')+"</div>":"<b>S "+(t.singles_draw_size||t.draw_size||"—")+"</b><div class='muted micro'>D "+(t.doubles?(t.doubles_draw_size||"—"):"—")+" · Q "+(t.qualifying_draw_size||"—")+"</div>")+"</td>"+
   "<td><b>"+(t.winner_points!=null?fmt(t.winner_points):"—")+"</b></td>"+
   "<td><b>"+(t.prize_money!=null?tournamentPrizeLabel(t):"—")+"</b></td>"+
   "<td>"+(t.defending_champion_name?("<div class='tm-holder' "+(t.defending_champion_player_id?"onclick='event.stopPropagation();openPlayer("+t.defending_champion_player_id+")'":"")+"><span>🏆 "+esc(t.defending_champion_name)+"</span><small>"+esc(String(t.defending_champion_year||""))+"</small></div>"):(t.defending_champion_source&&/première édition/i.test(t.defending_champion_source)?"<span class='muted mini'>Première édition</span>":"<span class='muted'>—</span>"))+"</td>"+
@@ -2703,6 +2705,7 @@ window.openTournament=async id=>{
   const d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
   t.entry_rule_context=tournamentEntryContext();t.managed_entry_rules=d.entry_rules||null;t.managed_wildcard_status=d.wildcard?.status||null;t.managed_doubles_entry_status=d.doubles_entry_status||null;tournamentDetailRows.set(Number(id),t);
   const cr=career(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior',isNcaa=String(t.circuit)==='NCAA',isFed=String(t.circuit)==='Federation';
+  const teamEvent=d.special_team_event||specialTeamEventMeta(t);
   const joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
   let singleRule=singlesEligibility(t),doubleRule=doublesEligibility(t);
   const serverRun=d.run||null,doublesRun=d.doubles_run||null;
@@ -2750,7 +2753,7 @@ window.openTournament=async id=>{
   }
   const rawElig=managedJunior&&!isSinglesFinals?(managedJunior.entry_method==='direct'?'Tableau direct junior':'Engagé junior'):singleRule.label;
   const elig=rawElig;
-  const canAttempt=(isSinglesFinals||(!isNcaa&&!isFed))&&singleRule.can;
+  const canAttempt=!teamEvent&&(isSinglesFinals||(!isNcaa&&!isFed))&&singleRule.can;
   const cuts=tmCuts(t);
 
   const rankTitle=isJunior?'Junior':'ATP';
@@ -2770,6 +2773,7 @@ window.openTournament=async id=>{
    ${detailPhoto?`<div class="tm-tour-hero"><img src="${esc(detailPhoto)}" alt="${esc(t.name)}" onerror="this.parentElement.style.display='none'"><div class="tm-tour-hero-overlay"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span><span class="badge good">${esc(detailPhotoLabel)}</span></div></div>`:''}
    <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button>${(Number(economics.total||0)>0||economics.format==='none'||economics.note)?'<button onclick="tourSection(\'prize\')">Dotations</button>':''}${editionHistory.length?'<button onclick="tourSection(\'history\')">Histoire '+editionHistory.length+'</button>':''}${isNcaa?`<button onclick="tourSection('ncaa')">NCAA / ITA</button>`:`<button onclick="tourSection('draw')">${isJunior?'Tableau junior':'Tableau'}</button>${Number(t.qualifying_draw_size||0)>0?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}`}</div>
    <div id="tourBody">
+    ${teamEvent?`<div class="notice"><b>${esc(teamEvent.label)}</b> · ${esc(teamEvent.format)}<br><span class="muted mini">${esc(teamEvent.tie||"")}${teamEvent.scoring?" · "+esc(teamEvent.scoring):""} · ${esc(teamEvent.selection||"")}</span></div>`:""}
     <div class="grid g2">
       <div class="card"><div class="row between"><h2>${isNcaa?'Accès NCAA':isFed?'Sélection':isJunior?'Circuit Junior':'Inscription simple'}</h2><span class="badge ${singleRule.cls}">${esc(elig)}</span></div>
         <div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · projeté':''):'—'}</b></div>

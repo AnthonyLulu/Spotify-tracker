@@ -106,6 +106,29 @@ function tournamentEconomicsHtml(e,t,fr={}){
   const labels={PARTICIPATION:'Participation',RR_WIN:'Par victoire en poule',SF_WIN:'Victoire en demi-finale',F_WIN:'Victoire en finale'};
   return html+"<div class='grid g2' style='margin-top:12px'>"+[['singles','Simple · par joueur'],['doubles_team','Double · par équipe']].filter(([k])=>k==='singles'||t.doubles).map(([k,title])=>"<div class='card'><h2>"+title+"</h2>"+Object.entries(e.special?.[k]||{}).map(([code,value])=>"<div class='list-item row between'><span>"+esc(labels[code]||code)+"</span><b>"+money(value,cur)+"</b></div>").join('')+"<p class='muted mini'>Ces primes se cumulent selon les matchs joués et gagnés.</p></div>").join('')+'</div>';
  }
+ if(e.format==='team_components'){
+  const special=e.special||{};
+  const stageLabels={GROUP:'Phase de groupes',QF:'Quart de finale',SF:'Demi-finale',F:'Finale'};
+  const rankLabels={'1_10':'#1–10','11_20':'#11–20','21_30':'#21–30','31_50':'#31–50','51_100':'#51–100','101_250':'#101–250','251_plus':'#251+'};
+  const rows=(obj,labels={})=>Object.entries(obj||{}).map(([code,value])=>"<div class='list-item row between'><span>"+esc(labels[code]||code)+"</span><b>"+money(value,cur)+"</b></div>").join('');
+  const participation=[
+    ['participation_no1','Joueur n°1 de la sélection'],
+    ['participation_no2','Joueur n°2 de la sélection'],
+    ['participation_no3','Joueur n°3 de la sélection']
+  ].map(([key,title])=>"<div class='card'><h2>"+title+"</h2>"+rows(special[key],rankLabels)+"</div>").join('');
+  const performance="<div class='card'><h2>Victoire en simple · joueur n°1</h2>"+rows(special.singles_match_win_no1,stageLabels)+"</div>"
+    +"<div class='card'><h2>Victoire en double mixte</h2>"+rows(special.mixed_doubles_match_win,stageLabels)+"</div>"
+    +"<div class='card'><h2>Bonus victoire équipe · par joueur</h2>"+rows(special.team_win_per_player,stageLabels)+"</div>";
+  return html+"<div class='notice mini' style='margin-top:10px'><b>United Cup :</b> la rémunération est composée d'une prime de participation liée au classement, de primes par victoire individuelle et d'un bonus par victoire de l'équipe.</div><div class='grid g3' style='margin-top:12px'>"+participation+"</div><div class='grid g3' style='margin-top:12px'>"+performance+"</div>";
+ }
+ if(e.format==='appearance_plus_team_bonus'){
+  const special=e.special||{};
+  const appearance=String(special.APPEARANCE_FEE||'').includes('not_public')?'Montant exact non public':esc(special.APPEARANCE_FEE||'—');
+  return html+"<div class='grid g2' style='margin-top:12px'>"
+    +"<div class='card'><h2>Bonus équipe gagnante</h2><div class='list-item row between'><span>Par joueur</span><b>"+money(special.WINNING_TEAM_BONUS_PER_PLAYER||0,cur)+"</b></div><div class='list-item row between'><span>Taille de l'équipe</span><b>"+fmt(special.WINNING_TEAM_SIZE||0)+" joueurs</b></div><div class='list-item row between'><span>Total connu</span><b>"+money(special.KNOWN_WINNING_TEAM_BONUS_TOTAL||e.total||0,cur)+"</b></div></div>"
+    +"<div class='card'><h2>Appearance fee</h2><div class='list-item row between'><span>Montant</span><b>"+appearance+"</b></div><p class='muted mini'>La Laver Cup verse également des appearance fees liés au statut/classement. Court Boss ne fabrique pas un faux montant lorsque le détail public n'existe pas.</p></div>"
+    +"</div>";
+ }
  html+="<div class='grid g2' style='margin-top:12px'>"+block('Simple · par joueur',e.singles,e.singles_is_estimate,fr.points_by_result)+block('Qualifications · par joueur',e.qualifying,e.qualifying_is_estimate,fr.qualifying_points)+(t.doubles?block('Double · par équipe',e.doubles,e.doubles_is_estimate,null):'')+"</div>";
  if(Number(fr.qualifying_points?.Q)>0)html+="<div class='notice mini' style='margin-top:10px'>Qualification acquise : +"+fmt(fr.qualifying_points.Q)+" points en plus du résultat dans le tableau principal.</div>";
  return html;

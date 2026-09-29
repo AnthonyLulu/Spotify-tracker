@@ -132,6 +132,30 @@ test('Backend Junior Slam path contains real qualifying simulation and host-prio
  assert.match(code,/entry_method:"wildcard"/);
 });
 
+test('Special team events never enter the standard individual tournament flow',()=>{
+ const f=frontend();
+ f.run("t={category:'United Cup',entry_rule_code:'UNITED_CUP_TEAM',singles:true,doubles:true};local.career.age=22");
+ assert.equal(f.run('singlesEligibility(t).can'),false);
+ assert.equal(f.run('singlesEligibility(t).phase'),'team_selection');
+ assert.equal(f.run('doublesEligibility(t).can'),false);
+ assert.equal(f.run('specialTeamEventMeta(t).teams'),18);
+ f.run("t={category:'Laver Cup',entry_rule_code:'LAVER_CUP_INVITE',singles:true,doubles:true}");
+ assert.equal(f.run('specialTeamEventMeta(t).teams'),2);
+ f.run("t={category:'Junior Davis Cup',entry_rule_code:'JUNIOR_DAVIS_SELECTION',circuit:'Junior',singles:true,doubles:true};local.career.age=17");
+ assert.equal(f.run('singlesEligibility(t).phase'),'team_selection');
+ assert.equal(f.run('specialTeamEventMeta(t).teams'),16);
+});
+
+test('Backend exposes team event metadata and blocks standard tournament simulation',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/function specialTeamEventMeta\(t:any\)/);
+ assert.match(code,/entry_preview_model:"team_selection_v1"/);
+ assert.match(code,/Cette compétition se joue par équipes et par sélection/);
+ assert.match(code,/UNITED_CUP_TEAM/);
+ assert.match(code,/LAVER_CUP_INVITE/);
+ assert.match(code,/JUNIOR_DAVIS_SELECTION/);
+});
+
 test('Doubles draw config supports full 64-team Slams and realistic seed counts',()=>{
  assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:128,doubles_draw_size:64}),{drawSize:64,seedCount:16});
  assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:48,doubles_draw_size:24}),{drawSize:24,seedCount:8});

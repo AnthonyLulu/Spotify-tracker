@@ -161,3 +161,19 @@ test('Tournament result UI keeps the event currency instead of forcing euros',()
  assert.match(code,/money\(d\.user_prize,d\.tournament\?\.prize_currency\|\|'USD'\)/);
  assert.match(code,/money\(d\.prize\|\|0,d\.tournament\?\.prize_currency\|\|'USD'\)/);
 });
+
+
+test('Normal doubles fields prefer documented race teams before synthetic rank pairings',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/projectedDoublesRaceRows/);
+ assert.match(code,/doubles_race_2025_full/);
+ assert.match(code,/source:"doubles-race-projection"/);
+ assert.match(code,/if\(pairs\.length<drawSize-1&&projectedRacePairRows\.length\)/);
+});
+
+test('Doubles seeding uses race or pair ranking rather than hidden match strength',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/const seedOrder=entrants\.slice\(\)\.sort/);
+ assert.match(code,/Number\(a\.entry_rank\|\|999999\)-Number\(c\.entry_rank\|\|999999\)/);
+ assert.doesNotMatch(code,/const entrants=\[userPair,\.\.\.pairs\]\.slice\(0,drawSize\)\.sort\(\(a:any,b:any\)=>Number\(b\.strength/);
+});

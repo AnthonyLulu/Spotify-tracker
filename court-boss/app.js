@@ -68,7 +68,7 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const RANKING_SNAPSHOT='2025-12-01';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const tournamentRoundLabels={W:'Vainqueur',F:'Finaliste',SF:'Demi-finale',QF:'Quart de finale',R16:'Huitième de finale',Q3:'Troisième tour qualifs',Q2:'Deuxième tour qualifs',Q1:'Premier tour qualifs',Q:'Qualification acquise'};
+const tournamentRoundLabels={W:'Vainqueur',F:'Finaliste',SF:'Demi-finale',QF:'Quart de finale',R16:'Huitième de finale',Q3:'Troisième tour qualifs',Q2:'Deuxième tour qualifs',Q1:'Premier tour qualifs',Q:'Qualification acquise',DQ1:'Premier tour qualifs double',DQF:'Finale qualifs double'};
 function tournamentRoundLabel(code,fr={},t={}){
  const k=String(code||'');
  if(tournamentRoundLabels[k])return tournamentRoundLabels[k];
@@ -198,9 +198,12 @@ function tournamentFormatHtml(fr,t,qs=null){
   else if(t.category==='Masters 1000'){
    const dwc=dd===32?3:dd===28?(draw===48?3:3):dd===24?2:null;
    if(dwc!=null)doubleComp='Double : '+dd+' équipes · '+(dd-dwc)+' admissions + '+dwc+' WC.';
-  }else if(t.circuit==='ATP'&&['ATP 250','ATP 500'].includes(String(t.category||''))){
+  }else if(t.circuit==='ATP'&&String(t.category||'')==='ATP 500'){
+   const dwc=2,dq=1,direct=Math.max(0,dd-dwc-dq);
+   doubleComp='Double : '+dd+' équipes · '+direct+' admissions directes + '+dq+' qualifiée + '+dwc+' WC. Qualifs : 4 équipes (3 directes + 1 WC), 1 place ; 45 pts au qualifié, 25 au finaliste des qualifs.';
+  }else if(t.circuit==='ATP'&&String(t.category||'')==='ATP 250'){
    const dwc=2;
-   doubleComp='Double : '+dd+' équipes · '+Math.max(0,dd-dwc)+' admissions + '+dwc+' WC'+(t.category==='ATP 500'?' · qualifs double possibles selon format':'')+'.';
+   doubleComp='Double : '+dd+' équipes · '+Math.max(0,dd-dwc)+' admissions directes + '+dwc+' WC.';
   }
  }
  return `<div class="card" style="margin-top:12px">
@@ -754,11 +757,20 @@ function tournamentEntryReason(reason){
  return labels[reason]||'Entrée non autorisée par le règlement';
 }
 function tournamentParticipationWindow(t,elig={},discipline='singles'){
- const qualifying=discipline==='singles'&&(
-  ['qualifying','protected_qualifying','alternate'].includes(elig.method)
-  ||String(elig.method||'').endsWith('_qualifying')
- );
- return {start_date:(qualifying?t.qualifying_start_date:null)||t.main_draw_start_date||t.start_date,end_date:t.end_date||t.start_date,deadline:(qualifying?t.qualifying_entry_deadline:null)||t.singles_entry_deadline||t.main_entry_deadline||t.deadline};
+ const qualifying=discipline==='singles'
+  ?(
+    ['qualifying','protected_qualifying','alternate'].includes(elig.method)
+    ||String(elig.method||'').endsWith('_qualifying')
+   )
+  :(
+    Boolean(elig.requiresQualifying)
+    ||String(elig.phase||'')==='qualifying'
+    ||['qualifying','protected_qualifying','qualifier','protected_qualifier'].includes(String(elig.method||''))
+   );
+ const deadline=discipline==='doubles'
+  ?(qualifying?(t.doubles_entry_deadline||t.qualifying_entry_deadline):t.doubles_entry_deadline)
+  :(qualifying?t.qualifying_entry_deadline:null)||t.singles_entry_deadline||t.main_entry_deadline||t.deadline;
+ return {start_date:(qualifying?t.qualifying_start_date:null)||t.main_draw_start_date||t.start_date,end_date:t.end_date||t.start_date,deadline};
 }
 function existingEntryWindow(id,e,discipline='singles'){
  if(e.entry_start_date)return {start_date:e.entry_start_date,end_date:e.end_date};
@@ -912,6 +924,9 @@ function doublesEligibility(t){
      label:server.label||"Statut double",cls:server.projected_acceptance===false?"bad":server.phase==="onsite"?"warn":"good",
      can:server.can_schedule!==false,phase:server.phase||"server",projectedAcceptance:server.projected_acceptance,
      projectedCut:server.projected_cut,bestCombinedRank:server.best_combined_rank,composition:server.composition,
+     requiresQualifying:Boolean(server.requires_qualifying),qualifyingCut:server.qualifying_cut,
+     qualifyingEntryMethod:server.qualifying_entry_method||null,
+     qualifyingWildcardCandidate:Boolean(server.qualifying_wildcard_candidate),
      protectedRanking:server.protected_ranking||null,protectedCombinedRank:server.protected_combined_rank,
      useProtectedRanking:Boolean(server.use_protected_ranking)
    };
@@ -1181,13 +1196,13 @@ window.toggleDoublesEntry=async id=>{
    alert("Inscriptions double closes : dernier sign-in "+df(onsite)+".");
    return;
  }
- const window=tournamentParticipationWindow(t,{},'doubles');
+ const window=tournamentParticipationWindow(t,elig,'doubles');
  const sConflict=Object.entries(local.entryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(window.start_date,window.end_date,existingEntryWindow(eid,e).start_date,e.end_date));
  if(sConflict){alert("Tu es déjà engagé en simple à "+sConflict[1].name+" cette semaine.");return}
  const dConflict=Object.entries(local.doublesEntryMeta).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(window.start_date,window.end_date,existingEntryWindow(eid,e,'doubles').start_date,e.end_date));
  if(dConflict){alert("Conflit double avec "+dConflict[1].name+".");return}
  const partner=activeDoublesPartner();
- local.doublesEntryMeta[id]={entry_start_date:window.start_date,name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,partner_id:partner?.id,partner_name:partner?.name,status:elig.label,projected_acceptance:elig.projectedAcceptance,projected_cut:elig.projectedCut,best_combined_rank:elig.bestCombinedRank};
+ local.doublesEntryMeta[id]={entry_start_date:window.start_date,entry_method:elig.requiresQualifying?(elig.qualifyingEntryMethod||'qualifying'):'direct',name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,partner_id:partner?.id,partner_name:partner?.name,status:elig.label,projected_acceptance:elig.projectedAcceptance,projected_cut:elig.projectedCut,qualifying_cut:elig.qualifyingCut,best_combined_rank:elig.bestCombinedRank};
  local.doublesEntries.push(id);persist();render();
 }
 window.toggleEntry=window.toggleSinglesEntry;

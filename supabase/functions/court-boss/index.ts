@@ -1299,6 +1299,8 @@ async function managedDoublesEntryStatus(t:any){
   const focus=String(career.data?.career_focus||"mixed");
   const partner:any=partnership.data?.partner;
   const composition=doublesDrawComposition(t);
+  const specialTeamEvent=specialTeamEventMeta(t);
+  if(specialTeamEvent)return {can_schedule:false,projected_acceptance:false,label:specialTeamEvent.label,phase:"selection",composition,team_event:specialTeamEvent};
   if(focus==="singles_only")return {can_schedule:false,projected_acceptance:false,label:"Simple exclusivement",phase:"career_focus",composition};
   if(!t?.doubles)return {can_schedule:false,projected_acceptance:false,label:"Pas de double",phase:"none",composition};
   if(["NCAA","Federation"].includes(String(t?.circuit)))return {can_schedule:false,projected_acceptance:false,label:"Par sélection",phase:"selection",composition};
@@ -4991,6 +4993,11 @@ Deno.serve(async(req:Request)=>{
     const err=tour.error||career.error||anth.error||oldRun.error||partnership.error;
     if(err)return h({error:err.message},500);
     if(!tour.data||!career.data||!anth.data)return h({error:"Données carrière incomplètes"},404);
+    const specialTeamEvent=specialTeamEventMeta(tour.data);
+    if(specialTeamEvent)return h({
+      error:"Cette compétition se joue par équipes et par sélection. Le tableau de double standard est désactivé.",
+      team_event:specialTeamEvent,registration_mode:tour.data.registration_mode||null
+    },409);
     if(String(career.data.career_focus||"mixed")==="singles_only"){
       return h({error:"Orientation Simple exclusivement : ce joueur ne participe pas aux tableaux de double.",career_focus:"singles_only",singles_only:true},409);
     }

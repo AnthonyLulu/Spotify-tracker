@@ -245,3 +245,13 @@ test('Doubles acceptance tolerates missing individual rank data with race based 
  assert.match(code,/Math\.min\(aKnown,raceEstimate\)/);
  assert.match(code,/field_band:cut\.band/);
 });
+
+test('Live ranking imports cannot overwrite the frozen 2025 baseline',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/refresh-live-rankings/);
+ assert.match(code,/refresh-doubles-race/);
+ assert.match(code,/refresh-races/);
+ assert.match(code,/baseline_snapshot:AGE_REFERENCE_DATE/);
+ assert.match(code,/locked:true/);
+ assert.doesNotMatch(code,/apply_live_rankings.*p_snapshot:snapshot/s);
+});

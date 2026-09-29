@@ -109,6 +109,29 @@ test('Wildcard request is rejected before saving any decision when the player is
 });
 
 
+
+test('Junior Grand Slam cuts send mid-ranked juniors through qualifying and reject players outside the field',()=>{
+ const f=frontend();
+ f.run("local.date='2025-12-01';local.career={...local.career,age:17,junior_rank:60,junior_ranking:60};t={circuit:'Junior',category:'Junior Grand Slam',projected_direct_cut:48,projected_qual_cut:80,cut_is_projection:true,singles_entry_deadline:'2025-12-16',qualifying_entry_deadline:'2025-12-16',qualifying_start_date:'2026-01-21'}");
+ assert.equal(f.run('singlesEligibility(t).method'),'qualifying');
+ assert.equal(f.run('singlesEligibility(t).can'),true);
+ f.run('local.career.junior_rank=81;local.career.junior_ranking=81');
+ assert.equal(f.run('singlesEligibility(t).can'),false);
+ assert.equal(f.run('singlesEligibility(t).canWildcard'),true);
+ f.run("local.date='2025-12-17'");
+ assert.equal(f.run('singlesEligibility(t).can'),false);
+ assert.equal(f.run('singlesEligibility(t).canWildcard'),false);
+});
+
+test('Backend Junior Slam path contains real qualifying simulation and host-priority wildcard field',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/structuredJuniorEntry/);
+ assert.match(code,/entry_preview_model:"junior_qualifying_v1"/);
+ assert.match(code,/qualifyingCandidateIdsForRun=new Set/);
+ assert.match(code,/String\(a\.country\|\|""\)===String\(t\.country\|\|""\)/);
+ assert.match(code,/entry_method:"wildcard"/);
+});
+
 test('Doubles draw config supports full 64-team Slams and realistic seed counts',()=>{
  assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:128,doubles_draw_size:64}),{drawSize:64,seedCount:16});
  assert.deepEqual(tournamentDoublesDrawConfig({singles_draw_size:48,doubles_draw_size:24}),{drawSize:24,seedCount:8});

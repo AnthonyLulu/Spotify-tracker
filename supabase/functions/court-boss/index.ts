@@ -2133,6 +2133,97 @@ Deno.serve(async(req:Request)=>{
         :Promise.resolve({data:null,error:null})
     ]);
 
+    const managedProfile=Number(careerDate.data?.managed_player_id||0)===Number(id);
+    const bySeason=new Map<number,{season:number,singles_eur:number,doubles_eur:number,total_eur:number,events:number}>();
+    const addFinancial=(dateValue:any,singles:number,doubles:number)=>{
+      const season=Number(String(dateValue||referenceDate).slice(0,4))||referenceYear;
+      const current=bySeason.get(season)||{season,singles_eur:0,doubles_eur:0,total_eur:0,events:0};
+      current.singles_eur=Math.round((current.singles_eur+Number(singles||0))*100)/100;
+      current.doubles_eur=Math.round((current.doubles_eur+Number(doubles||0))*100)/100;
+      current.total_eur=Math.round((current.singles_eur+current.doubles_eur)*100)/100;
+      current.events+=1;
+      bySeason.set(season,current);
+    };
+    let singlesPrizeEur=0,doublesPrizeEur=0,financialEvents=0,estimatedPrizeEvents=0;
+
+    if(managedProfile){
+      const [managedSingles,managedDoubles]=await Promise.all([
+        db.from("tournament_runs")
+          .select("user_prize_eur,user_prize,played_at,tournaments(start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
+          .eq("status","completed").order("played_at",{ascending:true}).limit(1000),
+        db.from("doubles_runs")
+          .select("user_prize_eur,user_prize,played_at,tournaments(start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
+          .eq("status","completed").order("played_at",{ascending:true}).limit(1000)
+      ]);
+      if(!managedSingles.error){
+        for(const row of managedSingles.data??[]){
+          const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
+          const dateValue=tour?.end_date||tour?.start_date||(row as any).played_at;
+          if(dateValue&&String(dateValue).slice(0,10)>referenceDate)continue;
+          const amount=Number((row as any).user_prize_eur??prizeToBaseEur((row as any).user_prize,tour?.prize_currency||"USD"));
+          singlesPrizeEur+=amount;financialEvents++;if(tour?.prize_breakdown_is_estimate)estimatedPrizeEvents++;
+          addFinancial(dateValue,amount,0);
+        }
+      }
+      if(!managedDoubles.error){
+        for(const row of managedDoubles.data??[]){
+          const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
+          const dateValue=tour?.end_date||tour?.start_date||(row as any).played_at;
+          if(dateValue&&String(dateValue).slice(0,10)>referenceDate)continue;
+          const amount=Number((row as any).user_prize_eur??prizeToBaseEur((row as any).user_prize,tour?.prize_currency||"USD"));
+          doublesPrizeEur+=amount;financialEvents++;if(tour?.prize_breakdown_is_estimate)estimatedPrizeEvents++;
+          addFinancial(dateValue,0,amount);
+        }
+      }
+    }else{
+      const [worldSingles,pairRows]=await Promise.all([
+        db.from("world_tournament_entries")
+          .select("result_code,simulated_on,tournaments(id,name,start_date,end_date,prize_currency,singles_prize_by_result,prize_breakdown_is_estimate)")
+          .eq("player_id",id).lte("simulated_on",referenceDate).order("simulated_on",{ascending:true}).limit(1000),
+        db.from("world_doubles_partnerships")
+          .select("id").or(`player_a_id.eq.${id},player_b_id.eq.${id}`).limit(500)
+      ]);
+      if(!worldSingles.error){
+        for(const row of worldSingles.data??[]){
+          const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
+          if(!tour)continue;
+          const payout=tournamentRoundPrize(tour,String((row as any).result_code||""),"singles");
+          const amount=prizeToBaseEur(payout.amount,tour.prize_currency||"USD");
+          singlesPrizeEur+=amount;financialEvents++;if(payout.estimated||tour.prize_breakdown_is_estimate)estimatedPrizeEvents++;
+          addFinancial((row as any).simulated_on||tour.end_date||tour.start_date,amount,0);
+        }
+      }
+      const pairIds=(pairRows.error?[]:(pairRows.data??[])).map((x:any)=>Number(x.id)).filter(Boolean);
+      if(pairIds.length){
+        const worldDoubles=await db.from("world_doubles_tournament_entries")
+          .select("pair_id,prize_awarded,simulated_on,tournaments(id,name,start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
+          .in("pair_id",pairIds).lte("simulated_on",referenceDate).order("simulated_on",{ascending:true}).limit(1000);
+        if(!worldDoubles.error){
+          for(const row of worldDoubles.data??[]){
+            const tour:any=Array.isArray((row as any).tournaments)?(row as any).tournaments[0]:(row as any).tournaments;
+            const playerShare=Math.round(Number((row as any).prize_awarded||0)/2*100)/100;
+            const amount=prizeToBaseEur(playerShare,tour?.prize_currency||"USD");
+            doublesPrizeEur+=amount;financialEvents++;if(tour?.prize_breakdown_is_estimate)estimatedPrizeEvents++;
+            addFinancial((row as any).simulated_on||tour?.end_date||tour?.start_date,0,amount);
+          }
+        }
+      }
+    }
+    singlesPrizeEur=Math.round(singlesPrizeEur*100)/100;
+    doublesPrizeEur=Math.round(doublesPrizeEur*100)/100;
+    const careerFinancials={
+      base_currency:BASE_CURRENCY,
+      from_date:AGE_REFERENCE_DATE,
+      through_date:referenceDate,
+      singles_prize_eur:singlesPrizeEur,
+      doubles_prize_eur:doublesPrizeEur,
+      total_prize_eur:Math.round((singlesPrizeEur+doublesPrizeEur)*100)/100,
+      events:financialEvents,
+      estimated_events:estimatedPrizeEvents,
+      seasons:[...bySeason.values()].sort((x,y)=>y.season-x.season),
+      scope:"Court Boss simulated career only"
+    };
+
     const statisticsDashboard=await db.rpc("player_statistics_dashboard_v2",{p_player_id:id,p_as_of:referenceDate});
 
     return h({
@@ -2157,6 +2248,7 @@ Deno.serve(async(req:Request)=>{
       attributeTrend:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=85)&&!attributeTrend.error?attributeTrend.data:null,
       hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
+      careerFinancials,
       statisticsDashboard:statisticsDashboard.error?null:statisticsDashboard.data,
       eloRating:eloRating.error?null:eloRating.data,
       dynamicRatings:dynamicRatings.error?null:dynamicRatings.data,

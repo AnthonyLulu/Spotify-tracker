@@ -14,6 +14,14 @@ const h=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,hea
 const n=(v:unknown,d:number,min=0,max=5000)=>{const value=v==null||v===""?d:Number(v);return Math.max(min,Math.min(max,Number.isFinite(value)?value:d));};
 const normalizeName=(value:string)=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const AGE_REFERENCE_DATE="2025-12-01";
+const BASE_CURRENCY="EUR";
+const PRIZE_FX_TO_EUR_20251201:Record<string,number>={EUR:1,USD:1/1.1646,GBP:1/0.8778,AUD:1/1.7740};
+const prizeFxToEur=(currency:any)=>PRIZE_FX_TO_EUR_20251201[String(currency||"EUR").toUpperCase()]??1;
+const prizeToBaseEur=(amount:any,currency:any)=>{
+  const value=Number(amount||0);
+  if(!Number.isFinite(value))return 0;
+  return Math.round(value*prizeFxToEur(currency)*100)/100;
+};
 const ageAt=(birth:string|null|undefined,at:string|null|undefined,fallback:any=null,fallbackSnapshot:string|null|undefined=null)=>{
   const target=new Date(String(at||new Date().toISOString().slice(0,10))+"T12:00:00Z");
   if(Number.isNaN(target.getTime()))return fallback;
@@ -4519,7 +4527,12 @@ Deno.serve(async(req:Request)=>{
       const payout=tournamentRoundPrize(t,userRound,/^Q\d+$/.test(userRound)?"qualifying":"singles");
       userPrize=payout.amount;
     }
-    const runIns=await db.from("tournament_runs").insert({tournament_id:tid,entry_method:entryMode,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,user_prize:userPrize,status:"completed"}).select("id").single();
+    const prizeFxRateToEur=prizeFxToEur(t.prize_currency||"USD");
+    const userPrizeEur=prizeToBaseEur(userPrize,t.prize_currency||"USD");
+    const runIns=await db.from("tournament_runs").insert({
+      tournament_id:tid,entry_method:entryMode,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,
+      user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
+    }).select("id").single();
     if(runIns.error)return h({error:runIns.error.message},500);
     const runId=runIns.data.id;
 
@@ -4654,7 +4667,7 @@ Deno.serve(async(req:Request)=>{
     const newForm=Math.max(35,Math.min(100,Number(c.form||72)+(userRound==="Champion"?6:userRound==="F"?4:userRound==="SF"?2:userMatches.length?1:-1)));
     const travelCost=dest===homeCountry?120:(european.includes(dest)?380:850);
     const agentRep=await db.from("player_agency_representation").select("commission_pct").eq("player_id",managedId).eq("active",true).maybeSingle();
-    const agentCommission=Math.max(0,Math.round(userPrize*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
+    const agentCommission=Math.max(0,Math.round(userPrizeEur*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
     let staffPerformanceBonus=0;
     if(userRound==="Champion"){
       const staffContracts=await db.from("contracts").select("weekly_salary,bonuses").eq("subject_type","staff").eq("status","active");
@@ -4690,7 +4703,7 @@ Deno.serve(async(req:Request)=>{
       if(rankCalc.error)return h({error:rankCalc.error.message},500);
       newPoints=Number(rankCalc.data?.points??c.points??0);newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     }
-    const newBudget=Number(c.budget||0)+userPrize-travelCost-agentCommission-staffPerformanceBonus;
+    const newBudget=Number(c.budget||0)+userPrizeEur-travelCost-agentCommission-staffPerformanceBonus;
     let staffAchievementCredit:any=null;
     if(userRound==="Champion"){
       const titleIns=await db.from("player_titles").insert({
@@ -4731,7 +4744,7 @@ Deno.serve(async(req:Request)=>{
         :{budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}
       ).eq("id","demo"),
       db.from("finances").update({
-        prize_money:Number(finState.data?.prize_money||0)+userPrize,
+        prize_money:Number(finState.data?.prize_money||0)+userPrizeEur,
         travel_cost:Number(finState.data?.travel_cost||0)+travelCost,
         agent_commission:Number(finState.data?.agent_commission||0)+agentCommission,
         staff_bonus:Number(finState.data?.staff_bonus||0)+staffPerformanceBonus
@@ -4739,7 +4752,7 @@ Deno.serve(async(req:Request)=>{
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:rank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:rank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 
@@ -5220,8 +5233,13 @@ Deno.serve(async(req:Request)=>{
       teamPrize=tournamentRoundPrize(t,userRound,"doubles").amount;
     }
     const prize=Math.round(teamPrize/2*100)/100;
+    const prizeFxRateToEur=prizeFxToEur(t.prize_currency||"USD");
+    const prizeEur=prizeToBaseEur(prize,t.prize_currency||"USD");
 
-    const run=await db.from("doubles_runs").insert({tournament_id:tid,partnership_id:partnership.data.id,partner_id:partner.id,user_round:userRound,user_points:pts,user_prize:prize,status:"completed"}).select("id").single();
+    const run=await db.from("doubles_runs").insert({
+      tournament_id:tid,partnership_id:partnership.data.id,partner_id:partner.id,user_round:userRound,user_points:pts,
+      user_prize:prize,user_prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
+    }).select("id").single();
     if(run.error)return h({error:run.error.message},500);
     if(matches.length){
       const rows=matches.filter((m:any)=>m.user_pair===userPair.name).map((m:any)=>({...m,run_id:run.data.id}));
@@ -5307,7 +5325,7 @@ Deno.serve(async(req:Request)=>{
     const travelCost=singlesRun.data?0:(String(t.country||"")===String(c.country||"FRA")?80:260);
     const fatigueAdd=matches.filter((m:any)=>m.user_pair===userPair.name).length*4+(travelCost?3:0);
     const agentRep=await db.from("player_agency_representation").select("commission_pct").eq("player_id",anthony.id).eq("active",true).maybeSingle();
-    const agentCommission=Math.max(0,Math.round(prize*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
+    const agentCommission=Math.max(0,Math.round(prizeEur*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
     let staffPerformanceBonus=0;
     if(userRound==="Champion"){
       const staffContracts=await db.from("contracts").select("weekly_salary,bonuses").eq("subject_type","staff").eq("status","active");
@@ -5319,7 +5337,7 @@ Deno.serve(async(req:Request)=>{
         },0);
       }
     }
-    const newBudget=Number(c.budget||0)+prize-travelCost-agentCommission-staffPerformanceBonus;
+    const newBudget=Number(c.budget||0)+prizeEur-travelCost-agentCommission-staffPerformanceBonus;
     const newFatigue=Math.min(100,Number(c.fatigue||18)+fatigueAdd);
     const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(fatigueAdd*.35));
     const careerUpdate:any={budget:newBudget,fatigue:newFatigue,fitness:newFitness,updated_at:new Date().toISOString()};
@@ -5331,7 +5349,7 @@ Deno.serve(async(req:Request)=>{
     const finState=await db.from("finances").select("prize_money,travel_cost,agent_commission,staff_bonus").eq("id","demo").maybeSingle();
     if(!finState.error){
       await db.from("finances").update({
-        prize_money:Number(finState.data?.prize_money||0)+prize,
+        prize_money:Number(finState.data?.prize_money||0)+prizeEur,
         travel_cost:Number(finState.data?.travel_cost||0)+travelCost,
         agent_commission:Number(finState.data?.agent_commission||0)+agentCommission,
         staff_bonus:Number(finState.data?.staff_bonus||0)+staffPerformanceBonus
@@ -5341,7 +5359,7 @@ Deno.serve(async(req:Request)=>{
 
     const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:Number(run.data.id),p_date:earned});
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
+    return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }
 
   if(path.endsWith("/api/season-summary")&&req.method==="GET"){

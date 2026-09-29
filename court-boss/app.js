@@ -62,7 +62,23 @@ const df=s=>s?new Date(s+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',
 const RANKING_SNAPSHOT='2025-12-01';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const tournamentRoundLabels={W:'Vainqueur',F:'Finaliste',SF:'Demi-finale',QF:'Quart de finale',R16:'Huitième de finale',R24:'Premier tour · 24',R28:'Premier tour · 28',R32:'Seizième de finale',R48:'Premier tour · 48',R56:'Premier tour · 56',R64:'Premier tour · 64',R96:'Premier tour · 96',R128:'Premier tour · 128',Q3:'Troisième tour qualifs',Q2:'Deuxième tour qualifs',Q1:'Premier tour qualifs',Q:'Qualification acquise'};
+const tournamentRoundLabels={W:'Vainqueur',F:'Finaliste',SF:'Demi-finale',QF:'Quart de finale',R16:'Huitième de finale',Q3:'Troisième tour qualifs',Q2:'Deuxième tour qualifs',Q1:'Premier tour qualifs',Q:'Qualification acquise'};
+function tournamentRoundLabel(code,fr={},t={}){
+ const k=String(code||'');
+ if(tournamentRoundLabels[k])return tournamentRoundLabels[k];
+ if(/^R\\d+$/.test(k)){
+  const rounds=Array.isArray(fr?.rounds)?fr.rounds:[];
+  const idx=rounds.indexOf(k);
+  if(idx>=0){
+   const names=['Premier tour','Deuxième tour','Troisième tour','Quatrième tour'];
+   return (names[idx]||('Tour '+(idx+1)))+' · '+k;
+  }
+  const draw=Number(fr?.main_draw_size||t?.singles_draw_size||t?.draw_size||0);
+  if(draw&&k==='R'+draw)return 'Premier tour · '+k;
+  return k;
+ }
+ return k;
+}
 function tournamentEconomicsHtml(e,t,fr={}){
  e=e||{};const cur=e.currency||t.prize_currency||'USD';
  const known=e.total_is_estimate===false;
@@ -72,7 +88,7 @@ function tournamentEconomicsHtml(e,t,fr={}){
   const keys=[...new Set([...Object.keys(obj),...Object.keys(points||{}).filter(k=>k!=='Q')])].sort((a,b)=>(order.indexOf(a)<0?999:order.indexOf(a))-(order.indexOf(b)<0?999:order.indexOf(b)));
   const empty=Object.keys(obj).length===0;
   const badge=estimated===false?'Barème officiel':empty?'Gains non renseignés':'Barème estimé';
-  return "<div class='card'><div class='row between'><h2>"+esc(title)+"</h2><span class='badge "+(estimated===false?'good':'warn')+"'>"+badge+"</span></div>"+(keys.length?"<div class='table-wrap'><table class='table'><thead><tr><th>Tour atteint</th><th>Gain</th>"+(points?'<th>Points</th>':'')+"</tr></thead><tbody>"+keys.map(k=>"<tr><td><b>"+esc(tournamentRoundLabels[k]||k)+"</b></td><td><b>"+(Object.hasOwn(obj,k)?money(obj[k],cur):estimated===false?money(0,cur):'—')+"</b></td>"+(points?'<td>'+(Object.hasOwn(points,k)?fmt(points[k]):'—')+'</td>':'')+"</tr>").join('')+"</tbody></table></div>":"<div class='empty'>"+(estimated===false?'Aucune dotation sur cette phase.':'Barème non renseigné pour cette phase.')+"</div>")+"</div>";
+  return "<div class='card'><div class='row between'><h2>"+esc(title)+"</h2><span class='badge "+(estimated===false?'good':'warn')+"'>"+badge+"</span></div>"+(keys.length?"<div class='table-wrap'><table class='table'><thead><tr><th>Tour atteint</th><th>Gain</th>"+(points?'<th>Points</th>':'')+"</tr></thead><tbody>"+keys.map(k=>"<tr><td><b>"+esc(tournamentRoundLabel(k,fr,t))+"</b></td><td><b>"+(Object.hasOwn(obj,k)?money(obj[k],cur):estimated===false?money(0,cur):'—')+"</b></td>"+(points?'<td>'+(Object.hasOwn(points,k)?fmt(points[k]):'—')+'</td>':'')+"</tr>").join('')+"</tbody></table></div>":"<div class='empty'>"+(estimated===false?'Aucune dotation sur cette phase.':'Barème non renseigné pour cette phase.')+"</div>")+"</div>";
  };
  let html="<div class='card'><div class='row between'><div><div class='eyebrow'>Économie du tournoi</div><h2>Dotation "+esc(String(t.start_date||'').slice(0,4))+"</h2></div><span class='badge "+(known?'good':'warn')+"'>"+(known?'Total officiel':'Total estimé')+"</span></div>";
  html+="<div class='kpi-strip' style='margin-top:10px'><div class='kpi'><span class='muted mini'>Dotation annoncée</span><b>"+money(e.total??t.prize_money??0,cur)+"</b></div><div class='kpi'><span class='muted mini'>Devise</span><b>"+esc(cur)+"</b></div><div class='kpi'><span class='muted mini'>Simple</span><b>"+esc(t.singles_draw_size||t.draw_size||'—')+"</b></div><div class='kpi'><span class='muted mini'>Double</span><b>"+esc(t.doubles?t.doubles_draw_size||'—':'—')+"</b></div></div>";

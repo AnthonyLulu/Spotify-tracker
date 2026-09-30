@@ -9462,7 +9462,7 @@ Deno.serve(async(req:Request)=>{
       await db.from("inbox_items").insert({
         kind:"planning",title:"Plan de saison mis à jour",
         body:"Le plan "+season+" a été modifié : "+row.target_events+" tournois cible, priorité "+row.preferred_surface+".",
-        action_route:"careerhub",game_date:String(career.data.career_date||AGE_REFERENCE_DATE),priority:"normal",is_read:false
+        action_route:"season",game_date:String(career.data.career_date||AGE_REFERENCE_DATE),priority:"normal",is_read:false
       });
       return h({ok:true,season_plan:up.data});
     }

@@ -1602,7 +1602,12 @@ Deno.serve(async(req:Request)=>{
 
     if(kind==="ncaa"){
       const playerSelect="id,name,country,ranking,points,doubles_ranking,age,age_source,age_snapshot_date,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,data_source,photo_url,ncaa_current,ncaa_team_id,ncaa_rank,ncaa_school,ncaa_division,ncaa_status,ncaa_last_school,ncaa_verified,ranking_snapshot_date";
-      const ncaaSeason=ncaaSeasonAt(gameDate);
+      const rankingNcaaSeasonAt=(iso:any)=>{
+        const s=String(iso||AGE_REFERENCE_DATE),y=Number(s.slice(0,4))||2025,m=Number(s.slice(5,7))||1;
+        const start=m>=8?y:y-1;
+        return String(start)+"-"+String((start+1)%100).padStart(2,"0");
+      };
+      const ncaaSeason=rankingNcaaSeasonAt(gameDate);
       const [currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3,collegeTeams,schoolAliases]=await Promise.all([
         db.from("ncaa_player_registry")
           .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
@@ -1704,11 +1709,11 @@ Deno.serve(async(req:Request)=>{
       }
       if(country)rows=rows.filter((x:any)=>String(x.country||"").toUpperCase()===country);
       rows.sort((a:any,b:any)=>{
-        const ao=a.ncaa_current_verified&&a.ncaa_rank!=null?0:1;
-        const bo=b.ncaa_current_verified&&b.ncaa_rank!=null?0:1;
-        if(ao!==bo)return ao-bo;
-        if(ao===0){
-          const ac=Number(a.ncaa_rank),bc=Number(b.ncaa_rank);
+        const typeOrder=(x:any)=>x.ncaa_rank_type==="official"?0:x.ncaa_rank_type==="simulated_depth"?1:x.ncaa_rank!=null?2:3;
+        const at=typeOrder(a),bt=typeOrder(b);
+        if(at!==bt)return at-bt;
+        if(a.ncaa_rank!=null||b.ncaa_rank!=null){
+          const ac=Number(a.ncaa_rank??999999),bc=Number(b.ncaa_rank??999999);
           if(ac!==bc)return ac-bc;
         }
         if(Boolean(a.ncaa_current)!==Boolean(b.ncaa_current))return a.ncaa_current?-1:1;

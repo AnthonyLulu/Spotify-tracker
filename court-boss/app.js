@@ -223,7 +223,7 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 
-const get=async(path,opts={},retried=false)=>{const key=courtBossAccessKey();const r=await fetch(API+path,{...opts,headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':key,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){localStorage.removeItem('courtBossAccessKey');accessKey='';return get(path,opts,true)}if(r.status===401)throw new Error('Code d’accès Court Boss incorrect.');if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);if(key)localStorage.setItem('courtBossAccessKey',key);return body;};
+const get=async(path,opts={},retried=false)=>{const key=courtBossAccessKey();const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':key,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){localStorage.removeItem('courtBossAccessKey');accessKey='';return get(path,opts,true)}if(r.status===401)throw new Error('Code d’accès Court Boss incorrect.');if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);if(key)localStorage.setItem('courtBossAccessKey',key);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let competitionRows=[],competitionCount=0,competitionOffset=0,competitionLoading=false,competitionFilters={q:'',circuit:'Tous',category:'Toutes',surface:'Toutes',country:'',source:'Tous',prestige:'Tous',history:'Tous',holder:'Tous'};
 let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
@@ -412,7 +412,7 @@ window.nav=async r=>{
  route=r;
  window.scrollTo({top:0,behavior:'smooth'});
  try{
-  if(r==='rankings'&&!rankRows.length){
+  if(r==='rankings'&&(!rankRows.length||rankKind==='ncaa')){
    loading('Chargement du classement…');
    await loadRankings();
   }

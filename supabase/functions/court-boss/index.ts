@@ -976,7 +976,16 @@ async function resolveTournamentImage(t:any){
         "adelaideinternational.com.au","www.adelaideinternational.com.au",
         "asbclassic.co.nz","www.asbclassic.co.nz",
         "openoccitanie.com","www.openoccitanie.com",
-        "tenniseurope.org","www.tenniseurope.org"
+        "tenniseurope.org","www.tenniseurope.org",
+        "daviscup.com","www.daviscup.com",
+        "dallasopen.com","www.dallasopen.com","rioopen.com","www.rioopen.com",
+        "abiertomexicanodetenis.com","www.abiertomexicanodetenis.com",
+        "dubaidutyfreetennischampionships.com","www.dubaidutyfreetennischampionships.com",
+        "barcelonaopenbancsabadell.com","www.barcelonaopenbancsabadell.com",
+        "bmwopen.de","www.bmwopen.de","hamburgopenatp500.com","www.hamburgopenatp500.com",
+        "terrawortmann-open.de","www.terrawortmann-open.de","japanopentennis.com","www.japanopentennis.com",
+        "erstebank-open.com","www.erstebank-open.com","swissindoorsbasel.ch","www.swissindoorsbasel.ch",
+        "mallorcachampionships.com","www.mallorcachampionships.com"
       ];
       canFetchOfficial=allowed.includes(host);
     }catch{}
@@ -1000,7 +1009,7 @@ async function resolveTournamentImage(t:any){
         let raw="";
         for(const re of picks){const m=html.match(re);if(m?.[1]){raw=String(m[1]).replace(/&amp;/g,"&").trim();break;}}
         try{if(raw)raw=new URL(raw,source).toString()}catch{}
-        if(raw&&/^https?:\/\//i.test(raw)&&!/placeholder|default-avatar|favicon|sprite|logo/i.test(raw)){
+        if(raw&&/^https?:\/\//i.test(raw)&&!/placeholder|default-avatar|favicon|sprite|logo/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
           t.image_url=raw;
           t.image_source_url=source;
           t.image_source_label="Visuel officiel du tournoi";
@@ -1037,7 +1046,7 @@ async function resolveTournamentImage(t:any){
           return (nameHit||cityHit)&&tennisContext;
         });
         const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
-        if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)){
+        if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
           t.image_url=raw;
           t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
           t.image_source_label="Wikipedia/Wikimedia · tournoi vérifié";
@@ -1081,7 +1090,7 @@ async function resolveTournamentImage(t:any){
             if(bad.test(title))score-=10;
             return {x,raw,title,score};
           })
-          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&x.score>-3)
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(x.raw)&&x.score>-3)
           .sort((a:any,b:any)=>b.score-a.score)[0];
         if(chosen?.raw){
           t.image_url=chosen.raw;
@@ -1112,7 +1121,7 @@ async function resolveTournamentImage(t:any){
         const j:any=await exact.json();
         chosen=(Object.values(j?.query?.pages||{}) as any[]).find((x:any)=>{
           const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-          return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+          return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
         })||null;
       }
       if(!chosen){
@@ -1133,12 +1142,12 @@ async function resolveTournamentImage(t:any){
             const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
             const raw=String(x?.original?.source||x?.thumbnail?.source||"");
             return (title===cityNorm||title.startsWith(cityNorm)||cityNorm.startsWith(title))
-              &&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw);
+              &&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
           })||null;
         }
       }
       const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
-      if(raw&&/^https?:\/\//i.test(raw)){
+      if(raw&&/^https?:\/\//i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
         t.image_url=raw;
         t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
         t.image_source_label="Photo de la ville · Wikipedia/Wikimedia";
@@ -1163,12 +1172,15 @@ async function captureManagedSaveSnapshot(){
   const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
   if(career.error||!career.data)throw new Error(career.error?.message||"Career missing");
   const managedId=Number(career.data.managed_player_id||0);
+  const nation=String(career.data.federation_nation||career.data.selected_federation_nation||career.data.country||"FRA");
+
   const [
-    academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,academyIntake,training,trainingProgress,
-    medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,
-    entries,doublesEntries,wildcards,agency,doublesCommitments,partnerHistory,partnerOffers,
-    seasonPlans,relationships,playerSponsors,injuries,staffAssignments,staffExternalOffers,doublesPartnerships,
-    tournamentRuns,doublesRuns,matchHistory,careerEvents,inbox,media
+    academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,
+    training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,
+    entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media,
+    seasonPlans,relationships,staffAssignments,staffExternalOffers,eventLog,shortlist,
+    collegeState,collegeOffers,ncaaRegistry,federation,davisSquad,seasonHistory,
+    managedInjuries,trainingLoad,partnerships,matchHistory,tournamentRuns,doublesRuns,doublesMatchHistory
   ]=await Promise.all([
     db.from("academies").select("*").eq("id","demo").maybeSingle(),
     db.from("finances").select("*").eq("id","demo").maybeSingle(),
@@ -1191,46 +1203,45 @@ async function captureManagedSaveSnapshot(){
     managedId?db.from("player_attributes").select("*").eq("player_id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
     managedId?db.from("player_development_profiles").select("*").eq("player_id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
     managedId?db.from("player_attribute_ceilings").select("*").eq("player_id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
-    managedId?db.from("entries").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
-    managedId?db.from("managed_doubles_entries").select("*").eq("owner_id","demo").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("entries").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("managed_doubles_entries").select("*").eq("owner_id","demo").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
     db.from("wildcard_requests").select("*").order("id"),
     managedId?db.from("player_agency_representation").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("player_doubles_commitments").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
-    managedId?db.from("player_doubles_partner_history").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("doubles_partner_offers").select("*").or("from_player_id.eq."+managedId+",to_player_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("inbox_items").select("*").order("id"),
+    db.from("media_events").select("*").order("id"),
     managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).order("season"):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("player_relationships").select("*").or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
-    managedId?db.from("player_sponsors").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
-    managedId?db.from("injuries").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("player_staff_assignments").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
     db.from("user_staff_external_offers").select("*").order("id"),
+    db.from("career_event_log").select("*").order("id"),
+    db.from("shortlist").select("*").order("added_at"),
+    db.from("college_career_state").select("*").eq("id","demo").maybeSingle(),
+    db.from("college_offers").select("*").order("id"),
+    managedId?db.from("ncaa_player_registry").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("federation_state").select("*").eq("nation",nation).maybeSingle(),
+    db.from("davis_squad").select("*").eq("nation",nation).order("id"),
+    db.from("season_history").select("*").order("id"),
+    managedId?db.from("injuries").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("player_training_load_profiles").select("*").eq("player_id",managedId).order("as_of_date"):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("doubles_partnerships").select("*").or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("match_history").select("*").eq("user_involved",true).order("id"),
     db.from("tournament_runs").select("*").order("id"),
     db.from("doubles_runs").select("*").order("id"),
-    db.from("match_history").select("*").eq("user_involved",true).order("id"),
-    db.from("career_event_log").select("*").order("id"),
-    db.from("inbox_items").select("*").order("id"),
-    db.from("media_events").select("*").order("id")
+    db.from("doubles_match_history").select("*").order("id")
   ]);
-  const all=[
-    academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,academyIntake,training,trainingProgress,
-    medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,
-    agency,doublesCommitments,partnerHistory,partnerOffers,seasonPlans,relationships,playerSponsors,injuries,
-    staffAssignments,staffExternalOffers,doublesPartnerships,tournamentRuns,doublesRuns,matchHistory,careerEvents,inbox,media
-  ];
+
+  const all=[academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media,seasonPlans,relationships,staffAssignments,staffExternalOffers,eventLog,shortlist,collegeState,collegeOffers,ncaaRegistry,federation,davisSquad,seasonHistory,managedInjuries,trainingLoad,partnerships,matchHistory,tournamentRuns,doublesRuns,doublesMatchHistory];
   const err=all.find((x:any)=>x?.error)?.error;
   if(err)throw new Error(err.message||"Snapshot failed");
 
-  const runIds=(tournamentRuns.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
-  const doublesRunIds=(doublesRuns.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
-  const staffProfileIds=(staff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean);
-  const [tournamentMatches,doublesMatches,staffPeerRelationships]=await Promise.all([
-    runIds.length?db.from("tournament_draw_matches").select("*").in("run_id",runIds).order("id"):Promise.resolve({data:[],error:null} as any),
-    doublesRunIds.length?db.from("doubles_match_history").select("*").in("run_id",doublesRunIds).order("id"):Promise.resolve({data:[],error:null} as any),
-    staffProfileIds.length?db.from("staff_peer_relationships").select("*").or("staff_a_id.in.("+staffProfileIds.join(",")+"),staff_b_id.in.("+staffProfileIds.join(",")+")"):Promise.resolve({data:[],error:null} as any)
+  const ownProfileIds=[...new Set((staff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean))];
+  const [staffProfiles,staffTraining]=await Promise.all([
+    ownProfileIds.length?db.from("staff_profiles").select("*").in("id",ownProfileIds).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("staff_training_enrollments").select("*").eq("user_managed",true).order("id")
   ]);
-  const detailErr=tournamentMatches.error||doublesMatches.error||staffPeerRelationships.error;
-  if(detailErr)throw new Error(detailErr.message||"Snapshot details failed");
+  if(staffProfiles.error||staffTraining.error)throw new Error((staffProfiles.error||staffTraining.error)?.message||"Staff snapshot failed");
 
   return {
     model:"CB-MANAGED-SAVE-v2",
@@ -1238,21 +1249,27 @@ async function captureManagedSaveSnapshot(){
     career_date:career.data.career_date,
     week:career.data.week,
     managed_player_id:managedId||null,
-    scope:"managed_career_exact_v2",
+    federation_nation:nation,
     career:career.data,
     academy:academy.data,
     finance:finance.data,
     facilities:facilities.data??[],
     staff:staff.data??[],
+    staff_profiles:staffProfiles.data??[],
+    staff_training:staffTraining.data??[],
+    staff_assignments:staffAssignments.data??[],
+    staff_external_offers:staffExternalOffers.data??[],
     contracts:contracts.data??[],
     academy_roster:roster.data??[],
     academy_members:members.data??[],
     academy_member_progress:memberProgress.data??[],
     academy_youth:youth.data??[],
-    academy_intake_history:academyIntake.data??[],
+    academy_intake_history:intakeHistory.data??[],
     training_plan:training.data??[],
     training_progress:trainingProgress.data??[],
+    training_load:trainingLoad.data??[],
     medical_plan:medical.data,
+    managed_injuries:managedInjuries.data??[],
     scouting_assignments:scouting.data??[],
     scouting_reports:scoutingReports.data??[],
     sponsor_offers:sponsors.data??[],
@@ -1261,37 +1278,36 @@ async function captureManagedSaveSnapshot(){
     managed_attributes:attrs.data,
     managed_development:development.data,
     managed_ceilings:ceilings.data,
+    season_plans:seasonPlans.data??[],
+    relationships:relationships.data??[],
     entries:entries.data??[],
     managed_doubles_entries:doublesEntries.data??[],
     wildcard_requests:wildcards.data??[],
     agency:agency.data??[],
     doubles_commitments:doublesCommitments.data??[],
-    doubles_partner_history:partnerHistory.data??[],
     partner_offers:partnerOffers.data??[],
-    season_plans:seasonPlans.data??[],
-    relationships:relationships.data??[],
-    player_sponsors:playerSponsors.data??[],
-    injuries:injuries.data??[],
-    player_staff_assignments:staffAssignments.data??[],
-    staff_external_offers:staffExternalOffers.data??[],
-    staff_peer_relationships:staffPeerRelationships.data??[],
-    doubles_partnerships:doublesPartnerships.data??[],
-    tournament_runs:tournamentRuns.data??[],
-    tournament_draw_matches:tournamentMatches.data??[],
-    doubles_runs:doublesRuns.data??[],
-    doubles_match_history:doublesMatches.data??[],
-    match_history:matchHistory.data??[],
-    career_event_log:careerEvents.data??[],
+    doubles_partnerships:partnerships.data??[],
     inbox:inbox.data??[],
-    media_events:media.data??[]
+    media_events:media.data??[],
+    career_event_log:eventLog.data??[],
+    shortlist:shortlist.data??[],
+    college_state:collegeState.data,
+    college_offers:collegeOffers.data??[],
+    ncaa_registry:ncaaRegistry.data??[],
+    federation_state:federation.data,
+    davis_squad:davisSquad.data??[],
+    season_history:seasonHistory.data??[],
+    match_history:matchHistory.data??[],
+    tournament_runs:tournamentRuns.data??[],
+    doubles_runs:doublesRuns.data??[],
+    doubles_match_history:doublesMatchHistory.data??[]
   };
 }
 
 async function restoreManagedSaveSnapshot(snapshot:any){
   const model=String(snapshot?.model||"");
   if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2"].includes(model))throw new Error("Unsupported save snapshot");
-  const isV2=model==="CB-MANAGED-SAVE-v2";
-  const managedId=Number(snapshot.managed_player_id||snapshot.career?.managed_player_id||0);
+
   const upsertOne=async(table:string,row:any,onConflict?:string)=>{
     if(!row)return;
     const q=onConflict?db.from(table).upsert(row,{onConflict}):db.from(table).upsert(row);
@@ -1302,108 +1318,83 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     const q=onConflict?db.from(table).upsert(rows,{onConflict}):db.from(table).upsert(rows);
     const r=await q;if(r.error)throw new Error(table+": "+r.error.message);
   };
-  const deleteAll=async(table:string,key="id")=>{
-    const r=await db.from(table).delete().not(key,"is",null);
-    if(r.error)throw new Error(table+" delete: "+r.error.message);
-  };
-  const deleteManaged=async(table:string,column="player_id")=>{
-    if(!managedId)return;
-    const r=await db.from(table).delete().eq(column,managedId);
-    if(r.error)throw new Error(table+" delete: "+r.error.message);
-  };
-  const deleteManagedEither=async(table:string,a:string,b:string)=>{
-    if(!managedId)return;
-    const r=await db.from(table).delete().or(a+".eq."+managedId+","+b+".eq."+managedId);
-    if(r.error)throw new Error(table+" delete: "+r.error.message);
+  const deleteAll=async(table:string,column="id")=>{
+    const r=await db.from(table).delete().not(column,"is",null);
+    if(r.error)throw new Error(table+" cleanup: "+r.error.message);
   };
 
-  if(isV2){
-    // Exact rewind for user-owned/private career state. The autonomous world remains global.
-    const currentRuns=await db.from("tournament_runs").select("id");
-    if(currentRuns.error)throw new Error("tournament_runs: "+currentRuns.error.message);
-    const currentRunIds=(currentRuns.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
-    if(currentRunIds.length){
-      const del=await db.from("tournament_draw_matches").delete().in("run_id",currentRunIds);
-      if(del.error)throw new Error("tournament_draw_matches delete: "+del.error.message);
-    }
-    await deleteAll("tournament_runs");
+  const managedId=Number(snapshot.managed_player_id||snapshot.career?.managed_player_id||0);
+  const nation=String(snapshot.federation_nation||snapshot.career?.federation_nation||snapshot.career?.selected_federation_nation||snapshot.career?.country||"FRA");
 
-    const currentDoublesRuns=await db.from("doubles_runs").select("id");
-    if(currentDoublesRuns.error)throw new Error("doubles_runs: "+currentDoublesRuns.error.message);
-    const currentDoublesRunIds=(currentDoublesRuns.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
-    if(currentDoublesRunIds.length){
-      const del=await db.from("doubles_match_history").delete().in("run_id",currentDoublesRunIds);
-      if(del.error)throw new Error("doubles_match_history delete: "+del.error.message);
-    }
-    await deleteAll("doubles_runs");
-    const userMatchDelete=await db.from("match_history").delete().eq("user_involved",true);
-    if(userMatchDelete.error)throw new Error("match_history delete: "+userMatchDelete.error.message);
-
-    await deleteAll("career_event_log");
+  if(model==="CB-MANAGED-SAVE-v2"){
+    // Exact managed-world rewind. Global AI/world tournament state is intentionally not rewound.
     await deleteAll("inbox_items");
     await deleteAll("media_events");
-
-    await deleteManaged("player_staff_assignments");
-    await deleteManaged("player_season_plans");
-    await deleteManagedEither("player_relationships","player_a_id","player_b_id");
-    await deleteManaged("player_sponsors");
-    await deleteManaged("injuries");
-    await deleteManaged("player_doubles_commitments");
-    await deleteManaged("player_doubles_partner_history");
-    await deleteManagedEither("doubles_partner_offers","from_player_id","to_player_id");
-    await deleteManagedEither("doubles_partnerships","player_a_id","player_b_id");
-    await deleteManaged("entries");
-    if(managedId){
-      const md=await db.from("managed_doubles_entries").delete().eq("owner_id","demo").eq("player_id",managedId);
-      if(md.error)throw new Error("managed_doubles_entries delete: "+md.error.message);
-    }
-    await deleteAll("wildcard_requests");
-    await deleteAll("user_staff_external_offers");
-
-    const currentStaff=await db.from("staff").select("profile_id");
-    if(currentStaff.error)throw new Error("staff: "+currentStaff.error.message);
-    const currentStaffIds=(currentStaff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean);
-    const snapshotStaffIds=(snapshot.staff??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean);
-    const staffIds=[...new Set([...currentStaffIds,...snapshotStaffIds])];
-    if(staffIds.length){
-      const spr=await db.from("staff_peer_relationships").delete().or("staff_a_id.in.("+staffIds.join(",")+"),staff_b_id.in.("+staffIds.join(",")+")");
-      if(spr.error)throw new Error("staff_peer_relationships delete: "+spr.error.message);
-    }
-
-    await deleteAll("academy_member_progress","member_id");
-    const ai=await db.from("academy_intake_history").delete().eq("academy_id","demo");
-    if(ai.error)throw new Error("academy_intake_history delete: "+ai.error.message);
-    await deleteAll("academy_roster");
-    await deleteAll("academy_members");
-    await deleteAll("academy_youth");
-
+    await deleteAll("career_event_log");
     await deleteAll("scouting_reports");
     await deleteAll("scouting_assignments");
     await deleteAll("sponsor_offers");
     await deleteAll("board_objectives");
     await deleteAll("contracts");
-    await deleteAll("staff");
+    await deleteAll("academy_member_progress","member_id");
+    await deleteAll("academy_roster");
+    await deleteAll("academy_members");
+    await deleteAll("academy_intake_history");
+    await deleteAll("academy_youth");
     await deleteAll("facilities");
+    await deleteAll("staff_training_enrollments");
+    await deleteAll("staff");
     await deleteAll("training_plan","day_index");
     await deleteAll("user_training_progress","attribute");
+    await deleteAll("shortlist");
+    await deleteAll("college_offers");
+    await db.from("college_career_state").delete().eq("id","demo");
+    await deleteAll("season_history");
+    await deleteAll("tournament_runs");
+    await deleteAll("doubles_match_history");
+    await deleteAll("doubles_runs");
+    await db.from("match_history").delete().eq("user_involved",true);
+    await db.from("managed_doubles_entries").delete().eq("owner_id","demo");
+    if(managedId){
+      await db.from("entries").delete().eq("player_id",managedId);
+      await db.from("player_agency_representation").delete().eq("player_id",managedId);
+      await db.from("player_doubles_commitments").delete().eq("player_id",managedId);
+      await db.from("doubles_partner_offers").delete().or("from_player_id.eq."+managedId+",to_player_id.eq."+managedId);
+      await db.from("doubles_partnerships").delete().or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId);
+      await db.from("player_relationships").delete().or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId);
+      await db.from("player_staff_assignments").delete().eq("player_id",managedId);
+      await db.from("player_season_plans").delete().eq("player_id",managedId);
+      await db.from("player_training_load_profiles").delete().eq("player_id",managedId);
+      await db.from("injuries").delete().eq("player_id",managedId);
+      await db.from("ncaa_player_registry").delete().eq("player_id",managedId);
+      await db.from("ranking_history").delete().eq("player_id",managedId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+      await db.from("doubles_ranking_history").delete().eq("player_id",managedId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+    }
+    await db.from("wildcard_requests").delete().not("id","is",null);
+    await db.from("user_staff_external_offers").delete().not("id","is",null);
+    await db.from("davis_squad").delete().eq("nation",nation);
   }
 
   await upsertOne("career_state",snapshot.career,"id");
   await upsertOne("academies",snapshot.academy,"id");
   await upsertOne("finances",snapshot.finance,"id");
   await upsertMany("facilities",snapshot.facilities,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("staff_profiles",snapshot.staff_profiles,"id");
   await upsertMany("staff",snapshot.staff,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("staff_training_enrollments",snapshot.staff_training,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_staff_assignments",snapshot.staff_assignments,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("user_staff_external_offers",snapshot.staff_external_offers,"id");
   await upsertMany("contracts",snapshot.contracts,"id");
   await upsertMany("academy_youth",snapshot.academy_youth,"id");
-  await upsertMany("academy_members",snapshot.academy_members,"id");
   await upsertMany("academy_roster",snapshot.academy_roster,"id");
-  if(isV2){
-    await upsertMany("academy_member_progress",snapshot.academy_member_progress,"member_id");
-    await upsertMany("academy_intake_history",snapshot.academy_intake_history,"id");
-  }
+  await upsertMany("academy_members",snapshot.academy_members,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("academy_member_progress",snapshot.academy_member_progress,"member_id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("academy_intake_history",snapshot.academy_intake_history,"id");
   await upsertMany("training_plan",snapshot.training_plan,"day_index");
   await upsertMany("user_training_progress",snapshot.training_progress,"attribute");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_training_load_profiles",snapshot.training_load,"player_id,as_of_date");
   await upsertOne("medical_plan",snapshot.medical_plan,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("injuries",snapshot.managed_injuries,"id");
   await upsertMany("scouting_assignments",snapshot.scouting_assignments,"id");
   await upsertMany("scouting_reports",snapshot.scouting_reports,"id");
   await upsertMany("sponsor_offers",snapshot.sponsor_offers,"id");
@@ -1412,33 +1403,58 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   await upsertOne("player_attributes",snapshot.managed_attributes,"player_id");
   await upsertOne("player_development_profiles",snapshot.managed_development,"player_id");
   await upsertOne("player_attribute_ceilings",snapshot.managed_ceilings,"player_id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_season_plans",snapshot.season_plans,"player_id,season");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_relationships",snapshot.relationships,"id");
   await upsertMany("entries",snapshot.entries,"id");
   await upsertMany("managed_doubles_entries",snapshot.managed_doubles_entries,"id");
   await upsertMany("wildcard_requests",snapshot.wildcard_requests,"id");
   await upsertMany("player_agency_representation",snapshot.agency,"player_id");
   await upsertMany("player_doubles_commitments",snapshot.doubles_commitments,"player_id");
   await upsertMany("doubles_partner_offers",snapshot.partner_offers,"id");
-
-  if(isV2){
-    await upsertMany("player_doubles_partner_history",snapshot.doubles_partner_history,"id");
-    await upsertMany("player_season_plans",snapshot.season_plans,"player_id,season");
-    await upsertMany("player_relationships",snapshot.relationships,"id");
-    await upsertMany("player_sponsors",snapshot.player_sponsors,"id");
-    await upsertMany("injuries",snapshot.injuries,"id");
-    await upsertMany("player_staff_assignments",snapshot.player_staff_assignments,"id");
-    await upsertMany("user_staff_external_offers",snapshot.staff_external_offers,"id");
-    await upsertMany("staff_peer_relationships",snapshot.staff_peer_relationships,"staff_a_id,staff_b_id");
-    await upsertMany("doubles_partnerships",snapshot.doubles_partnerships,"id");
-    await upsertMany("tournament_runs",snapshot.tournament_runs,"id");
-    await upsertMany("tournament_draw_matches",snapshot.tournament_draw_matches,"id");
-    await upsertMany("doubles_runs",snapshot.doubles_runs,"id");
-    await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
-    await upsertMany("match_history",snapshot.match_history,"id");
-    await upsertMany("career_event_log",snapshot.career_event_log,"id");
-  }
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("doubles_partnerships",snapshot.doubles_partnerships,"id");
   await upsertMany("inbox_items",snapshot.inbox,"id");
   await upsertMany("media_events",snapshot.media_events,"id");
-  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model:snapshot.model,scope:isV2?"managed_career_exact_v2":"managed_career_v1"};
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("career_event_log",snapshot.career_event_log,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("shortlist",snapshot.shortlist,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertOne("college_career_state",snapshot.college_state,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("college_offers",snapshot.college_offers,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("ncaa_player_registry",snapshot.ncaa_registry,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertOne("federation_state",snapshot.federation_state,"nation");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("davis_squad",snapshot.davis_squad,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("season_history",snapshot.season_history,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("match_history",snapshot.match_history,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("tournament_runs",snapshot.tournament_runs,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("doubles_runs",snapshot.doubles_runs,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
+
+  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model,snapshot_scope:model==="CB-MANAGED-SAVE-v2"?"managed_world_exact_v2":"managed_world_v1"};
+}
+
+async function ensureCareerBaselineTemplate(){
+  const existing=await db.from("game_career_templates").select("id,game_version").eq("id","default-2025-12-01").maybeSingle();
+  if(existing.error)throw new Error(existing.error.message);
+  if(existing.data)return {ok:true,created:false,id:existing.data.id};
+
+  const career=await db.from("career_state").select("career_date,week").eq("id","demo").maybeSingle();
+  if(career.error||!career.data)throw new Error(career.error?.message||"Career missing");
+  if(String(career.data.career_date)!==AGE_REFERENCE_DATE||Number(career.data.week||1)!==1){
+    return {ok:false,created:false,reason:"baseline_window_passed"};
+  }
+
+  const snapshot=await captureManagedSaveSnapshot();
+  const localPayload={
+    date:AGE_REFERENCE_DATE,week:1,
+    training:["Service","Retour","Coup droit","Récupération","Déplacements","Match play","Repos"],
+    entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],feed:[],
+    scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
+    tactics:{aggression:58,risk:52,net:28,returnPos:"Neutre"}
+  };
+  const ins=await db.from("game_career_templates").insert({
+    id:"default-2025-12-01",managed_snapshot:snapshot,local_payload:localPayload,
+    game_version:"2026.10-career-os-v2",updated_at:new Date().toISOString()
+  });
+  if(ins.error)throw new Error(ins.error.message);
+  return {ok:true,created:true,id:"default-2025-12-01"};
 }
 
 function specialTeamEventMeta(t:any){
@@ -1923,7 +1939,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:51,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:52,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v2+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

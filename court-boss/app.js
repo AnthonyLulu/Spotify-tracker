@@ -1702,19 +1702,62 @@ window.toggleEntry=window.toggleSinglesEntry;
 function academy(){
  const a=boot.academy||{},c=career();
  const roster=management?.academyRoster||[];
+ const youth=boot.youth||[];
+ const activeYouth=youth.filter(y=>['prospect','signed','academy'].includes(String(y.status||'')));
+ const capacity=Number(a.youth_capacity||8),used=activeYouth.length;
  const focuses=['Équilibré','Service','Retour','Fond de court','Déplacements','Physique','Mental','Double'];
- return `<div class="section-head"><div><div class="eyebrow">Structure</div><h1>${esc(a.name||'Court Boss Academy')}</h1><div class="muted">Réputation ${a.reputation||48}/100 · Board ${a.board_confidence||76}% · ${roster.length} joueur(s) sous contrat</div></div><button class="primary" onclick="nav('board')">Voir le board</button></div>
- <div class="kpi-strip"><div class="kpi click" onclick="nav('finance')"><span class="muted mini">Budget</span><b>${euro(c.budget??a.budget)}</b></div><div class="kpi click" onclick="nav('scouting')"><span class="muted mini">Scouting</span><b>Niv. ${a.scouting_network||2}</b></div><div class="kpi click" onclick="nav('medical')"><span class="muted mini">Médical</span><b>Niv. ${a.medical_level||1}</b></div><div class="kpi"><span class="muted mini">Marketing</span><b>Niv. ${a.marketing||1}</b></div></div>
- <div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Effectif</div><h2>Joueurs sous contrat</h2></div><button class="ghost" onclick="nav('scouting')">Recruter</button></div>
+ const styles=['Équilibré','Technique','Physique','Mental','Service & attaque','Développement long terme'];
+ const monthNames=['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+ const potentialRange=y=>{
+  const lo=Number(y.potential_floor??Math.max(Number(y.current_ability||0),Number(y.potential||0)-8));
+  const hi=Number(y.potential_ceiling??Math.min(99,Number(y.potential||0)+5));
+  return starRatingHtml(abilityStarValue(lo),'Plancher estimé')+'–'+starRatingHtml(abilityStarValue(hi),'Plafond estimé');
+ };
+ return `<div class="section-head"><div><div class="eyebrow">Academy 2.0 · filière jeunes</div><h1>${esc(a.name||'Court Boss Academy')}</h1><div class="muted">Réputation ${a.reputation||48}/100 · jeunes ${a.junior_reputation||40}/100 · Board ${a.board_confidence||76}% · intake annuel en ${monthNames[Number(a.intake_month||3)]}</div></div><div class="row"><button class="soft-btn" onclick="nav('scouting')">Scouting</button><button class="primary" onclick="nav('board')">Board</button></div></div>
+ <div class="kpi-strip">
+  <div class="kpi"><span class="muted mini">Niveau académie</span><b>${a.academy_level||1}/5</b></div>
+  <div class="kpi"><span class="muted mini">Capacité jeunes</span><b>${used}/${capacity}</b><div class="bar"><i style="width:${Math.min(100,Math.round(used/Math.max(1,capacity)*100))}%"></i></div></div>
+  <div class="kpi click" onclick="nav('finance')"><span class="muted mini">Budget</span><b>${euro(c.budget??a.budget)}</b></div>
+  <div class="kpi"><span class="muted mini">Bourses</span><b>${euro(a.scholarship_budget||10000)}</b></div>
+  <div class="kpi"><span class="muted mini">Portée recrutement</span><b>Niv. ${a.recruitment_reach||a.scouting_network||2}</b></div>
+  <div class="kpi"><span class="muted mini">Développement</span><b>${a.development_intensity||2}/5</b></div>
+ </div>
+
+ <div class="grid g2" style="margin-top:12px">
+  <div class="card"><div class="eyebrow">Identité de formation</div><h2>Philosophie</h2>
+   <div class="list-item"><span class="muted mini">Style académie</span><select class="select" onchange="setAcademySetting('academy_style',this.value)">${styles.map(x=>`<option ${x===String(a.academy_style||'Équilibré')?'selected':''}>${x}</option>`).join('')}</select></div>
+   <div class="list-item row between"><span>Intensité développement</span><select class="select" style="width:auto" onchange="setAcademySetting('development_intensity',this.value)">${[1,2,3,4,5].map(x=>`<option value="${x}" ${Number(a.development_intensity||2)===x?'selected':''}>${x}/5</option>`).join('')}</select></div>
+   <div class="list-item row between"><span>Capacité jeunes</span><select class="select" style="width:auto" onchange="setAcademySetting('youth_capacity',this.value)">${[8,10,12,16,20,24].map(x=>`<option value="${x}" ${Number(a.youth_capacity||8)===x?'selected':''}>${x}</option>`).join('')}</select></div>
+   <div class="muted mini" style="margin-top:8px">Une académie plus intense fait progresser plus vite mais augmente la charge. Le niveau des installations et du staff continue de peser sur le développement réel.</div>
+  </div>
+  <div class="card"><div class="eyebrow">Orientation carrière</div><h2>NCAA ↔ Circuit pro</h2>
+   <div class="list-item"><div class="row between"><span>Préférence NCAA</span><b>${a.ncaa_pathway||50}%</b></div><input type="range" min="0" max="100" step="5" value="${a.ncaa_pathway||50}" onchange="setAcademySetting('ncaa_pathway',this.value)"></div>
+   <div class="list-item"><div class="row between"><span>Préférence pro</span><b>${a.pro_pathway||50}%</b></div><input type="range" min="0" max="100" step="5" value="${a.pro_pathway||50}" onchange="setAcademySetting('pro_pathway',this.value)"></div>
+   <div class="notice mini" style="margin-top:8px">À partir de 18 ans, le jeu crée une vraie décision manager. Un départ NCAA génère une projection Court Boss, jamais un faux rang ITA officiel.</div>
+  </div>
+ </div>
+
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Promotion & intake</div><h2>Jeunes de l’académie</h2><div class="muted">Le potentiel reste volontairement incertain et se resserre avec le scouting.</div></div><button class="ghost" onclick="nav('scouting')">Améliorer la connaissance</button></div>
+ <div class="grid g2">${youth.map(y=>`<div class="card academy-youth-card">
+   <div class="row between"><div class="click" onclick="openYouth(${y.id})"><div class="eyebrow">${esc(y.region||'Académie')} · ${esc(y.personality||'Profil en observation')}</div><h2>${flags[y.country]||'🏳️'} ${esc(y.name)}</h2><div class="muted mini">${y.age} ans · ${esc(y.handedness||'—')} · revers ${esc(y.backhand||'—')} · ${esc(y.style||'')}</div></div><span class="badge ${y.status==='signed'?'good':y.status==='ncaa'?'tag-ncaa':''}">${esc(y.status||'prospect')}</span></div>
+   <div class="grid g3" style="margin-top:10px"><div class="kpi"><span class="muted micro">Niveau</span><b>${starRatingHtml(abilityStarValue(y.current_ability||0),'Niveau actuel')}</b></div><div class="kpi"><span class="muted micro">Potentiel scout</span><b style="font-size:12px">${potentialRange(y)}</b></div><div class="kpi"><span class="muted micro">Confiance</span><b>${y.scouting_confidence||45}%</b></div></div>
+   <div class="row" style="margin-top:9px;gap:6px;flex-wrap:wrap"><span class="badge">Moral ${y.morale||70}</span><span class="badge">Charge ${y.training_load||50}</span><span class="badge ${y.injury_status==='Fit'?'good':'bad'}">${esc(y.injury_status||'Fit')}</span><span class="badge">Préférence ${esc(y.pathway_preference||'undecided')}</span></div>
+   ${Number(y.age)>=18&&String(y.status)==='prospect'?`<div class="row" style="margin-top:10px"><button class="primary" onclick="decideYouthPathway(${y.id},'pro')">Passer pro</button><button class="soft-btn" onclick="decideYouthPathway(${y.id},'ncaa')">Envoyer en NCAA</button></div>`:''}
+  </div>`).join('')||'<div class="card empty">Aucun jeune dans la promotion.</div>'}</div>
+
+ <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Effectif professionnel</div><h2>Joueurs sous contrat</h2></div><button class="ghost" onclick="nav('contracts')">Contrats</button></div>
  <div class="stack">${roster.map(r=>{const p=r.players||{};return `<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">${esc(r.squad_role||'Académie')}</div><h2>${flags[p.country]||'🏳️'} ${esc(p.name||'Joueur')}</h2><div class="muted mini">ATP #${fmt(p.ranking||2001)} · ${starRatingHtml(abilityStarValue(p.current_ability||0),'Niveau')} / ${starRatingHtml(abilityStarValue(p.potential||0),'Potentiel')} · ${p.age||'—'} ans</div></div><span class="badge ${p.injury_status==='Fit'?'good':'bad'}">${esc(p.injury_status||'Fit')}</span></div>
  <div class="grid g3" style="margin-top:10px"><div class="kpi"><span class="muted mini">Contrat</span><b style="font-size:13px">${df(r.contract_end)}</b></div><div class="kpi"><span class="muted mini">Coût / sem.</span><b>${euro(r.weekly_cost)}</b></div><div class="kpi"><span class="muted mini">Forme</span><b>${p.form||'—'}</b></div></div>
  <div class="row" style="margin-top:10px;flex-wrap:wrap"><select class="select" style="width:auto" onchange="setAcademyFocus(${r.id},this.value)">${focuses.map(x=>`<option ${x===r.development_focus?'selected':''}>${x}</option>`).join('')}</select><button class="soft-btn" onclick="renewAcademyPlayer(${r.id})">Renouveler +1 an</button>${r.squad_role!=='Joueur principal'?`<button class="danger-btn" onclick="releaseAcademyPlayer(${r.id},'${esc(p.name||'Joueur')}')">Libérer</button>`:''}</div></div>`}).join('')||'<div class="card empty">Aucun joueur sous contrat.</div>'}</div>
+
  <div class="grid g2" style="margin-top:12px">
-  <div class="card"><div class="row between"><h2>Prospects académie</h2><button class="ghost" onclick="nav('scouting')">Scouting</button></div>${(boot.youth||[]).map(y=>`<div class="list-item row between click" onclick="openYouth(${y.id})"><div><b>${flags[y.country]||'🏳️'} ${esc(y.name)}</b><div class="muted mini">${y.age} ans · ${esc(y.style||'')}</div></div><div style="text-align:right"><b>${starRatingHtml(abilityStarValue(y.potential||0),'Potentiel')}</b><div class="muted mini">Niveau ${starRatingHtml(abilityStarValue(y.current_ability||0),'Niveau')}</div><span class="badge ${y.status==='signed'?'good':''}">${y.status==='signed'?'Signé':'Prospect'}</span></div></div>`).join('')}</div>
   <div class="card"><h2>Installations</h2>${(boot.facilities||[]).map(f=>`<div class="list-item row between"><span>${esc(f.name)}</span><div class="row"><b>Niveau ${facilityLevel(f)}/5</b><button class="soft-btn" onclick="upgradeFacility(${f.id},'${esc(f.name)}',${f.level})">Améliorer</button></div></div>`).join('')}</div>
- </div>
- <div class="card" style="margin-top:12px"><h2>Objectifs du board</h2>${(boot.board||[]).map(o=>`<div class="list-item"><div class="row between"><b>${esc(o.objective)}</b><span>${o.progress}%</span></div><div class="bar"><i style="width:${o.progress}%"></i></div></div>`).join('')}</div>`
+  <div class="card"><h2>Objectifs du board</h2>${(boot.board||[]).map(o=>`<div class="list-item"><div class="row between"><b>${esc(o.objective)}</b><span>${o.progress}%</span></div><div class="bar"><i style="width:${o.progress}%"></i></div></div>`).join('')}</div>
+ </div>`;
 }
+
+window.setAcademySetting=async(field,value)=>{try{await managerAction('academy_setting',0,{field,value});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
+window.decideYouthPathway=async(id,decision)=>{if(!confirm(decision==='ncaa'?'Envoyer ce jeune vers la NCAA ?':'Lancer son passage professionnel ?'))return;try{const d=await managerAction('academy_pathway',id,{decision});boot=await get('/api/bootstrap');await loadManagement();alert(decision==='ncaa'?'Destination : '+d.destination:'Passage pro confirmé.');render()}catch(e){alert(e.message)}}
 
 window.setAcademyFocus=async(id,focus)=>{try{await managerAction('academy_focus',id,{focus});await loadManagement();render()}catch(e){alert(e.message)}}
 window.renewAcademyPlayer=async id=>{try{await managerAction('renew_academy_player',id);await loadManagement();render()}catch(e){alert(e.message)}}

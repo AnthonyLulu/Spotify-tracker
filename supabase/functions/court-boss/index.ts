@@ -1159,7 +1159,7 @@ async function managedTournamentEntryRules(t:any){
   if(!managed.data?.managed_player_id)return null;
   const methods=["direct","qualifying","wildcard","alternate","protected","protected_qualifying"];
   const [checks,entry]=await Promise.all([
-    Promise.all(methods.map(method=>db.rpc("tournament_entry_eligibility",{p_player_id:managed.data.managed_player_id,p_tournament_id:t.id,p_entry_method:method}))),
+    Promise.all(methods.map(method=>db.rpc("player_event_eligibility",{p_player_id:managed.data.managed_player_id,p_tournament_id:t.id,p_entry_method:method}))),
     db.from("entries")
       .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at")
       .eq("tournament_id",t.id).eq("player_id",managed.data.managed_player_id).maybeSingle()
@@ -3121,7 +3121,7 @@ Deno.serve(async(req:Request)=>{
       }
       elig={eligible:true,reason:"managed_pathway",entry_method:requestedMethod,pathway:path};
     }else{
-      const eligibility=await db.rpc("tournament_entry_eligibility",{
+      const eligibility=await db.rpc("player_event_eligibility",{
         p_player_id:playerId,p_tournament_id:tid,p_entry_method:requestedMethod
       });
       if(eligibility.error)return h({error:eligibility.error.message},500);
@@ -4519,90 +4519,38 @@ Deno.serve(async(req:Request)=>{
       trainingResult.load=trainingSessions.reduce((sum:number,s:any)=>sum+(["Endurance","Match play","Déplacements"].includes(String(s))?3:["Service","Retour","Coup droit","Revers","Double"].includes(String(s))?2:String(s)==="Récupération"?0:-1),0);
     }
 
-    // Season engines run sequentially on purpose. National-team commitments
-    // reserve the week first, then pro singles, juniors and doubles fill around them.
-    const davisWorldEvents=await db.rpc("simulate_world_davis_ties",{p_from_date:previousDate,p_to_date:date});
-    if(davisWorldEvents.error)return h({error:davisWorldEvents.error.message},500);
-    const juniorDavisEvents=await db.rpc("simulate_junior_davis_cup",{p_from_date:previousDate,p_to_date:date});
-    if(juniorDavisEvents.error)return h({error:juniorDavisEvents.error.message},500);
+    // Unified circuit engine. Competition-specific adapters still own their
+    // draw/match rules, but one SQL orchestrator now owns weekly priority,
+    // acceptance, qualifying, conflicts and the cross-circuit integrity audit.
+    const unifiedCircuitWindow=await db.rpc("run_unified_circuit_window",{
+      p_from_date:previousDate,p_to_date:date
+    });
+    if(unifiedCircuitWindow.error)return h({error:unifiedCircuitWindow.error.message},500);
+    const circuit:any=unifiedCircuitWindow.data||{};
+    const circuitResult=(key:string)=>({data:circuit[key]??null,error:null});
 
-    // United Cup is a mixed national-team event. Its pre-01/12/2025 roster
-    // reserves ATP players before ordinary tour entries are processed.
-    const unitedCupEvents=await db.rpc("simulate_united_cup_window",{p_from_date:previousDate,p_to_date:date});
-    if(unitedCupEvents.error)return h({error:unitedCupEvents.error.message},500);
-
-    const laverCupPreparation=await db.rpc("prepare_laver_cup_window",{p_from_date:previousDate,p_to_date:date});
-    if(laverCupPreparation.error)return h({error:laverCupPreparation.error.message},500);
-    const laverCupEvents=await db.rpc("simulate_laver_cup",{p_from_date:previousDate,p_to_date:date});
-    if(laverCupEvents.error)return h({error:laverCupEvents.error.message},500);
-
-    // Reserve the official ITA team calendar first, but resolve lineups only
-    // after pro singles has had a chance to claim Grand Slam-level players.
-    const ncaaTeamPreparation=await db.rpc("prepare_ita_team_events",{p_from_date:previousDate,p_to_date:date});
-    if(ncaaTeamPreparation.error)return h({error:ncaaTeamPreparation.error.message},500);
-
-    // Verified ITA/NCAA individual championships reserve selected players before pro scheduling.
-    const ncaaPriorityEntries=await db.rpc("prepare_ncaa_priority_individual_events",{p_from_date:previousDate,p_to_date:date});
-    if(ncaaPriorityEntries.error)return h({error:ncaaPriorityEntries.error.message},500);
-
-    // Freeze/refresh original acceptance lists before qualifying. Pre-Q vacancies
-    // promote the next ALT; once qualifying has started, late main-draw vacancies
-    // are reserved for the Lucky Loser route instead of a fresh dynamic selection.
-    const worldAcceptanceEvents=await db.rpc("refresh_world_acceptance_window",{p_from_date:previousDate,p_to_date:date});
-    if(worldAcceptanceEvents.error)return h({error:worldAcceptanceEvents.error.message},500);
-    const worldAcceptanceReconcile=await db.rpc("reconcile_world_acceptance_commitments",{p_from_date:previousDate,p_to_date:date});
-    if(worldAcceptanceReconcile.error)return h({error:worldAcceptanceReconcile.error.message},500);
-
-    // Qualifying reserves players on the real qualifying dates, before main draws.
-    const worldQualifyingEvents=await db.rpc("simulate_world_qualifying_window",{p_from_date:previousDate,p_to_date:date});
-    if(worldQualifyingEvents.error)return h({error:worldQualifyingEvents.error.message},500);
-    const worldDoublesQualifyingEvents=await db.rpc("simulate_world_doubles_qualifying_window",{p_from_date:previousDate,p_to_date:date});
-    if(worldDoublesQualifyingEvents.error)return h({error:worldDoublesQualifyingEvents.error.message},500);
-
-    // Main draws now advance on their actual round dates. The legacy full engine
-    // remains immediately after this as a fallback for round-robin / unsupported
-    // formats and for any event that could not enter the progressive state machine.
-    const progressiveWorldEvents=await db.rpc("advance_world_tournament_window",{p_from_date:previousDate,p_to_date:date});
-    if(progressiveWorldEvents.error)return h({error:progressiveWorldEvents.error.message},500);
-
-    // Pro singles outranks ordinary college duals and can override ITA team duty for a Grand Slam.
-    const worldEvents=await db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date});
-    if(worldEvents.error)return h({error:worldEvents.error.message},500);
-
-    // Nitto ATP Finals doubles: freeze the official selection list on the
-    // post-Paris Monday, then resolve the 8-team RR + SF/F when the event ends.
-    const atpFinalsDoublesPreparation=await db.rpc("prepare_atp_finals_doubles_window",{p_from_date:previousDate,p_to_date:date});
-    if(atpFinalsDoublesPreparation.error)return h({error:atpFinalsDoublesPreparation.error.message},500);
-    const atpFinalsDoublesEvents=await db.rpc("simulate_atp_finals_doubles",{p_from_date:previousDate,p_to_date:date});
-    if(atpFinalsDoublesEvents.error)return h({error:atpFinalsDoublesEvents.error.message},500);
-
-    // ITA team lineups are now resolved with pro absences already known.
-    const ncaaTeamEvents=await db.rpc("simulate_ita_team_event_results",{p_from_date:previousDate,p_to_date:date});
-    if(ncaaTeamEvents.error)return h({error:ncaaTeamEvents.error.message},500);
-
-    // Junior qualifying and main draws outrank synthetic NCAA/UTR events
-    // and routine college duals for eligible junior prospects.
-    const juniorQualifyingEvents=await db.rpc("simulate_junior_qualifying_window",{p_from_date:previousDate,p_to_date:date});
-    if(juniorQualifyingEvents.error)return h({error:juniorQualifyingEvents.error.message},500);
-
-    // Doubles sign-in happens after singles qualifying status is known.
-    // Accepted partnerships are frozen here so the same players cannot be
-    // double-booked into NCAA/UTR or another world event later in the week.
-    const juniorDoublesPreparation=await db.rpc("prepare_junior_doubles_window",{p_from_date:previousDate,p_to_date:date});
-    if(juniorDoublesPreparation.error)return h({error:juniorDoublesPreparation.error.message},500);
-
-    const juniorWorldEvents=await db.rpc("simulate_junior_world_tournaments",{p_from_date:previousDate,p_to_date:date});
-    if(juniorWorldEvents.error)return h({error:juniorWorldEvents.error.message},500);
-
-    // NCAA individual / UTR then fills around pro, ITA and junior commitments.
-    const ncaaIndividualEvents=await db.rpc("simulate_ncaa_individual_events",{p_from_date:previousDate,p_to_date:date});
-    if(ncaaIndividualEvents.error)return h({error:ncaaIndividualEvents.error.message},500);
-
-    // Routine duals use replacement lineups after higher-priority commitments are known.
-    const ncaaWorldEvents=await db.rpc("simulate_ncaa_duals",{p_from_date:previousDate,p_to_date:date});
-    if(ncaaWorldEvents.error)return h({error:ncaaWorldEvents.error.message},500);
-    const worldDoublesEvents=await db.rpc("simulate_world_doubles_tournaments",{p_from_date:previousDate,p_to_date:date});
-    if(worldDoublesEvents.error)return h({error:worldDoublesEvents.error.message},500);
+    const davisWorldEvents=circuitResult("davis");
+    const juniorDavisEvents=circuitResult("junior_davis");
+    const unitedCupEvents=circuitResult("united_cup");
+    const laverCupPreparation=circuitResult("laver_prepare");
+    const laverCupEvents=circuitResult("laver");
+    const ncaaTeamPreparation=circuitResult("ncaa_team_prepare");
+    const ncaaPriorityEntries=circuitResult("ncaa_priority");
+    const worldAcceptanceEvents=circuitResult("world_acceptance");
+    const worldAcceptanceReconcile=circuitResult("world_acceptance_reconcile");
+    const worldQualifyingEvents=circuitResult("world_qualifying");
+    const worldDoublesQualifyingEvents=circuitResult("world_doubles_qualifying");
+    const progressiveWorldEvents=circuitResult("progressive_world");
+    const worldEvents=circuitResult("world_tournaments");
+    const atpFinalsDoublesPreparation=circuitResult("atp_finals_doubles_prepare");
+    const atpFinalsDoublesEvents=circuitResult("atp_finals_doubles");
+    const ncaaTeamEvents=circuitResult("ncaa_team");
+    const juniorQualifyingEvents=circuitResult("junior_qualifying");
+    const juniorDoublesPreparation=circuitResult("junior_doubles_prepare");
+    const juniorWorldEvents=circuitResult("junior_world");
+    const ncaaIndividualEvents=circuitResult("ncaa_individual");
+    const ncaaWorldEvents=circuitResult("ncaa_duals");
+    const worldDoublesEvents=circuitResult("world_doubles");
     const sim=await db.rpc("simulate_world_week",{p_week:week,p_snapshot_date:date});
     if(sim.error) return h({error:sim.error.message},500);
     const hiddenTraitEvolution=await db.rpc("evolve_player_hidden_traits_from_results",{
@@ -4876,7 +4824,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -5400,7 +5348,7 @@ Deno.serve(async(req:Request)=>{
     const structuredJuniorEntry=isJuniorSingles&&!isJuniorFinals&&direct>0&&qual>direct&&Number(formatRule?.qualifier_count||0)>0;
     if(structuredJuniorEntry)entryProjectionModel="junior_rank_projection";
     if(!isSinglesFinals&&!isJuniorSingles){
-      const entrySnapshot=await db.rpc("tournament_entry_eligibility",{
+      const entrySnapshot=await db.rpc("player_event_eligibility",{
         p_player_id:managedId,p_tournament_id:tid,p_entry_method:"direct"
       });
       if(entrySnapshot.error)return h({error:entrySnapshot.error.message},500);
@@ -5488,7 +5436,7 @@ Deno.serve(async(req:Request)=>{
       const eligibilityMode=specialExempt?"direct":entryMode;
       const eligible=frozenEntryMode
         ?{data:{eligible:true,reason:"frozen_acceptance",entry_method:entryMode},error:null}
-        :await db.rpc("tournament_entry_eligibility",{
+        :await db.rpc("player_event_eligibility",{
             p_player_id:managedId,p_tournament_id:tid,p_entry_method:eligibilityMode
           });
       if(eligible.error)return h({error:eligible.error.message},500);
@@ -9279,7 +9227,7 @@ Deno.serve(async(req:Request)=>{
       ]);
       if(t.error||a.error||!t.data)return h({error:(t.error||a.error)?.message||"Tournoi introuvable"},404);
       if(["ATP","Challenger","ITF"].includes(String(t.data.circuit))){
-        const eligibility=await db.rpc("tournament_entry_eligibility",{p_player_id:career.data.managed_player_id,p_tournament_id:id,p_entry_method:"wildcard"});
+        const eligibility=await db.rpc("player_event_eligibility",{p_player_id:career.data.managed_player_id,p_tournament_id:id,p_entry_method:"wildcard"});
         if(eligibility.error)return h({error:eligibility.error.message},500);
         if(eligibility.data?.eligible===false)return h({error:"Wild card impossible : le règlement de ce circuit interdit l'entrée de ce joueur.",entry_rule:eligibility.data},409);
       }

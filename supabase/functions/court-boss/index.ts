@@ -5259,7 +5259,14 @@ Deno.serve(async(req:Request)=>{
         return h({error:labels[reason]||"Joueur non éligible à ce tournoi selon le règlement du circuit.",entry_rule:eligible.data},409);
       }
 
-      const scheduleMode=entryMode==="protected_qualifying"?"qualifying":entryMode==="protected"?"direct":entryMode;
+      const scheduleMode=entryMode==="protected_qualifying"||entryMode.endsWith("_qualifying")
+        ?"qualifying"
+        :entryMode==="protected"||[
+            "special_exempt","late_entry","junior_reserved",
+            "nextgen_accelerator","junior_accelerator","college_accelerator"
+          ].includes(entryMode)
+          ?"direct"
+          :entryMode;
       const schedule=await db.rpc("managed_tournament_schedule_status",{
         p_target_tournament_id:tid,p_entry_mode:scheduleMode
       });
@@ -5748,7 +5755,10 @@ Deno.serve(async(req:Request)=>{
       if(finalRes.winner.isUser)userRound="Champion";
       champion=finalRes.winner;
     }else{
-      qualifier=entryMode==="qualifying"||entryMode==="protected_qualifying";
+      qualifier=frozenEntryPhase==="qualifying"
+        ||entryMode==="qualifying"
+        ||entryMode==="protected_qualifying"
+        ||entryMode.endsWith("_qualifying");
       const qDraw=Math.max(0,Number(t.qualifying_draw_size??formatRule?.qualifying_draw_size??0));
       const qSlots=Math.max(0,Number(formatRule?.qualifier_count||0));
       const qPlan=qualifyingSectionPlan(qDraw,qSlots);

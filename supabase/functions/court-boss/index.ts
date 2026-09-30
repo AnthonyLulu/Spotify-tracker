@@ -5739,6 +5739,19 @@ Deno.serve(async(req:Request)=>{
       :{data:null,error:null};
     const agencyNetwork=await db.rpc("agency_network_overview",{p_limit:12});
     const staffLeaders=await db.rpc("staff_world_leaderboard",{p_limit:20});
+    const academyIntakeHistory=await db.from("academy_intake_history")
+      .select("id,academy_id,youth_id,intake_year,generated_on,country,initial_ca,potential_floor,potential_ceiling,signed,destination,youth:academy_youth(id,name,country,age,status,pathway_preference)")
+      .eq("academy_id","demo").order("intake_year",{ascending:false}).order("id",{ascending:false}).limit(60);
+    const academyConfig=await db.from("academies").select("head_of_youth_profile_id").eq("id","demo").maybeSingle();
+    const academyHeadId=Number(academyConfig.data?.head_of_youth_profile_id||0);
+    const academyHead=academyHeadId
+      ?await db.from("staff_profiles")
+        .select("id,name,nationality,primary_role,youth_rating,development_rating,communication_rating,reputation,specialty,staff_personality,coaching_style,photo_url")
+        .eq("id",academyHeadId).maybeSingle()
+      :{data:null,error:null};
+    const academyStaffCandidates=await db.from("staff")
+      .select("id,name,role,profile_id,profile:staff_profiles(id,name,nationality,primary_role,youth_rating,development_rating,communication_rating,reputation,specialty)")
+      .not("profile_id","is",null).order("skill",{ascending:false});
 
     return h({
       contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],
@@ -5754,7 +5767,10 @@ Deno.serve(async(req:Request)=>{
       ownStaffRelations,
       ownStaffOffers:ownStaffOffers.error?[]:(ownStaffOffers.data??[]),
       doublesPartnerOffers:doublesPartnerOffers.error?[]:(doublesPartnerOffers.data??[]),
-      managedDoublesCommitment:managedDoublesCommitment.error?null:managedDoublesCommitment.data
+      managedDoublesCommitment:managedDoublesCommitment.error?null:managedDoublesCommitment.data,
+      academyIntakeHistory:academyIntakeHistory.error?[]:(academyIntakeHistory.data??[]),
+      academyHead:academyHead.error?null:academyHead.data,
+      academyStaffCandidates:academyStaffCandidates.error?[]:(academyStaffCandidates.data??[])
     });
   }
 
@@ -8860,17 +8876,44 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="academy_setting"){
       const field=String(body?.field||"");
-      const allowed=new Set(["academy_style","ncaa_pathway","pro_pathway","development_intensity","scholarship_budget","youth_capacity"]);
+      const allowed=new Set(["academy_style","ncaa_pathway","pro_pathway","development_intensity","scholarship_budget","youth_capacity","recruitment_reach"]);
       if(!allowed.has(field))return h({error:"Réglage académie invalide"},400);
       let value:any=body?.value;
       if(["ncaa_pathway","pro_pathway"].includes(field))value=n(value,50,0,100);
       if(field==="development_intensity")value=n(value,2,1,5);
       if(field==="youth_capacity")value=n(value,8,4,30);
-      if(field==="scholarship_budget")value=Math.max(0,Number(value||0));
+      if(field==="recruitment_reach")value=n(value,2,1,5);
+      if(field==="scholarship_budget")value=Math.max(0,Math.min(100000,Number(value||0)));
       if(field==="academy_style")value=String(value||"Équilibré").slice(0,60);
       const up=await db.from("academies").update({[field]:value}).eq("id","demo").select("*").single();
       if(up.error)return h({error:up.error.message},500);
       return h({ok:true,academy:up.data});
+    }
+
+    if(action==="assign_head_of_youth"){
+      const profileId=Number(id||0);
+      const member=await db.from("staff")
+        .select("id,name,role,profile_id,profile:staff_profiles(id,name,primary_role,youth_rating,development_rating,communication_rating,reputation)")
+        .eq("profile_id",profileId).maybeSingle();
+      if(member.error||!member.data)return h({error:member.error?.message||"Ce membre ne fait pas partie de ton staff."},404);
+      const p:any=Array.isArray(member.data.profile)?member.data.profile[0]:member.data.profile||{};
+      if(Number(p.youth_rating||0)<1)return h({error:"Ce membre du staff ne possède pas de profil formation jeunes."},409);
+      const up=await db.from("academies").update({head_of_youth_profile_id:profileId}).eq("id","demo").select("*").single();
+      if(up.error)return h({error:up.error.message},500);
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      await db.from("inbox_items").insert({
+        kind:"academy",title:"Direction de la formation mise à jour",
+        body:String(p.name||member.data.name||"Le membre du staff")+" devient responsable du développement des jeunes.",
+        action_route:"academy",is_read:false,game_date:today,priority:"normal",
+        action_type:"open_route",action_label:"Voir l’académie",action_payload:{route:"academy"},decision_status:"info"
+      });
+      await db.from("career_event_log").insert({
+        event_date:today,week:Number(career.data.week||1),system:"academy",event_type:"head_of_youth",
+        entity_type:"staff_profile",entity_id:profileId,
+        summary:"Nouveau responsable de la formation",
+        payload:{staff_profile_id:profileId,name:p.name||member.data.name,youth_rating:Number(p.youth_rating||0)}
+      });
+      return h({ok:true,academy:up.data,head_of_youth:p});
     }
 
     if(action==="academy_pathway"){

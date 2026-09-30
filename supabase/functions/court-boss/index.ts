@@ -10301,6 +10301,7 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="set_scouting_assignment"){
       const focus=String(body?.focus||"U23 potentiel").slice(0,80);
+      const region=String(body?.region||"").trim().slice(0,80);
       const today=String(career.data.career_date||AGE_REFERENCE_DATE);
       let scoutProfileId=Number(body?.scout_profile_id||0);
       let scoutName="";
@@ -10331,14 +10332,16 @@ Deno.serve(async(req:Request)=>{
 
       const eta=new Date(today+"T12:00:00Z");
       eta.setUTCDate(eta.getUTCDate()+Math.max(21,Math.min(70,Math.round((11-scoutRating*.32)*7))));
-      const up=await db.from("scouting_assignments").update({
+      const assignmentPatch:any={
         focus,progress:0,status:"active",started_at:today,last_update:today,
         staff_profile_id:scoutProfileId||null,
         scout_name:scoutName||"Réseau scouting",
         confidence:Math.max(45,Math.min(95,48+scoutRating*2)),
         report_quality:Math.max(40,Math.min(96,45+scoutRating*2)),
         eta_date:eta.toISOString().slice(0,10)
-      }).eq("id",id);
+      };
+      if(region)assignmentPatch.region=region;
+      const up=await db.from("scouting_assignments").update(assignmentPatch).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
       await db.from("scouting_reports").delete().eq("assignment_id",id);
       await db.from("inbox_items").insert({
@@ -10346,7 +10349,7 @@ Deno.serve(async(req:Request)=>{
         body:"Mission lancée : "+focus+" · "+(scoutName||"réseau scouting")+" affecté.",
         action_route:"scouting",is_read:false
       });
-      return h({ok:true,focus,scout_profile_id:scoutProfileId||null,scout_name:scoutName,eta_date:eta.toISOString().slice(0,10)});
+      return h({ok:true,focus,region:region||null,scout_profile_id:scoutProfileId||null,scout_name:scoutName,eta_date:eta.toISOString().slice(0,10)});
     }
 
 

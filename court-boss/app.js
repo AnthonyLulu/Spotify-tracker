@@ -4602,7 +4602,8 @@ window.simulateWeek=async()=>{
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   trainingPreview=null;careerHub=null;
-  await saveCareerSlot(0,'autosave',true);
+  const autosave=await saveCareerSlot(0,'autosave',true);
+  if(!autosave?.ok)throw new Error('La semaine a été validée côté serveur mais l’autosave a échoué. Ouvre le Save Center et sauvegarde avant de continuer.');
   await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
   if(route==='training')await loadTrainingPreview(true).catch(()=>{});
   if(route==='history')await loadHistory().catch(()=>{});

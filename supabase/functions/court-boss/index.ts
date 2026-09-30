@@ -10104,6 +10104,72 @@ Deno.serve(async(req:Request)=>{
     });
   }
 
+
+  if(path.endsWith("/api/save-slots")&&req.method==="GET"){
+    const browserKey=saveId(req); if(!browserKey)return h({error:"Invalid save key"},400);
+    const slots=await db.from("game_save_slots")
+      .select("id,slot_no,slot_type,slot_name,career_date,week,player_name,managed_player_id,snapshot_scope,game_version,created_at,updated_at")
+      .eq("browser_key",browserKey)
+      .order("slot_no",{ascending:true});
+    if(slots.error)return h({error:slots.error.message},500);
+    return h({ok:true,slots:slots.data??[],model:"CB-SAVE-SLOTS-v1"});
+  }
+
+  if(path.endsWith("/api/save-slot")&&req.method==="POST"){
+    const browserKey=saveId(req); if(!browserKey)return h({error:"Invalid save key"},400);
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const slotNo=n(body?.slot_no,0,0,9);
+    const slotType=["manual","autosave","quick"].includes(String(body?.slot_type||"manual"))?String(body?.slot_type||"manual"):"manual";
+    const slotName=String(body?.slot_name||(
+      slotType==="autosave"?"Autosave":slotType==="quick"?"Sauvegarde rapide":"Sauvegarde "+slotNo
+    )).slice(0,80);
+    const snapshot=await captureManagedSaveSnapshot();
+    const payload=body?.local_payload&&typeof body.local_payload==="object"?body.local_payload:{};
+    const save=await db.from("game_save_slots").upsert({
+      browser_key:browserKey,slot_no:slotNo,slot_type:slotType,slot_name:slotName,
+      local_payload:payload,managed_snapshot:snapshot,
+      career_date:snapshot.career_date,week:snapshot.week,
+      player_name:snapshot.career?.player_name||null,
+      managed_player_id:snapshot.managed_player_id||null,
+      snapshot_scope:"managed_world_v1",game_version:"2026.10-career-os-v1",
+      updated_at:new Date().toISOString()
+    },{onConflict:"browser_key,slot_no"}).select("id,slot_no,slot_type,slot_name,career_date,week,player_name,updated_at").single();
+    if(save.error)return h({error:save.error.message},500);
+    await db.from("career_event_log").insert({
+      event_date:snapshot.career_date,week:snapshot.week,system:"save",event_type:"save_created",
+      entity_type:"save_slot",entity_id:save.data.id,
+      summary:"Sauvegarde "+slotName,
+      payload:{slot_no:slotNo,slot_type:slotType,snapshot_scope:"managed_world_v1"}
+    });
+    return h({ok:true,slot:save.data,snapshot_model:snapshot.model});
+  }
+
+  if(path.endsWith("/api/load-slot")&&req.method==="POST"){
+    const browserKey=saveId(req); if(!browserKey)return h({error:"Invalid save key"},400);
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const slotNo=n(body?.slot_no,0,0,9);
+    const slot=await db.from("game_save_slots")
+      .select("*").eq("browser_key",browserKey).eq("slot_no",slotNo).maybeSingle();
+    if(slot.error||!slot.data)return h({error:slot.error?.message||"Sauvegarde introuvable"},404);
+    const restored=await restoreManagedSaveSnapshot(slot.data.managed_snapshot);
+    await db.from("career_event_log").insert({
+      event_date:slot.data.career_date||AGE_REFERENCE_DATE,week:slot.data.week||1,system:"save",event_type:"save_loaded",
+      entity_type:"save_slot",entity_id:slot.data.id,
+      summary:"Chargement "+slot.data.slot_name,
+      payload:{slot_no:slotNo,snapshot_scope:slot.data.snapshot_scope}
+    });
+    return h({ok:true,slot:{slot_no:slot.data.slot_no,slot_name:slot.data.slot_name,career_date:slot.data.career_date,week:slot.data.week},local_payload:slot.data.local_payload,restored});
+  }
+
+  if(path.endsWith("/api/delete-slot")&&req.method==="POST"){
+    const browserKey=saveId(req); if(!browserKey)return h({error:"Invalid save key"},400);
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const slotNo=n(body?.slot_no,0,0,9);
+    if(slotNo===0)return h({error:"Le slot autosave ne peut pas être supprimé."},409);
+    const del=await db.from("game_save_slots").delete().eq("browser_key",browserKey).eq("slot_no",slotNo);
+    return del.error?h({error:del.error.message},500):h({ok:true,slot_no:slotNo});
+  }
+
   if(path.endsWith("/api/save")&&req.method==="POST"){
     const sid=saveId(req); if(!sid) return h({error:"Invalid save key"},400);
     let payload:any; try{payload=await req.json()}catch{return h({error:"Invalid JSON"},400)}

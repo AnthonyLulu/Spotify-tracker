@@ -1206,3 +1206,117 @@ body{background:
   .academy-youth-card .grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
   .academy-youth-card .kpi{padding:8px 6px}
 }
+
+
+/* Career launcher */
+.career-launcher{
+  min-height:100dvh;
+  position:relative;
+  overflow:hidden;
+  background:#06100c;
+  color:var(--text);
+}
+.career-launch-bg{
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(circle at 78% 18%,rgba(166,231,122,.17),transparent 24%),
+    radial-gradient(circle at 16% 82%,rgba(63,145,102,.16),transparent 30%),
+    linear-gradient(145deg,#0a1b13 0%,#07110d 46%,#030806 100%);
+}
+.career-launch-bg::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  opacity:.11;
+  background-image:
+    linear-gradient(rgba(255,255,255,.12) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.12) 1px,transparent 1px);
+  background-size:52px 52px;
+  mask-image:linear-gradient(to bottom,transparent,black 30%,black 70%,transparent);
+}
+.career-launch-shell{
+  position:relative;
+  z-index:1;
+  width:min(1180px,calc(100% - 32px));
+  min-height:100dvh;
+  margin:0 auto;
+  padding:42px 0 38px;
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(330px,.75fr);
+  grid-template-areas:"brand brand" "copy primary" "saves saves";
+  gap:28px 42px;
+  align-content:center;
+}
+.career-launch-brand{grid-area:brand;font-size:24px;font-weight:900;letter-spacing:.18em}
+.career-launch-brand span{font-weight:500}
+.career-launch-brand b{color:var(--accent)}
+.career-launch-brand small{display:block;margin-top:4px;font-size:9px;letter-spacing:.28em;color:var(--muted)}
+.career-launch-copy{grid-area:copy;align-self:center}
+.career-launch-copy h1{
+  margin:8px 0 14px;
+  max-width:720px;
+  font-size:clamp(42px,6vw,82px);
+  line-height:.94;
+  letter-spacing:-.055em;
+}
+.career-launch-copy p{max-width:650px;color:var(--muted);font-size:15px;line-height:1.65}
+.career-launch-primary{grid-area:primary;display:grid;gap:10px;align-self:center}
+.career-launch-main,.career-launch-secondary,.career-launch-new,.career-launch-save{
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:16px;
+  text-align:left;
+  cursor:pointer;
+  color:var(--text);
+  transition:transform .16s ease,border-color .16s ease,background .16s ease;
+}
+.career-launch-main:hover,.career-launch-secondary:hover,.career-launch-new:hover,.career-launch-save:hover{transform:translateY(-2px);border-color:rgba(166,231,122,.42)}
+.career-launch-main{
+  padding:22px;
+  min-height:145px;
+  background:linear-gradient(135deg,rgba(166,231,122,.20),rgba(15,39,28,.92));
+}
+.career-launch-main span,.career-launch-new span{display:block;color:var(--accent);font-size:10px;font-weight:900;letter-spacing:.15em}
+.career-launch-main strong{display:block;margin:8px 0 4px;font-size:25px}
+.career-launch-main small,.career-launch-secondary small,.career-launch-new small,.career-launch-save small{display:block;color:var(--muted);line-height:1.4}
+.career-launch-secondary,.career-launch-new{padding:15px 17px;background:rgba(10,24,17,.84)}
+.career-launch-secondary span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.12em}
+.career-launch-secondary b{display:block;margin:4px 0}
+.career-launch-saves{grid-area:saves;margin-top:8px;padding-top:20px;border-top:1px solid rgba(255,255,255,.08)}
+.career-launch-save-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px}
+.career-launch-save{padding:12px;background:rgba(8,20,14,.78)}
+.career-launch-save-type{display:block;color:var(--accent);font-size:8px;font-weight:900;letter-spacing:.12em}
+.career-launch-save strong{display:block;margin:4px 0 3px;font-size:13px}
+.career-launch-empty{grid-column:1/-1;padding:16px;border:1px dashed rgba(255,255,255,.13);border-radius:14px;color:var(--muted)}
+.career-picker{min-height:100dvh;padding:26px max(16px,calc((100vw - 1080px)/2));background:linear-gradient(160deg,#07110d,#0b1b14)}
+.career-picker-head{display:flex;gap:18px;align-items:flex-start;margin-bottom:18px}
+.career-picker-head h1{margin:3px 0}
+.career-picker-search{position:sticky;top:8px;z-index:5;background:rgba(10,24,17,.94);backdrop-filter:blur(16px)}
+.career-picker-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.career-picker-player{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid rgba(255,255,255,.10);border-radius:16px;background:var(--panel)}
+.career-picker-player h2{margin:2px 0 4px}
+.career-picker-avatar{width:58px;height:70px;border-radius:12px;overflow:hidden;flex:0 0 58px;background:#10251c}
+.career-picker-avatar img{width:100%;height:100%;object-fit:cover;object-position:top center}
+
+@media(max-width:820px){
+  .career-launch-shell{
+    width:min(100% - 22px,680px);
+    padding:26px 0 30px;
+    grid-template-columns:1fr;
+    grid-template-areas:"brand" "copy" "primary" "saves";
+    gap:20px;
+    align-content:start;
+  }
+  .career-launch-copy h1{font-size:clamp(38px,13vw,62px)}
+  .career-launch-save-grid{grid-template-columns:1fr 1fr}
+  .career-picker{padding:18px 12px 32px}
+  .career-picker-results{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .career-launch-save-grid{grid-template-columns:1fr}
+  .career-launch-main{min-height:126px;padding:18px}
+  .career-launch-copy p{font-size:14px}
+  .career-picker-head{display:grid;grid-template-columns:1fr}
+  .career-picker-player{align-items:flex-start}
+  .career-picker-player .primary{align-self:center}
+}

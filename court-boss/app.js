@@ -1742,7 +1742,7 @@ function academy(){
    <div class="row between"><div class="click" onclick="openYouth(${y.id})"><div class="eyebrow">${esc(y.region||'Académie')} · ${esc(y.personality||'Profil en observation')}</div><h2>${flags[y.country]||'🏳️'} ${esc(y.name)}</h2><div class="muted mini">${y.age} ans · ${esc(y.handedness||'—')} · revers ${esc(y.backhand||'—')} · ${esc(y.style||'')}</div></div><span class="badge ${y.status==='signed'?'good':y.status==='ncaa'?'tag-ncaa':''}">${esc(y.status||'prospect')}</span></div>
    <div class="grid g3" style="margin-top:10px"><div class="kpi"><span class="muted micro">Niveau</span><b>${starRatingHtml(abilityStarValue(y.current_ability||0),'Niveau actuel')}</b></div><div class="kpi"><span class="muted micro">Potentiel scout</span><b style="font-size:12px">${potentialRange(y)}</b></div><div class="kpi"><span class="muted micro">Confiance</span><b>${y.scouting_confidence||45}%</b></div></div>
    <div class="row" style="margin-top:9px;gap:6px;flex-wrap:wrap"><span class="badge">Moral ${y.morale||70}</span><span class="badge">Charge ${y.training_load||50}</span><span class="badge ${y.injury_status==='Fit'?'good':'bad'}">${esc(y.injury_status||'Fit')}</span><span class="badge">Préférence ${esc(y.pathway_preference||'undecided')}</span></div>
-   ${Number(y.age)>=18&&String(y.status)==='prospect'?`<div class="row" style="margin-top:10px"><button class="primary" onclick="decideYouthPathway(${y.id},'pro')">Passer pro</button><button class="soft-btn" onclick="decideYouthPathway(${y.id},'ncaa')">Envoyer en NCAA</button></div>`:''}
+   ${Number(y.age)>=18&&String(y.status)==='prospect'?`<div class="row" style="margin-top:10px"><button class="primary" onclick="decideYouthPathway(${y.id},'pro')">Passer pro</button><button class="soft-btn" onclick="decideYouthPathway(${y.id},'ncaa')">Envoyer en NCAA</button><button class="ghost" onclick="decideYouthPathway(${y.id},'release')">Libérer</button></div>`:''}
   </div>`).join('')||'<div class="card empty">Aucun jeune dans la promotion.</div>'}</div>
 
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Effectif professionnel</div><h2>Joueurs sous contrat</h2></div><button class="ghost" onclick="nav('contracts')">Contrats</button></div>
@@ -1757,7 +1757,16 @@ function academy(){
 }
 
 window.setAcademySetting=async(field,value)=>{try{await managerAction('academy_setting',0,{field,value});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
-window.decideYouthPathway=async(id,decision)=>{if(!confirm(decision==='ncaa'?'Envoyer ce jeune vers la NCAA ?':'Lancer son passage professionnel ?'))return;try{const d=await managerAction('academy_pathway',id,{decision});boot=await get('/api/bootstrap');await loadManagement();alert(decision==='ncaa'?'Destination : '+d.destination:'Passage pro confirmé.');render()}catch(e){alert(e.message)}}
+window.decideYouthPathway=async(id,decision)=>{
+ const question=decision==='ncaa'?'Envoyer ce jeune vers la NCAA ?':decision==='release'?'Libérer ce jeune de l’académie ?':'Lancer son passage professionnel ?';
+ if(!confirm(question))return;
+ try{
+  const d=await managerAction('academy_pathway',id,{decision});
+  boot=await get('/api/bootstrap');await loadManagement();
+  alert(decision==='ncaa'?'Destination : '+d.destination:decision==='release'?'Le jeune a été libéré.':'Passage pro confirmé.');
+  render();
+ }catch(e){alert(e.message)}
+}
 
 window.setAcademyFocus=async(id,focus)=>{try{await managerAction('academy_focus',id,{focus});await loadManagement();render()}catch(e){alert(e.message)}}
 window.renewAcademyPlayer=async id=>{try{await managerAction('renew_academy_player',id);await loadManagement();render()}catch(e){alert(e.message)}}
@@ -2760,19 +2769,20 @@ function fantasyPage(){
 }
 function saveCenterPage(){
  const byNo=new Map((saveSlots||[]).map(x=>[Number(x.slot_no),x]));
- const cards=[0,1,2,3].map(n=>{
-  const x=byNo.get(n),auto=n===0;
-  return `<div class="card save-slot ${x?'has-save':''}">
-    <div class="row between"><div><div class="eyebrow">${auto?'Autosave':'Slot '+n}</div><h2>${esc(x?.slot_name||(auto?'Autosave hebdomadaire':'Slot vide'))}</h2></div><span class="badge ${x?'good':''}">${x?'Disponible':'Vide'}</span></div>
+ const cards=[0,1,2,3,4,5,9].map(n=>{
+  const x=byNo.get(n),auto=n===0,quick=n===9;
+  const slotLabel=auto?'Autosave':quick?'Quicksave':'Slot '+n;
+  return `<div class="card save-slot ${x?'has-save':''} ${auto?'is-autosave':''} ${quick?'is-quicksave':''}">
+    <div class="row between"><div><div class="eyebrow">${slotLabel}</div><h2>${esc(x?.slot_name||(auto?'Autosave hebdomadaire':quick?'Sauvegarde rapide':'Slot vide'))}</h2></div><span class="badge ${x?'good':''}">${x?'Disponible':'Vide'}</span></div>
     ${x?`<div class="list-item row between"><span>Date carrière</span><b>${df(x.career_date)}</b></div><div class="list-item row between"><span>Semaine</span><b>${fmt(x.week||1)}</b></div><div class="list-item row between"><span>Joueur</span><b>${esc(x.player_name||'—')}</b></div><div class="muted micro" style="margin-top:7px">Dernière écriture : ${new Date(x.updated_at).toLocaleString('fr-FR')}</div>`:auto?'<div class="muted">L’autosave sera créé après la prochaine semaine simulée.</div>':'<div class="empty">Aucune sauvegarde dans ce slot.</div>'}
     <div class="row" style="margin-top:12px;flex-wrap:wrap">
       ${x?`<button class="primary" onclick="loadCareerSlot(${n})">Charger</button>`:''}
-      <button class="soft-btn" ${saveSlotBusy?'disabled':''} onclick="saveCareerSlot(${n},'${auto?'autosave':'manual'}')">${x?'Écraser':'Sauvegarder ici'}</button>
+      <button class="soft-btn" ${saveSlotBusy?'disabled':''} onclick="saveCareerSlot(${n},'${auto?'autosave':quick?'quick':'manual'}')">${x?'Écraser':'Sauvegarder ici'}</button>
       ${x&&!auto?`<button class="danger-btn" onclick="deleteCareerSlot(${n})">Supprimer</button>`:''}
     </div>
    </div>`;
  }).join('');
- return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 3 slots manuels. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(1,'manual')">Sauvegarde rapide</button></div>
+ return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
  <div class="notice mini"><b>Snapshot managé v1 :</b> les slots restaurent l’état complet de ta structure et du joueur géré. Le monde global reste piloté par le moteur de simulation de la carrière.</div>
  <div class="grid g2" style="margin-top:12px">${cards}</div>`;
 }
@@ -4270,6 +4280,7 @@ window.simulateWeek=async()=>{
     await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
     trainingPreview=null;if(route==='training')await loadTrainingPreview(true);
     if(route==='history')await loadHistory();
+    await saveCareerSlot(0,'autosave',true);
     return;
   }
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
@@ -4294,6 +4305,7 @@ window.simulateWeek=async()=>{
   await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
   trainingPreview=null;if(route==='training')await loadTrainingPreview(true);
   if(route==='history')await loadHistory();
+  await saveCareerSlot(0,'autosave',true);
  }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }

@@ -2830,22 +2830,50 @@ function tournamentBracketHtml(matches,entries,byeSlots,bracketSize,title){
  let rows=Array.isArray(matches)?matches.filter(Boolean):[];
  if(!rows.length)rows=projectedTournamentR1(entries,byeSlots,bracketSize);
  if(!rows.length)return "<div class='card'><h2>"+esc(title||'Tableau')+"</h2><div class='empty'>Le tirage n’est pas encore publié.</div></div>";
- const roundKeys=[]; for(const m of rows){const k=String(m.round_name||m.round_code||'Tour');if(!roundKeys.includes(k))roundKeys.push(k)}
+ let size=Number(bracketSize||0);
+ if(!size){
+  const maxSlot=Math.max(2,...(entries||[]).map(x=>Number(x.draw_slot)||0));
+  size=Math.pow(2,Math.ceil(Math.log2(maxSlot)));
+ }
+ size=Math.max(2,Math.pow(2,Math.ceil(Math.log2(size))));
+ const totalRounds=Math.max(1,Math.round(Math.log2(size)));
+ const roundLabel=r=>{
+  if(r===1)return '1er tour';
+  if(r===totalRounds)return 'Finale';
+  if(r===totalRounds-1)return 'Demi-finales';
+  if(r===totalRounds-2)return 'Quarts de finale';
+  if(r===totalRounds-3)return 'Huitièmes';
+  return r+'e tour';
+ };
+ for(let r=1;r<=totalRounds;r++){
+  if(rows.some(m=>Number(m.round_no||0)===r))continue;
+  const count=Math.max(1,size/Math.pow(2,r));
+  for(let m=1;m<=count;m++)rows.push({
+   round_no:r,round_name:roundLabel(r),match_no:m,
+   player_a_id:null,player_b_id:null,player_a_name:'À déterminer',player_b_name:'À déterminer',
+   scheduled_date:null,status:'scheduled',score:null,placeholder:true
+  });
+ }
+ rows.sort((a,b)=>Number(a.round_no||99)-Number(b.round_no||99)||Number(a.match_no||99)-Number(b.match_no||99));
+ const roundNos=[...new Set(rows.map(m=>Number(m.round_no||0)).filter(Boolean))].sort((a,b)=>a-b);
  const pLine=(id,name,seed,code)=>{
-  const label=(seed?'['+seed+'] ':'')+(code&&code!=='DA'?'('+code+') ':'')+String(name||'À déterminer');
+  const ec=code?tournamentEntryCode(code):'';
+  const label=(seed?'['+seed+'] ':'')+(ec&&ec!=='DA'?'('+ec+') ':'')+String(name||'À déterminer');
   return id?"<div class='click' onclick='openPlayer("+Number(id)+")'>"+esc(label)+"</div>":"<div>"+esc(label)+"</div>";
  };
- return "<div class='card'><div class='row between'><div><div class='eyebrow'>Tirage</div><h2>"+esc(title||'Tableau')+"</h2></div><span class='badge'>"+rows.length+" match"+(rows.length>1?'s':'')+"</span></div>"+
+ const played=rows.filter(m=>m.status==='completed'&&!m.placeholder&&m.score!=='BYE').length;
+ return "<div class='card'><div class='row between'><div><div class='eyebrow'>Tirage évolutif</div><h2>"+esc(title||'Tableau')+"</h2></div><span class='badge'>"+played+" joué"+(played>1?'s':'')+" · "+size+" slots</span></div>"+
   "<div style='display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding:10px 0'>"+
-  roundKeys.map(r=>"<div style='min-width:255px;flex:0 0 255px'><div class='row between' style='margin-bottom:7px'><b>"+esc(r)+"</b></div>"+
-    rows.filter(m=>String(m.round_name||m.round_code||'Tour')===r).map(m=>"<div class='list-item' style='margin-bottom:8px'>"+
-      "<div class='row between'><span class='muted micro'>"+(m.scheduled_date?df(m.scheduled_date):'Date à fixer')+"</span><span class='badge "+(m.status==='completed'?'good':'')+"'>"+(m.status==='completed'?'Joué':'À jouer')+"</span></div>"+
+  roundNos.map(r=>"<div style='min-width:255px;flex:0 0 255px'><div class='row between' style='margin-bottom:7px'><b>"+esc((rows.find(m=>Number(m.round_no||0)===r)?.round_name)||roundLabel(r))+"</b></div>"+
+    rows.filter(m=>Number(m.round_no||0)===r).map(m=>"<div class='list-item' style='margin-bottom:8px;opacity:"+(m.placeholder?.72:1)+"'>"+
+      "<div class='row between'><span class='muted micro'>"+(m.scheduled_date?df(m.scheduled_date):'À programmer')+"</span><span class='badge "+(m.status==='completed'?'good':'')+"'>"+(m.score==='BYE'?'BYE':m.status==='completed'?'Joué':'À jouer')+"</span></div>"+
       "<div style='margin-top:5px'>"+pLine(m.player_a_id,m.player_a_name,m.player_a_seed,m.player_a_entry)+"</div>"+
       "<div>"+pLine(m.player_b_id,m.player_b_name,m.player_b_seed,m.player_b_entry)+"</div>"+
-      (m.score?"<div class='muted mini' style='margin-top:5px'><b>"+esc(m.score)+"</b>"+(m.winner_name?' · '+esc(m.winner_name):'')+"</div>":"")+
+      (m.score&&m.score!=='BYE'?"<div class='muted mini' style='margin-top:5px'><b>"+esc(m.score)+"</b>"+(m.winner_name?' · '+esc(m.winner_name):'')+"</div>":"")+
     "</div>").join('')+"</div>").join('')+
   "</div></div>";
 }
+
 function luckyLoserHtml(rows){
  if(!Array.isArray(rows)||!rows.length)return "<div class='notice mini'><b>Lucky Losers :</b> l’ordre sera généré après les qualifications si une place se libère.</div>";
  return "<div class='card' style='margin-top:12px'><div class='row between'><h2>Ordre Lucky Loser</h2><span class='badge'>LL</span></div><div class='table-wrap'><table class='table'><thead><tr><th>Ordre</th><th>Joueur</th><th>Rang</th><th>Statut</th></tr></thead><tbody>"+

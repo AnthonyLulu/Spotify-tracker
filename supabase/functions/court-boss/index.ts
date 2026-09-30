@@ -5673,8 +5673,9 @@ Deno.serve(async(req:Request)=>{
       const ensuredPlan=await db.rpc("ensure_managed_season_plan",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)});
       if(ensuredPlan.error)return h({error:ensuredPlan.error.message},500);
     }
-    const [health,seasonPlan,media,sponsors,board,timeline,relationships,academy]=await Promise.all([
+    const [health,integrity,seasonPlan,media,sponsors,board,timeline,relationships,academy]=await Promise.all([
       db.rpc("career_system_health",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
+      db.rpc("career_os_integrity_audit",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
       managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",year).maybeSingle():Promise.resolve({data:null,error:null} as any),
       db.from("media_events").select("*").lte("event_date",career.data.career_date).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(60),
       db.from("sponsor_offers").select("*").order("status",{ascending:true}).order("created_at",{ascending:false}).limit(30),
@@ -5688,7 +5689,7 @@ Deno.serve(async(req:Request)=>{
         :Promise.resolve({data:[],error:null} as any),
       db.from("academies").select("*").eq("id","demo").maybeSingle()
     ]);
-    const err=health.error||seasonPlan.error||media.error||sponsors.error||board.error||timeline.error||relationships.error||academy.error;
+    const err=health.error||integrity.error||seasonPlan.error||media.error||sponsors.error||board.error||timeline.error||relationships.error||academy.error;
     if(err)return h({error:err.message},500);
     const rels=(relationships.data??[]).map((x:any)=>{
       const other=Number(x.player_a_id)===managedId?(Array.isArray(x.player_b)?x.player_b[0]:x.player_b):(Array.isArray(x.player_a)?x.player_a[0]:x.player_a);
@@ -5697,6 +5698,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       model:"CB-CAREER-HUB-v2",
       health:health.data??null,
+      integrity:integrity.data??null,
       career:career.data,
       season_plan:seasonPlan.data??null,
       seasonPlan:seasonPlan.data??null,

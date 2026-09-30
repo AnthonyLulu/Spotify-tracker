@@ -617,10 +617,12 @@ async function renderCareerPickerResults(params){
         <h2>${esc(p.name)}</h2>
         <div class="muted mini">${p.ranking?'ATP #'+fmt(p.ranking):'ATP NR'} · ${ageLabel(p,true)} · ${esc(p.style||'Style à découvrir')}</div>
       </div>
-      <button class="primary" onclick="startCareerWithPlayer(${p.id},${JSON.stringify(String(p.name||'Joueur'))})">Gérer</button>
+      <button class="primary" onclick='startCareerFromPicker(${p.id},${JSON.stringify(String(p.name||'Joueur')).replace(/'/g,"&#39;")})'>Gérer</button>
     </div>`).join(''):'<div class="card empty">Aucun joueur trouvé.</div>';
   }catch(e){box.innerHTML='<div class="notice bad">'+esc(e.message)+'</div>'}
 }
+
+window.startCareerFromPicker=(id,name)=>window.startCareerWithPlayer(Number(id),String(name||'Joueur'));
 
 window.startCareerWithPlayer=async function(id,name){
   if(!confirm("Démarrer une nouvelle carrière avec "+name+" ? Les résultats de la carrière actuelle seront réinitialisés."))return;

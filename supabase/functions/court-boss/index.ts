@@ -1498,6 +1498,28 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   const managedId=Number(snapshot.managed_player_id||snapshot.career?.managed_player_id||0);
   const nation=String(snapshot.federation_nation||snapshot.career?.federation_nation||snapshot.career?.selected_federation_nation||snapshot.career?.country||"FRA");
 
+  let currentManagedId=0;
+  let currentNation=nation;
+  let currentStaffProfileIds:number[]=[];
+  if(model==="CB-MANAGED-SAVE-v2"){
+    const currentCareer=await db.from("career_state")
+      .select("managed_player_id,federation_nation,selected_federation_nation,country")
+      .eq("id","demo").maybeSingle();
+    if(currentCareer.error)throw new Error("current career cleanup: "+currentCareer.error.message);
+    currentManagedId=Number(currentCareer.data?.managed_player_id||0);
+    currentNation=String(
+      currentCareer.data?.federation_nation
+      ||currentCareer.data?.selected_federation_nation
+      ||currentCareer.data?.country
+      ||nation
+    );
+    const currentStaffProfiles=await db.from("staff").select("profile_id");
+    if(currentStaffProfiles.error)throw new Error("staff profile cleanup: "+currentStaffProfiles.error.message);
+    currentStaffProfileIds=[...new Set((currentStaffProfiles.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean))];
+  }
+  const managedCleanupIds=[...new Set([currentManagedId,managedId].filter(Boolean))];
+  const nationCleanup=[...new Set([currentNation,nation].filter(Boolean))];
+
   if(model==="CB-MANAGED-SAVE-v2"){
     // Exact managed-world rewind. Global AI/world tournament state is intentionally not rewound.
     await deleteAll("inbox_items");
@@ -1532,36 +1554,37 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     await deleteAll("doubles_runs");
     await db.from("match_history").delete().eq("user_involved",true);
     await db.from("managed_doubles_entries").delete().eq("owner_id","demo");
-    if(managedId){
-      await db.from("entries").delete().eq("player_id",managedId);
-      await db.from("player_agency_representation").delete().eq("player_id",managedId);
-      await db.from("player_doubles_commitments").delete().eq("player_id",managedId);
-      await db.from("player_doubles_partner_history").delete().eq("player_id",managedId);
-      await db.from("doubles_partner_offers").delete().or("from_player_id.eq."+managedId+",to_player_id.eq."+managedId);
-      await db.from("doubles_partnerships").delete().or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId);
-      await db.from("player_relationships").delete().or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId);
-      await db.from("player_sponsors").delete().eq("player_id",managedId);
-      await db.from("player_staff_assignments").delete().eq("player_id",managedId);
-      await db.from("player_season_plans").delete().eq("player_id",managedId);
-      await db.from("player_training_load_profiles").delete().eq("player_id",managedId);
-      await db.from("injuries").delete().eq("player_id",managedId);
-      await db.from("ncaa_player_registry").delete().eq("player_id",managedId);
-      await db.from("ranking_history").delete().eq("player_id",managedId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
-      await db.from("doubles_ranking_history").delete().eq("player_id",managedId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+    for(const cleanupPlayerId of managedCleanupIds){
+      await db.from("entries").delete().eq("player_id",cleanupPlayerId);
+      await db.from("player_agency_representation").delete().eq("player_id",cleanupPlayerId);
+      await db.from("player_doubles_commitments").delete().eq("player_id",cleanupPlayerId);
+      await db.from("player_doubles_partner_history").delete().eq("player_id",cleanupPlayerId);
+      await db.from("doubles_partner_offers").delete().or("from_player_id.eq."+cleanupPlayerId+",to_player_id.eq."+cleanupPlayerId);
+      await db.from("doubles_partnerships").delete().or("player_a_id.eq."+cleanupPlayerId+",player_b_id.eq."+cleanupPlayerId);
+      await db.from("player_relationships").delete().or("player_a_id.eq."+cleanupPlayerId+",player_b_id.eq."+cleanupPlayerId);
+      await db.from("player_sponsors").delete().eq("player_id",cleanupPlayerId);
+      await db.from("player_staff_assignments").delete().eq("player_id",cleanupPlayerId);
+      await db.from("player_season_plans").delete().eq("player_id",cleanupPlayerId);
+      await db.from("player_training_load_profiles").delete().eq("player_id",cleanupPlayerId);
+      await db.from("injuries").delete().eq("player_id",cleanupPlayerId);
+      await db.from("ncaa_player_registry").delete().eq("player_id",cleanupPlayerId);
+      await db.from("ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+      await db.from("doubles_ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
     }
     await db.from("wildcard_requests").delete().not("id","is",null);
     await db.from("user_staff_external_offers").delete().not("id","is",null);
-    const currentStaffProfiles=await db.from("staff").select("profile_id");
-    if(currentStaffProfiles.error)throw new Error("staff profile cleanup: "+currentStaffProfiles.error.message);
     const peerIds=[...new Set([
-      ...(currentStaffProfiles.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean),
+      ...currentStaffProfileIds,
       ...(snapshot.staff??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean)
     ])];
     if(peerIds.length){
       const peerDel=await db.from("staff_peer_relationships").delete().or("staff_a_id.in.("+peerIds.join(",")+"),staff_b_id.in.("+peerIds.join(",")+")");
       if(peerDel.error)throw new Error("staff peer cleanup: "+peerDel.error.message);
     }
-    await db.from("davis_squad").delete().eq("nation",nation);
+    for(const cleanupNation of nationCleanup){
+      const davisCleanup=await db.from("davis_squad").delete().eq("nation",cleanupNation);
+      if(davisCleanup.error)throw new Error("davis_squad cleanup: "+davisCleanup.error.message);
+    }
   }
 
   await upsertOne("career_state",snapshot.career,"id");

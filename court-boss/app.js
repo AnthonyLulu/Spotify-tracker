@@ -622,11 +622,12 @@ async function loadStaffWorld(){
   staffWorldData=await get('/api/staff-world?'+p.toString());
  }finally{staffWorldLoading=false}
 }
+const rankPageSize=()=>rankKind==='ncaa'?150:100;
 async function loadRankings(){
  const q=rankQuery?'&q='+encodeURIComponent(rankQuery):'';
  const u=rankKind==='nextgen'?'&u='+nextGenAge:'';
  const c=rankCountry?'&country='+encodeURIComponent(rankCountry):'';
- const d=await get(`/api/rankings?kind=${rankKind}&offset=${rankOffset}&limit=100${q}${u}${c}`);
+ const d=await get(`/api/rankings?kind=${rankKind}&offset=${rankOffset}&limit=${rankPageSize()}${q}${u}${c}`);
  rankRows=d.rows;rankCount=d.count;rankMeta=d;
  if(rankKind==='ncaa'){
   try{
@@ -809,12 +810,12 @@ function rankings(){
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>${rankKind==='singles'?'# ATP / Monde':'#'}</th>${rankKind==='singles'?'<th>Meilleur carrière</th><th>+/−</th>':''}<th>${rankRows[0]?.is_team?'Paire':'Joueur'}</th><th>Âge 01/12/25</th><th>Pays</th><th>Pts</th><th>${['doubles_race','junior_race','junior_doubles_race'].includes(rankKind)?'Finals':rankKind==='nextgen'?'ATP':'Niv.'}</th><th>${['doubles_race','junior_race','junior_doubles_race'].includes(rankKind)?'Statut':rankKind==='nextgen'?'Statut':'Pot.'}</th></tr></thead><tbody>
   ${rankRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${rankCell(p,rankKind)}</td>${rankKind==='singles'?`<td>${(p.career_high_rank??p.best_rank_2025)?'#'+fmt(p.career_high_rank??p.best_rank_2025):'—'}</td><td>${p.ranking_change==null?'<span class="muted">—</span>':p.ranking_change>0?'<span class="rank-up">▲ '+p.ranking_change+'</span>':p.ranking_change<0?'<span class="rank-down">▼ '+Math.abs(p.ranking_change)+'</span>':'<span class="muted">=</span>'}</td>`:''}<td><b>${esc(p.name)}</b> ${p.game_generated?'<span class="badge">Newgen</span>':''}${rankKind==='junior'&&p.junior_rank_type==='official'?'<span class="badge good">ITF vérifié</span>':rankKind==='junior'&&p.junior_rank_type==='verified_nr'?'<span class="badge">ITF · NR</span>':''}${p.ncaa_current?'<span class="badge tag-ncaa">NCAA</span>':p.ncaa_status==='Alumni'?'<span class="badge tag-ncaa">NCAA Alumni</span>':''}${rankKind==='doubles'?(p.doubles_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Index DB</span>'):''}${['doubles_race','junior_race','junior_doubles_race'].includes(rankKind)?(p.official_qualification?'<span class="badge good">Rang officiel · pts estimés</span>':/estimated|estimate|estimé/i.test(String(p.source||''))?'<span class="badge">Estimé</span>':/simulated|Court Boss/i.test(String(p.source||''))?'<span class="badge">Simulé</span>':'<span class="badge good">Officiel</span>'):''}<div class="muted micro">${rankKind==='singles'?(p.official_ranking?'ATP officiel #'+fmt(p.official_ranking):p.game_generated?'Joueur généré Court Boss':'Base historique / scouting'):rankKind==='junior'?(p.junior_rank_type==='official'?'Rang jeu #'+fmt(p.junior_ranking)+' · ITF source #'+fmt(p.junior_official_ranking)+(rankSnapshot(p,rankKind)?' · au '+df(rankSnapshot(p,rankKind)):''):p.junior_rank_type==='verified_nr'?'Rang jeu #'+fmt(p.junior_ranking)+' · ITF vérifié, rang estimé':'Rang jeu #'+fmt(p.junior_ranking)+' · Newgen simulé · 13–17 ans'):(rankSnapshot(p,rankKind)?'au '+df(rankSnapshot(p,rankKind)):'')}${p.ncaa_current&&p.ncaa_school?' · '+esc(p.ncaa_school):p.ncaa_status==='Alumni'&&p.ncaa_last_school?' · ex-'+esc(p.ncaa_last_school):''}</div></td><td>${rankAge(p,rankKind)}</td><td>${flags[p.country]||'🏳️'} ${esc(p.country)}</td><td><b>${rankPoints(p,rankKind)==null?'—':fmt(rankPoints(p,rankKind))}</b></td><td>${['doubles_race','junior_race','junior_doubles_race'].includes(rankKind)?'Top '+fmt(rankMeta?.qualificationPlaces||8):rankKind==='nextgen'?(p.ranking?'#'+fmt(p.ranking):'—'):rankingLevelKnowledgeCell(p)}</td><td>${['doubles_race','junior_race','junior_doubles_race'].includes(rankKind)?(p.finals_status==='qualified'?'<span class="badge good">Qualifié</span>':p.finals_status==='alternate'?'<span class="badge warn">Remplaçant</span>':'<span class="badge">En course</span>'):rankKind==='nextgen'?(p.nextgen_status==='withdrawn'?'<span class="badge bad">Retiré</span>':p.nextgen_status==='alternate'?'<span class="badge warn">Remplaçant</span>':p.nextgen_status==='qualified'?'<span class="badge good">Qualifié</span>':rankingPotentialKnowledgeCell(p)):rankingPotentialKnowledgeCell(p)}</td></tr>`).join('')}
   </tbody></table></div>
-  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
+  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+rankPageSize()>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>
  </div>`
 }
 window.jumpRanking=async()=>{
  const target=clamp(Number(document.getElementById('rankJump')?.value||1),1,Math.max(1,rankCount));
- rankQuery='';rankOffset=Math.max(0,Math.min(Math.max(0,rankCount-100),target-1));
+ rankQuery='';rankOffset=Math.max(0,Math.min(Math.max(0,rankCount-rankPageSize()),target-1));
  await loadRankings();render();
 }
 function ncaaRanking(){
@@ -827,7 +828,7 @@ function ncaaRanking(){
    ${rows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ncaa_rank_type==='simulated_depth'?(p.ncaa_projected_rank?'~#'+fmt(p.ncaa_projected_rank):'~'):p.ncaa_rank?'#'+fmt(p.ncaa_rank):'—'}</td><td>${p.ncaa_rank_type==='official'?'<span class="badge good">ITA officiel</span>':p.ncaa_rank_type==='simulated_depth'?'<span class="badge warn">Projection Court Boss</span>':p.ncaa_rank_verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Profil NCAA</span>'}<div class="muted micro">${p.ncaa_snapshot_date?'au '+df(p.ncaa_snapshot_date):''}</div></td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${rankAge(p,'ncaa')}</td><td><b>${esc(p.ncaa_school||'—')}</b></td><td>${esc(p.ncaa_division||'NCAA')}</td><td>${p.utr_rating!=null?'<b>'+(p.utr_verified?'':'~')+Number(p.utr_rating).toFixed(2)+'</b><div class="muted micro">'+(p.utr_verified?'UTR vérifié':'UTR estimé Court Boss')+'</div>':'—'}</td><td>${p.ranking_current&&p.ranking?'#'+fmt(p.ranking):'—'}</td><td><span class="badge ${(p.ncaa_current||p.ncaa_current_verified)?'good':''}">${(p.ncaa_current||p.ncaa_current_verified)?'NCAA actif':p.ncaa_status==='Alumni'?'NCAA Alumni':esc(p.ncaa_status||'NCAA historique')}</span></td></tr>`).join('')}
   </tbody></table></div>
   ${rows.length?'' : '<div class="empty">Aucun profil NCAA pour ce filtre.</div>'}
-  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+100>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>`;
+  <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+rankPageSize()>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>`;
  const doublesTable=`
   <div class="notice mini" style="margin-top:10px"><b>NCAA Double au 01/12/2025</b> · ${fmt(ncaaDoublesMeta?.count||doubleRows.length)} paire(s) vérifiée(s) disponible(s) au cutoff.</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>#</th><th>Paire</th><th>Université</th><th>Référence</th></tr></thead><tbody>
@@ -847,8 +848,8 @@ window.setRankKind=async k=>{rankKind=k;rankOffset=0;rankQuery='';await loadRank
 window.setNextGenAge=async a=>{nextGenAge=clamp(Number(a)||21,18,21);rankOffset=0;rankQuery='';await loadRankings();render()}
 window.searchRanking=async q=>{rankQuery=q.trim();rankOffset=0;await loadRankings();render()}
 window.setRankCountry=async c=>{rankCountry=String(c||'').toUpperCase();rankOffset=0;await loadRankings();render()}
-window.rankPage=async d=>{rankOffset=Math.max(0,rankOffset+d*100);await loadRankings();render();window.scrollTo(0,0)}
-window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump')?.value||1),1,Math.max(1,rankCount));rankOffset=Math.floor((n-1)/100)*100;await loadRankings();render();window.scrollTo(0,0)}
+window.rankPage=async d=>{rankOffset=Math.max(0,rankOffset+d*rankPageSize());await loadRankings();render();window.scrollTo(0,0)}
+window.jumpRank=async()=>{const n=clamp(Number(document.getElementById('rankJump')?.value||1),1,Math.max(1,rankCount));rankOffset=Math.floor((n-1)/rankPageSize())*rankPageSize();await loadRankings();render();window.scrollTo(0,0)}
 
 function calWeekStart(date){
  const d=new Date(String(date||"2025-12-01")+"T12:00:00"),day=(d.getDay()+6)%7;

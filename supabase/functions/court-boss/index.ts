@@ -987,25 +987,13 @@ async function resolveTournamentImage(t:any){
     DC:"District of Columbia",PR:"Puerto Rico"
   };
   const usStateNames=new Set(Object.values(usStateCodes).map(x=>normalizeName(x)));
-  const facilityRe=/\b(?:arena|stadium|sports? cent(?:er|re)|tennis cent(?:er|re)|tennis stadium|tennis club|country club|golf club|coliseum|club|complex|campus|resort|academy|pavilion|courts?|fairgrounds|olympic park)\b/i;
-  const placeAliases=new Map<string,string>([
-    ["caglari","Cagliari"],
-    ["punto cana","Punta Cana"],
-    ["istanbul ttf","Istanbul"],
-    ["mexico city challenger","Mexico City"],
-    ["yanagawa city","Yanagawa"],
-    ["toulouse balma","Balma"],
-    ["bastia lucciana","Bastia"]
-  ]);
-  const cleanPlace=(value:any)=>{
-    const cleaned=String(value||"")
-      .replace(/^\s*(?:M15|M25|J30|J60|J100|J200|J300|J500)\s+/i,"")
-      .replace(/\s*\((?:cancelled|canceled)\)\s*$/i,"")
-      .replace(/\s+(?:Challenger|Classic|International|Trophy|Futures|Open)(?:\s+\d+)?\s*$/i,"")
-      .replace(/\s+\d+\s*$/,"")
-      .replace(/\s+/g," ").trim();
-    return placeAliases.get(normalizeName(cleaned))||cleaned;
-  };
+  const facilityRe=/\b(?:arena|stadium|cent(?:er|re)|sports? cent(?:er|re)|tennis cent(?:er|re)|tennis stadium|tennis club|tennis training|tennis academy|country club|golf club|coliseum|club|complex|campus|resort|academy|pavilion|courts?|fairgrounds|olympic park)\b/i;
+  const cleanPlace=(value:any)=>String(value||"")
+    .replace(/^\s*(?:M15|M25|J30|J60|J100|J200|J300|J500)\s+/i,"")
+    .replace(/\s*\((?:cancelled|canceled)\)\s*$/i,"")
+    .replace(/\s+(?:Challenger|Classic|International|Trophy|Futures|Open)(?:\s+\d+)?\s*$/i,"")
+    .replace(/\s+\d+\s*$/,"")
+    .replace(/\s+/g," ").trim();
   const geoCandidates:string[]=[];
   const pushGeo=(value:any)=>{
     const v=cleanPlace(value);
@@ -1013,13 +1001,12 @@ async function resolveTournamentImage(t:any){
   };
 
   const commaParts=rawPlace.split(",").map(x=>cleanPlace(x)).filter(Boolean);
-  const venueCandidate=commaParts.length>=2&&facilityRe.test(commaParts[0])?commaParts[0]:"";
-  const venueAliasMap=new Map<string,string>([
-    ["heristo arena","OWL Arena"],
-    ["centre videotron","Videotron Centre"],
-    ["doug mitchell thunderbird sports center","Doug Mitchell Thunderbird Sports Centre"]
-  ]);
-  const venueSearchCandidate=venueAliasMap.get(normalizeName(venueCandidate))||venueCandidate;
+  const parentheticalParts=[...rawPlace.matchAll(/\(([^)]+)\)/g)].map(m=>cleanPlace(m[1])).filter(Boolean);
+  const parentheticalVenue=parentheticalParts.find(x=>facilityRe.test(x))||"";
+  const venueCandidate=commaParts.length>=2&&facilityRe.test(commaParts[0])
+    ?commaParts[0]
+    :parentheticalVenue;
+
   if(commaParts.length>=2){
     const first=commaParts[0],last=commaParts[commaParts.length-1];
     const stateCode=last.toUpperCase();
@@ -1035,22 +1022,19 @@ async function resolveTournamentImage(t:any){
       pushGeo(cityPart+", "+last);
       pushGeo(cityPart);
     }else if(startsWithFacility){
-      // "Copper Box Arena, London" and "Venue, City, Country/region".
       const cityPart=commaParts.length>=3?cityBeforeRegion:last;
       pushGeo(cityPart);
       if(commaParts.length>=3)pushGeo(last);
     }else{
-      // Normal geographic values such as "Naples, FL" or "Newport, RI".
       pushGeo(first);
       if(commaParts.length===2&&!facilityRe.test(last))pushGeo(last);
     }
   }
 
-  // Parentheses often hold the venue, not the city:
-  // "Genoa (Park Tennis Training)" -> Genoa.
+  // "Genoa (Park Tennis Training)" -> city Genoa, venue Park Tennis Training.
   const noParen=cleanPlace(rawPlace.replace(/\s*\([^)]*\)\s*/g," "));
   if(noParen&&!facilityRe.test(noParen))pushGeo(noParen);
-  for(const x of [...rawPlace.matchAll(/\(([^)]+)\)/g)].map(m=>cleanPlace(m[1]))){
+  for(const x of parentheticalParts){
     if(x&&!facilityRe.test(x))pushGeo(x);
   }
   if(!geoCandidates.length&&!facilityRe.test(rawPlace))pushGeo(rawPlace);
@@ -1063,7 +1047,6 @@ async function resolveTournamentImage(t:any){
     return t;
   }
   const curatedImageSources=[
-    {re:/Chengdu Open/i,url:"https://www.atptour.com/en/tournaments/chengdu/7581/overview"},
     {re:/United Cup/i,url:"https://www.unitedcup.com/en/media/news/united-cup-2026-schedule-released"},
     {re:/Nitto ATP Finals/i,url:"https://www.nittoatpfinals.com/en/"},
     {re:/Next Gen ATP Finals/i,url:"https://www.nextgenatpfinals.com/en/"},
@@ -1224,7 +1207,7 @@ async function resolveTournamentImage(t:any){
     try{
       const qs=new URLSearchParams({
         action:"query",generator:"search",
-        gsrsearch:`"${venueSearchCandidate}" "${primaryCity}"`,
+        gsrsearch:`"${venueCandidate}" "${primaryCity}"`,
         gsrnamespace:"0",gsrlimit:"8",
         prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1400",
         inprop:"url",format:"json",origin:"*"
@@ -1236,26 +1219,29 @@ async function resolveTournamentImage(t:any){
       if(r.ok){
         const jj:any=await r.json();
         const pages=(Object.values(jj?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
-        const venueTokens=normalizeName(venueSearchCandidate).split(" ").filter(x=>x.length>=3&&!/^(arena|stadium|center|centre|club|sports|tennis|golf|coliseum)$/.test(x));
+        const venueTokens=normalizeName(venueCandidate).split(" ").filter(x=>(x.length>=3||/\d/.test(x))&&!/^(arena|stadium|center|centre|club|sports|tennis|golf|coliseum|training|academy)$/.test(x));
         const cityToken=normalizeName(primaryCity).replace(/\s+/g,"");
         const chosen=pages
           .map((x:any)=>{
             const title=normalizeName(String(x.title||""));
             const titleCompact=title.replace(/\s+/g,"");
             const raw=String(x?.original?.source||x?.thumbnail?.source||"").trim();
-            let score=0;
-            for(const tok of venueTokens)if(title.includes(tok))score+=3;
+            let score=0,venueHits=0;
+            for(const tok of venueTokens){
+              if(title.includes(tok)){score+=3;venueHits++}
+            }
             if(cityToken&&titleCompact.includes(cityToken))score+=4;
             if(/arena|stadium|coliseum|tennis|sports|centre|center|club/i.test(String(x.title||"")))score+=2;
-            if(/person|film|song|album|berry|station|railway|metro/i.test(String(x.title||"")))score-=10;
-            return {x,raw,score};
+            if(/station|railway|train|airport|person|film|song|album|berry/i.test(String(x.title||"")))score-=10;
+            return {x,raw,score,venueHits};
           })
-          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(x.raw)&&x.score>=4)
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(x.raw)
+            &&x.score>=4&&(venueTokens.length===0||x.venueHits>0))
           .sort((a:any,b:any)=>b.score-a.score)[0];
         if(chosen?.raw){
           t.image_url=chosen.raw;
           t.image_source_url=String(chosen.x?.fullurl||"https://en.wikipedia.org/");
-          t.image_source_label="Wikipedia/Wikimedia · lieu du tournoi · "+venueSearchCandidate+", "+primaryCity;
+          t.image_source_label="Wikipedia/Wikimedia · lieu du tournoi · "+venueCandidate+", "+primaryCity;
           await db.from("tournaments").update({
             image_url:t.image_url,image_source_url:t.image_source_url,image_source_label:t.image_source_label
           }).eq("id",t.id);
@@ -2200,7 +2186,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:56,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v6+venue-city-parser-v3+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:56,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v7+venue-city-parser-v4+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

@@ -4896,7 +4896,7 @@ Deno.serve(async(req:Request)=>{
           .select("selected,ll_order,loss_round_code,ranking_at_seeding")
           .eq("tournament_id",tid).eq("player_id",managedId).eq("selected",true).maybeSingle(),
         db.from("world_tournament_acceptance_states").select("status,frozen_on").eq("tournament_id",tid).maybeSingle(),
-        db.from("world_qualifying_acceptance_states").select("status,created_on,draw_prepared_on").eq("tournament_id",tid).maybeSingle()
+        db.from("world_qualifying_acceptance_states").select("status,created_on,movement_closes_on,last_refreshed_on").eq("tournament_id",tid).maybeSingle()
       ]);
       const frozenErr=mainEntry.error||qEntry.error||llEntry.error||mainState.error||qState.error;
       if(frozenErr)return h({error:frozenErr.message},500);

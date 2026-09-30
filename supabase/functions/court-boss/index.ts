@@ -1106,51 +1106,86 @@ async function resolveTournamentImage(t:any){
 
   if(!t.image_url&&t.city){
     try{
-      const cityName=String(t.city||"").split("/")[0].trim();
-      const exactQs=new URLSearchParams({
-        action:"query",titles:cityName,redirects:"1",
-        prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
-        inprop:"url",format:"json",origin:"*"
-      });
-      const exact=await fetch("https://en.wikipedia.org/w/api.php?"+exactQs.toString(),{
-        headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-photo-fallback)"},
-        signal:timeoutSignal()
-      });
-      let chosen:any=null;
-      if(exact.ok){
-        const j:any=await exact.json();
-        chosen=(Object.values(j?.query?.pages||{}) as any[]).find((x:any)=>{
-          const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-          return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
-        })||null;
+      const rawCity=String(t.city||"").split("/")[0].trim();
+      const cleanCity=(value:string)=>value
+        .replace(/^\s*(?:M15|M25|J30|J60|J100|J200|J300|J500)\s+/i,"")
+        .replace(/\s*\((?:cancelled|canceled)\)\s*$/i,"")
+        .replace(/\s+(?:Challenger|Classic|International|Trophy|Futures|Open)(?:\s+\d+)?\s*$/i,"")
+        .replace(/\s+\d+\s*$/,"")
+        .replace(/\s+(?:NC|CA|FL|TX|GA|NE|KY|MI|NV|OK)\s*$/i,"")
+        .trim();
+      const candidates:string[]=[];
+      const pushCity=(v:any)=>{
+        const x=cleanCity(String(v||"").trim());
+        if(x.length>=3&&!candidates.some(y=>normalizeName(y)===normalizeName(x)))candidates.push(x);
+      };
+      pushCity(rawCity);
+      const noParen=rawCity.replace(/\s*\([^)]*\)\s*/g," ").replace(/\s+/g," ").trim();
+      pushCity(noParen);
+      const paren=[...rawCity.matchAll(/\(([^)]+)\)/g)].map(x=>x[1]);
+      for(const x of paren)pushCity(x);
+      if(rawCity.includes(",")){
+        const parts=rawCity.split(",").map(x=>x.trim()).filter(Boolean);
+        const last=parts[parts.length-1]||"";
+        if(!/^[A-Z]{2}$/i.test(last))pushCity(last);
+        pushCity(parts[0]);
       }
-      if(!chosen){
-        const cityNorm=normalizeName(cityName).replace(/\s+/g,"");
-        const searchQs=new URLSearchParams({
-          action:"query",generator:"search",gsrsearch:`intitle:"${cityName}"`,gsrnamespace:"0",gsrlimit:"5",
+      const venueStripped=rawCity
+        .replace(/\b(?:arena|stadium|sports? center|tennis center|tennis stadium|coliseum|club|country club|complex|campus)\b/ig," ")
+        .replace(/\s+/g," ").trim();
+      pushCity(venueStripped);
+      if(/\bTTF\b/i.test(rawCity))pushCity(rawCity.replace(/\bTTF\b/ig,""));
+      if(!candidates.length)pushCity(rawCity);
+
+      let chosen:any=null;
+      let chosenCity="";
+      for(const cityName of candidates.slice(0,5)){
+        const exactQs=new URLSearchParams({
+          action:"query",titles:cityName,redirects:"1",
           prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
           inprop:"url",format:"json",origin:"*"
         });
-        const search=await fetch("https://en.wikipedia.org/w/api.php?"+searchQs.toString(),{
-          headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-search-fallback)"},
+        const exact=await fetch("https://en.wikipedia.org/w/api.php?"+exactQs.toString(),{
+          headers:{"User-Agent":"CourtBoss/1.0 (+normalized-city-photo-fallback)"},
           signal:timeoutSignal()
         });
-        if(search.ok){
-          const j:any=await search.json();
-          const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
-          chosen=pages.find((x:any)=>{
-            const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+        if(exact.ok){
+          const jj:any=await exact.json();
+          chosen=(Object.values(jj?.query?.pages||{}) as any[]).find((x:any)=>{
             const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-            return (title===cityNorm||title.startsWith(cityNorm)||cityNorm.startsWith(title))
-              &&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
+            return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
           })||null;
         }
+        if(!chosen){
+          const cityNorm=normalizeName(cityName).replace(/\s+/g,"");
+          const searchQs=new URLSearchParams({
+            action:"query",generator:"search",gsrsearch:`intitle:"${cityName}"`,gsrnamespace:"0",gsrlimit:"5",
+            prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
+            inprop:"url",format:"json",origin:"*"
+          });
+          const search=await fetch("https://en.wikipedia.org/w/api.php?"+searchQs.toString(),{
+            headers:{"User-Agent":"CourtBoss/1.0 (+normalized-city-search-fallback)"},
+            signal:timeoutSignal()
+          });
+          if(search.ok){
+            const jj:any=await search.json();
+            const pages=(Object.values(jj?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+            chosen=pages.find((x:any)=>{
+              const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+              const raw=String(x?.original?.source||x?.thumbnail?.source||"");
+              return (title===cityNorm||title.startsWith(cityNorm)||cityNorm.startsWith(title))
+                &&raw&&!/logo|icon|flag|map|coat.of.arms/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
+            })||null;
+          }
+        }
+        if(chosen){chosenCity=cityName;break}
       }
+
       const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
       if(raw&&/^https?:\/\//i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
         t.image_url=raw;
         t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
-        t.image_source_label="Photo de la ville · Wikipedia/Wikimedia";
+        t.image_source_label="Photo de la ville · Wikipedia/Wikimedia"+(chosenCity&&normalizeName(chosenCity)!==normalizeName(rawCity)?" · lieu normalisé":"");
         await db.from("tournaments").update({
           image_url:raw,image_source_url:t.image_source_url,image_source_label:t.image_source_label
         }).eq("id",t.id);

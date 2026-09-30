@@ -1050,6 +1050,21 @@ async function resolveTournamentImage(t:any){
     }
   }
   if(!geoCandidates.length&&!facilityRe.test(geoRawPlace))pushGeo(geoRawPlace);
+
+  const aliasBase=normalizeName(String(geoCandidates[0]||geoRawPlace||rawPlace).split(",")[0]);
+  const geoAliasKey=String(t.country||"").toUpperCase()+"|"+aliasBase;
+  const knownGeoAliases:Record<string,string>={
+    "GER|halle":"Halle (Saale)",
+    "ITA|fano":"Fano, Marche",
+    "ITA|grado":"Grado, Friuli-Venezia Giulia",
+    "ITA|lesa":"Lesa, Piedmont",
+    "CHN|luan":"Lu'an, Anhui"
+  };
+  const knownGeoAlias=knownGeoAliases[geoAliasKey];
+  if(knownGeoAlias&&!geoCandidates.some(x=>normalizeName(x)===normalizeName(knownGeoAlias))){
+    geoCandidates.unshift(knownGeoAlias);
+  }
+
   const primaryCity=geoCandidates[0]||geoRawPlace||rawPlace;
   const syntheticPlace=/^ville\s+\d+$/i.test(primaryCity)||/^(?:rus|isr|ven)\s+tennis\s+center$/i.test(primaryCity);
   const curatedImageSources=[
@@ -1259,7 +1274,7 @@ async function resolveTournamentImage(t:any){
   if(!t.image_url&&t.city&&!syntheticPlace){
     try{
       const rawCity=String(t.city||"").trim();
-      const nonGeoTitleRe=/\b(?:berry|actor|actress|singer|musician|film|album|song|surname|given name|disambiguation)\b/i;
+      const nonGeoTitleRe=/\b(?:berry|actor|actress|singer|musician|film|album|song|surname|given name|disambiguation|river|national park|wrestler|company|corporation)\b/i;
       const pageLooksGeographic=(x:any,cityName:string)=>{
         const raw=String(x?.original?.source||x?.thumbnail?.source||"");
         const hasCoordinates=Array.isArray(x?.coordinates)&&x.coordinates.length>0;
@@ -2231,7 +2246,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:60,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v8+venue-city-parser-v6+geo-page-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:61,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v8+venue-city-parser-v7+geo-aliases+geo-page-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

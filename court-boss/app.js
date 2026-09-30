@@ -3130,9 +3130,18 @@ function relationshipsPage(){
 }
 function mediaPage(){
  const media=careerHub?.media||[],events=careerHub?.events||[];
- return '<div class="section-head"><div><div class="eyebrow">Narration carrière</div><h1>Médias & actualité</h1><div class="muted">La forme, la fatigue, le classement, le staff et les décisions de carrière alimentent les storylines.</div></div><span class="pill">'+media.length+' sujet(s)</span></div>'+
- '<div class="grid g2"><div class="stack">'+(media.map(x=>'<div class="card"><div class="row between"><div class="eyebrow">'+df(x.event_date)+' · '+esc(x.kind)+'</div><span class="badge '+(x.tone==='positive'?'good':x.tone==='concern'?'warn':'')+'">'+esc(x.tone||'neutral')+'</span></div><h2>'+esc(x.headline)+'</h2><p class="muted">'+esc(x.body)+'</p>'+(x.action_route?'<button class="soft-btn" onclick="nav(\''+esc(x.action_route)+'\')">Voir le contexte</button>':'')+'</div>').join('')||'<div class="card empty">Les premiers sujets apparaîtront au fil des semaines.</div>')+'</div>'+
+ const choiceButtons=x=>String(x.response_status||'pending')==='resolved'
+  ?'<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px"><span class="badge good">Réponse : '+esc(x.response_choice||'prise')+'</span><span class="badge">Moral '+(Number(x.morale_delta||0)>=0?'+':'')+fmt(x.morale_delta||0)+'</span><span class="badge">Réputation '+(Number(x.reputation_delta||0)>=0?'+':'')+fmt(x.reputation_delta||0)+'</span></div>'
+  :'<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px"><button class="soft-btn" onclick="respondMedia('+Number(x.id)+',\'professionnel\')">Professionnel</button><button class="soft-btn" onclick="respondMedia('+Number(x.id)+',\'ambitieux\')">Ambitieux</button><button class="soft-btn" onclick="respondMedia('+Number(x.id)+',\'combatif\')">Combatif</button><button class="ghost" onclick="respondMedia('+Number(x.id)+',\'calme\')">Calme</button></div>';
+ return '<div class="section-head"><div><div class="eyebrow">Narration carrière</div><h1>Médias & actualité</h1><div class="muted">Les storylines sont maintenant interactives : ta façon de répondre influence le moral, la pression médiatique et la réputation de jeu.</div></div><span class="pill">'+media.length+' sujet(s)</span></div>'+
+ '<div class="grid g2"><div class="stack">'+(media.map(x=>'<div class="card"><div class="row between"><div class="eyebrow">'+df(x.event_date)+' · '+esc(x.kind)+'</div><span class="badge '+(x.tone==='positive'?'good':x.tone==='concern'?'warn':'')+'">'+esc(x.tone||'neutral')+'</span></div><h2>'+esc(x.headline)+'</h2><p class="muted">'+esc(x.body)+'</p>'+choiceButtons(x)+(x.action_route?'<button class="ghost" style="margin-top:8px" onclick="nav(\''+esc(x.action_route)+'\')">Voir le contexte</button>':'')+'</div>').join('')||'<div class="card empty">Les premiers sujets apparaîtront au fil des semaines.</div>')+'</div>'+
  '<div class="card"><div class="row between"><div><div class="eyebrow">Journal Career OS</div><h2>Événements récents</h2></div><span class="badge">'+events.length+'</span></div>'+events.slice(0,30).map(x=>'<div class="list-item"><div class="row between"><b>'+esc(x.summary)+'</b><span class="muted micro">'+df(x.event_date)+'</span></div><div class="muted mini">'+esc(x.system)+' · '+esc(x.event_type)+'</div></div>').join('')+'</div></div>';
+}
+window.respondMedia=async(id,choice)=>{
+ try{
+  await managerAction('respond_media',Number(id),{choice});
+  careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();
+ }catch(e){alert(e.message)}
 }
 function diagnosticsPage(){
  const x=careerHub?.health||{},checks=[

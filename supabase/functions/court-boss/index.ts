@@ -1168,6 +1168,31 @@ async function getManagedPlayer(select="*"){
   return await db.from("players").select(select).eq("id",c.data.managed_player_id).maybeSingle();
 }
 
+async function recordFinanceTransactions(rows:any[]){
+  const clean=(Array.isArray(rows)?rows:[])
+    .filter((x:any)=>x&&Number(x.amount||0)!==0&&String(x.transaction_key||"").trim())
+    .map((x:any)=>({
+      transaction_key:String(x.transaction_key).slice(0,180),
+      game_date:String(x.game_date||AGE_REFERENCE_DATE).slice(0,10),
+      week:x.week==null?null:Number(x.week),
+      category:String(x.category||"other").slice(0,60),
+      amount:Number(x.amount||0),
+      currency:String(x.currency||"EUR").slice(0,3).toUpperCase(),
+      source_type:x.source_type?String(x.source_type).slice(0,60):null,
+      source_id:x.source_id==null?null:Number(x.source_id),
+      description:String(x.description||"Mouvement financier").slice(0,240),
+      balance_after:x.balance_after==null?null:Number(x.balance_after),
+      metadata:x.metadata&&typeof x.metadata==="object"?x.metadata:{}
+    }));
+  if(!clean.length)return {ok:true,inserted:0};
+  const r=await db.from("finance_transactions").upsert(clean,{onConflict:"transaction_key",ignoreDuplicates:true});
+  if(r.error){
+    console.warn("Finance ledger",r.error.message);
+    return {ok:false,error:r.error.message,inserted:0};
+  }
+  return {ok:true,inserted:clean.length};
+}
+
 async function captureManagedSaveSnapshot(){
   const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
   if(career.error||!career.data)throw new Error(career.error?.message||"Career missing");
@@ -1175,7 +1200,7 @@ async function captureManagedSaveSnapshot(){
   const nation=String(career.data.federation_nation||career.data.selected_federation_nation||career.data.country||"FRA");
 
   const [
-    academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,
+    academy,finance,financeTransactions,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,
     training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,
     entries,doublesEntries,wildcards,agency,doublesCommitments,partnerHistory,partnerOffers,inbox,media,
     seasonPlans,relationships,playerSponsors,staffAssignments,staffExternalOffers,eventLog,shortlist,
@@ -1184,6 +1209,7 @@ async function captureManagedSaveSnapshot(){
   ]=await Promise.all([
     db.from("academies").select("*").eq("id","demo").maybeSingle(),
     db.from("finances").select("*").eq("id","demo").maybeSingle(),
+    db.from("finance_transactions").select("*").order("game_date",{ascending:true}).order("id",{ascending:true}),
     db.from("facilities").select("*").order("id"),
     db.from("staff").select("*").order("id"),
     db.from("contracts").select("*").order("id"),
@@ -1234,7 +1260,7 @@ async function captureManagedSaveSnapshot(){
     db.from("doubles_match_history").select("*").order("id")
   ]);
 
-  const all=[academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,agency,doublesCommitments,partnerHistory,partnerOffers,inbox,media,seasonPlans,relationships,playerSponsors,staffAssignments,staffExternalOffers,eventLog,shortlist,collegeState,collegeOffers,ncaaRegistry,federation,davisSquad,seasonHistory,managedInjuries,trainingLoad,partnerships,matchHistory,tournamentRuns,doublesRuns,doublesMatchHistory];
+  const all=[academy,finance,financeTransactions,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,agency,doublesCommitments,partnerHistory,partnerOffers,inbox,media,seasonPlans,relationships,playerSponsors,staffAssignments,staffExternalOffers,eventLog,shortlist,collegeState,collegeOffers,ncaaRegistry,federation,davisSquad,seasonHistory,managedInjuries,trainingLoad,partnerships,matchHistory,tournamentRuns,doublesRuns,doublesMatchHistory];
   const err=all.find((x:any)=>x?.error)?.error;
   if(err)throw new Error(err.message||"Snapshot failed");
 
@@ -1259,6 +1285,7 @@ async function captureManagedSaveSnapshot(){
     career:career.data,
     academy:academy.data,
     finance:finance.data,
+    finance_transactions:financeTransactions.data??[],
     facilities:facilities.data??[],
     staff:staff.data??[],
     staff_profiles:staffProfiles.data??[],
@@ -1339,6 +1366,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   if(model==="CB-MANAGED-SAVE-v2"){
     // Exact managed-world rewind. Global AI/world tournament state is intentionally not rewound.
     await deleteAll("inbox_items");
+    await deleteAll("finance_transactions");
     await deleteAll("media_events");
     await deleteAll("career_event_log");
     await deleteAll("scouting_reports");
@@ -1404,6 +1432,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   await upsertOne("career_state",snapshot.career,"id");
   await upsertOne("academies",snapshot.academy,"id");
   await upsertOne("finances",snapshot.finance,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("finance_transactions",snapshot.finance_transactions,"id");
   await upsertMany("facilities",snapshot.facilities,"id");
   if(model==="CB-MANAGED-SAVE-v2")await upsertMany("staff_profiles",snapshot.staff_profiles,"id");
   await upsertMany("staff",snapshot.staff,"id");
@@ -5478,6 +5507,12 @@ Deno.serve(async(req:Request)=>{
 
     const medical=await db.rpc("apply_managed_medical_week",{p_date:date});
     if(medical.error)return h({error:medical.error.message},500);
+    const weeklyLedger=await recordFinanceTransactions([
+      {transaction_key:"week:"+date+":sponsors",game_date:date,week,category:"sponsor_income",amount:sponsorWeekly,source_type:"weekly_cycle",description:"Revenus sponsors hebdomadaires",metadata:{accepted_sponsors:(sponsorRows.data??[]).filter((x:any)=>x.status==="accepted").length}},
+      {transaction_key:"week:"+date+":staff",game_date:date,week,category:"staff_payroll",amount:-staffWeekly,source_type:"weekly_cycle",description:"Salaires du staff"},
+      {transaction_key:"week:"+date+":academy",game_date:date,week,category:"academy_payroll",amount:-playerWeekly,source_type:"weekly_cycle",description:"Contrats joueurs académie"},
+      {transaction_key:"week:"+date+":medical",game_date:date,week,category:"medical",amount:-Number(medical.data?.weekly_cost||0),source_type:"weekly_cycle",description:"Protocole médical · "+String(medical.data?.protocol||"Suivi médical")}
+    ]);
     const scouts=await db.from("scouting_assignments")
       .select("id,region,focus,progress,status,staff_profile_id,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,scouting_rating,reputation,regions,professionalism,workload,burnout,travel_fatigue,operational_status,rest_until)");
     if(!scouts.error){
@@ -5531,7 +5566,7 @@ Deno.serve(async(req:Request)=>{
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});
     if(careerHealth.error)return h({error:careerHealth.error.message},500);
-    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -5756,6 +5791,9 @@ Deno.serve(async(req:Request)=>{
     const academyStaffCandidates=await db.from("staff")
       .select("id,name,role,profile_id,profile:staff_profiles(id,name,nationality,primary_role,youth_rating,development_rating,communication_rating,reputation,specialty)")
       .not("profile_id","is",null).order("skill",{ascending:false});
+    const financeTransactions=await db.from("finance_transactions")
+      .select("id,transaction_key,game_date,week,category,amount,currency,source_type,source_id,description,balance_after,metadata")
+      .order("game_date",{ascending:false}).order("id",{ascending:false}).limit(200);
 
     return h({
       contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],
@@ -5774,7 +5812,8 @@ Deno.serve(async(req:Request)=>{
       managedDoublesCommitment:managedDoublesCommitment.error?null:managedDoublesCommitment.data,
       academyIntakeHistory:academyIntakeHistory.error?[]:(academyIntakeHistory.data??[]),
       academyHead:academyHead.error?null:academyHead.data,
-      academyStaffCandidates:academyStaffCandidates.error?[]:(academyStaffCandidates.data??[])
+      academyStaffCandidates:academyStaffCandidates.error?[]:(academyStaffCandidates.data??[]),
+      financeTransactions:financeTransactions.error?[]:(financeTransactions.data??[])
     });
   }
 
@@ -7294,6 +7333,13 @@ Deno.serve(async(req:Request)=>{
       }).eq("id","demo"),
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
+    const earnedFinanceDate=String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE);
+    await recordFinanceTransactions([
+      {transaction_key:"singles-run:"+runId+":prize",game_date:earnedFinanceDate,week:Number(c.week||0)||null,category:"prize_money",amount:userPrizeEur,source_type:"tournament_run",source_id:Number(runId),description:"Prize money · "+String(t.name),metadata:{result:userRound}},
+      {transaction_key:"singles-run:"+runId+":travel",game_date:earnedFinanceDate,week:Number(c.week||0)||null,category:"travel",amount:-travelCost,source_type:"tournament_run",source_id:Number(runId),description:"Voyage · "+String(t.name)},
+      {transaction_key:"singles-run:"+runId+":agent",game_date:earnedFinanceDate,week:Number(c.week||0)||null,category:"agent_commission",amount:-agentCommission,source_type:"tournament_run",source_id:Number(runId),description:"Commission agent · "+String(t.name)},
+      {transaction_key:"singles-run:"+runId+":staff-bonus",game_date:earnedFinanceDate,week:Number(c.week||0)||null,category:"staff_bonus",amount:-staffPerformanceBonus,source_type:"tournament_run",source_id:Number(runId),description:"Prime performance staff · "+String(t.name),balance_after:newBudget}
+    ]);
     const playedSinglesEntry=await db.from("entries")
       .select("id,metadata")
       .eq("tournament_id",tid)
@@ -8043,6 +8089,12 @@ Deno.serve(async(req:Request)=>{
       }).eq("id","demo");
     }
     await db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" remportent le double à "+t.name+" !":String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" terminent "+userRound+" en double à "+t.name+"."});
+    await recordFinanceTransactions([
+      {transaction_key:"doubles-run:"+run.data.id+":prize",game_date:earned,week:Number(c.week||0)||null,category:"prize_money",amount:prizeEur,source_type:"doubles_run",source_id:Number(run.data.id),description:"Prize money double · "+String(t.name),metadata:{result:userRound,partner_id:partner.id}},
+      {transaction_key:"doubles-run:"+run.data.id+":travel",game_date:earned,week:Number(c.week||0)||null,category:"travel",amount:-travelCost,source_type:"doubles_run",source_id:Number(run.data.id),description:"Voyage double · "+String(t.name)},
+      {transaction_key:"doubles-run:"+run.data.id+":agent",game_date:earned,week:Number(c.week||0)||null,category:"agent_commission",amount:-agentCommission,source_type:"doubles_run",source_id:Number(run.data.id),description:"Commission agent double · "+String(t.name)},
+      {transaction_key:"doubles-run:"+run.data.id+":staff-bonus",game_date:earned,week:Number(c.week||0)||null,category:"staff_bonus",amount:-staffPerformanceBonus,source_type:"doubles_run",source_id:Number(run.data.id),description:"Prime performance staff double · "+String(t.name),balance_after:newBudget}
+    ]);
 
     const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:Number(run.data.id),p_date:earned});
     if(persistedDoubleEntry?.id){
@@ -9155,6 +9207,12 @@ Deno.serve(async(req:Request)=>{
       });
 
       await db.from("inbox_items").insert({kind:"academy",title:"Prospect signé",body:y.data.name+" rejoint officiellement l’académie avec un contrat de 2 ans.",action_route:"academy",is_read:false});
+      await recordFinanceTransactions([{
+        transaction_key:"academy-youth:"+id+":signing",game_date:start,week:Number(career.data.week||1),
+        category:"academy_signing",amount:-cost,source_type:"academy_youth",source_id:id,
+        description:"Bourse / signature jeune · "+String(y.data.name),balance_after:budget,
+        metadata:{player_id:playerId,weekly_cost:weeklyCost}
+      }]);
       return h({ok:true,budget,status:"signed",player_id:playerId,roster:roster.data});
     }
 
@@ -9208,6 +9266,12 @@ Deno.serve(async(req:Request)=>{
         body:(member.data.name||member.data.role)+" débute une formation "+focus+" à "+center.data.name+".",
         action_route:"staff",is_read:false
       });
+      await recordFinanceTransactions([{
+        transaction_key:"staff-training:"+member.data.id+":"+centerId+":"+start,game_date:start,week:Number(career.data.week||1),
+        category:"staff_training",amount:-cost,source_type:"staff_profile",source_id:Number(member.data.profile_id||0)||null,
+        description:"Formation staff · "+String(member.data.name||member.data.role)+" · "+String(center.data.name),balance_after:budget,
+        metadata:{focus,expected_end:endDate.toISOString().slice(0,10)}
+      }]);
 
       return h({ok:true,budget,cost,focus,expected_end:endDate.toISOString().slice(0,10),center:center.data.name});
     }
@@ -9784,6 +9848,12 @@ Deno.serve(async(req:Request)=>{
         body:"Accord signé avec "+offer.data.brand+". Ton agent négocie "+negotiatedBonus+" € de bonus et "+negotiatedWeekly+" €/sem.",
         action_route:"finance",is_read:false
       });
+      await recordFinanceTransactions([{
+        transaction_key:"sponsor:"+id+":signing",game_date:String(career.data.career_date||AGE_REFERENCE_DATE),week:Number(career.data.week||1),
+        category:"sponsor_bonus",amount:negotiatedBonus,source_type:"sponsor_offer",source_id:id,
+        description:"Prime de signature · "+String(offer.data.brand),balance_after:budget,
+        metadata:{weekly_value:negotiatedWeekly,visibility_rank:visibilityRank}
+      }]);
       return h({ok:true,budget,status:"accepted",weekly_value:negotiatedWeekly,signing_bonus:negotiatedBonus,agent_bonus_pct:Math.round((negotiationMult-1)*100),visibility_rank:visibilityRank,career_focus:focus});
     }
 
@@ -10429,6 +10499,11 @@ Deno.serve(async(req:Request)=>{
       const cup=await db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo");
       if(cup.error)return h({error:cup.error.message},500);
       await db.from("inbox_items").insert({kind:"academy",title:"Installation améliorée",body:String(fac.data.name||"Installation")+" passe niveau "+(level+1)+".",action_route:"academy",is_read:false});
+      await recordFinanceTransactions([{
+        transaction_key:"facility:"+id+":level:"+(level+1),game_date:String(career.data.career_date||AGE_REFERENCE_DATE),week:Number(career.data.week||1),
+        category:"facility_upgrade",amount:-cost,source_type:"facility",source_id:id,
+        description:"Amélioration installation · "+String(fac.data.name||"Installation")+" niveau "+(level+1),balance_after:budget
+      }]);
       return h({ok:true,level:level+1,cost,budget});
     }
 

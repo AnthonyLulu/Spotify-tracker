@@ -1610,7 +1610,7 @@ Deno.serve(async(req:Request)=>{
       const ncaaSeason=rankingNcaaSeasonAt(gameDate);
       const [currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3,collegeTeams,schoolAliases]=await Promise.all([
         db.from("ncaa_player_registry")
-          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .eq("season",ncaaSeason)
           .lte("snapshot_date",gameDate)
           .order("snapshot_date",{ascending:false})
@@ -1619,19 +1619,19 @@ Deno.serve(async(req:Request)=>{
           .lte("ncaa_snapshot_date",gameDate)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*").limit(1500),
         db.from("ncaa_player_registry")
-          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .eq("season","2025-26").eq("status","ITA All-American 2025-26").lte("snapshot_date",gameDate).limit(500),
         db.from("ncaa_player_registry")
-          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(0,999),
         db.from("ncaa_player_registry")
-          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(1000,1999),
         db.from("ncaa_player_registry")
-          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(2000,2999),
         db.from("ncaa_player_registry")
-          .select("id,ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .lte("snapshot_date",gameDate).order("snapshot_date",{ascending:false}).order("id",{ascending:false}).range(3000,3999),
         db.from("college_teams").select("id,name").limit(500),
         db.from("ncaa_school_team_aliases").select("school_name,team_id,is_active").eq("is_active",true).limit(1000)
@@ -1665,16 +1665,18 @@ Deno.serve(async(req:Request)=>{
         if(old&&Number(old.__priority??99)<=priority)return;
         const metaHasRank=!!meta&&Object.prototype.hasOwnProperty.call(meta,"ita_rank");
         const ncaaSource=String(meta?.source_label||meta?.source_url||p.ncaa_source||"");
-        const ncaaRankType=/Court Boss dynamic NCAA supply/i.test(ncaaSource)
-          ?"simulated_depth"
-          :/ITA Division I Men.?s National Singles Rankings|ITA official/i.test(ncaaSource)
-            ?"official"
-            :(metaHasRank&&meta?.ita_rank!=null?"verified_other":"profile");
         const rawRegistryRank=metaHasRank&&meta?.ita_rank!=null?Number(meta.ita_rank):null;
-        const officialRank=ncaaRankType==="official"||ncaaRankType==="verified_other"
-          ?rawRegistryRank
-          :(metaHasRank?null:(p.ncaa_rank??null));
-        const projectedRank=ncaaRankType==="simulated_depth"?rawRegistryRank:null;
+        const physicalOfficial=meta?.ita_rank_official!=null?Number(meta.ita_rank_official):null;
+        const physicalProjected=meta?.projected_rank!=null?Number(meta.projected_rank):null;
+        const ncaaRankType=physicalOfficial!=null
+          ?"official"
+          :physicalProjected!=null
+            ?"simulated_depth"
+            :(metaHasRank&&meta?.ita_rank!=null?"verified_other":"profile");
+        const officialRank=physicalOfficial!=null
+          ?physicalOfficial
+          :(ncaaRankType==="verified_other"?rawRegistryRank:(metaHasRank?null:(p.ncaa_rank??null)));
+        const projectedRank=physicalProjected;
         byId.set(id,{
           ...p,
           ncaa_rank:officialRank,
@@ -3217,7 +3219,7 @@ Deno.serve(async(req:Request)=>{
 
     if(String(t.data.circuit)==="NCAA"){
       const reg=await db.from("ncaa_player_registry")
-        .select("ita_rank,school,division,season,status,snapshot_date,source_url,source_label,players(id,name,country,ranking,doubles_ranking,current_ability,potential,ncaa_current,ncaa_school,ncaa_rank)")
+        .select("ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players(id,name,country,ranking,doubles_ranking,current_ability,potential,ncaa_current,ncaa_school,ncaa_rank)")
         .eq("season",ncaaSeasonAt(referenceDate))
         .lte("snapshot_date",referenceDate)
         .order("ita_rank",{ascending:true,nullsFirst:false})
@@ -3227,14 +3229,17 @@ Deno.serve(async(req:Request)=>{
         const p=Array.isArray(x.players)?x.players[0]:x.players;
         return p?{
           ...p,
-          ita_rank:x.ita_rank,
+          ita_rank:x.ita_rank_official??null,
+          ita_rank_official:x.ita_rank_official??null,
+          projected_rank:x.projected_rank??null,
+          registry_rank:x.ita_rank??null,
           school:x.school,
           division:x.division,
           ncaa_season:x.season,
           ncaa_status:x.status,
           ncaa_snapshot_date:x.snapshot_date,
           ncaa_source:x.source_label||x.source_url,
-          ncaa_rank_type:/Court Boss dynamic NCAA supply/i.test(String(x.source_label||""))?"simulated_depth":/ITA Division I Men.?s National Singles Rankings|ITA official/i.test(String(x.source_label||""))?"official":"verified_other"
+          ncaa_rank_type:x.ita_rank_official!=null?"official":x.projected_rank!=null?"simulated_depth":"verified_other"
         }:null;
       }).filter(Boolean);
       const individual=String(t.data.registration_mode||"")==="ncaa_individual_selection"
@@ -8653,7 +8658,7 @@ Deno.serve(async(req:Request)=>{
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
         .order("ranking",{ascending:true,nullsFirst:false})
         .limit(2500),
-      db.from("ncaa_player_registry").select("player_id,status,season,ita_rank,school,division,snapshot_date")
+      db.from("ncaa_player_registry").select("player_id,status,season,ita_rank,ita_rank_official,projected_rank,school,division,snapshot_date")
         .order("snapshot_date",{ascending:false}).limit(5000),
       db.from("players")
         .select("id,name,country,career_high_rank,career_high_rank_date,weeks_at_no1,weeks_top10,weeks_top100,ranking_history_weeks,ranking_history_source,ranking_history_cutoff")

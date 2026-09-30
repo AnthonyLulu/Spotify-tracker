@@ -1489,7 +1489,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:49,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v24",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:50,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v25",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -2115,7 +2115,10 @@ Deno.serve(async(req:Request)=>{
     const cutoff="2025-12-01";
     const schoolParam=(u.searchParams.get("school")??"").trim().slice(0,180);
     const q=(u.searchParams.get("q")??"").trim().slice(0,100);
-    const [rosterRes,stagingRes,mapRes]=await Promise.all([
+    const schoolKey=(v:any)=>normalizeName(String(v||""));
+    const profileKey=(v:any)=>schoolKey(v).replace(/\s+/g,"");
+
+    const [rosterRes,stagingRes,mapRes,profilesRes]=await Promise.all([
       db.from("ncaa_roster_reference")
         .select("athlete_id,full_name,name_norm,season,division,conference,school,class_standing,country,source_url,player_id")
         .eq("season",season).limit(5000),
@@ -2124,15 +2127,17 @@ Deno.serve(async(req:Request)=>{
         .eq("season",season).eq("snapshot_date",snapshot).limit(200),
       db.from("ita_ncaa_singles_player_map")
         .select("ita_player_id,player_id")
-        .eq("season",season).eq("snapshot_date",snapshot).limit(200)
+        .eq("season",season).eq("snapshot_date",snapshot).limit(200),
+      db.from("ncaa_university_profiles")
+        .select("*").limit(1000)
     ]);
-    const baseError=rosterRes.error||stagingRes.error||mapRes.error;
+    const baseError=rosterRes.error||stagingRes.error||mapRes.error||profilesRes.error;
     if(baseError)return h({error:baseError.message},500);
 
-    const schoolKey=(v:any)=>normalizeName(String(v||""));
     const rosterAll=rosterRes.data??[];
     const stagingAll=stagingRes.data??[];
     const playerByIta=new Map<string,number>((mapRes.data??[]).map((x:any)=>[String(x.ita_player_id),Number(x.player_id)]));
+    const profileByKey=new Map<string,any>((profilesRes.data??[]).map((x:any)=>[String(x.school_key),x]));
     const rosterSchoolByPlayer=new Map<number,string>();
     const rosterDisplayByKey=new Map<string,string>();
     for(const rr of rosterAll){
@@ -2141,9 +2146,6 @@ Deno.serve(async(req:Request)=>{
       if((rr as any).player_id!=null&&key)rosterSchoolByPlayer.set(Number((rr as any).player_id),key);
     }
 
-    // ITA and roster providers use different school labels (e.g. "Ohio State" vs "Ohio St.").
-    // Infer the canonical roster school from already-resolved ranked players, so one school
-    // produces one card and one roster instead of duplicate aliases.
     const stageSchoolVotes=new Map<string,Map<string,number>>();
     for(const s of stagingAll){
       const rawKey=schoolKey((s as any).school);
@@ -2177,14 +2179,41 @@ Deno.serve(async(req:Request)=>{
       return stageSchoolKeyMap.get(raw)||raw;
     };
 
+    const fetchAtpSnapshot=async(ids:number[])=>{
+      const unique=[...new Set(ids.filter((x:any)=>Number.isFinite(Number(x))&&Number(x)>0).map(Number))];
+      if(!unique.length)return new Map<number,any>();
+      const chunks:number[][]=[];
+      for(let i=0;i<unique.length;i+=350)chunks.push(unique.slice(i,i+350));
+      const results=await Promise.all(chunks.map(chunk=>
+        db.from("ranking_history").select("player_id,ranking,points,snapshot_date")
+          .eq("snapshot_date",cutoff).in("player_id",chunk).limit(1000)
+      ));
+      const err=results.find(x=>x.error)?.error;
+      if(err)throw err;
+      const out=new Map<number,any>();
+      for(const res of results)for(const row of res.data??[])out.set(Number((row as any).player_id),row);
+      return out;
+    };
+
     if(!schoolParam){
+      let atpById=new Map<number,any>();
+      try{atpById=await fetchAtpSnapshot(rosterAll.map((x:any)=>Number(x.player_id)).filter(Boolean))}catch{}
       const bySchool=new Map<string,any>();
       const ensure=(key:any,raw:any)=>{
         const k=String(key||"");
         if(!k)return null;
         let row=bySchool.get(k);
         if(!row){
-          row={key:k,name:rosterDisplayByKey.get(k)||String(raw||"").trim(),roster_count:0,official_ranked_count:0,best_ita_rank:null,conference:null,division:null,source_url:null};
+          const display=rosterDisplayByKey.get(k)||String(raw||"").trim();
+          const profile=profileByKey.get(profileKey(display))||profileByKey.get(profileKey(raw));
+          row={
+            key:k,name:display,roster_count:0,official_ranked_count:0,best_ita_rank:null,
+            atp_ranked_count:0,best_atp_rank:null,conference:null,division:null,source_url:null,
+            city:profile?.city||null,state:profile?.state||null,country:profile?.country||"USA",
+            description:profile?.description||null,hero_image_url:profile?.hero_image_url||null,
+            logo_url:profile?.logo_url||null,primary_color:profile?.primary_color||null,
+            secondary_color:profile?.secondary_color||null,_atpIds:new Set<number>()
+          };
           bySchool.set(k,row);
         }
         return row;
@@ -2196,6 +2225,13 @@ Deno.serve(async(req:Request)=>{
         row.conference=row.conference||(rr as any).conference||null;
         row.division=row.division||(rr as any).division||"NCAA Division I";
         row.source_url=row.source_url||(rr as any).source_url||null;
+        const pid=Number((rr as any).player_id||0);
+        const atp=pid?atpById.get(pid):null;
+        if(atp&&!row._atpIds.has(pid)){
+          row._atpIds.add(pid);row.atp_ranked_count++;
+          const rank=Number(atp.ranking||0)||null;
+          if(rank!=null&&(row.best_atp_rank==null||rank<row.best_atp_rank))row.best_atp_rank=rank;
+        }
       }
       for(const s of stagingAll){
         const key=stagingSchoolKey(s);
@@ -2205,11 +2241,30 @@ Deno.serve(async(req:Request)=>{
         if(rank!=null&&(row.best_ita_rank==null||rank<row.best_ita_rank))row.best_ita_rank=rank;
         row.conference=row.conference||(s as any).conference||null;
         row.division=row.division||"NCAA Division I";
+        const pid=playerByIta.get(String((s as any).ita_player_id||""));
+        const atp=pid?atpById.get(pid):null;
+        if(atp&&pid&&!row._atpIds.has(pid)){
+          row._atpIds.add(pid);row.atp_ranked_count++;
+          const ar=Number(atp.ranking||0)||null;
+          if(ar!=null&&(row.best_atp_rank==null||ar<row.best_atp_rank))row.best_atp_rank=ar;
+        }
       }
-      let rows=[...bySchool.values()];
+      let rows=[...bySchool.values()].map((x:any)=>{
+        const {_atpIds,...row}=x;
+        const fallbackDescription=
+          row.name+" évolue en "+String(row.division||"NCAA Division I")+
+          (row.conference?" dans la "+String(row.conference):"")+
+          ". Court Boss recense "+String(row.roster_count||0)+" joueur(s) dans le roster 2025-26"+
+          (row.official_ranked_count?", dont "+String(row.official_ranked_count)+" classé(s) ITA.":".");
+        let favicon_url:any=null;
+        try{favicon_url=row.source_url?new URL("/favicon.ico",row.source_url).toString():null}catch{}
+        return {...row,description:row.description||fallbackDescription,favicon_url};
+      });
       if(q){
         const nq=normalizeName(q);
-        rows=rows.filter((x:any)=>normalizeName(x.name).includes(nq)||normalizeName(x.conference||"").includes(nq));
+        rows=rows.filter((x:any)=>
+          normalizeName(x.name).includes(nq)||normalizeName(x.conference||"").includes(nq)||normalizeName(x.state||"").includes(nq)
+        );
       }
       rows.sort((a:any,b:any)=>{
         const ar=Number(a.best_ita_rank??999999),br=Number(b.best_ita_rank??999999);
@@ -2219,8 +2274,8 @@ Deno.serve(async(req:Request)=>{
       });
       return h({
         kind:"ncaa-universities",season,snapshot_date:snapshot,cutoff,
-        count:rows.length,rows,
-        rosterRows:rosterAll.length,officialRankedPlayers:stagingAll.length
+        count:rows.length,rows,rosterRows:rosterAll.length,officialRankedPlayers:stagingAll.length,
+        conferences:[...new Set(rows.map((x:any)=>String(x.conference||"")).filter(Boolean))].sort()
       });
     }
 
@@ -2231,7 +2286,6 @@ Deno.serve(async(req:Request)=>{
     const mappedPlayerByIta=new Map<string,number>(
       [...playerByIta.entries()].filter(([ita])=>stagedIds.has(ita))
     );
-
     const ids=new Set<number>();
     for(const rr of rosterRows)if((rr as any).player_id!=null)ids.add(Number((rr as any).player_id));
     for(const s of stagedRows){
@@ -2257,9 +2311,7 @@ Deno.serve(async(req:Request)=>{
       ]);
       const detailError=pRes.error||rRes.error||hRes.error;
       if(detailError)return h({error:detailError.message},500);
-      playerData=pRes.data??[];
-      registryData=rRes.data??[];
-      rankingHistory=hRes.data??[];
+      playerData=pRes.data??[];registryData=rRes.data??[];rankingHistory=hRes.data??[];
     }
 
     const playerById=new Map<number,any>(playerData.map((x:any)=>[Number(x.id),x]));
@@ -2290,22 +2342,15 @@ Deno.serve(async(req:Request)=>{
       const existing=merged.get(key)||{};
       const age=ageAt(p?.birth_date||null,cutoff,p?.age,p?.age_snapshot_date);
       merged.set(key,{
-        ...existing,
-        id:id||null,
-        name,
-        country:p?.country||base?.country||null,
+        ...existing,id:id||null,name,country:p?.country||base?.country||null,
         class_standing:base?.class_standing||existing.class_standing||null,
-        division:base?.division||"NCAA Division I",
-        conference:base?.conference||existing.conference||null,
+        division:base?.division||"NCAA Division I",conference:base?.conference||existing.conference||null,
         university:String(base?.school||rosterDisplayByKey.get(targetKey)||schoolParam),
         ita_rank:st?.ita_rank??reg?.ita_rank_official??existing.ita_rank??null,
         projected_rank:reg?.projected_rank??existing.projected_rank??null,
-        atp_rank:atp?.ranking??null,
-        atp_points:atp?.points??null,
-        utr_rating:p?.ncaa_utr_rating??null,
-        utr_verified:Boolean(p?.ncaa_utr_verified),
-        age,
-        ncaa_current:Boolean(p?.ncaa_current??true),
+        atp_rank:atp?.ranking??null,atp_points:atp?.points??null,
+        utr_rating:p?.ncaa_utr_rating??null,utr_verified:Boolean(p?.ncaa_utr_verified),
+        age,ncaa_current:Boolean(p?.ncaa_current??true),
         ncaa_status:p?.ncaa_status||reg?.status||"Active",
         source_url:base?.source_url||existing.source_url||null
       });
@@ -2323,17 +2368,94 @@ Deno.serve(async(req:Request)=>{
       if(aa!==ba)return aa-ba;
       return String(a.name).localeCompare(String(b.name));
     });
-    const conference=rosterRows.find((x:any)=>x.conference)?.conference||stagedRows.find((x:any)=>x.conference)?.conference||null;
+
+    const displayName=rosterDisplayByKey.get(targetKey)||rosterRows[0]?.school||stagedRows[0]?.school||schoolParam;
+    const pkey=profileKey(displayName);
+    let profile=profileByKey.get(pkey)||null;
+    const conference=rosterRows.find((x:any)=>x.conference)?.conference||stagedRows.find((x:any)=>x.conference)?.conference||profile?.conference||null;
+    const division=rosterRows[0]?.division||profile?.division||"NCAA Division I";
+    const sourceUrl=profile?.source_url||rosterRows.find((x:any)=>x.source_url)?.source_url||null;
+    const officialCount=rows.filter((x:any)=>x.ita_rank!=null).length;
+    const atpCount=rows.filter((x:any)=>x.atp_rank!=null).length;
+    const bestIta=rows.find((x:any)=>x.ita_rank!=null)?.ita_rank??null;
+    const bestAtp=rows.filter((x:any)=>x.atp_rank!=null).reduce((m:any,x:any)=>m==null||Number(x.atp_rank)<m?Number(x.atp_rank):m,null);
+    const generatedDescription=
+      displayName+" évolue en "+division+(conference?" dans la "+conference:"")+
+      ". Le roster Court Boss 2025-26 contient "+String(rows.length)+" joueur(s), avec "+
+      String(officialCount)+" classé(s) ITA"+(bestIta!=null?" et un meilleur rang ITA #"+String(bestIta):"")+
+      ". "+String(atpCount)+" joueur(s) disposent d'un classement ATP au cutoff du 01/12/2025"+
+      (bestAtp!=null?", le meilleur étant #"+String(bestAtp):"")+".";
+
+    const absoluteUrl=(raw:any,base:any)=>{
+      const value=String(raw||"").trim();
+      if(!value)return null;
+      try{return new URL(value,String(base||sourceUrl||"")).toString()}catch{return null}
+    };
+    const extractMeta=(html:string,name:string)=>{
+      const safe=String(name).replace(/[.*+?^$()|[\]\\]/g,"\\$&");
+      const a=new RegExp('<meta[^>]+(?:property|name)=[\"\\\']'+safe+'[\"\\\'][^>]+content=[\"\\\']([^\"\\\']+)[\"\\\']','i').exec(html)?.[1];
+      if(a)return htmlText(a);
+      const b=new RegExp('<meta[^>]+content=[\"\\\']([^\"\\\']+)[\"\\\'][^>]+(?:property|name)=[\"\\\']'+safe+'[\"\\\']','i').exec(html)?.[1];
+      return b?htmlText(b):null;
+    };
+    const extractIcon=(html:string)=>{
+      const a=/<link[^>]+rel=["'][^"']*(?:apple-touch-icon|icon)[^"']*["'][^>]+href=["']([^"']+)["']/i.exec(html)?.[1];
+      if(a)return a;
+      return /<link[^>]+href=["']([^"']+)["'][^>]+rel=["'][^"']*(?:apple-touch-icon|icon)[^"']*["']/i.exec(html)?.[1]||null;
+    };
+
+    if(sourceUrl&&(!profile?.hero_image_url||!profile?.logo_url)){
+      try{
+        const response=await fetch(sourceUrl,{
+          headers:{"User-Agent":"CourtBoss/1.0 (+NCAA university profile)","Accept":"text/html,application/xhtml+xml"},
+          signal:AbortSignal.timeout(6500)
+        });
+        if(response.ok){
+          const html=await response.text();
+          const hero=absoluteUrl(extractMeta(html,"og:image")||extractMeta(html,"twitter:image"),sourceUrl);
+          const logo=absoluteUrl(extractIcon(html),sourceUrl);
+          const update={
+            school_key:pkey,display_name:displayName,conference,division,
+            description:profile?.description||generatedDescription,
+            hero_image_url:hero||profile?.hero_image_url||null,
+            logo_url:logo||profile?.logo_url||null,
+            source_url:sourceUrl,metadata_source:"Official athletics roster page · Open Graph",
+            metadata_fetched_at:new Date().toISOString(),updated_at:new Date().toISOString()
+          };
+          const saved=await db.from("ncaa_university_profiles").upsert(update,{onConflict:"school_key"}).select("*").maybeSingle();
+          if(!saved.error&&saved.data)profile=saved.data;
+        }
+      }catch{}
+    }
+
+    if(!profile){
+      const update={
+        school_key:pkey,display_name:displayName,conference,division,
+        description:generatedDescription,source_url:sourceUrl,
+        metadata_source:"Court Boss NCAA roster summary",
+        metadata_fetched_at:new Date().toISOString(),updated_at:new Date().toISOString()
+      };
+      const saved=await db.from("ncaa_university_profiles").upsert(update,{onConflict:"school_key"}).select("*").maybeSingle();
+      if(!saved.error&&saved.data)profile=saved.data;
+    }else if(!profile.description){
+      const saved=await db.from("ncaa_university_profiles").update({description:generatedDescription,updated_at:new Date().toISOString()}).eq("school_key",pkey).select("*").maybeSingle();
+      if(!saved.error&&saved.data)profile=saved.data;
+    }
+
+    let faviconUrl:any=null;
+    try{faviconUrl=sourceUrl?new URL("/favicon.ico",sourceUrl).toString():null}catch{}
     return h({
       kind:"ncaa-university",season,snapshot_date:snapshot,cutoff,
       university:{
-        name:rosterDisplayByKey.get(targetKey)||rosterRows[0]?.school||stagedRows[0]?.school||schoolParam,
-        conference,
-        division:rosterRows[0]?.division||"NCAA Division I",
-        roster_count:rows.length,
-        official_ranked_count:rows.filter((x:any)=>x.ita_rank!=null).length,
-        atp_ranked_count:rows.filter((x:any)=>x.atp_rank!=null).length,
-        best_ita_rank:rows.find((x:any)=>x.ita_rank!=null)?.ita_rank??null
+        name:displayName,conference,division,roster_count:rows.length,
+        official_ranked_count:officialCount,atp_ranked_count:atpCount,
+        best_ita_rank:bestIta,best_atp_rank:bestAtp,
+        city:profile?.city||null,state:profile?.state||null,country:profile?.country||"USA",
+        description:profile?.description||generatedDescription,
+        hero_image_url:profile?.hero_image_url||null,logo_url:profile?.logo_url||null,
+        favicon_url:faviconUrl,source_url:sourceUrl,
+        primary_color:profile?.primary_color||null,secondary_color:profile?.secondary_color||null,
+        metadata_source:profile?.metadata_source||"Court Boss NCAA roster summary"
       },
       rows
     });

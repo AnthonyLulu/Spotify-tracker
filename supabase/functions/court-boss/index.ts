@@ -1352,7 +1352,10 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     await deleteAll("academy_intake_history");
     await deleteAll("academy_youth");
     await deleteAll("facilities");
-    await deleteAll("staff_training_enrollments");
+    {
+      const cleanTraining=await db.from("staff_training_enrollments").delete().eq("user_managed",true);
+      if(cleanTraining.error)throw new Error("staff_training_enrollments cleanup: "+cleanTraining.error.message);
+    }
     await deleteAll("staff");
     await deleteAll("training_plan","day_index");
     await deleteAll("user_training_progress","attribute");
@@ -1416,7 +1419,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   if(model==="CB-MANAGED-SAVE-v2")await upsertMany("academy_intake_history",snapshot.academy_intake_history,"id");
   await upsertMany("training_plan",snapshot.training_plan,"day_index");
   await upsertMany("user_training_progress",snapshot.training_progress,"attribute");
-  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_training_load_profiles",snapshot.training_load,"player_id,as_of_date");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_training_load_profiles",snapshot.training_load,"player_id");
   await upsertOne("medical_plan",snapshot.medical_plan,"id");
   if(model==="CB-MANAGED-SAVE-v2")await upsertMany("injuries",snapshot.managed_injuries,"id");
   await upsertMany("scouting_assignments",snapshot.scouting_assignments,"id");
@@ -1985,6 +1988,7 @@ Deno.serve(async(req:Request)=>{
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(currentCareer.error)return h({error:currentCareer.error.message},500);
+    try{await ensureCareerBaselineTemplate()}catch(e){console.warn("Career baseline template",String((e as any)?.message||e))}
     if(currentCareer.data){
       const inboxSync=await db.rpc("career_sync_actionable_inbox",{
         p_date:String(currentCareer.data.career_date||AGE_REFERENCE_DATE),
@@ -10913,6 +10917,27 @@ Deno.serve(async(req:Request)=>{
   }
 
 
+  if(path.endsWith("/api/new-career")&&req.method==="POST"){
+    const browserKey=saveId(req); if(!browserKey)return h({error:"Invalid save key"},400);
+    const baseline=await ensureCareerBaselineTemplate();
+    if(!baseline.ok)return h({error:"Le modèle de nouvelle carrière n'est pas disponible.",reason:baseline.reason||"template_missing"},409);
+    const template=await db.from("game_career_templates").select("*").eq("id","default-2025-12-01").maybeSingle();
+    if(template.error||!template.data)return h({error:template.error?.message||"Modèle de carrière introuvable"},404);
+    const restored=await restoreManagedSaveSnapshot(template.data.managed_snapshot);
+    const payload=template.data.local_payload&&typeof template.data.local_payload==="object"?template.data.local_payload:{};
+    const legacy=await db.from("game_saves").upsert({
+      id:browserKey,payload,updated_at:new Date().toISOString()
+    },{onConflict:"id"});
+    if(legacy.error)return h({error:legacy.error.message},500);
+    const c=await db.from("career_state").select("career_date,week,player_name,managed_player_id").eq("id","demo").maybeSingle();
+    await db.from("career_event_log").insert({
+      event_date:c.data?.career_date||AGE_REFERENCE_DATE,week:Number(c.data?.week||1),
+      system:"career",event_type:"new_career",entity_type:"player",entity_id:c.data?.managed_player_id||null,
+      summary:"Nouvelle carrière démarrée",payload:{template:"default-2025-12-01",snapshot_model:restored.model}
+    });
+    return h({ok:true,model:"CB-NEW-CAREER-v1",local_payload:payload,career:c.data??null,restored});
+  }
+
   if(path.endsWith("/api/save-slots")&&req.method==="GET"){
     const browserKey=saveId(req); if(!browserKey)return h({error:"Invalid save key"},400);
     const slots=await db.from("game_save_slots")
@@ -10920,7 +10945,7 @@ Deno.serve(async(req:Request)=>{
       .eq("browser_key",browserKey)
       .order("slot_no",{ascending:true});
     if(slots.error)return h({error:slots.error.message},500);
-    return h({ok:true,slots:slots.data??[],model:"CB-SAVE-SLOTS-v1"});
+    return h({ok:true,slots:slots.data??[],model:"CB-SAVE-SLOTS-v2"});
   }
 
   if(path.endsWith("/api/save-slot")&&req.method==="POST"){

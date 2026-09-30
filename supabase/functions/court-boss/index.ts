@@ -1173,7 +1173,7 @@ async function resolveTournamentImage(t:any){
           return (nameHit||cityHit)&&tennisContext;
         });
         const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
-        if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw)){
+        if(raw&&/^https?:\/\//i.test(raw)&&!badImageRe.test(raw)&&!/logo|icon|flag|map/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw)){
           t.image_url=raw;
           t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
           t.image_source_label="Wikipedia/Wikimedia · tournoi vérifié";
@@ -1201,7 +1201,7 @@ async function resolveTournamentImage(t:any){
         const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
         const nameNorm=normalizeName(String(t.name||""));
         const cityNorm=normalizeName(String(primaryCity||t.city||""));
-        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player|new york times|golden state|newspaper|magazine|book|document|scan|djvu/i;
+        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player|new york times|golden state|newspaper|magazine|book|document|scan|djvu|table[ _-]?tennis|ping[ _-]?pong|pictogram/i;
         const tennis=/tennis|court|stadium|arena|open|championship|masters|tournament/i;
         const chosen=pages
           .map((x:any)=>{
@@ -1217,7 +1217,7 @@ async function resolveTournamentImage(t:any){
             if(bad.test(title))score-=10;
             return {x,raw,title,score};
           })
-          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(x.raw)&&x.score>-3)
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!badImageRe.test(x.raw)&&!bad.test(x.title)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(x.raw)&&x.score>-3)
           .sort((a:any,b:any)=>b.score-a.score)[0];
         if(chosen?.raw){
           t.image_url=chosen.raw;
@@ -1263,7 +1263,7 @@ async function resolveTournamentImage(t:any){
             if(/station|railway|train|airport|person|film|song|album|berry/i.test(String(x.title||"")))score-=10;
             return {x,raw,score,venueHits};
           })
-          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(x.raw)
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!badImageRe.test(x.raw)&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(x.raw)
             &&x.score>=4&&(venueTokens.length===0||x.venueHits>0))
           .sort((a:any,b:any)=>b.score-a.score)[0];
         if(chosen?.raw){
@@ -2254,7 +2254,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:62,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v9+venue-city-parser-v8+geo-aliases+table-tennis-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:63,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v10+venue-city-parser-v8+geo-aliases+table-tennis-search-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

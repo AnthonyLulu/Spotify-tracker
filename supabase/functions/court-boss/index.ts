@@ -963,7 +963,7 @@ async function resolveTournamentImage(t:any){
   // Reject document scans/DJVU false positives that Commons can rank as "images".
   const cachedUrl=String(t.image_url||"");
   const cachedSourceUrl=String(t.image_source_url||"");
-  const badImageRe=/\.djvu(?:\/|\.|$|\?)|The_New_York_Times|California_a_guide_to_the_Golden_state|table[_%20 -]?tennis|ping[_%20 -]?pong|pictogram/i;
+  const badImageRe=/\.djvu(?:\/|\.|$|\?)|The_New_York_Times|California_a_guide_to_the_Golden_state|table[_%20 -]?tennis|ping[_%20 -]?pong|pictogram|file-type-icons|fileicon|\.(?:wav|ogg|mp3|flac)(?:$|\?|%)/i;
   const badCachedImage=badImageRe.test(cachedUrl)||badImageRe.test(cachedSourceUrl);
   const weakImage=/Photo de la ville|Fallback circuit|Fallback compétition|Fallback catégorie|réutilisée/i.test(String(t.image_source_label||""))||badCachedImage;
   if(t.image_url&&!weakImage)return t;
@@ -1201,7 +1201,7 @@ async function resolveTournamentImage(t:any){
         const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
         const nameNorm=normalizeName(String(t.name||""));
         const cityNorm=normalizeName(String(primaryCity||t.city||""));
-        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player|new york times|golden state|newspaper|magazine|book|document|scan|djvu|table[ _-]?tennis|ping[ _-]?pong|pictogram/i;
+        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player|new york times|golden state|newspaper|magazine|book|document|scan|djvu|table[ _-]?tennis|ping[ _-]?pong|pictogram|\.wav|\.ogg|\.mp3|audio|pronunciation/i;
         const tennis=/tennis|court|stadium|arena|open|championship|masters|tournament/i;
         const chosen=pages
           .map((x:any)=>{
@@ -2254,7 +2254,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:63,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v10+venue-city-parser-v8+geo-aliases+table-tennis-search-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:64,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

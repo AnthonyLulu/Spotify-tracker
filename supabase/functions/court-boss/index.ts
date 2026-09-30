@@ -2691,6 +2691,35 @@ Deno.serve(async(req:Request)=>{
     const {data,error,count}=await query;
     if(error) return h({error:error.message},500);
 
+    // Surface the managed player's frozen acceptance state directly in the
+    // tournament calendar so the list view shows real DA / ALT / Q status,
+    // not only a projected cut until the detail sheet is opened.
+    let rows:any[]=(data??[]);
+    const tournamentIds=rows.map((x:any)=>Number(x.id||0)).filter(Boolean);
+    if(tournamentIds.length){
+      const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+      if(managed.error)return h({error:managed.error.message},500);
+      const managedId=Number(managed.data?.managed_player_id||0);
+      if(managedId){
+        const [mainAcceptance,qAcceptance]=await Promise.all([
+          db.from("world_tournament_acceptance_entries")
+            .select("tournament_id,status,acceptance_order,effective_rank,entry_method,snapshot_date,promoted_on,withdrawn_on,withdrawal_phase,withdrawal_reason")
+            .eq("player_id",managedId).in("tournament_id",tournamentIds),
+          db.from("world_qualifying_acceptance_entries")
+            .select("tournament_id,status,acceptance_order,effective_rank,entry_method,snapshot_date,promoted_on,withdrawn_on,withdrawal_phase,withdrawal_reason")
+            .eq("player_id",managedId).in("tournament_id",tournamentIds)
+        ]);
+        if(mainAcceptance.error||qAcceptance.error)return h({error:(mainAcceptance.error||qAcceptance.error)?.message},500);
+        const mainMap=new Map((mainAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
+        const qMap=new Map((qAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
+        rows=rows.map((t:any)=>({
+          ...t,
+          managed_acceptance_main:mainMap.get(Number(t.id))??null,
+          managed_acceptance_qualifying:qMap.get(Number(t.id))??null
+        }));
+      }
+    }
+
     const year=Number((month||from||"2025").slice(0,4))||2025;
     let tbcRows:any[]=[];
     if(source!=="Simulation"&&source!=="Fictif"){
@@ -2708,7 +2737,7 @@ Deno.serve(async(req:Request)=>{
         });
       }
     }
-    return h({offset,limit,count:count??0,rows:data??[],tbc:tbcRows});
+    return h({offset,limit,count:count??0,rows,tbc:tbcRows});
   }
 
 

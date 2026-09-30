@@ -8441,6 +8441,158 @@ Deno.serve(async(req:Request)=>{
     if(career.error||!career.data) return h({error:career.error?.message||"Career not found"},500);
     let budget=Number(career.data.budget||0);
 
+    if(action==="academy_setting"){
+      const field=String(body?.field||"");
+      const allowed=new Set(["academy_style","ncaa_pathway","pro_pathway","development_intensity","scholarship_budget","youth_capacity"]);
+      if(!allowed.has(field))return h({error:"Réglage académie invalide"},400);
+      let value:any=body?.value;
+      if(["ncaa_pathway","pro_pathway"].includes(field))value=n(value,50,0,100);
+      if(field==="development_intensity")value=n(value,2,1,5);
+      if(field==="youth_capacity")value=n(value,8,4,30);
+      if(field==="scholarship_budget")value=Math.max(0,Number(value||0));
+      if(field==="academy_style")value=String(value||"Équilibré").slice(0,60);
+      const up=await db.from("academies").update({[field]:value}).eq("id","demo").select("*").single();
+      if(up.error)return h({error:up.error.message},500);
+      return h({ok:true,academy:up.data});
+    }
+
+    if(action==="academy_pathway"){
+      const decision=String(body?.decision||"").toLowerCase();
+      if(!["pro","ncaa","release"].includes(decision))return h({error:"Décision académie invalide"},400);
+      const y=await db.from("academy_youth").select("*").eq("id",id).maybeSingle();
+      if(y.error||!y.data)return h({error:y.error?.message||"Prospect introuvable"},404);
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      if(decision==="release"){
+        const up=await db.from("academy_youth").update({status:"released",pathway_preference:"released",last_review_date:today}).eq("id",id);
+        if(up.error)return h({error:up.error.message},500);
+        await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
+          .eq("related_entity_type","academy_youth").eq("related_entity_id",id).eq("action_type","academy_pathway");
+        await db.from("academy_intake_history").update({destination:"released"}).eq("youth_id",id);
+        return h({ok:true,decision:"release"});
+      }
+      if(Number(y.data.age||0)<18)return h({error:"La décision NCAA / pro n'est disponible qu'à partir de 18 ans."},409);
+
+      let playerId:number|null=null;
+      const existing=await db.from("players").select("id").eq("slug","academy-youth-"+id).maybeSingle();
+      if(existing.error)return h({error:existing.error.message},500);
+      if(existing.data?.id)playerId=Number(existing.data.id);
+      if(!playerId){
+        const ca=Number(y.data.current_ability||45),pa=Number(y.data.potential||75);
+        const ins=await db.from("players").insert({
+          slug:"academy-youth-"+id,name:y.data.name,country:y.data.country||"FRA",is_real:false,
+          ranking:decision==="pro"?2001+Number(id):null,source_ranking:null,points:0,
+          doubles_ranking:decision==="pro"?2500+Number(id):null,
+          itf_ranking:decision==="pro"?900+Number(id):null,
+          junior_ranking:null,
+          age:Number(y.data.age||18),birth_date:y.data.birth_date||null,
+          height_cm:174+(Number(id)%18),weight_kg:66+(Number(id)%16),
+          handedness:y.data.handedness||((Number(id)%5===0)?"Gaucher":"Droitier"),
+          backhand:y.data.backhand||((Number(id)%7===0)?"1 main":"2 mains"),
+          style:y.data.style||"À définir",current_ability:ca,potential:pa,
+          form:68,fitness:92,morale:Number(y.data.morale||80),fatigue:10,
+          scouting_confidence:100,injury_status:"Fit",
+          data_source:"Court Boss Academy pathway",data_snapshot:today,ranking_current:false,
+          ncaa_current:decision==="ncaa",ncaa_status:decision==="ncaa"?"Active":null
+        }).select("id").single();
+        if(ins.error)return h({error:ins.error.message},500);
+        playerId=Number(ins.data.id);
+        const base=Math.max(5,Math.min(17,Math.round(ca/6)));
+        const attr=(salt:number)=>Math.max(4,Math.min(20,base+((Number(id)*salt)%5)-2));
+        const attrs=await db.from("player_attributes").insert({
+          player_id:playerId,serve_power:attr(3),serve_precision:attr(5),forehand:attr(7),backhand:attr(11),return_game:attr(13),
+          volley:attr(17),touch:attr(19),movement:attr(23),speed:attr(29),stamina:attr(31),strength:attr(37),
+          anticipation:attr(41),concentration:attr(43),composure:attr(47),fighting_spirit:attr(53),tactics:attr(59),
+          doubles:attr(61),clay_affinity:attr(67),hard_affinity:attr(71),grass_affinity:attr(73)
+        });
+        if(attrs.error)return h({error:attrs.error.message},500);
+      }
+
+      let destination="";
+      if(decision==="ncaa"){
+        const teams=await db.from("college_teams").select("id,name,ita_rank,preseason_rank").order("ita_rank",{ascending:true,nullsFirst:false}).limit(30);
+        if(teams.error||!(teams.data??[]).length)return h({error:teams.error?.message||"Aucune université NCAA disponible"},500);
+        const pool=teams.data??[];
+        const qualityBand=Math.max(0,Math.min(pool.length-1,Math.floor((95-Number(y.data.potential||75))/4)));
+        const choice=pool[Math.min(pool.length-1,qualityBand+(Number(id)%Math.min(5,Math.max(1,pool.length-qualityBand))))]||pool[0];
+        destination=String(choice.name);
+        const seasonStart=Number(today.slice(5,7))>=8?Number(today.slice(0,4)):Number(today.slice(0,4))-1;
+        const season=String(seasonStart)+"-"+String((seasonStart+1)%100).padStart(2,"0");
+        const projected=126+Math.max(0,Math.min(350,Math.round((90-Number(y.data.current_ability||45))*4+(Number(id)%29))));
+        const [pp,reg,uy]=await Promise.all([
+          db.from("players").update({
+            ncaa_current:true,ncaa_school:destination,ncaa_status:"Active",ncaa_verified:false,
+            ncaa_rank:null,ncaa_class_year:"Freshman",ranking_current:false,ranking:null,itf_ranking:null
+          }).eq("id",playerId),
+          db.from("ncaa_player_registry").upsert({
+            player_id:playerId,ita_rank:null,ita_rank_official:null,projected_rank:projected,
+            school:destination,division:"NCAA D1",season,status:"Active",snapshot_date:today,
+            source_label:"Court Boss Academy pathway · simulated depth",rank_source_kind:"simulated_depth",class_year:"Freshman"
+          },{onConflict:"player_id,season,snapshot_date"}),
+          db.from("academy_youth").update({
+            status:"ncaa",pathway_preference:"ncaa",last_review_date:today
+          }).eq("id",id)
+        ]);
+        const er=pp.error||reg.error||uy.error;if(er)return h({error:er.message},500);
+        await db.from("academy_intake_history").update({destination:"NCAA · "+destination}).eq("youth_id",id);
+        await db.from("inbox_items").insert({
+          kind:"academy",title:y.data.name+" rejoint la NCAA",
+          body:y.data.name+" s'engage avec "+destination+". Son classement affiché restera une projection Court Boss tant qu'il n'existe pas de rang ITA officiel.",
+          action_route:"university",is_read:false,game_date:today,priority:"normal",
+          action_type:"open_route",action_label:"Voir la NCAA",action_payload:{route:"university"},
+          related_entity_type:"player",related_entity_id:playerId,decision_status:"info"
+        });
+      }else{
+        const existingRoster=await db.from("academy_roster").select("id").eq("source_youth_id",id).maybeSingle();
+        if(existingRoster.error)return h({error:existingRoster.error.message},500);
+        const cost=Number(y.data.scholarship_cost||0);
+        if(!existingRoster.data&&budget<cost)return h({error:"Budget insuffisant pour le passage pro."},409);
+        if(!existingRoster.data){
+          budget-=cost;
+          const endDate=new Date(today+"T12:00:00Z");endDate.setUTCFullYear(endDate.getUTCFullYear()+2);
+          const weeklyCost=Math.max(100,Math.round(Number(y.data.current_ability||45)*5));
+          const ro=await db.from("academy_roster").insert({
+            player_id:playerId,source_youth_id:id,contract_start:today,contract_end:endDate.toISOString().slice(0,10),
+            weekly_cost:weeklyCost,squad_role:"Passage pro",development_focus:"Équilibré",status:"active"
+          });
+          if(ro.error)return h({error:ro.error.message},500);
+          await db.from("contracts").insert({
+            subject_type:"player",subject_name:y.data.name,role:"Joueur pro académie",weekly_salary:weeklyCost,
+            start_date:today,end_date:endDate.toISOString().slice(0,10),bonuses:{top500_bonus:1000,title_bonus:750},status:"active"
+          });
+          await db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo");
+        }
+        const [pp,uy]=await Promise.all([
+          db.from("players").update({
+            ncaa_current:false,ncaa_school:null,ncaa_status:null,ranking_current:false,
+            ranking:2001+Number(id),itf_ranking:900+Number(id)
+          }).eq("id",playerId),
+          db.from("academy_youth").update({
+            status:"signed",pathway_preference:"pro",signed_on:today,last_review_date:today
+          }).eq("id",id)
+        ]);
+        const er=pp.error||uy.error;if(er)return h({error:er.message},500);
+        destination="Circuit pro";
+        await db.from("academy_intake_history").update({signed:true,destination:"Circuit pro"}).eq("youth_id",id);
+        await db.from("inbox_items").insert({
+          kind:"academy",title:y.data.name+" passe professionnel",
+          body:y.data.name+" signe son premier contrat professionnel avec l'académie.",
+          action_route:"academy",is_read:false,game_date:today,priority:"normal",
+          action_type:"open_route",action_label:"Voir l'académie",action_payload:{route:"academy"},
+          related_entity_type:"player",related_entity_id:playerId,decision_status:"info"
+        });
+      }
+
+      await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
+        .eq("related_entity_type","academy_youth").eq("related_entity_id",id).eq("action_type","academy_pathway");
+
+      await db.from("career_event_log").insert({
+        event_date:today,week:Number(career.data.week||0),system:"academy",event_type:"pathway_decision",
+        entity_type:"academy_youth",entity_id:id,summary:y.data.name+" → "+destination,
+        payload:{decision,player_id:playerId,destination}
+      });
+      return h({ok:true,decision,player_id:playerId,destination,budget});
+    }
+
     if(action==="sign_youth"){
       const y=await db.from("academy_youth").select("*").eq("id",id).maybeSingle();
       if(y.error||!y.data)return h({error:y.error?.message||"Prospect not found"},404);

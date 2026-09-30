@@ -960,7 +960,10 @@ async function resolveTournamentImage(t:any){
 
   // Keep strong tournament/stadium imagery stable, but let generic city/circuit
   // fallbacks upgrade themselves when the public image route is requested.
-  const weakImage=/Photo de la ville|Fallback circuit|Fallback compétition|réutilisée/i.test(String(t.image_source_label||""));
+  // Reject document scans/DJVU false positives that Commons can rank as "images".
+  const cachedUrl=String(t.image_url||"");
+  const badCachedImage=/\.djvu(?:\/|\.|$|\?)|The_New_York_Times|California_a_guide_to_the_Golden_state/i.test(cachedUrl);
+  const weakImage=/Photo de la ville|Fallback circuit|Fallback compétition|réutilisée/i.test(String(t.image_source_label||""))||badCachedImage;
   if(t.image_url&&!weakImage)return t;
 
   const fallbackImage=weakImage?String(t.image_url||"").trim():"";
@@ -997,6 +1000,7 @@ async function resolveTournamentImage(t:any){
   };
 
   const commaParts=rawPlace.split(",").map(x=>cleanPlace(x)).filter(Boolean);
+  const venueCandidate=commaParts.length>=2&&facilityRe.test(commaParts[0])?commaParts[0]:"";
   if(commaParts.length>=2){
     const first=commaParts[0],last=commaParts[commaParts.length-1];
     const stateCode=last.toUpperCase();
@@ -1017,8 +1021,15 @@ async function resolveTournamentImage(t:any){
   if(noParen&&!facilityRe.test(noParen))pushGeo(noParen);
   if(!geoCandidates.length)pushGeo(rawPlace);
   const primaryCity=geoCandidates[0]||rawPlace;
+  const syntheticPlace=/^ville\s+\d+$/i.test(primaryCity)||/^(?:rus|isr|ven)\s+tennis\s+center$/i.test(primaryCity);
+  if(syntheticPlace&&fallbackImage&&!badCachedImage){
+    t.image_url=fallbackImage;
+    t.image_source_url=fallbackSourceUrl;
+    t.image_source_label=fallbackSourceLabel;
+    return t;
+  }
   const curatedImageSources=[
-    {re:/United Cup/i,url:"https://www.unitedcup.com/en/"},
+    {re:/United Cup/i,url:"https://www.unitedcup.com/en/media/news/united-cup-2026-schedule-released"},
     {re:/Nitto ATP Finals/i,url:"https://www.nittoatpfinals.com/en/"},
     {re:/Next Gen ATP Finals/i,url:"https://www.nextgenatpfinals.com/en/"},
     {re:/Rolex Shanghai Masters/i,url:"https://en.rolexshanghaimasters.com/en/"}
@@ -1079,7 +1090,7 @@ async function resolveTournamentImage(t:any){
         let raw="";
         for(const re of picks){const m=html.match(re);if(m?.[1]){raw=String(m[1]).replace(/&amp;/g,"&").trim();break;}}
         try{if(raw)raw=new URL(raw,source).toString()}catch{}
-        if(raw&&/^https?:\/\//i.test(raw)&&!/placeholder|default-avatar|favicon|sprite|logo/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
+        if(raw&&/^https?:\/\//i.test(raw)&&!/placeholder|default-avatar|favicon|sprite|logo/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw)){
           t.image_url=raw;
           t.image_source_url=source;
           t.image_source_label="Visuel officiel du tournoi";
@@ -1116,7 +1127,7 @@ async function resolveTournamentImage(t:any){
           return (nameHit||cityHit)&&tennisContext;
         });
         const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
-        if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
+        if(raw&&/^https?:\/\//i.test(raw)&&!/logo|icon|flag|map/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw)){
           t.image_url=raw;
           t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
           t.image_source_label="Wikipedia/Wikimedia · tournoi vérifié";
@@ -1144,7 +1155,7 @@ async function resolveTournamentImage(t:any){
         const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
         const nameNorm=normalizeName(String(t.name||""));
         const cityNorm=normalizeName(String(primaryCity||t.city||""));
-        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player/i;
+        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player|new york times|golden state|newspaper|magazine|book|document|scan|djvu/i;
         const tennis=/tennis|court|stadium|arena|open|championship|masters|tournament/i;
         const chosen=pages
           .map((x:any)=>{
@@ -1160,12 +1171,56 @@ async function resolveTournamentImage(t:any){
             if(bad.test(title))score-=10;
             return {x,raw,title,score};
           })
-          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(x.raw)&&x.score>-3)
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(x.raw)&&x.score>-3)
           .sort((a:any,b:any)=>b.score-a.score)[0];
         if(chosen?.raw){
           t.image_url=chosen.raw;
           t.image_source_url="https://commons.wikimedia.org/wiki/"+encodeURIComponent(String(chosen.x.title||"").replace(/ /g,"_"));
           t.image_source_label="Wikimedia Commons · photo tournoi/lieu";
+          await db.from("tournaments").update({
+            image_url:t.image_url,image_source_url:t.image_source_url,image_source_label:t.image_source_label
+          }).eq("id",t.id);
+        }
+      }
+    }catch{}
+  }
+
+  if(!t.image_url&&venueCandidate){
+    try{
+      const qs=new URLSearchParams({
+        action:"query",generator:"search",
+        gsrsearch:`"${venueCandidate}" "${primaryCity}"`,
+        gsrnamespace:"0",gsrlimit:"8",
+        prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1400",
+        inprop:"url",format:"json",origin:"*"
+      });
+      const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{
+        headers:{"User-Agent":"CourtBoss/1.0 (+venue-photo-fallback)"},
+        signal:timeoutSignal()
+      });
+      if(r.ok){
+        const jj:any=await r.json();
+        const pages=(Object.values(jj?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+        const venueTokens=normalizeName(venueCandidate).split(" ").filter(x=>x.length>=3&&!/^(arena|stadium|center|centre|club|sports|tennis|golf|coliseum)$/.test(x));
+        const cityToken=normalizeName(primaryCity).replace(/\s+/g,"");
+        const chosen=pages
+          .map((x:any)=>{
+            const title=normalizeName(String(x.title||""));
+            const titleCompact=title.replace(/\s+/g,"");
+            const raw=String(x?.original?.source||x?.thumbnail?.source||"").trim();
+            let score=0;
+            for(const tok of venueTokens)if(title.includes(tok))score+=3;
+            if(cityToken&&titleCompact.includes(cityToken))score+=4;
+            if(/arena|stadium|coliseum|tennis|sports|centre|center|club/i.test(String(x.title||"")))score+=2;
+            if(/person|film|song|album|berry/i.test(String(x.title||"")))score-=10;
+            return {x,raw,score};
+          })
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(x.raw)&&x.score>=4)
+          .sort((a:any,b:any)=>b.score-a.score)[0];
+        if(chosen?.raw){
+          t.image_url=chosen.raw;
+          t.image_source_url=String(chosen.x?.fullurl||"https://en.wikipedia.org/");
+          t.image_source_label="Wikipedia/Wikimedia · lieu du tournoi · "+venueCandidate+", "+primaryCity;
           await db.from("tournaments").update({
             image_url:t.image_url,image_source_url:t.image_source_url,image_source_label:t.image_source_label
           }).eq("id",t.id);
@@ -1193,7 +1248,7 @@ async function resolveTournamentImage(t:any){
           const jj:any=await exact.json();
           chosen=(Object.values(jj?.query?.pages||{}) as any[]).find((x:any)=>{
             const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-            return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
+            return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
           })||null;
         }
         if(!chosen){
@@ -1214,7 +1269,7 @@ async function resolveTournamentImage(t:any){
               const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
               const raw=String(x?.original?.source||x?.thumbnail?.source||"");
               return (title===cityNorm||title.startsWith(cityNorm)||cityNorm.startsWith(title))
-                &&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw);
+                &&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
             })||null;
           }
         }
@@ -1222,7 +1277,7 @@ async function resolveTournamentImage(t:any){
       }
 
       const raw=String(chosen?.original?.source||chosen?.thumbnail?.source||"").trim();
-      if(raw&&/^https?:\/\//i.test(raw)&&!/\.pdf(?:\/|\.|$|\?)/i.test(raw)){
+      if(raw&&/^https?:\/\//i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw)){
         t.image_url=raw;
         t.image_source_url=String(chosen?.fullurl||"https://en.wikipedia.org/");
         t.image_source_label="Photo de la ville · Wikipedia/Wikimedia · lieu normalisé: "+String(chosenCity||primaryCity||rawCity);
@@ -2078,7 +2133,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:53,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v4+venue-city-normalization+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:54,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v5+venue-first-city-normalization+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

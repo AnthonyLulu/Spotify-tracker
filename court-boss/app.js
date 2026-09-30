@@ -1433,7 +1433,7 @@ window.toggleDoublesEntry=async id=>{
  const entry=saved?.entry||{};
  local.doublesEntryMeta[id]={
    entry_start_date:window.start_date,
-   entry_method:entry.entry_method||elig.requiresQualifying?(elig.qualifyingEntryMethod||'qualifying'):'direct',
+   entry_method:entry.entry_method||(elig.requiresQualifying?(elig.qualifyingEntryMethod||'qualifying'):'direct'),
    entry_phase:entry.entry_phase||elig.phase||'advance',
    name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,
    partner_id:entry.partner_id||partner?.id,partner_name:partner?.name,
@@ -3689,7 +3689,7 @@ window.respondPartnerOffer=async(id,decision)=>{
   await loadManagement();render();
  }catch(e){alert(e.message)}
 }
-window.choosePartner=async id=>{if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : change d’orientation avant de former une paire.');return}try{await managerAction('choose_partner',id);local.partnerId=id;persist();await loadManagement();render()}catch(e){alert(e.message)}}
+window.choosePartner=async id=>{if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : change d’orientation avant de former une paire.');return}try{await managerAction('choose_partner',id);local.partnerId=id;local.doublesEntries=[];local.doublesEntryMeta={};persist();boot=await get('/api/bootstrap');mergeServerDoublesEntries(boot.doublesEntries||[]);await loadManagement();render()}catch(e){alert(e.message)}}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
 window.setCareerFocus=async focus=>{
  const labels={singles_only:'Simple exclusivement',singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};

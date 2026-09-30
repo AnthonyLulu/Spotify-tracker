@@ -10641,6 +10641,7 @@ Deno.serve(async(req:Request)=>{
         db.from("user_training_progress").update({xp:0,updated_at:new Date().toISOString()}).neq("attribute",""),
         db.from("managed_doubles_entries").delete().eq("owner_id","demo"),
         db.from("inbox_items").delete().gte("id",0),
+        db.from("finance_transactions").delete().gte("id",0),
         db.from("media_events").delete().gte("id",0),
         db.from("career_event_log").delete().gte("id",0),
         db.from("college_offers").update({status:"available"}).gte("id",0),
@@ -10764,6 +10765,11 @@ Deno.serve(async(req:Request)=>{
       await db.from("finances").update({
         prize_money:0,sponsor_income:0,travel_cost:0,staff_cost:0,agent_commission:0,staff_bonus:0,base_currency:BASE_CURRENCY
       }).eq("id","demo");
+      await recordFinanceTransactions([{
+        transaction_key:"opening:"+startDate,game_date:startDate,week:1,category:"opening",amount:14800,
+        source_type:"career",source_id:Number(p.id),description:"Solde d’ouverture · nouvelle carrière avec "+String(p.name),
+        balance_after:14800,metadata:{model:"CB-FINANCE-LEDGER-v1",managed_player_id:Number(p.id)}
+      }]);
       await db.rpc("refresh_sponsor_offer_eligibility",{p_date:startDate});
       await Promise.all([
         db.from("news_items").insert({body:"Nouvelle carrière lancée avec "+p.name+"."}),

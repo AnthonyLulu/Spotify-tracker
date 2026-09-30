@@ -1094,6 +1094,49 @@ function applyManagedPathwayEligibility(t,rule){
   pathwayDetails:p
  };
 }
+function tournamentPathwayReasonLabel(reason){
+ const labels={
+  no_pathway:'Aucune passerelle spéciale active',
+  regular_entry_still_open:'Inscriptions normales encore ouvertes',
+  no_late_entry_slot:'Aucune place Late Entry',
+  ranking_not_better_than_original_cut:'Classement insuffisant par rapport au cut original',
+  no_special_exempt_slots:'Aucune place Special Exempt',
+  no_qualified_previous_event:'Pas de résultat qualificatif la semaine précédente',
+  already_direct_acceptance:'Déjà admis directement',
+  no_performance_bye_rule:'Pas de règle Performance Bye sur cette épreuve',
+  not_source_event_finalist:'Résultat requis dans le tournoi source non atteint',
+  not_accepted_main_draw:'Pas admis au tableau principal',
+  would_be_top16_seed:'Déjà dans la zone des 16 premières têtes de série',
+  source_event_finalist_outside_top16_seeds:'Performance Bye disponible',
+  still_competing_previous_week:'Special Exempt disponible'
+ };
+ return labels[String(reason||'')]||String(reason||'Statut réglementaire');
+}
+function managedRegulatoryPathwaysHtml(t,fr){
+ const pathway=t?.managed_pathway_status||null;
+ const se=t?.managed_special_exempt_status||null;
+ const pb=t?.managed_performance_bye_status||null;
+ const rows=[];
+ const seSlots=Math.max(0,Number(fr?.special_exempt_slots||0));
+ const pbSlots=Math.max(0,Number(t?.performance_bye_slots||0));
+ if(se&&(se.eligible===true||seSlots>0)){
+  const info=se.eligible===true
+   ?('Disponible'+(se.source_tournament?' · via '+se.source_tournament:'')+(se.source_result?' ('+se.source_result+')':''))
+   :tournamentPathwayReasonLabel(se.reason);
+  rows.push('<div class="list-item row between"><div><b>Special Exempt</b><div class="muted micro">'+esc(info)+'</div></div><span class="badge '+(se.eligible===true?'good':'')+'">'+(se.eligible===true?'Éligible':fmt(seSlots)+' place(s)')+'</span></div>');
+ }
+ if(pb&&(pb.eligible===true||pbSlots>0)){
+  const info=pb.eligible===true
+   ?('Bye au 1er tour'+(pb.source_event?' · source '+pb.source_event:''))
+   :tournamentPathwayReasonLabel(pb.reason);
+  rows.push('<div class="list-item row between"><div><b>Performance Bye</b><div class="muted micro">'+esc(info)+'</div></div><span class="badge '+(pb.eligible===true?'good':'')+'">'+(pb.eligible===true?'Éligible':fmt(pbSlots)+' place(s)')+'</span></div>');
+ }
+ if(pathway?.eligible===true&&String(pathway.mode||'')!=='special_exempt'){
+  rows.push('<div class="list-item row between"><div><b>Passerelle active</b><div class="muted micro">'+esc(pathway.label||String(pathway.mode||'').replaceAll('_',' '))+'</div></div><span class="badge good">'+esc(String(pathway.mode||'').toUpperCase())+'</span></div>');
+ }
+ return rows.length?'<div style="margin-top:10px"><div class="eyebrow">Passerelles réglementaires</div>'+rows.join('')+'</div>':'';
+}
+
 function doublesEligibility(t){
  const partner=activeDoublesPartner(),c=career(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
  const server=t?.managed_doubles_entry_status;
@@ -3127,8 +3170,22 @@ window.openTournament=async id=>{
  const fallback=[...(tourRows||[]),...(boot.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>x.id===id);if(!id)return;
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
  try{
-  const d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
-  t.entry_rule_context=tournamentEntryContext();t.managed_entry_rules=d.entry_rules||null;t.managed_pathway_status=d.pathway_status||null;t.managed_wildcard_status=d.wildcard?.status||null;t.managed_doubles_entry_status=d.doubles_entry_status||null;tournamentDetailRows.set(Number(id),t);
+  let d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
+  if(['ATP','Challenger','ITF'].includes(String(t.circuit||''))){
+   try{
+    const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id));
+    d={...d,entry_rules:access.entry_rules??d.entry_rules,pathway_status:access.pathway_status??d.pathway_status,special_exempt_status:access.special_exempt_status??d.special_exempt_status,performance_bye_status:access.performance_bye_status??d.performance_bye_status};
+    t={...t,...(access.tournament||{})};
+   }catch{}
+  }
+  t.entry_rule_context=tournamentEntryContext();
+  t.managed_entry_rules=d.entry_rules||null;
+  t.managed_pathway_status=d.pathway_status||null;
+  t.managed_special_exempt_status=d.special_exempt_status||null;
+  t.managed_performance_bye_status=d.performance_bye_status||null;
+  t.managed_wildcard_status=d.wildcard?.status||null;
+  t.managed_doubles_entry_status=d.doubles_entry_status||null;
+  tournamentDetailRows.set(Number(id),t);
   const cr=career(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior',isNcaa=String(t.circuit)==='NCAA',isFed=String(t.circuit)==='Federation';
   const teamEvent=d.special_team_event||specialTeamEventMeta(t);
   const joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
@@ -3296,7 +3353,7 @@ window.openTournament=async id=>{
     ${t.doubles&&!isNcaa?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Inscription double</div><h2>${activePartner?esc(activePartner.name):'Partenaire requis'}</h2></div><span class="badge ${doubleRule.cls}">${esc(doubleRule.label)}</span></div><div class="list-item row between"><span>Ton rang double</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)} · ${esc(activePartner.name)}</b></div>`:''}<div class="list-item row between"><span>Advance entry double</span><b>${t.doubles_entry_deadline?df(t.doubles_entry_deadline):String(t.entry_rule_code)==='ITF_M15'?'Aucune':'—'}</b></div><div class="list-item row between"><span>On-site sign-in</span><b>${t.doubles_onsite_deadline?df(t.doubles_onsite_deadline):'—'}</b></div>${doubleRule.bestCombinedRank?`<div class="list-item row between"><span>Rang combiné best-of</span><b>${fmt(doubleRule.bestCombinedRank)}</b></div><div class="list-item row between"><span>Cut projeté</span><b>${doubleRule.projectedCut?fmt(doubleRule.projectedCut):'—'}</b></div>`:''}${doubleRule.protectedRanking?.available?`<div class="list-item row between"><span>PR double</span><b>#${fmt(doubleRule.protectedRanking.protected_rank)} · ${fmt(doubleRule.protectedRanking.uses_remaining)} utilisation(s)</b></div>${doubleRule.useProtectedRanking?`<div class="notice good mini" style="margin-top:6px"><b>PR utilisé pour cette entrée.</b> Rang combiné protégé : ${fmt(doubleRule.protectedCombinedRank||0)}.</div>`:''}`:''}${doublesRun?`<div class="notice good"><b>Déjà joué :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts · +${euro(doublesRun.user_prize||0)}</div>`:isDoublesFinals?(doubleRule.can?`<button class="primary" style="width:100%;margin-top:8px" onclick="playDoublesTournament(${t.id})">Jouer / simuler les Finals double</button><div class="notice good mini" style="margin-top:8px">Qualification automatique par la Race de la paire.</div>`:`<div class="notice bad mini" style="margin-top:8px">${esc(doubleRule.label)}</div><button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">Voir la Race Double</button>`):doubleRule.can?`<button class="${dJoined?'danger-btn':'primary'}" style="width:100%;margin-top:8px" onclick="toggleDoublesEntry(${t.id});closeOverlay()">${dJoined?'Retirer le double':'Inscrire la paire'}</button>`:`<button class="soft-btn" style="width:100%;margin-top:8px" onclick="closeOverlay();nav('doubles')">${activePartner?'Voir le hub Double':'Choisir un partenaire'}</button>`}</div>`:''}
    </div>
 
-   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isNcaa?'Accès NCAA / ITA':isJunior?'Circuit Junior':'Entrée'}</h2>${isNcaa?`<div class="list-item row between"><span>Mode d’accès</span><b>${esc(singleRule.label)}</b></div><div class="list-item row between"><span>Inscription libre</span><b>Non</b></div><div class="list-item row between"><span>Profils NCAA indexés</span><b>${fmt(ncaaPlayers.length)}</b></div>${t.entry_rule_note?`<div class="notice mini" style="margin-top:8px">${esc(t.entry_rule_note)}</div>`:''}`:isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${cuts.qual?'#'+fmt(cuts.qual)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>${entryProtection?.available?`<div class="list-item row between"><span>Classement protégé</span><b>#${fmt(entryProtection.protected_rank)} · ${fmt(entryProtection.uses_remaining)} utilisation(s)</b></div><div class="muted micro">Activation jusqu’au ${entryProtection.activation_deadline?df(entryProtection.activation_deadline):'—'}${entryProtection.active_until?' · actif jusqu’au '+df(entryProtection.active_until):''}</div>`:''}`}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau / champ</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div><div class="list-item row between"><span>Simple / Double</span><b>${t.singles?'S':''}${t.singles&&t.doubles?' + ':''}${t.doubles?'D':''}</b></div></div></div></template>
+   <template id="tourOverviewTpl"><div class="grid g2"><div class="card"><h2>${isNcaa?'Accès NCAA / ITA':isJunior?'Circuit Junior':'Entrée'}</h2>${isNcaa?`<div class="list-item row between"><span>Mode d’accès</span><b>${esc(singleRule.label)}</b></div><div class="list-item row between"><span>Inscription libre</span><b>Non</b></div><div class="list-item row between"><span>Profils NCAA indexés</span><b>${fmt(ncaaPlayers.length)}</b></div>${t.entry_rule_note?`<div class="notice mini" style="margin-top:8px">${esc(t.entry_rule_note)}</div>`:''}`:isJunior?`<div class="list-item row between"><span>Classement</span><b>ITF Junior</b></div><div class="list-item row between"><span>Engagés connus</span><b>${pairs.length}</b></div>`:`<div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Cut qualifs</span><b>${cuts.qual?'#'+fmt(cuts.qual)+(cuts.projected?' · proj.':''):'—'}</b></div><div class="list-item row between"><span>Ton statut</span><b>${elig}</b></div>${entryProtection?.available?`<div class="list-item row between"><span>Classement protégé</span><b>#${fmt(entryProtection.protected_rank)} · ${fmt(entryProtection.uses_remaining)} utilisation(s)</b></div><div class="muted micro">Activation jusqu’au ${entryProtection.activation_deadline?df(entryProtection.activation_deadline):'—'}${entryProtection.active_until?' · actif jusqu’au '+df(entryProtection.active_until):''}</div>`:''}`}${managedRegulatoryPathwaysHtml(t,formatRule)}</div><div class="card"><h2>Format</h2><div class="list-item row between"><span>Tableau / champ</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Référence</span><b>${t.is_verified?'Officielle':'Simulation'}</b></div><div class="list-item row between"><span>Simple / Double</span><b>${t.singles?'S':''}${t.singles&&t.doubles?' + ':''}${t.doubles?'D':''}</b></div></div></div></template>
 
    <template id="tourPrizeTpl">${tournamentEconomicsHtml(economics,t,d.format_rule||{})}</template>
 

@@ -5255,6 +5255,44 @@ Deno.serve(async(req:Request)=>{
     });
   }
 
+  if(path.endsWith("/api/career-hub")&&req.method==="GET"){
+    const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
+    const managedId=Number(career.data.managed_player_id||0);
+    const year=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+    const [seasonPlan,media,sponsors,board,timeline,relationships,academy]=await Promise.all([
+      managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",year).maybeSingle():Promise.resolve({data:null,error:null} as any),
+      db.from("media_events").select("*").lte("event_date",career.data.career_date).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(60),
+      db.from("sponsor_offers").select("*").order("status",{ascending:true}).order("created_at",{ascending:false}).limit(30),
+      db.from("board_objectives").select("*").order("priority",{ascending:true}),
+      db.from("career_event_log").select("*").lte("event_date",career.data.career_date).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(100),
+      managedId?db.from("player_relationships")
+        .select("id,player_a_id,player_b_id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,formed_date,last_update,active,player_a:players!player_relationships_player_a_id_fkey(id,name,country,ranking,doubles_ranking,photo_url),player_b:players!player_relationships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
+        .eq("active",true)
+        .or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId)
+        .order("affinity",{ascending:false}).limit(40)
+        :Promise.resolve({data:[],error:null} as any),
+      db.from("academies").select("*").eq("id","demo").maybeSingle()
+    ]);
+    const err=seasonPlan.error||media.error||sponsors.error||board.error||timeline.error||relationships.error||academy.error;
+    if(err)return h({error:err.message},500);
+    const rels=(relationships.data??[]).map((x:any)=>{
+      const other=Number(x.player_a_id)===managedId?(Array.isArray(x.player_b)?x.player_b[0]:x.player_b):(Array.isArray(x.player_a)?x.player_a[0]:x.player_a);
+      return {...x,other};
+    });
+    return h({
+      model:"CB-CAREER-HUB-v1",
+      career:career.data,
+      season_plan:seasonPlan.data??null,
+      media:media.data??[],
+      sponsors:sponsors.data??[],
+      board:board.data??[],
+      timeline:timeline.data??[],
+      relationships:rels,
+      academy:academy.data??null
+    });
+  }
+
   if(path.endsWith("/api/management")&&req.method==="GET"){
     const [contracts,college,shortlist,sponsors,candidates,partnerships,collegeOffers,collegeState,collegeDuals,davisTies,academyMembers,academyRoster,collegeTeamStaff,davisTeamStaff] = await Promise.all([
       db.from("contracts").select("*").order("end_date"),
@@ -9215,6 +9253,61 @@ Deno.serve(async(req:Request)=>{
       });
       await db.from("inbox_items").insert({kind:"staff",title:"Départ du staff",body:(sp.name||member.data?.name||"Un membre du staff")+" rejoint un autre joueur.",action_route:"staff",is_read:false});
       return h({ok:true,status:"departed"});
+    }
+
+    if(action==="update_season_plan"){
+      const managedId=Number(career.data.managed_player_id||0);
+      if(!managedId)return h({error:"Joueur géré introuvable"},409);
+      const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+      const incoming=body?.plan&&typeof body.plan==="object"?body.plan:{};
+      const allowedSurfaces=new Set(["Dur","Terre","Gazon","Mixte"]);
+      const current=await db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",season).maybeSingle();
+      if(current.error)return h({error:current.error.message},500);
+      const focus=String(career.data.career_focus||"mixed");
+      const base=current.data||{
+        player_id:managedId,season,
+        plan_type:focus==="doubles_only"?"doubles_specialist":focus==="singles_only"?"singles_specialist":"balanced",
+        target_events:22,preferred_surface:"Dur",secondary_surface:"Terre",
+        rest_bias:10,travel_tolerance:10,prestige_bias:10,development_bias:10,doubles_bias:focus==="doubles_only"?18:focus==="singles_only"?2:10,
+        reason:"Plan manager Court Boss"
+      };
+      const row={
+        ...base,
+        target_events:n(incoming.target_events,Number(base.target_events||22),8,38),
+        preferred_surface:allowedSurfaces.has(String(incoming.preferred_surface||base.preferred_surface))?String(incoming.preferred_surface||base.preferred_surface):String(base.preferred_surface||"Dur"),
+        secondary_surface:allowedSurfaces.has(String(incoming.secondary_surface||base.secondary_surface))?String(incoming.secondary_surface||base.secondary_surface):String(base.secondary_surface||"Terre"),
+        rest_bias:n(incoming.rest_bias,Number(base.rest_bias||10),0,20),
+        travel_tolerance:n(incoming.travel_tolerance,Number(base.travel_tolerance||10),0,20),
+        prestige_bias:n(incoming.prestige_bias,Number(base.prestige_bias||10),0,20),
+        development_bias:n(incoming.development_bias,Number(base.development_bias||10),0,20),
+        doubles_bias:n(incoming.doubles_bias,Number(base.doubles_bias||10),0,20),
+        max_consecutive_weeks:n(incoming.max_consecutive_weeks,Number(base.max_consecutive_weeks||3),1,8),
+        rest_trigger_fatigue:n(incoming.rest_trigger_fatigue,Number(base.rest_trigger_fatigue||58),30,90),
+        schedule_risk_tolerance:n(incoming.schedule_risk_tolerance,Number(base.schedule_risk_tolerance||10),0,20),
+        mental_load_target:n(incoming.mental_load_target,Number(base.mental_load_target||10),0,20),
+        reason:String(incoming.reason||"Plan défini par le manager").slice(0,300),
+        updated_at:new Date().toISOString(),
+        last_adapted_date:String(career.data.career_date||AGE_REFERENCE_DATE)
+      };
+      const up=await db.from("player_season_plans").upsert(row,{onConflict:"player_id,season"}).select("*").single();
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("inbox_items").insert({
+        kind:"planning",title:"Plan de saison mis à jour",
+        body:"Le plan "+season+" a été modifié : "+row.target_events+" tournois cible, priorité "+row.preferred_surface+".",
+        action_route:"careerhub",game_date:String(career.data.career_date||AGE_REFERENCE_DATE),priority:"normal",is_read:false
+      });
+      return h({ok:true,season_plan:up.data});
+    }
+
+    if(action==="decline_sponsor"){
+      const offer=await db.from("sponsor_offers").select("*").eq("id",id).maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offer not found"},404);
+      if(!["available","pending"].includes(String(offer.data.status||"")))return h({error:"Offre indisponible"},409);
+      const up=await db.from("sponsor_offers").update({status:"declined"}).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
+        .eq("related_entity_type","sponsor_offer").eq("related_entity_id",id);
+      return h({ok:true,status:"declined"});
     }
 
     if(action==="accept_sponsor"){

@@ -1108,6 +1108,126 @@ async function getManagedPlayer(select="*"){
   return await db.from("players").select(select).eq("id",c.data.managed_player_id).maybeSingle();
 }
 
+async function captureManagedSaveSnapshot(){
+  const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+  if(career.error||!career.data)throw new Error(career.error?.message||"Career missing");
+  const managedId=Number(career.data.managed_player_id||0);
+  const [
+    academy,finance,facilities,staff,contracts,roster,members,youth,training,trainingProgress,
+    medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,
+    entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media
+  ]=await Promise.all([
+    db.from("academies").select("*").eq("id","demo").maybeSingle(),
+    db.from("finances").select("*").eq("id","demo").maybeSingle(),
+    db.from("facilities").select("*").order("id"),
+    db.from("staff").select("*").order("id"),
+    db.from("contracts").select("*").order("id"),
+    db.from("academy_roster").select("*").order("id"),
+    db.from("academy_members").select("*").order("id"),
+    db.from("academy_youth").select("*").order("id"),
+    db.from("training_plan").select("*").order("day_index"),
+    db.from("user_training_progress").select("*").order("attribute"),
+    db.from("medical_plan").select("*").eq("id","demo").maybeSingle(),
+    db.from("scouting_assignments").select("*").order("id"),
+    db.from("scouting_reports").select("*").order("id"),
+    db.from("sponsor_offers").select("*").order("id"),
+    db.from("board_objectives").select("*").order("id"),
+    managedId?db.from("players").select("*").eq("id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
+    managedId?db.from("player_attributes").select("*").eq("player_id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
+    managedId?db.from("player_development_profiles").select("*").eq("player_id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
+    managedId?db.from("player_attribute_ceilings").select("*").eq("player_id",managedId).maybeSingle():Promise.resolve({data:null,error:null} as any),
+    managedId?db.from("entries").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("managed_doubles_entries").select("*").eq("owner_id","demo").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
+    db.from("wildcard_requests").select("*").order("id"),
+    managedId?db.from("player_agency_representation").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("player_doubles_commitments").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("doubles_partner_offers").select("*").or("from_player_id.eq."+managedId+",to_player_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("inbox_items").select("*").order("id",{ascending:false}).limit(250),
+    db.from("media_events").select("*").order("id",{ascending:false}).limit(100)
+  ]);
+  const all=[academy,finance,facilities,staff,contracts,roster,members,youth,training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media];
+  const err=all.find((x:any)=>x?.error)?.error;
+  if(err)throw new Error(err.message||"Snapshot failed");
+  return {
+    model:"CB-MANAGED-SAVE-v1",
+    captured_at:new Date().toISOString(),
+    career_date:career.data.career_date,
+    week:career.data.week,
+    managed_player_id:managedId||null,
+    career:career.data,
+    academy:academy.data,
+    finance:finance.data,
+    facilities:facilities.data??[],
+    staff:staff.data??[],
+    contracts:contracts.data??[],
+    academy_roster:roster.data??[],
+    academy_members:members.data??[],
+    academy_youth:youth.data??[],
+    training_plan:training.data??[],
+    training_progress:trainingProgress.data??[],
+    medical_plan:medical.data,
+    scouting_assignments:scouting.data??[],
+    scouting_reports:scoutingReports.data??[],
+    sponsor_offers:sponsors.data??[],
+    board_objectives:board.data??[],
+    managed_player:player.data,
+    managed_attributes:attrs.data,
+    managed_development:development.data,
+    managed_ceilings:ceilings.data,
+    entries:entries.data??[],
+    managed_doubles_entries:doublesEntries.data??[],
+    wildcard_requests:wildcards.data??[],
+    agency:agency.data??[],
+    doubles_commitments:doublesCommitments.data??[],
+    partner_offers:partnerOffers.data??[],
+    inbox:inbox.data??[],
+    media_events:media.data??[]
+  };
+}
+
+async function restoreManagedSaveSnapshot(snapshot:any){
+  if(!snapshot||String(snapshot.model||"")!=="CB-MANAGED-SAVE-v1")throw new Error("Unsupported save snapshot");
+  const upsertOne=async(table:string,row:any,onConflict?:string)=>{
+    if(!row)return;
+    const q=onConflict?db.from(table).upsert(row,{onConflict}):db.from(table).upsert(row);
+    const r=await q;if(r.error)throw new Error(table+": "+r.error.message);
+  };
+  const upsertMany=async(table:string,rows:any[],onConflict?:string)=>{
+    if(!Array.isArray(rows)||!rows.length)return;
+    const q=onConflict?db.from(table).upsert(rows,{onConflict}):db.from(table).upsert(rows);
+    const r=await q;if(r.error)throw new Error(table+": "+r.error.message);
+  };
+  await upsertOne("career_state",snapshot.career,"id");
+  await upsertOne("academies",snapshot.academy,"id");
+  await upsertOne("finances",snapshot.finance,"id");
+  await upsertMany("facilities",snapshot.facilities,"id");
+  await upsertMany("staff",snapshot.staff,"id");
+  await upsertMany("contracts",snapshot.contracts,"id");
+  await upsertMany("academy_youth",snapshot.academy_youth,"id");
+  await upsertMany("academy_roster",snapshot.academy_roster,"id");
+  await upsertMany("academy_members",snapshot.academy_members,"id");
+  await upsertMany("training_plan",snapshot.training_plan,"day_index");
+  await upsertMany("user_training_progress",snapshot.training_progress,"attribute");
+  await upsertOne("medical_plan",snapshot.medical_plan,"id");
+  await upsertMany("scouting_assignments",snapshot.scouting_assignments,"id");
+  await upsertMany("scouting_reports",snapshot.scouting_reports,"id");
+  await upsertMany("sponsor_offers",snapshot.sponsor_offers,"id");
+  await upsertMany("board_objectives",snapshot.board_objectives,"id");
+  await upsertOne("players",snapshot.managed_player,"id");
+  await upsertOne("player_attributes",snapshot.managed_attributes,"player_id");
+  await upsertOne("player_development_profiles",snapshot.managed_development,"player_id");
+  await upsertOne("player_attribute_ceilings",snapshot.managed_ceilings,"player_id");
+  await upsertMany("entries",snapshot.entries,"id");
+  await upsertMany("managed_doubles_entries",snapshot.managed_doubles_entries,"id");
+  await upsertMany("wildcard_requests",snapshot.wildcard_requests,"id");
+  await upsertMany("player_agency_representation",snapshot.agency,"player_id");
+  await upsertMany("player_doubles_commitments",snapshot.doubles_commitments,"player_id");
+  await upsertMany("doubles_partner_offers",snapshot.partner_offers,"id");
+  await upsertMany("inbox_items",snapshot.inbox,"id");
+  await upsertMany("media_events",snapshot.media_events,"id");
+  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model:snapshot.model};
+}
+
 function specialTeamEventMeta(t:any){
   const code=String(t?.entry_rule_code||""),category=String(t?.category||"");
   if(code==="UNITED_CUP_TEAM"||/United Cup/i.test(category))return {

@@ -1506,8 +1506,14 @@ function slamLogoHtml(keyOrName,extraClass=""){
 window.tournamentLogoHtml=tournamentLogoHtml;
 window.tournamentLogoByName=tournamentLogoByName;
 window.slamLogoHtml=slamLogoHtml;
+function tournamentPhotoUrl(t){
+ const direct=String(t?.image_url||"").trim();
+ const weak=/Photo de la ville|Fallback circuit|Fallback compétition/i.test(String(t?.image_source_label||""));
+ if(t?.id&&(!direct||weak))return API+'/api/tournament-image?id='+encodeURIComponent(t.id);
+ return direct;
+}
 function tournamentThumb(t){
- const photo=String(t?.image_url||"").trim()||(t?.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):"");
+ const photo=tournamentPhotoUrl(t);
  const logo=tournamentLogoMeta(t);
  const fallback=tournamentLogoHtml(t,"tm-list-logo tm-photo-logo-fallback");
  if(!photo)return fallback;
@@ -1615,7 +1621,7 @@ function tournamentCard(t){
  const action=isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':isNcaa?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'university\')">Voir NCAA</button>':doublesOnly?(t.doubles&&dRule.can?`<button class="${dJoined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleDoublesEntry(${t.id})">${dJoined?'Double ✓ · retirer':'Inscrire la paire'}</button>`:'<button class="ghost" disabled>Double indisponible</button>'):`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`;
  return `<div class="card click tm-tour-card-photo" onclick="${target}">
   <div class="tm-tour-card-photo-media">
-   ${(()=>{const photo=String(t.image_url||'').trim()||(t.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):'');const m=tournamentLogoMeta(t);return photo?`<img src="${esc(photo)}" alt="${esc(t.name)}" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tm-tour-card-photo-fallback" style="display:none">${tournamentLogoHtml(t,'tm-card-logo-fallback')}</div>${m?.url?`<span class="tm-tour-card-logo"><img src="${esc(m.url)}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.display='none'"></span>`:''}`:`<div class="tm-tour-card-photo-fallback">${tournamentLogoHtml(t,'tm-card-logo-fallback')}</div>`})()}
+   ${(()=>{const photo=tournamentPhotoUrl(t);const m=tournamentLogoMeta(t);return photo?`<img src="${esc(photo)}" alt="${esc(t.name)}" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tm-tour-card-photo-fallback" style="display:none">${tournamentLogoHtml(t,'tm-card-logo-fallback')}</div>${m?.url?`<span class="tm-tour-card-logo"><img src="${esc(m.url)}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.display='none'"></span>`:''}`:`<div class="tm-tour-card-photo-fallback">${tournamentLogoHtml(t,'tm-card-logo-fallback')}</div>`})()}
    <div class="tm-tour-card-photo-shade"></div>
    <div class="tm-tour-card-photo-badges"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div>
   </div>
@@ -1994,7 +2000,7 @@ window.openCompetition=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement de la compétition…</div></div></div>';
  try{
   const d=await get('/api/competition?id='+id),t=d.tournament,h=d.history||[],records=d.records||[];
-  const image=t.image_url||API+'/api/tournament-image?id='+t.id;
+  const image=tournamentPhotoUrl(t);
   const photoLabel=t.image_source_label||'Photo du tournoi';
   const holder=t.defending_champion_name||h[0]?.winner_name||null;
   const holderId=t.defending_champion_player_id||h[0]?.winner_player_id||null;
@@ -4029,7 +4035,7 @@ window.openTournament=async id=>{
       ?"Liste d’acceptation figée : les DA et ALT suivent maintenant l’ordre enregistré à la deadline."
       :"Avant la deadline, Court Boss affiche une projection à partir du classement et du cut.";
   const sourceLink=t.source_url?'<a class="soft-btn" href="'+esc(t.source_url)+'" target="_blank" rel="noopener noreferrer">Source officielle</a>':'';
-  const detailPhoto=String(t.image_url||"").trim()||(t.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):'');
+  const detailPhoto=tournamentPhotoUrl(t);
   const detailPhotoLabel=t.image_source_label||'Photo du tournoi';
 
   const juniorResults=(d.junior_entries||[]).map(e=>{

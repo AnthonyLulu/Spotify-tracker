@@ -1777,9 +1777,16 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
-    await publishActionableInbox();
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(currentCareer.error)return h({error:currentCareer.error.message},500);
+    if(currentCareer.data){
+      const inboxSync=await db.rpc("career_sync_actionable_inbox",{
+        p_date:String(currentCareer.data.career_date||AGE_REFERENCE_DATE),
+        p_week:Number(currentCareer.data.week||1)
+      });
+      if(inboxSync.error)console.warn("Career inbox bootstrap sync",inboxSync.error.message);
+    }
     const [career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries,managedDoublesEntries] = await Promise.all([
       Promise.resolve(currentCareer),
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
@@ -5310,7 +5317,7 @@ Deno.serve(async(req:Request)=>{
     if(careerInboxSync.error)return h({error:careerInboxSync.error.message},500);
     const weeklyDigest=await db.rpc("career_publish_weekly_digest",{p_date:date,p_week:week});
     if(weeklyDigest.error)return h({error:weeklyDigest.error.message},500);
-    const actionableInbox=await publishActionableInbox(date);
+    const actionableInbox=careerInboxSync.data;
     const mediaEvent=await db.rpc("career_generate_media_event",{p_date:date});
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});

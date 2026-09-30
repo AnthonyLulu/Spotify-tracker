@@ -889,6 +889,44 @@ function singlesEligibility(t){
  }
  if(t.singles===false)return {label:'Pas de simple',can:false,cls:'bad'};
 
+ // Once the real acceptance lists exist, they are the source of truth in the
+ // calendar too. Projection logic below is only for tournaments not frozen yet.
+ const actualMain=t.managed_acceptance_main||null;
+ const actualQ=t.managed_acceptance_qualifying||null;
+ const mainActive=actualMain&&['accepted','promoted'].includes(String(actualMain.status||''));
+ const qActive=actualQ&&['accepted','promoted'].includes(String(actualQ.status||''));
+ if(mainActive){
+  return {
+   label:String(actualMain.status)==='promoted'?'ALT → tableau principal':'Tableau principal · accepté',
+   method:'direct',phase:'main',cls:'good',can:true,frozen:true,acceptance:actualMain
+  };
+ }
+ if(qActive){
+  return {
+   label:'Qualifications · accepté'+(actualMain?.status==='alternate'?' · ALT MD #'+fmt(actualMain.acceptance_order):''),
+   method:'qualifying',phase:'qualifying',cls:'warn',can:true,frozen:true,acceptance:actualQ
+  };
+ }
+ if(actualQ?.status==='alternate'){
+  return {
+   label:'ALT Q #'+fmt(actualQ.acceptance_order)+(actualMain?.status==='alternate'?' · ALT MD #'+fmt(actualMain.acceptance_order):''),
+   method:'alternate',phase:'qualifying_alternate',cls:'warn',can:true,frozen:true,acceptance:actualQ
+  };
+ }
+ if(actualMain?.status==='alternate'){
+  return {
+   label:'ALT tableau #'+fmt(actualMain.acceptance_order),
+   method:'alternate',phase:'main_alternate',cls:'warn',can:true,frozen:true,acceptance:actualMain
+  };
+ }
+ if(actualMain?.status==='withdrawn'||actualQ?.status==='withdrawn'){
+  const withdrawn=actualMain?.status==='withdrawn'?actualMain:actualQ;
+  return {
+   label:'Retiré de la liste figée',method:'withdrawn',phase:'withdrawn',
+   cls:'bad',can:false,frozen:true,acceptance:withdrawn
+  };
+ }
+
  const authoritative=t.entry_rule_context===tournamentEntryContext(c);
  const rules=authoritative?(t.managed_entry_rules||{}):{};
  const prDirect=rules.protected||null;

@@ -11048,7 +11048,11 @@ Deno.serve(async(req:Request)=>{
       slotType==="autosave"?"Autosave":slotType==="quick"?"Sauvegarde rapide":"Sauvegarde "+slotNo
     )).slice(0,80);
     const snapshot=await captureManagedSaveSnapshot();
-    const payload=body?.local_payload&&typeof body.local_payload==="object"?body.local_payload:{};
+    const payload=body?.local_payload&&typeof body.local_payload==="object"?{...body.local_payload}:{};
+    delete payload.liveSessionId;
+    delete payload.liveMatch;
+    delete payload.liveOpponent;
+    delete payload.liveAuto;
     const save=await db.from("game_save_slots").upsert({
       browser_key:browserKey,slot_no:slotNo,slot_type:slotType,slot_name:slotName,
       local_payload:payload,managed_snapshot:snapshot,
@@ -11059,6 +11063,10 @@ Deno.serve(async(req:Request)=>{
       updated_at:new Date().toISOString()
     },{onConflict:"browser_key,slot_no"}).select("id,slot_no,slot_type,slot_name,career_date,week,player_name,updated_at").single();
     if(save.error)return h({error:save.error.message},500);
+    const legacy=await db.from("game_saves").upsert({
+      id:browserKey,payload,updated_at:new Date().toISOString()
+    },{onConflict:"id"});
+    if(legacy.error)return h({error:legacy.error.message},500);
     await db.from("career_event_log").insert({
       event_date:snapshot.career_date,week:snapshot.week,system:"save",event_type:"save_created",
       entity_type:"save_slot",entity_id:save.data.id,
@@ -11076,13 +11084,22 @@ Deno.serve(async(req:Request)=>{
       .select("*").eq("browser_key",browserKey).eq("slot_no",slotNo).maybeSingle();
     if(slot.error||!slot.data)return h({error:slot.error?.message||"Sauvegarde introuvable"},404);
     const restored=await restoreManagedSaveSnapshot(slot.data.managed_snapshot);
+    const loadedPayload=slot.data.local_payload&&typeof slot.data.local_payload==="object"?{...slot.data.local_payload}:{};
+    delete loadedPayload.liveSessionId;
+    delete loadedPayload.liveMatch;
+    delete loadedPayload.liveOpponent;
+    delete loadedPayload.liveAuto;
+    const legacy=await db.from("game_saves").upsert({
+      id:browserKey,payload:loadedPayload,updated_at:new Date().toISOString()
+    },{onConflict:"id"});
+    if(legacy.error)return h({error:legacy.error.message},500);
     await db.from("career_event_log").insert({
       event_date:slot.data.career_date||AGE_REFERENCE_DATE,week:slot.data.week||1,system:"save",event_type:"save_loaded",
       entity_type:"save_slot",entity_id:slot.data.id,
       summary:"Chargement "+slot.data.slot_name,
       payload:{slot_no:slotNo,snapshot_scope:slot.data.snapshot_scope}
     });
-    return h({ok:true,slot:{slot_no:slot.data.slot_no,slot_name:slot.data.slot_name,career_date:slot.data.career_date,week:slot.data.week},local_payload:slot.data.local_payload,restored});
+    return h({ok:true,slot:{slot_no:slot.data.slot_no,slot_name:slot.data.slot_name,career_date:slot.data.career_date,week:slot.data.week},local_payload:loadedPayload,restored});
   }
 
   if(path.endsWith("/api/delete-slot")&&req.method==="POST"){

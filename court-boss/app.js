@@ -318,6 +318,8 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
  finally{if(ownsBusy)saveSlotBusy=false}
 }
 async function loadCareerSlot(slotNo){
+ if(simulating){alert('La semaine est en cours de simulation. Le chargement est verrouillé jusqu’à la fin de l’autosave.');return;}
+ if(saveSlotBusy){alert('Une opération de sauvegarde ou de chargement est déjà en cours.');return;}
  if(local.liveSessionId){alert('Termine le match en cours avant de charger une sauvegarde.');return;}
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  if(!slot)return;
@@ -337,6 +339,8 @@ async function loadCareerSlot(slotNo){
  finally{saveSlotBusy=false}
 }
 async function deleteCareerSlot(slotNo){
+ if(simulating){alert('La semaine est en cours de simulation. Attends la validation de l’autosave avant de supprimer un slot.');return;}
+ if(saveSlotBusy)return;
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));if(!slot)return;
  if(!confirm('Supprimer « '+slot.slot_name+' » ?'))return;
  try{await get('/api/delete-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});await loadSaveSlots();render()}catch(e){alert(e.message)}
@@ -2913,6 +2917,7 @@ function launcherPage(){
  <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Sauvegardes</div><h2>Slots & reprise</h2></div><button class="soft-btn" onclick="nav('saves')">Ouvrir le Save Center</button></div><div class="muted mini">${auto?'Autosave : '+df(auto.career_date)+' · semaine '+fmt(auto.week||1):'Aucun autosave pour le moment.'}</div></div>`;
 }
 window.startNewCareer=async()=>{
+ if(simulating||saveSlotBusy){alert('Une simulation ou une opération de sauvegarde est en cours. Termine-la avant de démarrer une nouvelle carrière.');return;}
  if(local.liveSessionId){alert('Termine le match en cours avant de démarrer une nouvelle carrière.');return;}
  if(!confirm('Démarrer une nouvelle carrière au 01/12/2025 ? Les changements non sauvegardés de la carrière active seront perdus.'))return;
  saveSlotBusy=true;
@@ -2938,6 +2943,7 @@ window.startNewCareer=async()=>{
 }
 
 window.startCareerWithPlayer=async(id,name='ce joueur')=>{
+ if(simulating||saveSlotBusy){alert('Une simulation ou une opération de sauvegarde est en cours.');return;}
  const targetId=Number(id||0);if(!targetId)return;
  if(!confirm('Gérer '+name+' ? La carrière active sera réinitialisée autour de ce joueur au 01/12/2025. Tes sauvegardes manuelles restent disponibles.'))return;
  saveSlotBusy=true;

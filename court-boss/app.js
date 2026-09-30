@@ -235,9 +235,36 @@ let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFil
 let trainingPreview=null,trainingPreviewLoading=false;
 let saveSlots=[],saveSlotsLoading=false,saveSlotBusy=false;
 let careerHub=null,careerHubLoading=false;
-let local={date:'2025-12-01',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
-local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
-try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
+function baseLocalState(){
+ return {
+  date:'2025-12-01',week:1,
+  training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
+  entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],career:null,feed:[],
+  scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
+  tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}
+ };
+}
+function cleanCareerLocalState(payload={}){
+ const src=payload&&typeof payload==='object'?payload:{};
+ const next={...baseLocalState(),...src};
+ next.entries=Array.isArray(src.entries)?[...src.entries]:[];
+ next.entryMeta=src.entryMeta&&typeof src.entryMeta==='object'?{...src.entryMeta}:{};
+ next.doublesEntries=Array.isArray(src.doublesEntries)?[...src.doublesEntries]:[];
+ next.doublesEntryMeta=src.doublesEntryMeta&&typeof src.doublesEntryMeta==='object'?{...src.doublesEntryMeta}:{};
+ next.shortlist=Array.isArray(src.shortlist)?[...src.shortlist]:[];
+ next.feed=Array.isArray(src.feed)?[...src.feed]:[];
+ next.training=Array.isArray(src.training)&&src.training.length?[...src.training]:[...baseLocalState().training];
+ next.davisRoles=src.davisRoles&&typeof src.davisRoles==='object'?{...src.davisRoles}:{};
+ next.fantasy=Array.isArray(src.fantasy)?[...src.fantasy]:[];
+ next.tactics=src.tactics&&typeof src.tactics==='object'?{...baseLocalState().tactics,...src.tactics}:{...baseLocalState().tactics};
+ delete next.liveSessionId;
+ delete next.liveMatch;
+ delete next.liveOpponent;
+ delete next.liveAuto;
+ return next;
+}
+let local=baseLocalState();
+try{local=cleanCareerLocalState(JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{local=baseLocalState()}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));const key=courtBossAccessKey();fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey,'X-Court-Boss-Key':key},body:JSON.stringify(local)}).catch(()=>{})}
 async function loadSaveSlots(){
  if(saveSlotsLoading)return;
@@ -265,9 +292,12 @@ function invalidateCareerCaches(){
  staffWorldData=null;staffWorldOffset=0;worldStats=null;
 }
 async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
- if(saveSlotBusy)return;
- if(local.liveSessionId){if(!silent)alert('Termine le match en cours avant de sauvegarder.');return;}
- saveSlotBusy=true;
+ const criticalAutosave=slotType==='autosave'&&silent;
+ if(simulating&&!criticalAutosave){if(!silent)alert('La semaine est en cours de simulation. L’autosave sera écrit dès validation.');return {ok:false,reason:'simulation_in_progress'};}
+ if(saveSlotBusy&&!criticalAutosave)return {ok:false,reason:'save_busy'};
+ if(local.liveSessionId){if(!silent)alert('Termine le match en cours avant de sauvegarder.');return {ok:false,reason:'live_match'};}
+ const ownsBusy=!saveSlotBusy;
+ if(ownsBusy)saveSlotBusy=true;
  try{
   const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
   const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
@@ -282,9 +312,10 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
  }catch(e){
   local.lastSaveState={status:'error',slot_no:Number(slotNo),slot_type:slotType,career_date:local.date,week:local.week,updated_at:new Date().toISOString(),error:String(e?.message||e)};
   localStorage.setItem('cbLocal',JSON.stringify(local));
-  if(!silent)alert(e.message);else console.warn('Autosave',e)
+  if(!silent)alert(e.message);else console.warn('Autosave',e);
+  return {ok:false,error:String(e?.message||e)};
  }
- finally{saveSlotBusy=false}
+ finally{if(ownsBusy)saveSlotBusy=false}
 }
 async function loadCareerSlot(slotNo){
  if(local.liveSessionId){alert('Termine le match en cours avant de charger une sauvegarde.');return;}
@@ -294,11 +325,12 @@ async function loadCareerSlot(slotNo){
  saveSlotBusy=true;
  try{
   const d=await get('/api/load-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
-  if(d.local_payload&&typeof d.local_payload==='object')local={...local,...d.local_payload};
+  local=cleanCareerLocalState(d.local_payload||{});
+  local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:'load',career_date:d.slot?.career_date||local.date,week:d.slot?.week||local.week,updated_at:new Date().toISOString()};
   localStorage.setItem('cbLocal',JSON.stringify(local));
+  invalidateCareerCaches();
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
-  invalidateCareerCaches();
   await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
   route='home';render();
  }catch(e){alert('Chargement impossible : '+e.message)}
@@ -2867,14 +2899,7 @@ window.startNewCareer=async()=>{
  saveSlotBusy=true;
  try{
   const d=await get('/api/new-career',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-  const base={
-   date:'2025-12-01',week:1,
-   training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
-   entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],career:null,feed:[],
-   scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
-   tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}
-  };
-  local={...base,...(d.local_payload||{})};
+  local=cleanCareerLocalState(d.local_payload||{});
   localStorage.setItem('cbLocal',JSON.stringify(local));
   invalidateCareerCaches();
   boot=await get('/api/bootstrap');
@@ -2934,14 +2959,7 @@ window.createCustomCareerPlayer=async()=>{
  if(local.liveSessionId){alert('Termine le match en cours avant de démarrer une nouvelle carrière.');return}
  try{
   const reset=await get('/api/new-career',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-  const base={
-   date:'2025-12-01',week:1,
-   training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
-   entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],career:null,feed:[],
-   scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
-   tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}
-  };
-  local={...base,...(reset.local_payload||{})};
+  local=cleanCareerLocalState(reset.local_payload||{});
   localStorage.setItem('cbLocal',JSON.stringify(local));
   const d=await managerAction('create_custom_player',0,{
    name,country:String(document.getElementById('customCareerCountry')?.value||'FRA').toUpperCase(),
@@ -4531,6 +4549,7 @@ window.upgradeFacility=async(id,name,base)=>{try{const d=await managerAction('up
 window.openInboxItem=async(id,r)=>{try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}await nav(r)}
 window.simulateWeek=async()=>{
  if(simulating)return;
+ if(saveSlotBusy){alert('Une opération de sauvegarde ou de chargement est en cours. Termine-la avant de simuler la semaine.');return;}
  if(local.liveSessionId){alert('Termine le match en cours avant de passer à la semaine suivante.');nav('match');return;}
  simulating=true;render();
  try{
@@ -4556,7 +4575,8 @@ window.simulateWeek=async()=>{
     boot=await get('/api/bootstrap');
     if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
     trainingPreview=null;careerHub=null;
-    await saveCareerSlot(0,'autosave',true);
+    const autosave=await saveCareerSlot(0,'autosave',true);
+    if(!autosave?.ok)throw new Error('La semaine a été validée côté serveur mais l’autosave a échoué. Ouvre le Save Center et sauvegarde avant de continuer.');
     await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
     if(route==='training')await loadTrainingPreview(true).catch(()=>{});
     if(route==='history')await loadHistory().catch(()=>{});

@@ -228,7 +228,7 @@ let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount
 let competitionRows=[],competitionCount=0,competitionOffset=0,competitionLoading=false,competitionFilters={q:'',circuit:'Tous',category:'Toutes',surface:'Toutes',country:'',source:'Tous',prestige:'Tous',history:'Tous',holder:'Tous'};
 let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
 let tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};
-let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={};
+let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={},ncaaUniversities=[],ncaaUniversitiesMeta={},ncaaUniversityDetail=null,ncaaUniversityQuery='',ncaaUniversityLoading=false;
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
@@ -630,10 +630,16 @@ async function loadRankings(){
  const d=await get(`/api/rankings?kind=${rankKind}&offset=${rankOffset}&limit=${rankPageSize()}${q}${u}${c}`);
  rankRows=d.rows;rankCount=d.count;rankMeta=d;
  if(rankKind==='ncaa'){
-  try{
-   const nd=await get('/api/ncaa-doubles?offset=0&limit=100'+(rankQuery?'&q='+encodeURIComponent(rankQuery):''));
-   ncaaDoublesRows=nd.rows||[];ncaaDoublesMeta=nd;
-  }catch(e){ncaaDoublesRows=[];ncaaDoublesMeta={error:e.message}}
+  const [doublesResult,universitiesResult]=await Promise.allSettled([
+   get('/api/ncaa-doubles?offset=0&limit=100'+(rankQuery?'&q='+encodeURIComponent(rankQuery):'')),
+   get('/api/ncaa-universities')
+  ]);
+  if(doublesResult.status==='fulfilled'){
+   ncaaDoublesRows=doublesResult.value.rows||[];ncaaDoublesMeta=doublesResult.value;
+  }else{ncaaDoublesRows=[];ncaaDoublesMeta={error:String(doublesResult.reason?.message||doublesResult.reason||'Erreur NCAA double')}}
+  if(universitiesResult.status==='fulfilled'){
+   ncaaUniversities=universitiesResult.value.rows||[];ncaaUniversitiesMeta=universitiesResult.value;
+  }else{ncaaUniversities=[];ncaaUniversitiesMeta={error:String(universitiesResult.reason?.message||universitiesResult.reason||'Erreur universités NCAA')}}
  }
 }
 async function loadCountries(){
@@ -821,11 +827,11 @@ window.jumpRanking=async()=>{
 function ncaaRanking(){
  const rows=rankRows||[],startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rows.length,rankCount);
  const doubleRows=ncaaDoublesRows||[];
- const modeTabs=`<div class="tabs rank-tabs" style="margin:12px 0"><button class="${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')">Simple · ${fmt(rankMeta?.verifiedCurrentRanks||0)} ITA officiels + profondeur</button><button class="${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')">Double · Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</button></div>`;
+ const modeTabs=`<div class="tabs rank-tabs" style="margin:12px 0"><button class="${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')">Simple · ${fmt(rankMeta?.verifiedCurrentRanks||0)} ITA officiels + profondeur</button><button class="${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')">Double · Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</button><button class="${ncaaView==='universities'?'active':''}" onclick="setNcaaView('universities')">Universités · ${fmt(ncaaUniversitiesMeta?.count||ncaaUniversities.length||64)}</button></div>`;
  const singlesTable=`
   <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA au 01/12/2025</b> · <b>${fmt(rankMeta?.verifiedCurrentRanks||0)} rangs ITA officiels</b> au snapshot du ${df(rankMeta?.officialSnapshotDate||'2025-11-25')} · la profondeur Court Boss est séparée et précédée de <b>~</b>. Un <b>~#126</b> est une projection de gameplay, jamais le vrai ITA #126. L’UTR utilise aussi ~ lorsqu’il est estimé. ${rankMeta?.officialSourceUrl?`<a class="soft-btn" style="margin-left:6px" href="${esc(rankMeta.officialSourceUrl)}" target="_blank" rel="noopener noreferrer">Source ITA</a>`:''}</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>Rang</th><th>Référence</th><th>Joueur</th><th>Âge 01/12/25</th><th>Université</th><th>Division</th><th>UTR</th><th>ATP</th><th>Statut</th></tr></thead><tbody>
-   ${rows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ncaa_rank_type==='simulated_depth'?(p.ncaa_projected_rank?'~#'+fmt(p.ncaa_projected_rank):'~'):p.ncaa_rank?'#'+fmt(p.ncaa_rank):'—'}</td><td>${p.ncaa_rank_type==='official'?'<span class="badge good">ITA officiel</span>':p.ncaa_rank_type==='simulated_depth'?'<span class="badge warn">Projection Court Boss</span>':p.ncaa_rank_verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Profil NCAA</span>'}<div class="muted micro">${p.ncaa_snapshot_date?'au '+df(p.ncaa_snapshot_date):''}</div></td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${rankAge(p,'ncaa')}</td><td><b>${esc(p.ncaa_school||'—')}</b></td><td>${esc(p.ncaa_division||'NCAA')}</td><td>${p.utr_rating!=null?'<b>'+(p.utr_verified?'':'~')+Number(p.utr_rating).toFixed(2)+'</b><div class="muted micro">'+(p.utr_verified?'UTR vérifié':'UTR estimé Court Boss')+'</div>':'—'}</td><td>${p.ranking_current&&p.ranking?'#'+fmt(p.ranking):'—'}</td><td><span class="badge ${(p.ncaa_current||p.ncaa_current_verified)?'good':''}">${(p.ncaa_current||p.ncaa_current_verified)?'NCAA actif':p.ncaa_status==='Alumni'?'NCAA Alumni':esc(p.ncaa_status||'NCAA historique')}</span></td></tr>`).join('')}
+   ${rows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ncaa_rank_type==='simulated_depth'?(p.ncaa_projected_rank?'~#'+fmt(p.ncaa_projected_rank):'~'):p.ncaa_rank?'#'+fmt(p.ncaa_rank):'—'}</td><td>${p.ncaa_rank_type==='official'?'<span class="badge good">ITA officiel</span>':p.ncaa_rank_type==='simulated_depth'?'<span class="badge warn">Projection Court Boss</span>':p.ncaa_rank_verified?'<span class="badge good">Vérifié</span>':'<span class="badge">Profil NCAA</span>'}<div class="muted micro">${p.ncaa_snapshot_date?'au '+df(p.ncaa_snapshot_date):''}</div></td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${rankAge(p,'ncaa')}</td><td><b>${esc(p.ncaa_school||'—')}</b></td><td>${esc(p.ncaa_division||'NCAA')}</td><td>${p.utr_rating!=null?'<b>'+(p.utr_verified?'':'~')+Number(p.utr_rating).toFixed(2)+'</b><div class="muted micro">'+(p.utr_verified?'UTR vérifié':'UTR estimé Court Boss')+'</div>':'—'}</td><td>${p.ranking_current&&p.ranking?'<b>#'+fmt(p.ranking)+'</b><div class="muted micro">ATP 01/12/25</div>':'<span class="muted">NR</span><div class="muted micro">non classé ATP</div>'}</td><td><span class="badge ${(p.ncaa_current||p.ncaa_current_verified)?'good':''}">${(p.ncaa_current||p.ncaa_current_verified)?'NCAA actif':p.ncaa_status==='Alumni'?'NCAA Alumni':esc(p.ncaa_status||'NCAA historique')}</span></td></tr>`).join('')}
   </tbody></table></div>
   ${rows.length?'' : '<div class="empty">Aucun profil NCAA pour ce filtre.</div>'}
   <div class="pagination"><button ${rankOffset===0?'disabled':''} onclick="rankPage(-1)">←</button><span class="muted mini">lignes ${fmt(startRow)}–${fmt(endRow)} / ${fmt(rankCount)}</span><button ${rankOffset+rankPageSize()>=rankCount?'disabled':''} onclick="rankPage(1)">→</button></div>`;
@@ -835,15 +841,56 @@ function ncaaRanking(){
    ${doubleRows.map(x=>`<tr><td class="rank-num">#${fmt(x.ita_rank)}</td><td><b><span class="click" onclick="openPlayer(${x.player_one_id})">${esc(x.player_one_name)}</span> / <span class="click" onclick="openPlayer(${x.player_two_id})">${esc(x.player_two_name)}</span></b></td><td>${esc(x.school||'—')}</td><td><span class="badge good">ITA officiel</span></td></tr>`).join('')}
   </tbody></table></div>
   ${doubleRows.length?'' : '<div class="empty">Aucune paire NCAA pour ce filtre.</div>'}`;
+ const universityNeedle=String(ncaaUniversityQuery||'').trim().toLowerCase();
+ const universityRows=(ncaaUniversities||[]).filter(x=>!universityNeedle||String(x.name||'').toLowerCase().includes(universityNeedle));
+ const universitiesTable=ncaaUniversityDetail?(()=>{
+  const d=ncaaUniversityDetail,t=d.team||{},roster=d.rows||[];
+  return `<div class="ncaa-university-detail">
+   <div class="row between ncaa-university-title"><div><button class="soft-btn" onclick="closeNcaaUniversity()">← Universités</button><div class="eyebrow" style="margin-top:10px">NCAA Division I</div><h2>${esc(t.name||'Université')}</h2><div class="muted mini">${t.ita_rank?'Équipe ITA #'+fmt(t.ita_rank):'Équipe NCAA'}${t.record?' · bilan '+esc(t.record):''} · ${fmt(roster.length)} joueurs actifs</div></div><span class="pill">${t.ita_rank?'#'+fmt(t.ita_rank):'NCAA'}</span></div>
+   <div class="table-wrap live-rank-table" style="margin-top:14px"><table class="table"><thead><tr><th>NCAA</th><th>Joueur</th><th>Classe</th><th>Âge</th><th>UTR</th><th>ATP</th><th>Statut</th></tr></thead><tbody>
+    ${roster.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ita_rank_official!=null?'#'+fmt(p.ita_rank_official):p.projected_rank!=null?'~#'+fmt(p.projected_rank):'—'}</td><td><b>${esc(p.name)}</b><div class="muted micro">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div></td><td>${esc(p.ncaa_class_year||'—')}</td><td>${displayAge(p,RANKING_SNAPSHOT)??'—'}</td><td>${p.utr_rating!=null?'<b>'+(p.utr_verified?'':'~')+Number(p.utr_rating).toFixed(2)+'</b>':'—'}</td><td>${p.atp_rank?'<b>#'+fmt(p.atp_rank)+'</b>':'<span class="muted">NR</span>'}</td><td><span class="badge good">${esc(p.ncaa_registry_status||p.ncaa_status||'Actif')}</span></td></tr>`).join('')}
+   </tbody></table></div>
+   ${roster.length?'':'<div class="empty">Aucun joueur actif trouvé dans ce roster.</div>'}
+  </div>`;
+ })():`<div>
+  <div class="notice mini" style="margin-top:10px"><b>Universités NCAA</b> · ${fmt(ncaaUniversitiesMeta?.count||ncaaUniversities.length||0)} équipes canoniques Court Boss. Clique sur une université pour ouvrir son roster complet.</div>
+  <div class="ncaa-university-grid">
+   ${universityRows.map(t=>`<button class="ncaa-team-card" onclick="openNcaaUniversity(${t.id})"><div class="row between"><div><div class="eyebrow">NCAA DI</div><b class="ncaa-team-name">${esc(t.name)}</b></div><span class="badge ${t.ita_rank?'good':''}">${t.ita_rank?'Équipe #'+fmt(t.ita_rank):'NCAA'}</span></div><div class="ncaa-team-stats"><span><b>${fmt(t.roster_count||0)}</b><small>joueurs</small></span><span><b>${t.best_ita?'#'+fmt(t.best_ita):'—'}</b><small>meilleur ITA</small></span><span><b>${t.best_atp?'#'+fmt(t.best_atp):'NR'}</b><small>meilleur ATP</small></span></div><div class="muted micro">${t.record?'Bilan '+esc(t.record)+' · ':''}${fmt(t.official_ranked||0)} ITA officiels · ${fmt(t.projected_ranked||0)} profondeur CB</div></button>`).join('')}
+  </div>
+  ${universityRows.length?'':'<div class="empty">Aucune université pour cette recherche.</div>'}
+ </div>`;
+
  return `<div class="section-head"><div><div class="eyebrow">NCAA / ITA</div><h1>Joueurs universitaires</h1><div class="muted">Base NCAA figée au 01/12/2025 : rangs, rosters historiques, alumni et transferts disponibles avant le cutoff.</div></div><span class="pill">${fmt(rankCount)} profils NCAA</span></div>
  <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['doubles_race','Race Double'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_race','Race Junior'],['junior_doubles','Junior Double'],['junior_doubles_race','Race Junior Dbl'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  ${modeTabs}
  <div class="card">
-  <div class="rank-tools fm-rank-tools"><input class="input" value="${esc(rankQuery)}" placeholder="${ncaaView==='doubles'?'Rechercher joueur ou université NCAA…':'Rechercher un joueur NCAA…'}" onkeydown="if(event.key==='Enter')searchRanking(this.value)">${ncaaView==='singles'? `<select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div>`:''}</div>
-  ${ncaaView==='doubles'?doublesTable:singlesTable}
+  <div class="rank-tools fm-rank-tools">${ncaaView==='universities'? `<input class="input" value="${esc(ncaaUniversityQuery)}" placeholder="Rechercher une université NCAA…" oninput="setNcaaUniversityQuery(this.value)">`: `<input class="input" value="${esc(rankQuery)}" placeholder="${ncaaView==='doubles'?'Rechercher joueur ou université NCAA…':'Rechercher un joueur NCAA…'}" onkeydown="if(event.key==='Enter')searchRanking(this.value)">${ncaaView==='singles'? `<select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div>`:''}`}</div>
+  ${ncaaView==='doubles'?doublesTable:ncaaView==='universities'?universitiesTable:singlesTable}
  </div>`;
 }
-window.setNcaaView=async v=>{ncaaView=v==='doubles'?'doubles':'singles';rankOffset=0;render()}
+window.setNcaaView=async v=>{
+ ncaaView=v==='doubles'?'doubles':v==='universities'?'universities':'singles';
+ rankOffset=0;
+ if(ncaaView!=='universities')ncaaUniversityDetail=null;
+ if(ncaaView==='universities'&&!ncaaUniversities.length)await loadNcaaUniversities();
+ render()
+}
+async function loadNcaaUniversities(){
+ if(ncaaUniversityLoading)return;
+ ncaaUniversityLoading=true;
+ try{
+  const d=await get('/api/ncaa-universities');
+  ncaaUniversities=d.rows||[];ncaaUniversitiesMeta=d;
+ }finally{ncaaUniversityLoading=false}
+}
+window.openNcaaUniversity=async id=>{
+ ncaaUniversityLoading=true;
+ try{ncaaUniversityDetail=await get('/api/ncaa-university?team_id='+encodeURIComponent(id))}
+ catch(e){ncaaUniversityDetail={team:{name:'Université NCAA'},rows:[],error:e.message}}
+ finally{ncaaUniversityLoading=false;render()}
+}
+window.closeNcaaUniversity=()=>{ncaaUniversityDetail=null;render()}
+window.setNcaaUniversityQuery=v=>{ncaaUniversityQuery=v||'';ncaaUniversityDetail=null;render()}
 window.setRankKind=async k=>{rankKind=k;rankOffset=0;rankQuery='';await loadRankings();render()}
 window.setNextGenAge=async a=>{nextGenAge=clamp(Number(a)||21,18,21);rankOffset=0;rankQuery='';await loadRankings();render()}
 window.searchRanking=async q=>{rankQuery=q.trim();rankOffset=0;await loadRankings();render()}

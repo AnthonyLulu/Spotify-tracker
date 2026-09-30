@@ -6214,6 +6214,30 @@ Deno.serve(async(req:Request)=>{
       }).eq("id","demo"),
       db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||"Le joueur")+" remporte "+t.name+" !":String(c.player_name||"Le joueur")+" termine "+userRound+" à "+t.name+"."})
     ]);
+    const playedSinglesEntry=await db.from("entries")
+      .select("id,metadata")
+      .eq("tournament_id",tid)
+      .eq("player_id",managedId)
+      .eq("status","entered")
+      .maybeSingle();
+    if(playedSinglesEntry.error)return h({error:playedSinglesEntry.error.message},500);
+    if(playedSinglesEntry.data?.id){
+      const playedOn=String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE);
+      const entryDone=await db.from("entries").update({
+        status:"played",
+        withdrawn_on:null,
+        metadata:{
+          ...(playedSinglesEntry.data.metadata||{}),
+          played_run_id:Number(runId),
+          played_on:playedOn,
+          result:userRound,
+          entry_method:entryMode
+        },
+        updated_at:new Date().toISOString()
+      }).eq("id",Number(playedSinglesEntry.data.id));
+      if(entryDone.error)return h({error:entryDone.error.message},500);
+    }
+
     const board=await db.rpc("update_board_state");
     return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }

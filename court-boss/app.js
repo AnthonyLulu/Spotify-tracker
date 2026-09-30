@@ -233,7 +233,7 @@ let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
 let trainingPreview=null,trainingPreviewLoading=false;
-let saveSlots=[],saveSlotsLoading=false,saveSlotBusy=false;
+let saveSlots=[],saveSlotsLoading=false,saveSlotBusy=false,saveSlotQueue=Promise.resolve(),saveSlotQueueDepth=0;
 let careerHub=null,careerHubLoading=false;
 function baseLocalState(){
  return {
@@ -291,31 +291,47 @@ function invalidateCareerCaches(){
  dbRows=[];dbCount=0;dbOffset=0;dbLoaded=false;dbLoading=false;
  staffWorldData=null;staffWorldOffset=0;worldStats=null;
 }
+function snapshotLocalForSave(){
+ try{return cleanCareerLocalState(JSON.parse(JSON.stringify(local)))}catch{return cleanCareerLocalState(local)}
+}
+function enqueueSaveSlotWrite(task){
+ saveSlotQueueDepth++;
+ const run=saveSlotQueue.catch(()=>{}).then(async()=>{
+  saveSlotBusy=true;
+  try{return await task()}
+  finally{
+   saveSlotQueueDepth=Math.max(0,saveSlotQueueDepth-1);
+   saveSlotBusy=saveSlotQueueDepth>0;
+  }
+ });
+ saveSlotQueue=run.catch(()=>{});
+ return run;
+}
 async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
  const criticalAutosave=slotType==='autosave'&&silent;
  if(simulating&&!criticalAutosave){if(!silent)alert('La semaine est en cours de simulation. L’autosave sera écrit dès validation.');return {ok:false,reason:'simulation_in_progress'};}
  if(saveSlotBusy&&!criticalAutosave)return {ok:false,reason:'save_busy'};
  if(local.liveSessionId){if(!silent)alert('Termine le match en cours avant de sauvegarder.');return {ok:false,reason:'live_match'};}
- const ownsBusy=!saveSlotBusy;
- if(ownsBusy)saveSlotBusy=true;
- try{
-  const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
-  const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
-  const slotName=silent?defaultName:(prompt('Nom de la sauvegarde',defaultName)||defaultName);
-  const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:local})});
-  local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||local.date,week:d.slot?.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
-  localStorage.setItem('cbLocal',JSON.stringify(local));
-  await loadSaveSlots();
-  if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
-  if(route==='saves')render();
-  return d;
- }catch(e){
-  local.lastSaveState={status:'error',slot_no:Number(slotNo),slot_type:slotType,career_date:local.date,week:local.week,updated_at:new Date().toISOString(),error:String(e?.message||e)};
-  localStorage.setItem('cbLocal',JSON.stringify(local));
-  if(!silent)alert(e.message);else console.warn('Autosave',e);
-  return {ok:false,error:String(e?.message||e)};
- }
- finally{if(ownsBusy)saveSlotBusy=false}
+ const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
+ const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
+ const slotName=silent?defaultName:(prompt('Nom de la sauvegarde',defaultName)||defaultName);
+ const localPayload=snapshotLocalForSave();
+ return enqueueSaveSlotWrite(async()=>{
+  try{
+   const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:localPayload})});
+   local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||localPayload.date||local.date,week:d.slot?.week||localPayload.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
+   localStorage.setItem('cbLocal',JSON.stringify(local));
+   await loadSaveSlots();
+   if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
+   if(route==='saves')render();
+   return d;
+  }catch(e){
+   local.lastSaveState={status:'error',slot_no:Number(slotNo),slot_type:slotType,career_date:localPayload.date||local.date,week:localPayload.week||local.week,updated_at:new Date().toISOString(),error:String(e?.message||e)};
+   localStorage.setItem('cbLocal',JSON.stringify(local));
+   if(!silent)alert(e.message);else console.warn('Autosave',e);
+   return {ok:false,error:String(e?.message||e)};
+  }
+ });
 }
 async function loadCareerSlot(slotNo){
  if(simulating){alert('La semaine est en cours de simulation. Le chargement est verrouillé jusqu’à la fin de l’autosave.');return;}
@@ -662,7 +678,7 @@ async function init(){
  loading();
  try{
    boot=await get('/api/bootstrap');
-   if(boot.save&&typeof boot.save==='object') Object.assign(local,boot.save);
+   if(boot.save&&typeof boot.save==='object') local=cleanCareerLocalState(boot.save);
    local.career={...(local.career||{}),...(boot.career||{})};
    local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
    local.week=boot.career?.week??local.week??1;

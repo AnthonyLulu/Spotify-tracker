@@ -1490,7 +1490,7 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/bootstrap")&&req.method==="GET"){
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
-    const [career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries] = await Promise.all([
+    const [career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries,managedDoublesEntries] = await Promise.all([
       Promise.resolve(currentCareer),
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
       db.from("staff").select("*,profile:staff_profiles(*)").order("id"),
@@ -1516,9 +1516,15 @@ Deno.serve(async(req:Request)=>{
           .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at,tournaments(id,name,country,circuit,category,start_date,end_date,qualifying_start_date,qualifying_end_date,main_draw_start_date,qualifying_entry_deadline,main_entry_deadline,singles_entry_deadline,late_entry_deadline)")
           .eq("player_id",currentCareer.data.managed_player_id).eq("status","entered")
           .order("requested_on",{ascending:true})
+        :Promise.resolve({data:[],error:null}),
+      currentCareer.data?.managed_player_id
+        ?db.from("managed_doubles_entries")
+          .select("id,owner_id,tournament_id,player_id,partner_id,status,entry_method,entry_phase,combined_rank,protected_combined_rank,projected_cut,requested_on,withdrawn_on,metadata,updated_at,partner:players!managed_doubles_entries_partner_id_fkey(id,name,country,ranking,doubles_ranking),tournaments(id,name,country,circuit,category,start_date,end_date,doubles_entry_deadline,doubles_onsite_deadline,qualifying_start_date,main_draw_start_date)")
+          .eq("owner_id","demo").eq("player_id",currentCareer.data.managed_player_id).eq("status","entered")
+          .order("requested_on",{ascending:true})
         :Promise.resolve({data:[],error:null})
     ]);
-    const results=[career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries];
+    const results=[career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries,managedDoublesEntries];
     const err=results.find((x:any)=>x?.error)?.error;
     if(err) return h({error:err.message},500);
     return h({
@@ -1540,7 +1546,8 @@ Deno.serve(async(req:Request)=>{
       managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===Number(career.data?.managed_player_id)&&x.status==="Active")??null,
       medicalPlan:medicalPlan.data??null,
       davisSquad:davis.data??[],training:training.data??[],save:save.data?.payload??null,
-      entries:managedEntries.data??[]
+      entries:managedEntries.data??[],
+      doublesEntries:managedDoublesEntries.data??[]
     });
   }
 
@@ -2872,11 +2879,137 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/doubles-entry-status")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
-    const tr=await db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle();
-    if(tr.error)return h({error:tr.error.message},500);
+    const [tr,persisted]=await Promise.all([
+      db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
+      db.from("managed_doubles_entries")
+        .select("id,owner_id,tournament_id,player_id,partner_id,status,entry_method,entry_phase,combined_rank,protected_combined_rank,projected_cut,requested_on,withdrawn_on,metadata,updated_at,partner:players!managed_doubles_entries_partner_id_fkey(id,name,country,ranking,doubles_ranking)")
+        .eq("owner_id","demo").eq("tournament_id",id).maybeSingle()
+    ]);
+    if(tr.error||persisted.error)return h({error:(tr.error||persisted.error)?.message},500);
     if(!tr.data)return h({error:"Tournoi introuvable"},404);
-    try{return h({tournament:tr.data,doubles_entry_status:await managedDoublesEntryStatus(tr.data)})}
+    try{return h({
+      tournament:tr.data,
+      doubles_entry_status:await managedDoublesEntryStatus(tr.data),
+      managed_doubles_entry:persisted.data??null
+    })}
     catch(e){return h({error:String((e as any)?.message||e)},500)}
+  }
+
+  if(path.endsWith("/api/doubles-entry")&&req.method==="POST"){
+    let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const tid=n(body?.tournament_id??body?.id,0,1,99999999);
+    const action=String(body?.action||"enter").trim().toLowerCase();
+    const legacy=Boolean(body?.legacy);
+    if(!["enter","withdraw"].includes(action))return h({error:"Action double invalide"},400);
+
+    const [career,tr,partnership]=await Promise.all([
+      db.from("career_state").select("career_date,career_focus,managed_player_id").eq("id","demo").maybeSingle(),
+      db.from("tournaments").select("*").eq("id",tid).eq("is_active",true).maybeSingle(),
+      db.from("doubles_partnerships")
+        .select("id,player_a_id,player_b_id,partner:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)")
+        .order("id",{ascending:false}).limit(1).maybeSingle()
+    ]);
+    if(career.error||tr.error||partnership.error)return h({error:(career.error||tr.error||partnership.error)?.message},500);
+    if(!career.data?.managed_player_id)return h({error:"Joueur managé introuvable"},404);
+    if(!tr.data)return h({error:"Tournoi introuvable"},404);
+
+    const playerId=Number(career.data.managed_player_id);
+    const gameDate=String(career.data.career_date||AGE_REFERENCE_DATE);
+
+    if(action==="withdraw"){
+      const wd=await db.from("managed_doubles_entries").update({
+        status:"withdrawn",withdrawn_on:gameDate,updated_at:new Date().toISOString()
+      }).eq("owner_id","demo").eq("tournament_id",tid).eq("player_id",playerId)
+        .select("*").maybeSingle();
+      if(wd.error)return h({error:wd.error.message},500);
+      return h({ok:true,action:"withdraw",entry:wd.data??null});
+    }
+
+    if(String(career.data.career_focus||"mixed")==="singles_only"){
+      return h({error:"Mode Simple exclusivement : inscription double désactivée"},409);
+    }
+    if(!tr.data.doubles)return h({error:"Ce tournoi ne propose pas le double"},409);
+    const partner:any=partnership.data?.partner;
+    if(!partner||!partnership.data?.player_b_id)return h({error:"Choisis d’abord un partenaire de double"},409);
+
+    let entryStatus:any;
+    try{entryStatus=await managedDoublesEntryStatus(tr.data)}
+    catch(e){return h({error:String((e as any)?.message||e)},500)}
+    if(entryStatus?.can_schedule===false)return h({error:entryStatus.label||"Inscription double impossible",doubles_entry_status:entryStatus},409);
+
+    const entryMethod=String(
+      entryStatus?.requires_qualifying
+        ?(entryStatus.qualifying_entry_method||"qualifying")
+        :entryStatus?.projected_acceptance===false
+          ?"alternate"
+          :entryStatus?.use_protected_ranking
+            ?"protected"
+            :entryStatus?.phase==="onsite"
+              ?"onsite"
+              :entryStatus?.phase==="race"
+                ?"race"
+                :"direct"
+    );
+    const entryPhase=String(entryStatus?.phase||"advance");
+    const calendarMode=entryStatus?.requires_qualifying?"qualifying":"direct";
+
+    const [mineConflict,partnerConflict,otherDoubles]=await Promise.all([
+      db.rpc("player_tournament_calendar_conflict",{p_player_id:playerId,p_tournament_id:tid,p_entry_method:calendarMode}),
+      db.rpc("player_tournament_calendar_conflict",{p_player_id:Number(partnership.data.player_b_id),p_tournament_id:tid,p_entry_method:calendarMode}),
+      db.from("managed_doubles_entries")
+        .select("tournament_id,entry_method,entry_phase,tournaments(id,name,start_date,end_date,qualifying_start_date,main_draw_start_date)")
+        .eq("owner_id","demo").eq("player_id",playerId).eq("status","entered").neq("tournament_id",tid)
+    ]);
+    if(mineConflict.error||partnerConflict.error||otherDoubles.error)return h({error:(mineConflict.error||partnerConflict.error||otherDoubles.error)?.message},500);
+    if(mineConflict.data?.conflict===true&&!legacy)return h({error:"Conflit calendrier avec un autre engagement.",schedule_conflict:mineConflict.data},409);
+    if(partnerConflict.data?.conflict===true&&!legacy)return h({error:"Ton partenaire a un conflit calendrier.",partner_schedule_conflict:partnerConflict.data},409);
+
+    const thisStart=String(
+      entryStatus?.requires_qualifying
+        ?(tr.data.qualifying_start_date||tr.data.start_date)
+        :(tr.data.main_draw_start_date||tr.data.start_date)
+    );
+    const thisEnd=String(tr.data.end_date||tr.data.start_date||"");
+    const doubleConflict=(otherDoubles.data??[]).find((row:any)=>{
+      const t0=Array.isArray(row.tournaments)?row.tournaments[0]:row.tournaments;
+      const otherStart=String(
+        String(row.entry_method||"").includes("qualifying")
+          ?(t0?.qualifying_start_date||t0?.start_date)
+          :(t0?.main_draw_start_date||t0?.start_date)
+      );
+      const otherEnd=String(t0?.end_date||t0?.start_date||"");
+      return otherStart&&otherEnd&&thisStart&&thisEnd&&otherStart<=thisEnd&&thisStart<=otherEnd;
+    });
+    if(doubleConflict&&!legacy){
+      const t0=Array.isArray((doubleConflict as any).tournaments)?(doubleConflict as any).tournaments[0]:(doubleConflict as any).tournaments;
+      return h({error:"Conflit double avec "+String(t0?.name||"un autre tournoi")+".",conflict_tournament_id:(doubleConflict as any).tournament_id},409);
+    }
+
+    const combined=Number(entryStatus?.score||entryStatus?.best_combined_rank||entryStatus?.doubles_combined_rank||0)||null;
+    const protectedCombined=Number(entryStatus?.protected_combined_rank||0)||null;
+    const projectedCut=Number(entryStatus?.requires_qualifying?entryStatus?.qualifying_cut:entryStatus?.projected_cut||0)||null;
+    const requestedOn=legacy?String(body?.requested_on||gameDate):gameDate;
+
+    const up=await db.from("managed_doubles_entries").upsert({
+      owner_id:"demo",tournament_id:tid,player_id:playerId,
+      partner_id:Number(partnership.data.player_b_id),status:"entered",
+      entry_method:entryMethod,entry_phase:entryPhase,
+      combined_rank:combined,protected_combined_rank:protectedCombined,
+      projected_cut:projectedCut,requested_on:requestedOn,withdrawn_on:null,
+      metadata:{
+        label:entryStatus?.label||entryMethod,
+        projected_acceptance:entryStatus?.projected_acceptance,
+        qualifying_cut:entryStatus?.qualifying_cut??null,
+        field_band:entryStatus?.field_band??null,
+        use_protected_ranking:Boolean(entryStatus?.use_protected_ranking),
+        legacy_sync:legacy,
+        partnership_id:partnership.data.id
+      },
+      updated_at:new Date().toISOString()
+    },{onConflict:"owner_id,tournament_id"}).select("*").single();
+    if(up.error)return h({error:up.error.message},500);
+
+    return h({ok:true,action:"enter",entry:up.data,doubles_entry_status:entryStatus,partner});
   }
 
   if(path.endsWith("/api/tournament-detail")&&req.method==="GET"){

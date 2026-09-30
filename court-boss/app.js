@@ -2796,6 +2796,63 @@ function tournamentDoublesHistoryHtml(rows){
   "</tbody></table></div></div>";
 }
 
+
+function tournamentEntryCode(method){
+ const m=String(method||'direct').toLowerCase();
+ const map={direct:'DA',wildcard:'WC',qualifying:'Q',qualifier:'Q',qualifier_slot:'Q',lucky_loser:'LL',alternate:'ALT',special_exempt:'SE',performance_bye:'PB',bye:'BYE',direct_fallback_slot:'ALT'};
+ return map[m]||String(method||'DA').toUpperCase().slice(0,4);
+}
+function tournamentTimelineHtml(rows,phase){
+ if(!Array.isArray(rows)||!rows.length)return '';
+ const phaseLabel={entry_list:'Entry list',qualifying:'Qualifications',draw:'Tirage',live:'Tournoi en cours',completed:'Terminé'}[phase]||phase;
+ return "<div class='card' style='margin-bottom:12px'><div class='row between'><div><div class='eyebrow'>Calendrier réel du tableau</div><h2>WC · Q · LL · ALT · tirage</h2></div><span class='badge "+(phase==='live'?'good':phase==='qualifying'||phase==='draw'?'warn':'')+"'>"+esc(phaseLabel||'Préparation')+"</span></div><div style='display:flex;gap:8px;overflow-x:auto;padding:8px 0 2px'>"+
+  rows.map(x=>"<div style='min-width:150px;padding:9px;border:1px solid var(--border);border-radius:10px'><div class='muted micro'>"+df(x.date)+"</div><b style='font-size:12px'>"+esc(x.label)+"</b><div style='margin-top:5px'><span class='badge "+(x.status==='done'?'good':x.status==='today'?'warn':'')+"'>"+(x.status==='done'?'Fait':x.status==='today'?'Aujourd’hui':'À venir')+"</span></div></div>").join('')+
+ "</div></div>";
+}
+function projectedTournamentR1(entries,byeSlots,bracketSize){
+ const xs=(entries||[]).filter(x=>Number(x.draw_slot)>0);
+ if(!xs.length)return [];
+ const slotMap=new Map(xs.map(x=>[Number(x.draw_slot),x]));
+ const byes=new Set((byeSlots||[]).map(Number));
+ let size=Number(bracketSize||0);
+ if(!size)size=Math.pow(2,Math.ceil(Math.log2(Math.max(2,...xs.map(x=>Number(x.draw_slot)||0)))));
+ const out=[];
+ for(let s=1;s<=size;s+=2){
+  const a=slotMap.get(s)||{id:null,name:byes.has(s)?'BYE':'À déterminer',entry_method:byes.has(s)?'bye':null,draw_slot:s};
+  const b=slotMap.get(s+1)||{id:null,name:byes.has(s+1)?'BYE':'À déterminer',entry_method:byes.has(s+1)?'bye':null,draw_slot:s+1};
+  out.push({round_no:1,round_name:'1er tour',match_no:(s+1)/2,player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+    player_a_seed:a.seed,player_b_seed:b.seed,player_a_entry:tournamentEntryCode(a.entry_method),player_b_entry:tournamentEntryCode(b.entry_method),
+    scheduled_date:null,status:'scheduled',score:null});
+ }
+ return out;
+}
+function tournamentBracketHtml(matches,entries,byeSlots,bracketSize,title){
+ let rows=Array.isArray(matches)?matches.filter(Boolean):[];
+ if(!rows.length)rows=projectedTournamentR1(entries,byeSlots,bracketSize);
+ if(!rows.length)return "<div class='card'><h2>"+esc(title||'Tableau')+"</h2><div class='empty'>Le tirage n’est pas encore publié.</div></div>";
+ const roundKeys=[]; for(const m of rows){const k=String(m.round_name||m.round_code||'Tour');if(!roundKeys.includes(k))roundKeys.push(k)}
+ const pLine=(id,name,seed,code)=>{
+  const label=(seed?'['+seed+'] ':'')+(code&&code!=='DA'?'('+code+') ':'')+String(name||'À déterminer');
+  return id?"<div class='click' onclick='openPlayer("+Number(id)+")'>"+esc(label)+"</div>":"<div>"+esc(label)+"</div>";
+ };
+ return "<div class='card'><div class='row between'><div><div class='eyebrow'>Tirage</div><h2>"+esc(title||'Tableau')+"</h2></div><span class='badge'>"+rows.length+" match"+(rows.length>1?'s':'')+"</span></div>"+
+  "<div style='display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding:10px 0'>"+
+  roundKeys.map(r=>"<div style='min-width:255px;flex:0 0 255px'><div class='row between' style='margin-bottom:7px'><b>"+esc(r)+"</b></div>"+
+    rows.filter(m=>String(m.round_name||m.round_code||'Tour')===r).map(m=>"<div class='list-item' style='margin-bottom:8px'>"+
+      "<div class='row between'><span class='muted micro'>"+(m.scheduled_date?df(m.scheduled_date):'Date à fixer')+"</span><span class='badge "+(m.status==='completed'?'good':'')+"'>"+(m.status==='completed'?'Joué':'À jouer')+"</span></div>"+
+      "<div style='margin-top:5px'>"+pLine(m.player_a_id,m.player_a_name,m.player_a_seed,m.player_a_entry)+"</div>"+
+      "<div>"+pLine(m.player_b_id,m.player_b_name,m.player_b_seed,m.player_b_entry)+"</div>"+
+      (m.score?"<div class='muted mini' style='margin-top:5px'><b>"+esc(m.score)+"</b>"+(m.winner_name?' · '+esc(m.winner_name):'')+"</div>":"")+
+    "</div>").join('')+"</div>").join('')+
+  "</div></div>";
+}
+function luckyLoserHtml(rows){
+ if(!Array.isArray(rows)||!rows.length)return "<div class='notice mini'><b>Lucky Losers :</b> l’ordre sera généré après les qualifications si une place se libère.</div>";
+ return "<div class='card' style='margin-top:12px'><div class='row between'><h2>Ordre Lucky Loser</h2><span class='badge'>LL</span></div><div class='table-wrap'><table class='table'><thead><tr><th>Ordre</th><th>Joueur</th><th>Rang</th><th>Statut</th></tr></thead><tbody>"+
+  rows.map(x=>"<tr "+(x.player_id?"class='click' onclick='openPlayer("+x.player_id+")'":"")+"><td>#"+fmt(x.ll_order||'—')+"</td><td>"+(flags[x.country]||'🏳️')+" <b>"+esc(x.name)+"</b></td><td>#"+fmt(x.ranking||'—')+"</td><td><span class='badge "+(x.selected?'good':'')+"'>"+(x.selected?'Repêché LL':'Réserve LL')+"</span></td></tr>").join('')+
+  "</tbody></table></div></div>";
+}
+
 window.openTournament=async id=>{
  const fallback=[...(tourRows||[]),...(boot.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>x.id===id);if(!id)return;
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
@@ -2835,6 +2892,13 @@ window.openTournament=async id=>{
   const ncaaPlayers=d.ncaa_players||[];
   const forfeits=d.forfeits||[];
   const completedDraw=d.completed_draw||[];
+  const mainDrawMatches=d.main_draw_matches||d.world_completed_draw||[];
+  const qualifyingDraw=d.qualifying_draw||[];
+  const luckyLosers=d.lucky_losers||[];
+  const drawTimeline=d.draw_timeline||[];
+  const drawPhase=d.draw_phase||'entry_list';
+  const projectedByeSlots=d.projected_bye_slots||[];
+  const projectedBracketSize=Number(d.projected_bracket_size||t.singles_draw_size||t.draw_size||pairs.length||0);
   const doublesProjection=d.doubles_main||[],doublesCompleted=d.doubles_completed_draw||[];
   const drawRounds=[...new Set(completedDraw.map(m=>m.round_name))];
   const editionHistory=d.tournament_history||[],doublesEditionHistory=d.tournament_doubles_history||[],historyRecords=d.tournament_history_records||{};
@@ -2922,9 +2986,9 @@ window.openTournament=async id=>{
 
    <template id="tourNcaaTpl"><div class="card"><div class="row between"><div><div class="eyebrow">Circuit universitaire</div><h2>Vivier NCAA · ITA + UTR</h2></div><span class="badge">${fmt(ncaaPlayers.length)} profils</span></div><p class="muted mini">ITA = classement universitaire. UTR = niveau individuel séparé. Le symbole ~ indique une estimation Court Boss quand aucune valeur UTR sourcée n’est disponible.</p><div class="table-wrap" style="margin-top:10px"><table class="table"><thead><tr><th>ITA</th><th>Joueur</th><th>Université</th><th>UTR</th><th>ATP</th><th>Statut</th></tr></thead><tbody>${ncaaPlayers.slice(0,125).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td class="rank-num">${p.ita_rank?'#'+fmt(p.ita_rank):'—'}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${esc(p.school||p.ncaa_school||'—')}</td><td>${p.utr_rating!=null?'<b>'+(p.utr_verified?'':'~')+Number(p.utr_rating).toFixed(2)+'</b>':'—'}</td><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td><span class="badge good">${esc(p.ncaa_status||'Active')}</span></td></tr>`).join('')}</tbody></table></div>${!ncaaPlayers.length?'<div class="empty">Aucun profil NCAA relié à ce snapshot.</div>':''}</div></template>
 
-   <template id="tourDrawTpl"><div class="card"><div class="row between"><h2>${isJunior?'Engagés juniors':'Liste d’acceptation / tableau projeté'}</h2><span class="badge">${pairs.length} places</span></div><p class="muted mini">${drawIntro}</p><div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur / entrée</th><th>Points</th><th>${isJunior?'Résultat':'Forme'}</th></tr></thead><tbody>${tournamentEntryRowsHtml(pairs,isJunior)}</tbody></table></div></div>${tournamentFormatHtml(formatRule,t,qStructure)}</template>
+   <template id="tourDrawTpl">${tournamentTimelineHtml(drawTimeline,drawPhase)}${tournamentBracketHtml(mainDrawMatches,pairs,projectedByeSlots,projectedBracketSize,isJunior?'Tableau Junior':'Tableau principal')}<div class="card" style="margin-top:12px"><div class="row between"><h2>${d.draw_state?.actual?'Positions du tirage':'Entry list / tirage projeté'}</h2><span class="badge">${pairs.length} joueurs</span></div><p class="muted mini">${drawIntro} Les codes suivent le circuit : DA direct, WC wild card, Q qualifié, LL lucky loser, ALT alternate, SE special exempt, PB performance bye.</p><div class="table-wrap"><table class="table"><thead><tr><th>Slot</th><th>TDS</th><th>Entrée</th><th>Joueur</th><th>Rang</th></tr></thead><tbody>${pairs.slice().sort((a,b)=>Number(a.draw_slot||9999)-Number(b.draw_slot||9999)).map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${p.id})"`:''}><td>${p.draw_slot||'—'}</td><td>${p.seed?'#'+p.seed:'—'}</td><td><span class="badge">${tournamentEntryCode(p.entry_method)}</span></td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.ranking&&p.ranking<999999?'#'+fmt(p.ranking):'—'}</td></tr>`).join('')}</tbody></table></div></div>${tournamentFormatHtml(formatRule,t,qStructure)}</template>
 
-   <template id="tourQualTpl">${tournamentFormatHtml(formatRule,t,qStructure)}<div class="card"><div class="row between"><h2>Qualifications</h2>${qStructure?.seed_count!=null?`<span class="badge">${fmt(qStructure.seed_count)} TDS</span>`:''}</div>${t.qualifying_start_date?`<p class="muted mini">Du ${df(t.qualifying_start_date)} au ${df(t.qualifying_end_date||t.qualifying_start_date)} · à prévoir avant le tableau principal.</p>`:''}${qStructure?`<div class="kpi-strip" style="margin:10px 0"><div class="kpi"><span class="muted mini">Tableau Q</span><b>${fmt(qStructure.draw_size||0)}</b></div><div class="kpi"><span class="muted mini">Directs Q</span><b>${fmt(qStructure.direct_acceptances||0)}</b></div><div class="kpi"><span class="muted mini">WC Q</span><b>${fmt(qStructure.wildcards||0)}</b></div><div class="kpi"><span class="muted mini">Qualifiés</span><b>${fmt(qStructure.qualifier_slots||0)}</b></div></div>`:''}<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Joueur</th><th>Condition</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${p.ranking}</td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.fitness??'—'}% / fatigue ${p.fatigue??'—'}%</td></tr>`).join('')}</tbody></table></div></div></template>
+   <template id="tourQualTpl">${tournamentTimelineHtml(drawTimeline,drawPhase)}${tournamentBracketHtml(qualifyingDraw,[],[],0,'Tableau des qualifications')}${tournamentFormatHtml(formatRule,t,qStructure)}<div class="card" style="margin-top:12px"><div class="row between"><h2>Qualifications</h2>${qStructure?.seed_count!=null?`<span class="badge">${fmt(qStructure.seed_count)} TDS</span>`:''}</div>${t.qualifying_start_date?`<p class="muted mini">Du ${df(t.qualifying_start_date)} au ${df(t.qualifying_end_date||t.qualifying_start_date)}. Les Q gagnent leur place dans le main draw, les perdants éligibles alimentent l’ordre LL.</p>`:''}<div class="table-wrap"><table class="table"><thead><tr><th>Rang</th><th>Entrée</th><th>Joueur</th><th>Statut</th></tr></thead><tbody>${(d.qualifying||[]).map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td>#${fmt(p.ranking)}</td><td><span class="badge">${tournamentEntryCode(p.entry_method)}</span></td><td>${flags[p.country]||'🏳️'} <b>${esc(p.name)}</b></td><td>${p.qualified?'<span class="badge good">Q</span>':esc(p.result||((p.fitness??'—')+'% / fatigue '+(p.fatigue??'—')+'%'))}</td></tr>`).join('')}</tbody></table></div></div>${luckyLoserHtml(luckyLosers)}</template>
 
    <template id="tourDoubleTpl">
     <div class="grid g2"><div class="card"><div class="eyebrow">Partenariat</div><h2>${activePartner?flags[activePartner.country]||'🏳️':''} ${activePartner?esc(activePartner.name):'Aucun partenaire'}</h2><div class="list-item row between"><span>Ton classement</span><b>#${fmt(cr.doubles_rank||0)}</b></div>${activePartner?`<div class="list-item row between"><span>Partenaire</span><b>#${fmt(activePartner.doubles_ranking||0)}</b></div><div class="list-item row between"><span>Chimie</span><b>${pairScore(activePartner,'chem')}%</b></div>`:''}</div><div class="card"><div class="eyebrow">Tournoi</div><h2>${esc(t.name)} · Double</h2><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Catégorie</span><b>${esc(t.category||t.level||'—')}</b></div>${doublesRun?`<div class="notice good"><b>Résultat :</b> ${esc(doublesRun.user_round)} · +${doublesRun.user_points||0} pts</div>`:isDoublesFinals?(doubleRule.can&&activePartner?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler les Finals double</button><div class="notice good mini" style="margin-top:8px">Top 8 Race · paire qualifiée automatiquement.</div>`:`<div class="notice bad mini" style="margin-top:8px">${esc(doubleRule.label)}</div><button class="soft-btn" style="width:100%;margin-top:8px" onclick="setRankKind('${isJuniorDoubleFinals?'junior_doubles_race':'doubles_race'}');closeOverlay();nav('rankings')">Voir la Race</button>`):activePartner?(dJoined?`<button class="primary" style="width:100%;margin-top:10px" onclick="playDoublesTournament(${t.id})">Jouer / simuler le double</button>`:`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="toggleDoublesEntry(${t.id})">Inscrire la paire avant de jouer</button>`):`<button class="soft-btn" style="width:100%;margin-top:10px" onclick="closeOverlay();nav('doubles')">Choisir un partenaire</button>`}</div></div>

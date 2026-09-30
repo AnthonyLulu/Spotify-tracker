@@ -1659,15 +1659,23 @@ Deno.serve(async(req:Request)=>{
         const old=byId.get(id);
         if(old&&Number(old.__priority??99)<=priority)return;
         const metaHasRank=!!meta&&Object.prototype.hasOwnProperty.call(meta,"ita_rank");
+        const ncaaSource=String(meta?.source_label||meta?.source_url||p.ncaa_source||"");
+        const ncaaRankType=/Court Boss dynamic NCAA supply/i.test(ncaaSource)
+          ?"simulated_depth"
+          :/ITA Division I Men.?s National Singles Rankings|ITA official/i.test(ncaaSource)
+            ?"official"
+            :(metaHasRank&&meta?.ita_rank!=null?"verified_other":"profile");
         byId.set(id,{
           ...p,
           ncaa_rank:metaHasRank?meta.ita_rank:(p.ncaa_rank??null),
           ncaa_school:canonicalNcaaSchool(p,meta?.school??p.ncaa_school??p.ncaa_last_school??null),
           ncaa_division:meta?.division??p.ncaa_division??"NCAA Division I",
-          ncaa_season:meta?.season??(p.ncaa_current?"2025-26":null),
+          ncaa_season:meta?.season??(p.ncaa_current?ncaaSeason:null),
           ncaa_status:meta?.status??p.ncaa_status??(p.ncaa_current?"Active":"NCAA profile"),
           ncaa_snapshot_date:meta?.snapshot_date??null,
-          ncaa_source:meta?.source_label||meta?.source_url||p.ncaa_source||null,
+          ncaa_source:ncaaSource||null,
+          ncaa_rank_type:ncaaRankType,
+          ncaa_rank_verified:ncaaRankType==="official"||ncaaRankType==="verified_other",
           ncaa_current_verified:priority<=1,
           age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
           __priority:priority
@@ -1707,13 +1715,17 @@ Deno.serve(async(req:Request)=>{
         return String(a.name||"").localeCompare(String(b.name||""));
       });
       const total=rows.length;
-      const ranked=rows.filter((x:any)=>x.ncaa_rank!=null&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
+      const officialRanked=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_rank_type==="official"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
+      const simulatedDepth=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_rank_type==="simulated_depth"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
       rows=rows.slice(offset,offset+limit).map(({__priority,...x}:any)=>x);
       return h({
         kind,offset,limit,count:total,rows,
         officialCapacity:125,
-        verifiedCurrentRanks:ranked,
-        eligibility:"NCAA Division I · données vérifiées disponibles au cutoff 01/12/2025",
+        verifiedCurrentRanks:officialRanked,
+        simulatedDepthRanks:simulatedDepth,
+        officialSnapshotDate:"2025-11-25",
+        coverage:"ITA officiel 1-20 · profondeur 21+ simulée Court Boss au cutoff initial",
+        eligibility:"NCAA Division I · classement officiel distingué de la profondeur simulée",
         rankingDate:gameDate
       });
     }
@@ -3194,7 +3206,8 @@ Deno.serve(async(req:Request)=>{
           ncaa_season:x.season,
           ncaa_status:x.status,
           ncaa_snapshot_date:x.snapshot_date,
-          ncaa_source:x.source_label||x.source_url
+          ncaa_source:x.source_label||x.source_url,
+          ncaa_rank_type:/Court Boss dynamic NCAA supply/i.test(String(x.source_label||""))?"simulated_depth":/ITA Division I Men.?s National Singles Rankings|ITA official/i.test(String(x.source_label||""))?"official":"verified_other"
         }:null;
       }).filter(Boolean);
       const individual=String(t.data.registration_mode||"")==="ncaa_individual_selection"

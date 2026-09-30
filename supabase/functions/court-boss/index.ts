@@ -2749,12 +2749,32 @@ Deno.serve(async(req:Request)=>{
         status:"withdrawn",withdrawn_on:gameDate,updated_at:new Date().toISOString()
       }).eq("tournament_id",tid).eq("player_id",playerId).select("*").maybeSingle();
       if(upd.error)return h({error:upd.error.message},500);
+
+      const qStart=String(tour.data.qualifying_start_date||tour.data.main_draw_start_date||tour.data.start_date||gameDate);
+      const mainPhase=gameDate<qStart?"pre_q":"post_q";
+
+      const [mainMark,qMark]=await Promise.all([
+        db.from("world_tournament_acceptance_entries").update({
+          status:"withdrawn",withdrawn_on:gameDate,withdrawal_phase:mainPhase,
+          withdrawal_reason:"managed_withdrawal",updated_at:new Date().toISOString()
+        }).eq("tournament_id",tid).eq("player_id",playerId)
+          .in("status",["accepted","promoted","alternate"]).select("player_id"),
+        db.from("world_qualifying_acceptance_entries").update({
+          status:"withdrawn",withdrawn_on:gameDate,withdrawal_phase:"pre_q",
+          withdrawal_reason:"managed_withdrawal",updated_at:new Date().toISOString()
+        }).eq("tournament_id",tid).eq("player_id",playerId)
+          .in("status",["accepted","promoted","alternate"]).select("player_id")
+      ]);
+      if(mainMark.error||qMark.error)return h({error:(mainMark.error||qMark.error)?.message},500);
+
       const [mainRefresh,qRefresh]=await Promise.all([
         db.rpc("refresh_world_tournament_acceptance_list",{p_tournament_id:tid,p_date:gameDate}),
         db.rpc("refresh_world_qualifying_acceptance_list",{p_tournament_id:tid,p_date:gameDate})
       ]);
       return h({
         ok:true,action:"withdraw",entry:upd.data??null,
+        acceptance_marked_withdrawn:(mainMark.data??[]).length,
+        qualifying_marked_withdrawn:(qMark.data??[]).length,
         acceptance_refresh:mainRefresh.error?{skipped:true,error:mainRefresh.error.message}:mainRefresh.data,
         qualifying_refresh:qRefresh.error?{skipped:true,error:qRefresh.error.message}:qRefresh.data
       });
@@ -8530,6 +8550,44 @@ Deno.serve(async(req:Request)=>{
       let davisRole:any=null;
       if(focus==="doubles_only"){
         const managedId=Number(career.data.managed_player_id||0);
+        if(managedId){
+          const activeSingles=await db.from("entries")
+            .select("tournament_id")
+            .eq("player_id",managedId).eq("status","entered");
+          if(activeSingles.error)return h({error:activeSingles.error.message},500);
+          const activeTournamentIds=[...new Set((activeSingles.data??[]).map((x:any)=>Number(x.tournament_id)).filter(Boolean))];
+
+          const wd=await db.from("entries").update({
+            status:"withdrawn",
+            withdrawn_on:String(career.data.career_date||AGE_REFERENCE_DATE),
+            updated_at:new Date().toISOString()
+          }).eq("player_id",managedId).eq("status","entered");
+          if(wd.error)return h({error:wd.error.message},500);
+
+          for(const tournamentId of activeTournamentIds){
+            const tr=await db.from("tournaments")
+              .select("qualifying_start_date,main_draw_start_date,start_date")
+              .eq("id",tournamentId).maybeSingle();
+            const gameDateFocus=String(career.data.career_date||AGE_REFERENCE_DATE);
+            const qStart=String(tr.data?.qualifying_start_date||tr.data?.main_draw_start_date||tr.data?.start_date||gameDateFocus);
+            const phase=gameDateFocus<qStart?"pre_q":"post_q";
+
+            await db.from("world_tournament_acceptance_entries").update({
+              status:"withdrawn",withdrawn_on:gameDateFocus,withdrawal_phase:phase,
+              withdrawal_reason:"career_focus_doubles_only",updated_at:new Date().toISOString()
+            }).eq("tournament_id",tournamentId).eq("player_id",managedId)
+              .in("status",["accepted","promoted","alternate"]);
+
+            await db.from("world_qualifying_acceptance_entries").update({
+              status:"withdrawn",withdrawn_on:gameDateFocus,withdrawal_phase:"pre_q",
+              withdrawal_reason:"career_focus_doubles_only",updated_at:new Date().toISOString()
+            }).eq("tournament_id",tournamentId).eq("player_id",managedId)
+              .in("status",["accepted","promoted","alternate"]);
+
+            await db.rpc("refresh_world_tournament_acceptance_list",{p_tournament_id:tournamentId,p_date:gameDateFocus});
+            await db.rpc("refresh_world_qualifying_acceptance_list",{p_tournament_id:tournamentId,p_date:gameDateFocus});
+          }
+        }
         const pair=managedId
           ?await db.from("doubles_partnerships").select("id,player_b_id").eq("player_a_id",managedId).order("id",{ascending:false}).limit(1).maybeSingle()
           :{data:null,error:null};

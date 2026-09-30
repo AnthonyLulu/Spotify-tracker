@@ -1446,7 +1446,17 @@ function slamLogoHtml(keyOrName,extraClass=""){
 window.tournamentLogoHtml=tournamentLogoHtml;
 window.tournamentLogoByName=tournamentLogoByName;
 window.slamLogoHtml=slamLogoHtml;
-function tournamentThumb(t){return tournamentLogoHtml(t,"tm-list-logo")}
+function tournamentThumb(t){
+ const photo=String(t?.image_url||"").trim()||(t?.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):"");
+ const logo=tournamentLogoMeta(t);
+ const fallback=tournamentLogoHtml(t,"tm-list-logo tm-photo-logo-fallback");
+ if(!photo)return fallback;
+ return '<div class="tm-tour-photo-thumb">'+
+  '<img class="tm-tour-photo-img" src="'+esc(photo)+'" alt="" loading="lazy" decoding="async" onload="this.parentElement.classList.add(\'loaded\')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\'">'+
+  '<div class="tm-tour-photo-fallback" style="display:none">'+fallback+'</div>'+
+  (logo?.url?'<span class="tm-tour-photo-mark"><img src="'+esc(logo.url)+'" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.display=\'none\'"></span>':'')+
+ '</div>';
+}
 function tournamentTmRow(t){
  const st=tournamentStatus(t),se=singlesEligibility(t),de=doublesEligibility(t),joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
  const teamEvent=specialTeamEventMeta(t);
@@ -1543,7 +1553,19 @@ function tournamentCard(t){
  const doublesOnly=String(c.career_focus||'mixed')==='doubles_only',dJoined=(local.doublesEntries||[]).includes(t.id),dRule=doublesEligibility(t);
  const elig=doublesOnly?dRule.label:singlesElig;
  const action=isFederation?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'davis\')">Voir la Coupe Davis</button>':isNcaa?'<button class="soft-btn" onclick="event.stopPropagation();nav(\'university\')">Voir NCAA</button>':doublesOnly?(t.doubles&&dRule.can?`<button class="${dJoined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleDoublesEntry(${t.id})">${dJoined?'Double ✓ · retirer':'Inscrire la paire'}</button>`:'<button class="ghost" disabled>Double indisponible</button>'):`<button class="${joined?'danger-btn':'primary'}" onclick="event.stopPropagation();toggleEntry(${t.id})">${joined?'Inscrit · retirer':'S’inscrire'}</button>`;
- return `<div class="card click" onclick="${target}"><div class="row between" style="gap:12px"><div class="row" style="align-items:center;min-width:0">${tournamentThumb(t)}<div><div class="row"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div><h2 style="margin:8px 0 4px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span>${t.venue?' · '+esc(t.venue):''}</div></div></div><div style="text-align:right"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${action}</div></div></div></div>`
+ return `<div class="card click tm-tour-card-photo" onclick="${target}">
+  <div class="tm-tour-card-photo-media">
+   ${(()=>{const photo=String(t.image_url||'').trim()||(t.id?API+'/api/tournament-image?id='+encodeURIComponent(t.id):'');const m=tournamentLogoMeta(t);return photo?`<img src="${esc(photo)}" alt="${esc(t.name)}" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><div class="tm-tour-card-photo-fallback" style="display:none">${tournamentLogoHtml(t,'tm-card-logo-fallback')}</div>${m?.url?`<span class="tm-tour-card-logo"><img src="${esc(m.url)}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.display='none'"></span>`:''}`:`<div class="tm-tour-card-photo-fallback">${tournamentLogoHtml(t,'tm-card-logo-fallback')}</div>`})()}
+   <div class="tm-tour-card-photo-shade"></div>
+   <div class="tm-tour-card-photo-badges"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.level)}</span>${t.is_verified?'<span class="badge good">Officiel</span>':'<span class="badge">Monde simulé</span>'}</div>
+  </div>
+  <div class="tm-tour-card-photo-body">
+   <div class="row between" style="gap:12px">
+    <div style="min-width:0"><h2 style="margin:0 0 5px">${flags[t.country]||'🏳️'} ${esc(t.name)}</h2><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} · <span class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</span>${t.venue?' · '+esc(t.venue):''}</div></div>
+    <div style="text-align:right;flex:0 0 auto"><span class="badge ${elig==='Tableau direct'?'good':elig==='Qualifications'?'warn':''}">${elig}</span><div style="margin-top:8px">${action}</div></div>
+   </div>
+  </div>
+ </div>`
 }
 window.showMyEntries=()=>{
   const ids=new Set([...(local.entries||[]),...(local.doublesEntries||[])]);

@@ -3356,7 +3356,7 @@ function luckyLoserHtml(rows){
 
 window.openTournament=async id=>{
  const fallback=[...(tourRows||[]),...(boot.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>x.id===id);if(!id)return;
- overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
+ overlay.innerHTML='<div class="modal"><div class="sheet tm-tournament-sheet"><div class="loader">Chargement du tournoi…</div></div></div>';
  try{
   let d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
   if(['ATP','Challenger','ITF'].includes(String(t.circuit||''))){
@@ -3427,6 +3427,7 @@ window.openTournament=async id=>{
   const projectedByeSlots=d.projected_bye_slots||[];
   const projectedBracketSize=Number(d.projected_bracket_size||t.singles_draw_size||t.draw_size||pairs.length||0);
   const doublesProjection=d.doubles_main||[],doublesCompleted=d.doubles_completed_draw||[];
+  const worldDoublesEntries=d.doubles_world_entries||[],worldDoublesBracket=d.doubles_draw_bracket||[];
   const drawRounds=[...new Set(completedDraw.map(m=>m.round_name))];
   const editionHistory=d.tournament_history||[],doublesEditionHistory=d.tournament_doubles_history||[],historyRecords=d.tournament_history_records||{};
   const historyMajor=['Grand Chelem','Masters 1000','ATP 500','ATP 250','ATP Finals','Challenger 175','Challenger 125'].includes(String(t.category||''));
@@ -3516,7 +3517,21 @@ window.openTournament=async id=>{
 
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div class="tm-title-with-logo">${tournamentLogoHtml(t,'tm-detail-logo')}<div><div class="eyebrow">${esc(t.circuit||'Circuit')} · ${esc(t.category||t.level)}</div><h1>${flags[t.country]||'🏳️'} ${esc(t.name)}</h1><div class="muted">${esc(t.city||'')} · ${df(t.start_date)} → ${df(t.end_date)}</div></div></div><button class="close" onclick="closeOverlay()">✕</button></div>
    ${detailPhoto?`<div class="tm-tour-hero"><img src="${esc(detailPhoto)}" alt="${esc(t.name)}" onerror="this.parentElement.style.display='none'"><div class="tm-tour-hero-overlay"><span class="badge ${circuitClass(t.circuit)}">${esc(t.category||t.circuit)}</span><span class="badge good">${esc(detailPhotoLabel)}</span></div></div>`:''}
-   <div class="tabs" style="margin-top:12px"><button class="active" onclick="tourSection('overview')">Vue</button>${(Number(economics.total||0)>0||economics.format==='none'||economics.note)?'<button onclick="tourSection(\'prize\')">Dotations</button>':''}${editionHistory.length?'<button onclick="tourSection(\'history\')">Histoire '+editionHistory.length+'</button>':''}${isNcaa?`<button onclick="tourSection('ncaa')">NCAA / ITA</button>`:teamEvent?'':`<button onclick="tourSection('draw')">${isJunior?'Tableau junior':'Tableau'}</button>${Number(t.qualifying_draw_size||0)>0?'<button onclick="tourSection(\'qual\')">Qualifs</button>':''}${t.doubles?'<button onclick="tourSection(\'double\')">Double</button>':''}<button onclick="tourSection('forfeits')">Forfaits ${forfeits.length}</button>${(completedDraw.length||juniorResults)?`<button onclick="tourSection('results')">Résultats</button>`:''}`}</div>
+   <div class="tm-tour-nav">
+    <div class="tm-tour-tabs tm-tour-tabs-primary">
+     ${!teamEvent&&!isNcaa&&t.singles?`<button data-tour-section="draw" onclick="tourSection('draw',this)">Simple</button>`:""}
+     ${!teamEvent&&!isNcaa&&Number(t.qualifying_draw_size||0)>0?`<button data-tour-section="qual" onclick="tourSection('qual',this)">Qualifications</button>`:""}
+     ${!teamEvent&&!isNcaa&&t.doubles?`<button data-tour-section="double" onclick="tourSection('double',this)">Double</button>`:""}
+     ${isNcaa?`<button data-tour-section="ncaa" onclick="tourSection('ncaa',this)">NCAA / ITA</button>`:""}
+    </div>
+    <div class="tm-tour-tabs tm-tour-tabs-secondary">
+     <button data-tour-section="overview" onclick="tourSection('overview',this)">Infos</button>
+     ${(Number(economics.total||0)>0||economics.format==="none"||economics.note)?`<button data-tour-section="prize" onclick="tourSection('prize',this)">Dotations</button>`:""}
+     ${editionHistory.length?`<button data-tour-section="history" onclick="tourSection('history',this)">Histoire</button>`:""}
+     ${!teamEvent&&!isNcaa?`<button data-tour-section="forfeits" onclick="tourSection('forfeits',this)">Forfaits ${forfeits.length}</button>`:""}
+     ${(completedDraw.length||juniorResults)?`<button data-tour-section="results" onclick="tourSection('results',this)">Résultats</button>`:""}
+    </div>
+   </div>
    <div id="tourBody">
     ${teamEvent?`<div class="notice"><b>${esc(teamEvent.label)}</b> · ${esc(teamEvent.format)}<br><span class="muted mini">${esc(teamEvent.tie||"")}${teamEvent.scoring?" · "+esc(teamEvent.scoring):""} · ${esc(teamEvent.selection||"")}</span></div>`:""}
     <div class="grid g2">
@@ -3577,6 +3592,7 @@ window.openTournament=async id=>{
 
    <template id="tourResultsTpl">${isJunior&&juniorResults?`<div class="card"><h2>Résultats / statut des engagés</h2>${juniorResults}</div>`:''}<div class="stack">${drawRounds.map(r=>`<div class="card"><h2>${esc(r)}</h2>${completedDraw.filter(m=>m.round_name===r).map(m=>`<div class="list-item"><div class="row between"><div><div ${m.player_a_id?`class="click" onclick="openPlayer(${m.player_a_id})"`:''}>${esc(m.player_a_name)}</div><div ${m.player_b_id?`class="click" onclick="openPlayer(${m.player_b_id})"`:''}>${esc(m.player_b_name)}</div></div><div style="text-align:right"><b>${esc(m.score)}</b><div class="muted mini">Vainqueur : ${esc(m.winner_name)}</div></div></div></div>`).join('')}</div>`).join('')}</div></template>
   </div></div>`;
+  requestAnimationFrame(()=>window.tourSection(isNcaa?'ncaa':teamEvent?'overview':'draw'));
  }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Erreur tournoi</h2><p>${esc(e.message)}</p></div></div>`}
 }
 window.requestWildcard=async id=>{
@@ -3618,7 +3634,8 @@ window.playDoublesTournament=async id=>{
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(d.tournament?.name||'Double')}</div><h1>${d.round==='Champion'?'🏆 Champions':esc(d.round)}</h1><div class="muted">Avec ${esc(d.partner?.name||'partenaire')} · nouveau rang double #${fmt(d.rank||career().doubles_rank)}</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="kpi-strip" style="margin-top:12px"><div class="kpi"><span class="muted mini">Tour</span><b>${esc(d.round)}</b></div><div class="kpi"><span class="muted mini">Points double</span><b>+${d.points||0}</b></div><div class="kpi"><span class="muted mini">Prize money</span><b>${money(d.prize||0,d.tournament?.prize_currency||'USD')}</b><small class="muted">${d.prize_eur!=null?'Crédit budget '+euro(d.prize_eur):''}</small></div><div class="kpi"><span class="muted mini">Fatigue</span><b>+${d.fatigue_added||0}</b></div></div><div class="card" style="margin-top:12px"><h2>Parcours</h2>${(d.matches||[]).map(m=>`<div class="list-item"><div class="row between"><b>${esc(m.round_name)}</b><b>${esc(m.score)}</b></div><div class="muted mini">${esc(m.user_pair)} vs ${esc(m.opponent_pair)} · vainqueur ${esc(m.winner_pair)}</div></div>`).join('')||'<div class="empty">Aucun match.</div>'}</div></div></div>`;
  }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Double impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`}
 }
-window.tourSection=s=>{const m={overview:'tourOverviewTpl',prize:'tourPrizeTpl',history:'tourHistoryTpl',ncaa:'tourNcaaTpl',draw:'tourDrawTpl',qual:'tourQualTpl',double:'tourDoubleTpl',forfeits:'tourForfeitsTpl',results:'tourResultsTpl'},t=document.getElementById(m[s]);if(t)document.getElementById('tourBody').innerHTML=t.innerHTML}
+window.tourSection=(s,btn)=>{const m={overview:'tourOverviewTpl',prize:'tourPrizeTpl',history:'tourHistoryTpl',ncaa:'tourNcaaTpl',draw:'tourDrawTpl',qual:'tourQualTpl',double:'tourDoubleTpl',forfeits:'tourForfeitsTpl',results:'tourResultsTpl'},t=document.getElementById(m[s]),body=document.getElementById('tourBody');if(!t||!body)return;body.innerHTML=t.innerHTML;document.querySelectorAll('.tm-tour-tabs [data-tour-section]').forEach(x=>x.classList.toggle('active',x.dataset.tourSection===s));if(btn)btn.classList.add('active');const sc=body.querySelector('.tm-bracket-scroll');if(sc)sc.scrollLeft=0}
+window.focusManagedDraw=()=>{const el=document.querySelector('#tourBody .tm-bracket-match.is-managed');if(el)el.scrollIntoView({behavior:'smooth',block:'center',inline:'center'})}
 
 async function managerAction(action,id,extra={}){
   return get('/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,id,...extra})});

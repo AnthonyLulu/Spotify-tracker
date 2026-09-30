@@ -2920,7 +2920,7 @@ window.openTournament=async id=>{
   const ncaaPlayers=d.ncaa_players||[];
   const forfeits=d.forfeits||[];
   const completedDraw=d.completed_draw||[];
-  const mainDrawMatches=d.main_draw_matches||d.world_completed_draw||[];
+  const mainDrawMatches=d.main_draw_bracket||d.main_draw_matches||d.world_completed_draw||[];
   const qualifyingDraw=d.qualifying_draw||[];
   const luckyLosers=d.lucky_losers||[];
   const drawTimeline=d.draw_timeline||[];

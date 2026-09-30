@@ -1931,6 +1931,36 @@ Deno.serve(async(req:Request)=>{
     const {data,error,count}=await query;
     if(error)return h({error:error.message},500);
     let rows=(data??[]).map((p:any)=>({...p,age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date)}));
+    const ncaaBrowseIds=rows.filter((p:any)=>p.ncaa_current||p.ncaa_verified).map((p:any)=>Number(p.id)).filter(Boolean);
+    if(ncaaBrowseIds.length){
+      const registry=await db.from("ncaa_player_registry")
+        .select("player_id,ita_rank,ita_rank_official,projected_rank,school,status,snapshot_date,source_label,source_url")
+        .in("player_id",ncaaBrowseIds)
+        .lte("snapshot_date",gameDate)
+        .order("snapshot_date",{ascending:false});
+      if(registry.error)return h({error:registry.error.message},500);
+      const latestByPlayer=new Map<number,any>();
+      for(const x of registry.data??[]){
+        const pid=Number((x as any).player_id||0);
+        if(pid&&!latestByPlayer.has(pid))latestByPlayer.set(pid,x);
+      }
+      rows=rows.map((p:any)=>{
+        const x:any=latestByPlayer.get(Number(p.id));
+        if(!x)return p;
+        const official=x.ita_rank_official!=null?Number(x.ita_rank_official):null;
+        const projected=x.projected_rank!=null?Number(x.projected_rank):null;
+        return {
+          ...p,
+          ncaa_rank:official??projected??p.ncaa_rank,
+          ncaa_official_rank:official,
+          ncaa_projected_rank:projected,
+          ncaa_rank_type:official!=null?"official":projected!=null?"simulated_depth":"verified_other",
+          ncaa_rank_source:x.source_label||x.source_url||null,
+          ncaa_rank_source_url:x.source_url||null,
+          ncaa_school:x.school||p.ncaa_school
+        };
+      });
+    }
     // Search/browse progressively replaces Court Boss fictive estimates with sourced public facts when available.
     // ATP is already complete; NCAA/ITF pages hydrate a few missing profiles on every browse.
     if(q.length>=2||["NCAA","ITF","Junior","Junior Double"].includes(circuit)){
@@ -2183,11 +2213,18 @@ Deno.serve(async(req:Request)=>{
       }
 
       const ncaaRows=visibleNcaa;
-      const bestNcaa=ncaaRows.find((x:any)=>x.status==="Active"&&x.ita_rank!=null)
-        ??ncaaRows.find((x:any)=>x.ita_rank!=null)
+      const bestNcaa=ncaaRows.find((x:any)=>x.status==="Active"&&(x.ita_rank_official!=null||x.projected_rank!=null||x.ita_rank!=null))
+        ??ncaaRows.find((x:any)=>x.ita_rank_official!=null||x.projected_rank!=null||x.ita_rank!=null)
         ??ncaaRows[0];
       if(bestNcaa){
-        player.ncaa_rank=bestNcaa.ita_rank??player.ncaa_rank;
+        const officialNcaaRank=bestNcaa.ita_rank_official!=null?Number(bestNcaa.ita_rank_official):null;
+        const projectedNcaaRank=bestNcaa.projected_rank!=null?Number(bestNcaa.projected_rank):null;
+        player.ncaa_rank=officialNcaaRank??projectedNcaaRank??bestNcaa.ita_rank??player.ncaa_rank;
+        player.ncaa_official_rank=officialNcaaRank;
+        player.ncaa_projected_rank=projectedNcaaRank;
+        player.ncaa_rank_type=officialNcaaRank!=null?"official":projectedNcaaRank!=null?"simulated_depth":"verified_other";
+        player.ncaa_rank_source=bestNcaa.source_label||bestNcaa.source_url||player.ncaa_source||null;
+        player.ncaa_rank_source_url=bestNcaa.source_url||null;
         player.ncaa_school=bestNcaa.school??player.ncaa_school;
         player.ncaa_division=bestNcaa.division??player.ncaa_division;
         player.ncaa_status=bestNcaa.status??player.ncaa_status;

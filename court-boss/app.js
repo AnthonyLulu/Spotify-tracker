@@ -2836,12 +2836,16 @@ window.runInboxDecision=async(id,type,payload={})=>{
     careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
   if(type==='medical_protocol'){
-    await managerAction('set_medical_protocol',0,{protocol:payload.protocol});
-    boot=await get('/api/bootstrap');render();return;
+    await managerAction('set_medical_protocol',Number(payload.injury_id||0),{protocol:payload.protocol});
+    careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();return;
   }
   if(type==='respond_partner_offer'){
     await managerAction('respond_partner_offer',Number(payload.offer_id||0),{decision:payload.decision||'decline'});
-    boot=await get('/api/bootstrap');await loadManagement();render();return;
+    careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
+  }
+  if(type==='match_staff_offer'||type==='release_staff_offer'){
+    await managerAction(type,Number(payload.offer_id||0));
+    careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
   await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap');render();
  }catch(e){alert(e.message)}

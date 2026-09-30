@@ -4353,7 +4353,7 @@ window.simulateWeek=async()=>{
     boot=await get('/api/bootstrap');
     if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
     await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
-    trainingPreview=null;if(route==='training')await loadTrainingPreview(true);
+    trainingPreview=null;careerHub=null;if(route==='training')await loadTrainingPreview(true);
     if(route==='history')await loadHistory();
     await saveCareerSlot(0,'autosave',true);
     return;
@@ -4378,7 +4378,7 @@ window.simulateWeek=async()=>{
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
-  trainingPreview=null;if(route==='training')await loadTrainingPreview(true);
+  trainingPreview=null;careerHub=null;if(route==='training')await loadTrainingPreview(true);
   if(route==='history')await loadHistory();
   await saveCareerSlot(0,'autosave',true);
  }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}

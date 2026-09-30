@@ -10842,6 +10842,17 @@ Deno.serve(async(req:Request)=>{
       return h({ok:true,plan:up.data});
     }
 
+    if(action==="respond_media"){
+      const choice=String(body?.choice||"").trim().toLowerCase();
+      const result=await db.rpc("resolve_managed_media_event",{p_event_id:id,p_choice:choice});
+      if(result.error)return h({error:result.error.message},500);
+      const payload:any=result.data||{};
+      if(payload.ok===false)return h({error:payload.reason||"Réponse média refusée"},409);
+      await db.from("inbox_items").update({is_read:true,decision_status:"resolved"})
+        .eq("related_entity_type","media_event").eq("related_entity_id",id);
+      return h({ok:true,result:payload});
+    }
+
     if(action==="mark_inbox_read"){
       const up=await db.from("inbox_items").update({is_read:true}).eq("id",id);
       return up.error?h({error:up.error.message},500):h({ok:true});

@@ -827,7 +827,16 @@ window.jumpRanking=async()=>{
 function ncaaRanking(){
  const rows=rankRows||[],startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rows.length,rankCount);
  const doubleRows=ncaaDoublesRows||[];
- const modeTabs=`<div class="tabs rank-tabs" style="margin:12px 0"><button class="${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')">Simple · ${fmt(rankMeta?.verifiedCurrentRanks||0)} ITA officiels + profondeur</button><button class="${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')">Double · Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</button><button class="${ncaaView==='universities'?'active':''}" onclick="setNcaaView('universities')">Universités · ${fmt(ncaaUniversitiesMeta?.count||ncaaUniversities.length||64)}</button></div>`;
+ const modeTabs=`<div class="ncaa-hub-menu">
+  <button class="ncaa-hub-menu-btn ${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')"><span class="ncaa-hub-menu-icon">#</span><span><b>Simple</b><small>${fmt(rankMeta?.verifiedCurrentRanks||0)} ITA officiels</small></span></button>
+  <button class="ncaa-hub-menu-btn ${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')"><span class="ncaa-hub-menu-icon">2</span><span><b>Double</b><small>Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</small></span></button>
+  <button class="ncaa-hub-menu-btn ${ncaaView==='universities'?'active':''}" onclick="setNcaaView('universities')"><span class="ncaa-hub-menu-icon">U</span><span><b>Universités</b><small>${fmt(ncaaUniversitiesMeta?.count||ncaaUniversities.length||230)} programmes</small></span></button>
+ </div>
+ <div class="ncaa-university-quick-search">
+  <span class="ncaa-search-icon">⌕</span>
+  <input class="input" value="${esc(ncaaUniversityQuery)}" placeholder="Rechercher une université, une conférence…" onfocus="openNcaaUniversityHub()" oninput="quickNcaaUniversitySearch(this.value)">
+  <button class="soft-btn" onclick="openNcaaUniversityHub()">Universités →</button>
+ </div>`;
  const singlesTable=`
   <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA au 01/12/2025</b> · <b>${fmt(rankMeta?.verifiedCurrentRanks||0)} rangs ITA officiels</b> au snapshot du ${df(rankMeta?.officialSnapshotDate||'2025-11-25')} · la profondeur Court Boss est séparée et précédée de <b>~</b>. Un <b>~#126</b> est une projection de gameplay, jamais le vrai ITA #126. L’UTR utilise aussi ~ lorsqu’il est estimé. ${rankMeta?.officialSourceUrl?`<a class="soft-btn" style="margin-left:6px" href="${esc(rankMeta.officialSourceUrl)}" target="_blank" rel="noopener noreferrer">Source ITA</a>`:''}</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>Rang</th><th>Référence</th><th>Joueur</th><th>Âge 01/12/25</th><th>Université</th><th>Division</th><th>UTR</th><th>ATP</th><th>Statut</th></tr></thead><tbody>
@@ -929,7 +938,7 @@ function ncaaRanking(){
  <div class="tabs rank-tabs">${[['singles','ATP Ranking'],['race','ATP Race'],['doubles','ATP Doubles'],['doubles_race','Race Double'],['nextgen','Next Gen U21'],['junior','ITF Juniors'],['junior_race','Race Junior'],['junior_doubles','Junior Double'],['junior_doubles_race','Race Junior Dbl'],['itf','ITF WTT'],['ncaa','NCAA / ITA']].map(k=>`<button class="${rankKind===k[0]?'active':''}" onclick="setRankKind('${k[0]}')">${k[1]}</button>`).join('')}<button class="deep-db-tab" onclick="dbCircuit='Tous réels';dbOffset=0;dbLoaded=false;nav('players')">Monde ${fmt(worldStats?.worldRankingCapacity||30000)}</button></div>
  ${modeTabs}
  <div class="card">
-  <div class="rank-tools fm-rank-tools">${ncaaView==='universities'? `<input class="input" value="${esc(ncaaUniversityQuery)}" placeholder="Rechercher une université NCAA…" oninput="setNcaaUniversityQuery(this.value)">`: `<input class="input" value="${esc(rankQuery)}" placeholder="${ncaaView==='doubles'?'Rechercher joueur ou université NCAA…':'Rechercher un joueur NCAA…'}" onkeydown="if(event.key==='Enter')searchRanking(this.value)">${ncaaView==='singles'? `<select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div>`:''}`}</div>
+  <div class="rank-tools fm-rank-tools">${ncaaView==='universities'? `<div class="muted mini">Utilise la recherche NCAA juste au-dessus pour filtrer les universités.</div>`: `<input class="input" value="${esc(rankQuery)}" placeholder="${ncaaView==='doubles'?'Rechercher un joueur de double…':'Rechercher un joueur NCAA…'}" onkeydown="if(event.key==='Enter')searchRanking(this.value)">${ncaaView==='singles'? `<select class="select" onchange="setRankCountry(this.value)"><option value="">Toutes nationalités</option>${countryRows.map(x=>`<option value="${esc(x.country)}" ${rankCountry===x.country?'selected':''}>${flags[x.country]||'🏳️'} ${esc(x.country)} · ${fmt(x.ncaa_players||0)} NCAA</option>`).join('')}</select><div class="rank-jump"><input class="input" id="rankJump" type="number" min="1" max="${Math.max(rankCount,1)}" placeholder="Aller au rang"><button class="soft-btn" onclick="jumpRanking()">Aller</button></div>`:''}`}</div>
   ${ncaaView==='doubles'?doublesTable:ncaaView==='universities'?universitiesTable:singlesTable}
  </div>`;
 }
@@ -960,6 +969,16 @@ window.openNcaaUniversity=async school=>{
 }
 window.closeNcaaUniversity=()=>{ncaaUniversityDetail=null;render()}
 window.setNcaaUniversityQuery=v=>{ncaaUniversityQuery=v||'';ncaaUniversityDetail=null;render()}
+window.openNcaaUniversityHub=async()=>{
+ ncaaView='universities';ncaaUniversityDetail=null;rankOffset=0;
+ if(!ncaaUniversities.length)await loadNcaaUniversities();
+ render();setTimeout(()=>document.querySelector('.ncaa-university-grid')?.scrollIntoView({behavior:'smooth',block:'start'}),20)
+}
+window.quickNcaaUniversitySearch=async v=>{
+ ncaaUniversityQuery=v||'';ncaaView='universities';ncaaUniversityDetail=null;rankOffset=0;
+ if(!ncaaUniversities.length)await loadNcaaUniversities();
+ render()
+}
 window.setNcaaUniversityConference=v=>{ncaaUniversityConference=v||'';ncaaUniversityDetail=null;render()}
 window.setNcaaUniversityFilter=v=>{ncaaUniversityFilter=v||'all';ncaaUniversityDetail=null;render()}
 window.setNcaaUniversitySort=v=>{ncaaUniversitySort=v||'ita';ncaaUniversityDetail=null;render()}

@@ -10423,21 +10423,44 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="take_over_player"){
-      const [target,previousCareer]=await Promise.all([
+      const startDate=String(body?.date||AGE_REFERENCE_DATE).slice(0,10);
+      const [target,previousCareer,baseline,rankAtDate,doublePointsBaseline,doubleRankAtDate,principalRoster,principalMember]=await Promise.all([
         db.from("players").select("*,player_attributes(*)").eq("id",id).maybeSingle(),
-        db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle()
+        db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle(),
+        db.from("atp_ranking_baseline_2025_12_01").select("rank,points,snapshot_date,source_label").eq("source_player_id",id).maybeSingle(),
+        db.rpc("player_rank_at_date",{p_player_id:id,p_date:startDate}),
+        db.from("doubles_baseline_points").select("points,snapshot_date,source_label").eq("player_id",id).eq("snapshot_date",AGE_REFERENCE_DATE).maybeSingle(),
+        db.rpc("player_doubles_seed_rank_at_date",{p_player_id:id,p_date:startDate}),
+        db.from("academy_roster").select("id,player_id,squad_role,status,players(name)").eq("squad_role","Joueur principal").eq("status","active").limit(1).maybeSingle(),
+        db.from("academy_members").select("id,player_id,display_name,member_type,status").eq("member_type","managed").eq("status","active").limit(1).maybeSingle()
       ]);
-      if(target.error||previousCareer.error||!target.data)return h({error:(target.error||previousCareer.error)?.message||"Joueur introuvable"},404);
+      if(target.error||previousCareer.error||baseline.error||rankAtDate.error||doublePointsBaseline.error||doubleRankAtDate.error||principalRoster.error||principalMember.error||!target.data){
+        return h({error:(target.error||previousCareer.error||baseline.error||rankAtDate.error||doublePointsBaseline.error||doubleRankAtDate.error||principalRoster.error||principalMember.error)?.message||"Joueur introuvable"},404);
+      }
       const p:any=target.data;
       const attrs:any=Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes||{};
-      const startDate=String(body?.date||AGE_REFERENCE_DATE).slice(0,10);
+      const previousId=Number(previousCareer.data?.managed_player_id||0);
+      const managedIds=[...new Set([previousId,Number(p.id)].filter(Boolean))];
       const scoutingEtaDate=(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+28);return d.toISOString().slice(0,10)})();
-      const basePoints=Math.max(0,Number(p.points||0));
+      const academyContractEnd=(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCFullYear(d.getUTCFullYear()+3);return d.toISOString().slice(0,10)})();
+      const startingRank=Math.max(1,Number(baseline.data?.rank||rankAtDate.data||p.ranking||2000));
+      const basePoints=Math.max(0,Number(baseline.data?.points??p.points??0));
       const startingFocus=String(p.career_focus||"mixed");
-      const baseDoubleRank=p.doubles_ranking==null?3000:Math.max(1,Number(p.doubles_ranking));
-      const baseDoublePoints=p.doubles_ranking==null?0:Math.max(0,Math.round(45*(1800/baseDoubleRank-1)));
+      const historicalDoubleRank=Number(doubleRankAtDate.data||0);
+      const baseDoubleRank=historicalDoubleRank>0&&historicalDoubleRank<999999
+        ?historicalDoubleRank
+        :(p.doubles_ranking==null?3000:Math.max(1,Number(p.doubles_ranking)));
+      const baseDoublePoints=Math.max(0,Number(
+        doublePointsBaseline.data?.points
+        ??(p.doubles_ranking==null?0:Math.round(45*(1800/baseDoubleRank-1)))
+      ));
+      const principalPlayers:any=(principalRoster.data as any)?.players;
+      const previousPrincipalName=String(
+        (Array.isArray(principalPlayers)?principalPlayers[0]?.name:principalPlayers?.name)
+        ||principalMember.data?.display_name||""
+      ).trim();
 
-      await Promise.all([
+      const resetOps:any[]=[
         db.from("tournament_runs").delete().gte("id",0),
         db.from("doubles_runs").delete().gte("id",0),
         db.from("match_history").delete().eq("user_involved",true),
@@ -10450,8 +10473,38 @@ Deno.serve(async(req:Request)=>{
         }).gte("id",0),
         db.from("user_ranking_points").delete().eq("owner_id","demo"),
         db.from("user_doubles_points").delete().eq("owner_id","demo"),
-        db.from("user_training_progress").update({xp:0,updated_at:new Date().toISOString()}).neq("attribute","")
-      ]);
+        db.from("user_training_progress").update({xp:0,updated_at:new Date().toISOString()}).neq("attribute",""),
+        db.from("managed_doubles_entries").delete().eq("owner_id","demo"),
+        db.from("inbox_items").delete().gte("id",0),
+        db.from("media_events").delete().gte("id",0),
+        db.from("career_event_log").delete().gte("id",0),
+        db.from("college_offers").update({status:"available"}).gte("id",0),
+        db.from("college_career_state").update({
+          chosen_team_id:null,scholarship_pct:0,eligibility_years:4,status:"exploring",
+          academic_progress:72,coach_trust:55,lineup_position:null
+        }).eq("id","demo"),
+        db.from("sponsor_offers").update({status:"available"}).neq("status","locked"),
+        db.from("board_objectives").update({progress:0,status:"active"}).gte("id",0),
+        db.from("medical_plan").upsert({
+          id:"demo",protocol:"Récupération active",physio_hours:2,weekly_cost:250,
+          notes:"Récupération active et suivi médical",updated_at:new Date().toISOString()
+        },{onConflict:"id"}),
+        db.from("academy_youth").update({status:"prospect"}).neq("status","prospect"),
+        db.from("academy_roster").delete().neq("squad_role","Joueur principal"),
+        db.from("academy_members").delete().neq("member_type","managed")
+      ];
+      if(managedIds.length){
+        resetOps.push(
+          db.from("entries").delete().in("player_id",managedIds),
+          db.from("doubles_partner_offers").delete().in("from_player_id",managedIds),
+          db.from("doubles_partner_offers").delete().in("to_player_id",managedIds),
+          db.from("player_doubles_commitments").delete().in("player_id",managedIds),
+          db.from("injuries").delete().in("player_id",managedIds).gte("started_at",startDate)
+        );
+      }
+      const resetResults=await Promise.all(resetOps);
+      const resetError=resetResults.find((x:any)=>x?.error)?.error;
+      if(resetError)return h({error:"Reset carrière impossible : "+resetError.message},500);
 
       await db.from("user_ranking_points").insert({
         owner_id:"demo",label:"Points de départ - "+p.name,earned_date:startDate,
@@ -10467,7 +10520,7 @@ Deno.serve(async(req:Request)=>{
       const careerUpdate={
         managed_player_id:p.id,
         player_name:p.name,country:p.country,career_date:startDate,week:1,
-        singles_rank:Number(p.ranking||2000),doubles_rank:baseDoubleRank,points:basePoints,doubles_points:baseDoublePoints,
+        singles_rank:startingRank,doubles_rank:baseDoubleRank,points:basePoints,doubles_points:baseDoublePoints,
         age:Number(p.age||19),height_cm:Number(p.height_cm||184),weight_kg:Number(p.weight_kg||78),
         handedness:String(p.handedness||"Droitier"),backhand:String(p.backhand||"2 mains"),
         current_ability:Number(p.current_ability||55),potential:Number(p.potential||75),
@@ -10482,7 +10535,46 @@ Deno.serve(async(req:Request)=>{
       const cu=await db.from("career_state").update(careerUpdate).eq("id","demo");
       if(cu.error)return h({error:cu.error.message},500);
 
-      const previousId=Number(previousCareer.data?.managed_player_id||0);
+      if(principalRoster.data?.id){
+        const ar=await db.from("academy_roster").update({
+          player_id:p.id,source_youth_id:null,contract_start:startDate,contract_end:academyContractEnd,
+          weekly_cost:0,squad_role:"Joueur principal",development_focus:"Équilibré",status:"active"
+        }).eq("id",principalRoster.data.id);
+        if(ar.error)return h({error:ar.error.message},500);
+      }else{
+        const ar=await db.from("academy_roster").insert({
+          player_id:p.id,source_youth_id:null,contract_start:startDate,contract_end:academyContractEnd,
+          weekly_cost:0,squad_role:"Joueur principal",development_focus:"Équilibré",status:"active"
+        });
+        if(ar.error)return h({error:ar.error.message},500);
+      }
+      if(principalMember.data?.id){
+        const am=await db.from("academy_members").update({
+          player_id:p.id,youth_id:null,display_name:p.name,country:p.country,role:"Joueur principal",
+          development_focus:"Équilibré",weekly_cost:0,contract_end:academyContractEnd,status:"active",joined_at:startDate
+        }).eq("id",principalMember.data.id);
+        if(am.error)return h({error:am.error.message},500);
+      }else{
+        const am=await db.from("academy_members").insert({
+          member_type:"managed",player_id:p.id,youth_id:null,display_name:p.name,country:p.country,
+          role:"Joueur principal",development_focus:"Équilibré",weekly_cost:0,
+          contract_end:academyContractEnd,status:"active",joined_at:startDate
+        });
+        if(am.error)return h({error:am.error.message},500);
+      }
+
+      const principalContract=previousPrincipalName
+        ?await db.from("contracts").select("id").eq("subject_type","player").eq("subject_name",previousPrincipalName).eq("status","active").limit(1).maybeSingle()
+        :await db.from("contracts").select("id").eq("subject_type","player").eq("role","Joueur").eq("status","active").eq("weekly_salary",0).limit(1).maybeSingle();
+      if(principalContract.error)return h({error:principalContract.error.message},500);
+      if(principalContract.data?.id){
+        const pc=await db.from("contracts").update({
+          subject_name:p.name,role:"Joueur",start_date:startDate,end_date:academyContractEnd,
+          status:"active",weekly_salary:0
+        }).eq("id",principalContract.data.id);
+        if(pc.error)return h({error:pc.error.message},500);
+      }
+
       if(previousId && previousId!==Number(p.id)){
         const prev=await db.from("players").select("id,is_real").eq("id",previousId).maybeSingle();
         if(!prev.error&&prev.data&&!prev.data.is_real){
@@ -10504,9 +10596,30 @@ Deno.serve(async(req:Request)=>{
         }
       }
 
-      await db.from("finances").update({prize_money:0,sponsor_income:0,travel_cost:0,staff_cost:0,agent_commission:0,staff_bonus:0,base_currency:BASE_CURRENCY}).eq("id","demo");
-      await db.from("news_items").insert({body:"Nouvelle carrière lancée avec "+p.name+"."});
-      return h({ok:true,player:{id:p.id,name:p.name,country:p.country,ranking:p.ranking},career:careerUpdate});
+      await db.from("finances").update({
+        prize_money:0,sponsor_income:0,travel_cost:0,staff_cost:0,agent_commission:0,staff_bonus:0,base_currency:BASE_CURRENCY
+      }).eq("id","demo");
+      await db.rpc("refresh_sponsor_offer_eligibility",{p_date:startDate});
+      await Promise.all([
+        db.from("news_items").insert({body:"Nouvelle carrière lancée avec "+p.name+"."}),
+        db.from("inbox_items").insert({
+          kind:"career",title:"Bienvenue dans ta nouvelle carrière",
+          body:"Tu prends en main "+p.name+" au "+startDate+". Commence par définir ton plan de saison, ton staff et tes objectifs.",
+          action_route:"careerhub",game_date:startDate,priority:"high",action_type:"open_route",action_label:"Ouvrir le Bureau manager",
+          action_payload:{route:"careerhub"},decision_status:"pending",is_read:false
+        })
+      ]);
+      return h({
+        ok:true,
+        player:{id:p.id,name:p.name,country:p.country,ranking:startingRank,doubles_ranking:baseDoubleRank},
+        career:careerUpdate,
+        baseline:{
+          date:startDate,singles_rank:startingRank,singles_points:basePoints,
+          doubles_rank:baseDoubleRank,doubles_points:baseDoublePoints,
+          singles_source:baseline.data?.source_label||"player_rank_at_date / profile fallback",
+          doubles_source:doublePointsBaseline.data?.source_label||"doubles rank-calibrated fallback"
+        }
+      });
     }
 
 

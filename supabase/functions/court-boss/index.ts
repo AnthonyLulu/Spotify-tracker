@@ -956,10 +956,20 @@ async function parseLiveTennisDoublesRace(url:string){
 
 
 async function resolveTournamentImage(t:any){
-  if(!t||t.image_url||!t.name)return t;
+  if(!t||!t.name)return t;
+
+  // Keep strong tournament/stadium imagery stable, but let generic city/circuit
+  // fallbacks upgrade themselves when the public image route is requested.
+  const weakImage=/Photo de la ville|Fallback circuit|Fallback compétition/i.test(String(t.image_source_label||""));
+  if(t.image_url&&!weakImage)return t;
+
+  const fallbackImage=weakImage?String(t.image_url||"").trim():"";
+  const fallbackSourceUrl=weakImage?String(t.image_source_url||"").trim():"";
+  const fallbackSourceLabel=weakImage?String(t.image_source_label||"").trim():"";
+  if(weakImage)t.image_url=null;
 
   const timeoutSignal=()=>AbortSignal.timeout(5000);
-  const source=String(t.image_source_url||t.source_url||"").trim();
+  const source=String((weakImage?t.source_url:(t.image_source_url||t.source_url))||"").trim();
   let canFetchOfficial=false;
   if(/^https?:\/\//i.test(source)&&!/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source)){
     try{
@@ -1104,7 +1114,7 @@ async function resolveTournamentImage(t:any){
     }catch{}
   }
 
-  if(!t.image_url&&t.city){
+  if(!t.image_url&&t.city&&!weakImage){
     try{
       const rawCity=String(t.city||"").split("/")[0].trim();
       const cleanCity=(value:string)=>value
@@ -1191,6 +1201,11 @@ async function resolveTournamentImage(t:any){
         }).eq("id",t.id);
       }
     }catch{}
+  }
+  if(!t.image_url&&fallbackImage){
+    t.image_url=fallbackImage;
+    t.image_source_url=fallbackSourceUrl;
+    t.image_source_label=fallbackSourceLabel;
   }
   return t;
 }
@@ -2033,7 +2048,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:52,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v2+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:52,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v3+quality-upgrade+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

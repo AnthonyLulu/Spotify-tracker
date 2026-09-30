@@ -1014,3 +1014,26 @@ body{background:
   }
   .tm-bracket-match:not(:last-child)::after{width:23px}
 }
+
+
+/* NCAA hub navigation visibility fix */
+.ncaa-hub-menu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 10px}
+.ncaa-hub-menu-btn{display:flex;align-items:center;gap:9px;text-align:left;min-height:58px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.028);color:inherit;cursor:pointer}
+.ncaa-hub-menu-btn.active{border-color:rgba(177,255,76,.55);background:rgba(177,255,76,.08);box-shadow:inset 0 0 0 1px rgba(177,255,76,.12)}
+.ncaa-hub-menu-btn b{display:block;font-size:13px;line-height:1.15}
+.ncaa-hub-menu-btn small{display:block;margin-top:3px;font-size:9px;opacity:.65;white-space:normal}
+.ncaa-hub-menu-icon{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto;background:rgba(255,255,255,.08);font-weight:900}
+.ncaa-hub-menu-btn.active .ncaa-hub-menu-icon{background:rgba(177,255,76,.17)}
+.ncaa-university-quick-search{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(0,0,0,.18);margin-bottom:12px}
+.ncaa-university-quick-search .input{width:100%;min-width:0}
+.ncaa-search-icon{font-size:20px;opacity:.7;line-height:1}
+
+@media(max-width:700px){
+ .ncaa-hub-menu{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .ncaa-hub-menu-btn{display:block;text-align:center;padding:9px 6px;min-height:70px}
+ .ncaa-hub-menu-icon{margin:0 auto 5px;width:27px;height:27px}
+ .ncaa-hub-menu-btn b{font-size:12px}
+ .ncaa-hub-menu-btn small{font-size:8px;line-height:1.2}
+ .ncaa-university-quick-search{grid-template-columns:auto minmax(0,1fr);position:sticky;top:6px;z-index:15;background:rgba(7,17,13,.96);backdrop-filter:blur(12px)}
+ .ncaa-university-quick-search .soft-btn{grid-column:1/-1;width:100%;justify-content:center}
+}

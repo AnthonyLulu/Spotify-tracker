@@ -9263,7 +9263,8 @@ Deno.serve(async(req:Request)=>{
       if(!managedId)return h({error:"Joueur géré introuvable"},409);
       const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
       const incoming=body?.plan&&typeof body.plan==="object"?body.plan:{};
-      const allowedSurfaces=new Set(["Dur","Terre","Gazon","Mixte"]);
+      const allowedSurfaces=new Set(["Dur","Terre","Gazon","Mixte","Indoor"]);
+      const allowedPlans=new Set(["balanced","elite_selective","tour_regular","challenger_push","itf_build","doubles_specialist","singles_specialist","junior_transition","ncaa_pathway"]);
       const current=await db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",season).maybeSingle();
       if(current.error)return h({error:current.error.message},500);
       const focus=String(career.data.career_focus||"mixed");
@@ -9274,11 +9275,15 @@ Deno.serve(async(req:Request)=>{
         rest_bias:10,travel_tolerance:10,prestige_bias:10,development_bias:10,doubles_bias:focus==="doubles_only"?18:focus==="singles_only"?2:10,
         reason:"Plan manager Court Boss"
       };
+      const normalizedPreferred=String(incoming.preferred_surface||base.preferred_surface||"Dur")==="Polyvalent"?"Mixte":String(incoming.preferred_surface||base.preferred_surface||"Dur");
+      const normalizedSecondary=String(incoming.secondary_surface||base.secondary_surface||"Terre")==="Polyvalent"?"Mixte":String(incoming.secondary_surface||base.secondary_surface||"Terre");
+      const requestedPlan=String(incoming.plan_type||base.plan_type||"balanced");
       const row={
         ...base,
+        plan_type:allowedPlans.has(requestedPlan)?requestedPlan:String(base.plan_type||"balanced"),
         target_events:n(incoming.target_events,Number(base.target_events||22),8,38),
-        preferred_surface:allowedSurfaces.has(String(incoming.preferred_surface||base.preferred_surface))?String(incoming.preferred_surface||base.preferred_surface):String(base.preferred_surface||"Dur"),
-        secondary_surface:allowedSurfaces.has(String(incoming.secondary_surface||base.secondary_surface))?String(incoming.secondary_surface||base.secondary_surface):String(base.secondary_surface||"Terre"),
+        preferred_surface:allowedSurfaces.has(normalizedPreferred)?normalizedPreferred:String(base.preferred_surface||"Dur"),
+        secondary_surface:allowedSurfaces.has(normalizedSecondary)?normalizedSecondary:String(base.secondary_surface||"Terre"),
         rest_bias:n(incoming.rest_bias,Number(base.rest_bias||10),1,20),
         travel_tolerance:n(incoming.travel_tolerance,Number(base.travel_tolerance||10),1,20),
         prestige_bias:n(incoming.prestige_bias,Number(base.prestige_bias||10),1,20),

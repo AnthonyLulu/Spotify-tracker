@@ -958,6 +958,7 @@ async function parseLiveTennisDoublesRace(url:string){
 async function resolveTournamentImage(t:any){
   if(!t||t.image_url||!t.name)return t;
 
+  const timeoutSignal=()=>AbortSignal.timeout(5000);
   const source=String(t.image_source_url||t.source_url||"").trim();
   let canFetchOfficial=false;
   if(/^https?:\/\//i.test(source)&&!/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source)){
@@ -985,7 +986,8 @@ async function resolveTournamentImage(t:any){
     try{
       const r=await fetch(source,{
         headers:{"User-Agent":"CourtBoss/1.0 (+tournament-image-cache)","Accept":"text/html,application/xhtml+xml"},
-        redirect:"follow"
+        redirect:"follow",
+        signal:timeoutSignal()
       });
       if(r.ok&&/text\/html|application\/xhtml\+xml/i.test(String(r.headers.get("content-type")||""))){
         const html=await r.text();
@@ -1019,7 +1021,8 @@ async function resolveTournamentImage(t:any){
         inprop:"url",format:"json",origin:"*"
       });
       const r=await fetch("https://en.wikipedia.org/w/api.php?"+qs.toString(),{
-        headers:{"User-Agent":"CourtBoss/1.0 (+safe-tournament-image)"}
+        headers:{"User-Agent":"CourtBoss/1.0 (+safe-tournament-image)"},
+        signal:timeoutSignal()
       });
       if(r.ok){
         const j:any=await r.json();
@@ -1046,6 +1049,52 @@ async function resolveTournamentImage(t:any){
     }catch{}
   }
 
+  if(!t.image_url){
+    try{
+      const query=[String(t.name||""),String(t.city||""),"tennis"].filter(Boolean).join(" ");
+      const qs=new URLSearchParams({
+        action:"query",generator:"search",gsrsearch:query,gsrnamespace:"6",gsrlimit:"12",
+        prop:"imageinfo",iiprop:"url",iiurlwidth:"1200",format:"json",origin:"*"
+      });
+      const r=await fetch("https://commons.wikimedia.org/w/api.php?"+qs.toString(),{
+        headers:{"User-Agent":"CourtBoss/1.0 (+commons-tournament-photo)"},
+        signal:timeoutSignal()
+      });
+      if(r.ok){
+        const j:any=await r.json();
+        const pages=(Object.values(j?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
+        const nameNorm=normalizeName(String(t.name||""));
+        const cityNorm=normalizeName(String(t.city||""));
+        const bad=/logo|icon|flag|map|poster|trophy|draw|bracket|signature|autograph|portrait|headshot|press conference|player/i;
+        const tennis=/tennis|court|stadium|arena|open|championship|masters|tournament/i;
+        const chosen=pages
+          .map((x:any)=>{
+            const title=String(x.title||"");
+            const norm=normalizeName(title);
+            const info=(x.imageinfo||[])[0]||{};
+            const raw=String(info.thumburl||info.url||"").trim();
+            let score=0;
+            if(nameNorm&&norm.includes(nameNorm.replace(/\bpresented\b.*$/,"").trim()))score+=8;
+            if(cityNorm&&norm.includes(cityNorm))score+=4;
+            if(tennis.test(title))score+=3;
+            if(/court|stadium|arena/i.test(title))score+=2;
+            if(bad.test(title))score-=10;
+            return {x,raw,title,score};
+          })
+          .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&x.score>-3)
+          .sort((a:any,b:any)=>b.score-a.score)[0];
+        if(chosen?.raw){
+          t.image_url=chosen.raw;
+          t.image_source_url="https://commons.wikimedia.org/wiki/"+encodeURIComponent(String(chosen.x.title||"").replace(/ /g,"_"));
+          t.image_source_label="Wikimedia Commons · photo tournoi/lieu";
+          await db.from("tournaments").update({
+            image_url:t.image_url,image_source_url:t.image_source_url,image_source_label:t.image_source_label
+          }).eq("id",t.id);
+        }
+      }
+    }catch{}
+  }
+
   if(!t.image_url&&t.city){
     try{
       const cityName=String(t.city||"").split("/")[0].trim();
@@ -1055,7 +1104,8 @@ async function resolveTournamentImage(t:any){
         inprop:"url",format:"json",origin:"*"
       });
       const exact=await fetch("https://en.wikipedia.org/w/api.php?"+exactQs.toString(),{
-        headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-photo-fallback)"}
+        headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-photo-fallback)"},
+        signal:timeoutSignal()
       });
       let chosen:any=null;
       if(exact.ok){
@@ -1073,7 +1123,8 @@ async function resolveTournamentImage(t:any){
           inprop:"url",format:"json",origin:"*"
         });
         const search=await fetch("https://en.wikipedia.org/w/api.php?"+searchQs.toString(),{
-          headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-search-fallback)"}
+          headers:{"User-Agent":"CourtBoss/1.0 (+exact-city-search-fallback)"},
+          signal:timeoutSignal()
         });
         if(search.ok){
           const j:any=await search.json();

@@ -265,7 +265,14 @@ function cleanCareerLocalState(payload={}){
 }
 let local=baseLocalState();
 try{local=cleanCareerLocalState(JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{local=baseLocalState()}
-function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));const key=courtBossAccessKey();fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey,'X-Court-Boss-Key':key},body:JSON.stringify(local)}).catch(()=>{})}
+function persist(){
+ localStorage.setItem('cbLocal',JSON.stringify(local));
+ const key=courtBossAccessKey(),payload=snapshotLocalForSave();
+ enqueueSaveSlotWrite(async()=>{
+  const r=await fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey,'X-Court-Boss-Key':key},body:JSON.stringify(payload)});
+  if(!r.ok)throw new Error('Legacy save sync '+r.status);
+ },false).catch(e=>console.warn('Legacy save sync',e));
+}
 async function loadSaveSlots(){
  if(saveSlotsLoading)return;
  saveSlotsLoading=true;
@@ -294,14 +301,18 @@ function invalidateCareerCaches(){
 function snapshotLocalForSave(){
  try{return cleanCareerLocalState(JSON.parse(JSON.stringify(local)))}catch{return cleanCareerLocalState(local)}
 }
-function enqueueSaveSlotWrite(task){
- saveSlotQueueDepth++;
- const run=saveSlotQueue.catch(()=>{}).then(async()=>{
+function enqueueSaveSlotWrite(task,markBusy=true){
+ if(markBusy){
+  saveSlotQueueDepth++;
   saveSlotBusy=true;
+ }
+ const run=saveSlotQueue.catch(()=>{}).then(async()=>{
   try{return await task()}
   finally{
-   saveSlotQueueDepth=Math.max(0,saveSlotQueueDepth-1);
-   saveSlotBusy=saveSlotQueueDepth>0;
+   if(markBusy){
+    saveSlotQueueDepth=Math.max(0,saveSlotQueueDepth-1);
+    saveSlotBusy=saveSlotQueueDepth>0;
+   }
   }
  });
  saveSlotQueue=run.catch(()=>{});
@@ -340,7 +351,7 @@ async function loadCareerSlot(slotNo){
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  if(!slot)return;
  if(!confirm('Charger « '+slot.slot_name+' » du '+df(slot.career_date)+' ? Les changements non sauvegardés seront perdus.'))return;
- saveSlotBusy=true;
+ return enqueueSaveSlotWrite(async()=>{
  try{
   const d=await get('/api/load-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
   local=cleanCareerLocalState(d.local_payload||{});
@@ -351,8 +362,9 @@ async function loadCareerSlot(slotNo){
   if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
   await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
   route='home';render();
- }catch(e){alert('Chargement impossible : '+e.message)}
- finally{saveSlotBusy=false}
+ }catch(e){alert('Chargement impossible : '+e.message);return {ok:false,error:String(e?.message||e)}}
+ return {ok:true,slot_no:Number(slotNo)};
+ });
 }
 async function deleteCareerSlot(slotNo){
  if(simulating){alert('La semaine est en cours de simulation. Attends la validation de l’autosave avant de supprimer un slot.');return;}
@@ -678,7 +690,7 @@ async function init(){
  loading();
  try{
    boot=await get('/api/bootstrap');
-   if(boot.save&&typeof boot.save==='object') local=cleanCareerLocalState(boot.save);
+   if(boot.save&&typeof boot.save==='object'&&!localStorage.getItem('cbLocal')) local=cleanCareerLocalState(boot.save);
    local.career={...(local.career||{}),...(boot.career||{})};
    local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
    local.week=boot.career?.week??local.week??1;

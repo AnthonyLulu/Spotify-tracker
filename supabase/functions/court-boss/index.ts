@@ -1688,6 +1688,39 @@ Deno.serve(async(req:Request)=>{
     });
   }
 
+
+  if(path.endsWith("/api/career-hub")&&req.method==="GET"){
+    const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
+    const managedId=Number(career.data.managed_player_id||0);
+    const year=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+    const [health,media,events,seasonPlan,relA,relB,contracts,objectives]=await Promise.all([
+      db.rpc("career_system_health",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
+      db.from("media_events").select("*").order("event_date",{ascending:false}).order("id",{ascending:false}).limit(40),
+      db.from("career_event_log").select("*").order("event_date",{ascending:false}).order("id",{ascending:false}).limit(80),
+      managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",year).maybeSingle():Promise.resolve({data:null,error:null} as any),
+      managedId?db.from("player_relationships")
+        .select("*,other:players!player_relationships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,photo_url,style)")
+        .eq("player_a_id",managedId).eq("active",true).order("affinity",{ascending:false}).limit(30):Promise.resolve({data:[],error:null} as any),
+      managedId?db.from("player_relationships")
+        .select("*,other:players!player_relationships_player_a_id_fkey(id,name,country,ranking,doubles_ranking,photo_url,style)")
+        .eq("player_b_id",managedId).eq("active",true).order("affinity",{ascending:false}).limit(30):Promise.resolve({data:[],error:null} as any),
+      db.from("contracts").select("*").eq("status","active").order("end_date",{ascending:true}).limit(30),
+      db.from("board_objectives").select("*").order("priority",{ascending:true})
+    ]);
+    const err=health.error||media.error||events.error||seasonPlan.error||relA.error||relB.error||contracts.error||objectives.error;
+    if(err)return h({error:err.message},500);
+    const relationships=[...(relA.data??[]),...(relB.data??[])]
+      .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
+      .slice(0,40);
+    return h({
+      ok:true,career:career.data,health:health.data??null,
+      media:media.data??[],events:events.data??[],seasonPlan:seasonPlan.data??null,
+      relationships,contracts:contracts.data??[],objectives:objectives.data??[],
+      model:"CB-CAREER-HUB-v1"
+    });
+  }
+
   if(path.endsWith("/api/rankings")&&req.method==="GET"){
     const kind=u.searchParams.get("kind")??"singles";
     const offset=n(u.searchParams.get("offset"),0,0,50000), limit=n(u.searchParams.get("limit"),100,1,200);

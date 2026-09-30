@@ -1979,13 +1979,15 @@ function scouting(){
  const shortlist=management?.shortlist||[];
  const reports=boot.scoutingReports||[];
  const missions=['U23 potentiel','Top 300 immédiat','Serveurs puissants','Spécialistes terre battue','Double & volée','NCAA / université'];
+ const scoutingRegions=['France','Europe de l’Ouest','Europe de l’Est','Amérique du Nord','Amérique du Sud','Afrique','Asie','Océanie','NCAA / USA','Monde'];
  const ownScouts=(boot.staff||[]).filter(s=>Number(s.profile?.scouting_rating||0)>0).sort((a,b)=>Number(b.profile?.scouting_rating||0)-Number(a.profile?.scouting_rating||0));
  const academyPlayerIds=new Set((management?.academyRoster||[]).map(x=>Number(x.player_id||x.players?.id||0)).filter(Boolean));
  return `<div class="section-head"><div><div class="eyebrow">Recrutement</div><h1>Scouting</h1><div class="muted">Missions régionales, recruteurs réels de ton staff, précision des rapports et shortlist.</div></div><button class="primary" onclick="nav('players')">Chercher joueur</button></div>
  <div class="grid g3">${(boot.scouting||[]).map(s=>{const sp=s.staff||null;const missionReports=reports.filter(r=>Number(r.assignment_id)===Number(s.id));return `<div class="card">
   <div class="row between"><div><div class="eyebrow">${esc(s.region)}</div><h2>${esc(sp?.name||s.scout_name||'Réseau scouting')}</h2><div class="muted mini">Scouting ${sp?.scouting_rating??'—'}/20 · réputation ${sp?.reputation??'—'}/20</div></div><span class="badge ${s.status==='completed'?'good':Number(s.progress)>=75?'warn':''}">${esc(s.status)}</span></div>
-  <div class="list-item"><span class="muted mini">Mission</span><select class="select" onchange="changeScoutAssignment(${s.id},this.value,document.getElementById('scoutStaff_${s.id}')?.value)">${missions.map(m=>`<option ${m===s.focus?'selected':''}>${m}</option>`).join('')}</select></div>
-  <div class="list-item"><span class="muted mini">Recruteur affecté</span><select id="scoutStaff_${s.id}" class="select" onchange="changeScoutAssignment(${s.id},document.querySelector('[data-scout-focus=\'${s.id}\']')?.value||'${esc(s.focus)}',this.value)">${ownScouts.map(x=>`<option value="${x.profile?.id||''}" ${Number(x.profile?.id)===Number(s.staff_profile_id)?'selected':''}>${esc(x.profile?.name||x.name||x.role)} · ${x.profile?.scouting_rating||0}/20</option>`).join('')}</select></div>
+  <div class="list-item"><span class="muted mini">Zone suivie</span><select id="scoutRegion_${s.id}" class="select" onchange="changeScoutAssignment(${s.id},document.querySelector('[data-scout-focus=\'${s.id}\']')?.value||'${esc(s.focus)}',document.getElementById('scoutStaff_${s.id}')?.value,this.value)">${scoutingRegions.map(r=>`<option ${r===s.region?'selected':''}>${r}</option>`).join('')}</select></div>
+  <div class="list-item"><span class="muted mini">Mission</span><select class="select" onchange="changeScoutAssignment(${s.id},this.value,document.getElementById('scoutStaff_${s.id}')?.value,document.getElementById('scoutRegion_${s.id}')?.value)">${missions.map(m=>`<option ${m===s.focus?'selected':''}>${m}</option>`).join('')}</select></div>
+  <div class="list-item"><span class="muted mini">Recruteur affecté</span><select id="scoutStaff_${s.id}" class="select" onchange="changeScoutAssignment(${s.id},document.querySelector('[data-scout-focus=\'${s.id}\']')?.value||'${esc(s.focus)}',this.value,document.getElementById('scoutRegion_${s.id}')?.value)">${ownScouts.map(x=>`<option value="${x.profile?.id||''}" ${Number(x.profile?.id)===Number(s.staff_profile_id)?'selected':''}>${esc(x.profile?.name||x.name||x.role)} · ${x.profile?.scouting_rating||0}/20</option>`).join('')}</select></div>
   <input data-scout-focus="${s.id}" type="hidden" value="${esc(s.focus||'')}">
   <div class="bar" style="margin-top:12px"><i style="width:${s.progress}%"></i></div>
   <div class="row between mini muted" style="margin-top:5px"><span>${s.progress}% · confiance ${s.confidence??50}%</span><span>${s.eta_date?'ETA '+df(s.eta_date):''}</span></div>
@@ -1998,7 +2000,7 @@ function scouting(){
   <div class="card"><h2>Prospects académie</h2><div class="table-wrap"><table class="table"><thead><tr><th>Joueur</th><th>Âge</th><th>Potentiel</th></tr></thead><tbody>${(boot.youth||[]).map(y=>`<tr class="click" onclick="openYouth(${y.id})"><td><b>${esc(y.name)}</b></td><td>${y.age}</td><td class="a-good"><b>${starRatingHtml(abilityStarValue(y.potential||0),'Potentiel académie')}</b></td></tr>`).join('')}</tbody></table></div></div>
  </div>`
 }
-window.changeScoutAssignment=async(id,focus,scoutProfileId)=>{try{await managerAction('set_scouting_assignment',id,{focus,scout_profile_id:Number(scoutProfileId||0)||null});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
+window.changeScoutAssignment=async(id,focus,scoutProfileId,region)=>{try{await managerAction('set_scouting_assignment',id,{focus,region,scout_profile_id:Number(scoutProfileId||0)||null});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
 window.recruitScoutedPlayer=async(playerId,reportId)=>{
  if(!confirm('Proposer un contrat académie à ce joueur ?'))return;
  try{

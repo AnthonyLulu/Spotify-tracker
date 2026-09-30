@@ -988,12 +988,24 @@ async function resolveTournamentImage(t:any){
   };
   const usStateNames=new Set(Object.values(usStateCodes).map(x=>normalizeName(x)));
   const facilityRe=/\b(?:arena|stadium|sports? cent(?:er|re)|tennis cent(?:er|re)|tennis stadium|tennis club|country club|golf club|coliseum|club|complex|campus|resort|academy|pavilion|courts?|fairgrounds|olympic park)\b/i;
-  const cleanPlace=(value:any)=>String(value||"")
-    .replace(/^\s*(?:M15|M25|J30|J60|J100|J200|J300|J500)\s+/i,"")
-    .replace(/\s*\((?:cancelled|canceled)\)\s*$/i,"")
-    .replace(/\s+(?:Challenger|Classic|International|Trophy|Futures|Open)(?:\s+\d+)?\s*$/i,"")
-    .replace(/\s+\d+\s*$/,"")
-    .replace(/\s+/g," ").trim();
+  const placeAliases=new Map<string,string>([
+    ["caglari","Cagliari"],
+    ["punto cana","Punta Cana"],
+    ["istanbul ttf","Istanbul"],
+    ["mexico city challenger","Mexico City"],
+    ["yanagawa city","Yanagawa"],
+    ["toulouse balma","Balma"],
+    ["bastia lucciana","Bastia"]
+  ]);
+  const cleanPlace=(value:any)=>{
+    const cleaned=String(value||"")
+      .replace(/^\s*(?:M15|M25|J30|J60|J100|J200|J300|J500)\s+/i,"")
+      .replace(/\s*\((?:cancelled|canceled)\)\s*$/i,"")
+      .replace(/\s+(?:Challenger|Classic|International|Trophy|Futures|Open)(?:\s+\d+)?\s*$/i,"")
+      .replace(/\s+\d+\s*$/,"")
+      .replace(/\s+/g," ").trim();
+    return placeAliases.get(normalizeName(cleaned))||cleaned;
+  };
   const geoCandidates:string[]=[];
   const pushGeo=(value:any)=>{
     const v=cleanPlace(value);
@@ -1229,7 +1241,7 @@ async function resolveTournamentImage(t:any){
             for(const tok of venueTokens)if(title.includes(tok))score+=3;
             if(cityToken&&titleCompact.includes(cityToken))score+=4;
             if(/arena|stadium|coliseum|tennis|sports|centre|center|club/i.test(String(x.title||"")))score+=2;
-            if(/person|film|song|album|berry/i.test(String(x.title||"")))score-=10;
+            if(/person|film|song|album|berry|station|railway|metro/i.test(String(x.title||"")))score-=10;
             return {x,raw,score};
           })
           .filter((x:any)=>x.raw&&/^https?:\/\//i.test(x.raw)&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(x.raw)&&x.score>=4)

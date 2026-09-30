@@ -11109,7 +11109,7 @@ Deno.serve(async(req:Request)=>{
           kind:"career",title:"Bienvenue dans ta nouvelle carrière",
           body:"Tu prends en main "+p.name+" au "+startDate+". Commence par définir ton plan de saison, ton staff et tes objectifs.",
           action_route:"careerhub",game_date:startDate,priority:"high",action_type:"open_route",action_label:"Ouvrir le Bureau manager",
-          action_payload:{route:"careerhub"},decision_status:"pending",is_read:false
+          action_payload:{route:"careerhub"},decision_status:"info",is_read:false
         })
       ]);
       return h({

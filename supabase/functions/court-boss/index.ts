@@ -9814,6 +9814,8 @@ Deno.serve(async(req:Request)=>{
       if(String(con.data.subject_type||"")==="staff"){
         await db.from("staff").update({weekly_cost:salary}).eq("name",con.data.subject_name);
       }
+      await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
+        .eq("related_entity_type","contract").eq("related_entity_id",id);
       return h({ok:true,end_date:d.toISOString().slice(0,10),weekly_salary:salary,raise_pct:Math.round((factor-1)*100)});
     }
 

@@ -2823,26 +2823,35 @@ Deno.serve(async(req:Request)=>{
         c==="R128"?"R128":c.startsWith("Q")?"Qualifications "+c:c||"Tour";
     };
     const rawMainMatches=(worldMatchesRes.data??[]).filter((x:any)=>!x.is_qualifying);
-    const mainRoundNos=[...new Set(rawMainMatches.map((x:any)=>Number(x.round_no||0)).filter((x:number)=>x>0))].sort((a:number,b:number)=>a-b);
     const mainStartDate=String(t.data.main_draw_start_date||t.data.start_date||referenceDate);
     const mainEndDate=String(t.data.end_date||mainStartDate);
     const mainSpan=isoDayDiff(mainStartDate,mainEndDate);
+    const mainBracketSize=Math.pow(2,Math.ceil(Math.log2(Math.max(2,drawSize))));
+    const mainRoundCount=Math.max(1,Math.round(Math.log2(mainBracketSize)));
     const scheduledMainDate=(roundNo:any)=>{
-      const idx=Math.max(0,mainRoundNos.indexOf(Number(roundNo||0)));
-      return addIsoDays(mainStartDate,Math.min(mainSpan,Math.round(idx*mainSpan/Math.max(1,mainRoundNos.length-1))))||mainStartDate;
+      const idx=Math.max(0,Number(roundNo||1)-1);
+      return addIsoDays(mainStartDate,Math.min(mainSpan,Math.round(idx*mainSpan/Math.max(1,mainRoundCount-1))))||mainStartDate;
     };
+    const worldEntryMeta=new Map(worldMainRows.map((x:any)=>[Number(x.id),x]));
     worldCompletedDraw=rawMainMatches.map((x:any)=>{
       const scheduledDate=scheduledMainDate(x.round_no),completed=scheduledDate<=referenceDate;
-      const firstRound=Number(x.round_no||0)===Number(mainRoundNos[0]||1);
+      const firstRound=Number(x.round_no||0)===1;
       const drawPublished=referenceDate>=String(t.data.qualifying_end_date||addIsoDays(mainStartDate,-1)||mainStartDate);
       const revealPlayers=completed||(firstRound&&drawPublished);
+      const aMeta:any=worldEntryMeta.get(Number(x.player_a_id))||null;
+      const bMeta:any=worldEntryMeta.get(Number(x.player_b_id))||null;
+      const bye=String(x.score||"")==="BYE";
       return {
-        id:x.id,round_no:x.round_no,round_code:x.round_code,round_name:roundName(x.round_code),match_no:x.match_no,
+        id:x.id,round_no:x.round_no,round_code:x.round_code,
+        round_name:Number(x.round_no||0)===1?"1er tour":roundName(x.round_code),match_no:x.match_no,
         player_a_id:revealPlayers?x.player_a_id:null,player_b_id:revealPlayers?x.player_b_id:null,
-        player_a_name:revealPlayers?(worldPlayerMap.get(Number(x.player_a_id))?.name||"—"):"À déterminer",
-        player_b_name:revealPlayers?(worldPlayerMap.get(Number(x.player_b_id))?.name||"—"):"À déterminer",
-        winner_id:completed?x.winner_id:null,winner_name:completed?(worldPlayerMap.get(Number(x.winner_id))?.name||"—"):null,
-        loser_id:completed?x.loser_id:null,loser_name:completed?(worldPlayerMap.get(Number(x.loser_id))?.name||"—"):null,
+        player_a_name:revealPlayers?(x.player_a_id?(worldPlayerMap.get(Number(x.player_a_id))?.name||"—"):(bye?"BYE":"—")):"À déterminer",
+        player_b_name:revealPlayers?(x.player_b_id?(worldPlayerMap.get(Number(x.player_b_id))?.name||"—"):(bye?"BYE":"—")):"À déterminer",
+        player_a_seed:aMeta?.seed||null,player_b_seed:bMeta?.seed||null,
+        player_a_entry:aMeta?.entry_method||(bye&&!x.player_a_id?"bye":null),
+        player_b_entry:bMeta?.entry_method||(bye&&!x.player_b_id?"bye":null),
+        winner_id:completed?x.winner_id:null,winner_name:completed?(worldPlayerMap.get(Number(x.winner_id))?.name||(bye?"BYE":"—")):null,
+        loser_id:completed?x.loser_id:null,loser_name:completed&&x.loser_id?(worldPlayerMap.get(Number(x.loser_id))?.name||"—"):null,
         score:completed?x.score:null,best_of:x.best_of,player_a_win_probability:completed?x.player_a_win_probability:null,
         scheduled_date:scheduledDate,simulated_on:x.simulated_on,status:completed?"completed":"scheduled",source:"world_engine"
       };
@@ -3711,6 +3720,12 @@ Deno.serve(async(req:Request)=>{
     const worldDoublesQualifyingEvents=await db.rpc("simulate_world_doubles_qualifying_window",{p_from_date:previousDate,p_to_date:date});
     if(worldDoublesQualifyingEvents.error)return h({error:worldDoublesQualifyingEvents.error.message},500);
 
+    // Main draws now advance on their actual round dates. The legacy full engine
+    // remains immediately after this as a fallback for round-robin / unsupported
+    // formats and for any event that could not enter the progressive state machine.
+    const progressiveWorldEvents=await db.rpc("advance_world_tournament_window",{p_from_date:previousDate,p_to_date:date});
+    if(progressiveWorldEvents.error)return h({error:progressiveWorldEvents.error.message},500);
+
     // Pro singles outranks ordinary college duals and can override ITA team duty for a Grand Slam.
     const worldEvents=await db.rpc("simulate_world_tournaments",{p_from_date:previousDate,p_to_date:date});
     if(worldEvents.error)return h({error:worldEvents.error.message},500);
@@ -4022,7 +4037,7 @@ Deno.serve(async(req:Request)=>{
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
-    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){

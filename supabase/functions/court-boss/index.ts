@@ -2856,15 +2856,19 @@ Deno.serve(async(req:Request)=>{
       if(wp.error)return h({error:wp.error.message},500);
       worldPlayerMap=new Map((wp.data??[]).map((p:any)=>[Number(p.id),p]));
     }
+    const pendingForfeitIds=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id||0)).filter(Boolean));
     worldMainRows=(worldEntriesRes.data??[]).map((x:any)=>{
       const p:any=worldPlayerMap.get(Number(x.player_id))||{};
+      const withdrawnPending=pendingForfeitIds.has(Number(x.player_id));
       return {
         ...p,
         id:Number(x.player_id),
         ranking:Number(x.ranking_at_entry||p.ranking||999999),
         seed:x.seed,
         draw_slot:x.draw_slot,
-        entry_method:x.entry_method,
+        entry_method:withdrawnPending?"withdrawn_pending":x.entry_method,
+        withdrawn_pending:withdrawnPending,
+        withdrawn_player_id:withdrawnPending?Number(x.player_id):null,
         had_bye:Boolean(x.had_bye),
         matches_won:Number(x.matches_won||0),
         result:x.result_label||x.result_code||null,

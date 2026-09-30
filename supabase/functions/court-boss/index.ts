@@ -969,7 +969,14 @@ async function resolveTournamentImage(t:any){
   if(weakImage)t.image_url=null;
 
   const timeoutSignal=()=>AbortSignal.timeout(5000);
-  const source=String((weakImage?t.source_url:(t.image_source_url||t.source_url))||"").trim();
+  const curatedImageSources=[
+    {re:/United Cup/i,url:"https://www.unitedcup.com/en/"},
+    {re:/Nitto ATP Finals/i,url:"https://www.nittoatpfinals.com/en/"},
+    {re:/Next Gen ATP Finals/i,url:"https://www.nextgenatpfinals.com/en/"},
+    {re:/Rolex Shanghai Masters/i,url:"https://en.rolexshanghaimasters.com/en/"}
+  ];
+  const curatedImageSource=curatedImageSources.find((x:any)=>x.re.test(String(t.name||"")))?.url||"";
+  const source=String(curatedImageSource||(weakImage?t.source_url:(t.image_source_url||t.source_url))||"").trim();
   let canFetchOfficial=false;
   if(/^https?:\/\//i.test(source)&&!/github\.com|calendar-pdfs|what-is-the-2026-atp-tour-calendar|itftravelcoach|\.pdf(?:$|\?)/i.test(source)){
     try{
@@ -995,7 +1002,12 @@ async function resolveTournamentImage(t:any){
         "bmwopen.de","www.bmwopen.de","hamburgopenatp500.com","www.hamburgopenatp500.com",
         "terrawortmann-open.de","www.terrawortmann-open.de","japanopentennis.com","www.japanopentennis.com",
         "erstebank-open.com","www.erstebank-open.com","swissindoorsbasel.ch","www.swissindoorsbasel.ch",
-        "mallorcachampionships.com","www.mallorcachampionships.com"
+        "mallorcachampionships.com","www.mallorcachampionships.com",
+        "unitedcup.com","www.unitedcup.com",
+        "nittoatpfinals.com","www.nittoatpfinals.com",
+        "nextgenatpfinals.com","www.nextgenatpfinals.com",
+        "rolexshanghaimasters.com","www.rolexshanghaimasters.com",
+        "en.rolexshanghaimasters.com"
       ];
       canFetchOfficial=allowed.includes(host);
     }catch{}
@@ -3484,6 +3496,31 @@ Deno.serve(async(req:Request)=>{
     if(!q.data)return new Response("",{status:404,headers:cors});
     const t=await resolveTournamentImage(q.data);
     if(!t?.image_url)return new Response("",{status:404,headers:{...cors,"Cache-Control":"public, max-age=3600"}});
+    const proxy=u.searchParams.get("proxy")==="1";
+    if(proxy){
+      try{
+        const headers:Record<string,string>={
+          "User-Agent":"CourtBoss/1.0 (+tournament-image-proxy)",
+          "Accept":"image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+        };
+        const referer=String(t.image_source_url||t.source_url||"").trim();
+        if(/^https?:\/\//i.test(referer))headers["Referer"]=referer;
+        const image=await fetch(String(t.image_url),{
+          headers,redirect:"follow",signal:AbortSignal.timeout(8000)
+        });
+        const contentType=String(image.headers.get("content-type")||"");
+        if(image.ok&&/^image\//i.test(contentType)){
+          return new Response(image.body,{
+            status:200,
+            headers:{
+              ...cors,
+              "Content-Type":contentType,
+              "Cache-Control":"public, max-age=86400, stale-while-revalidate=604800"
+            }
+          });
+        }
+      }catch{}
+    }
     return new Response(null,{status:302,headers:{...cors,"Location":String(t.image_url),"Cache-Control":"public, max-age=86400"}});
   }
 

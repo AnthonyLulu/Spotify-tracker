@@ -8512,6 +8512,51 @@ Deno.serve(async(req:Request)=>{
     if(career.error||!career.data) return h({error:career.error?.message||"Career not found"},500);
     let budget=Number(career.data.budget||0);
 
+    if(action==="managed_season_plan"){
+      const managedId=Number(career.data.managed_player_id||0);
+      if(!managedId)return h({error:"Joueur géré introuvable"},409);
+      const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+      const allowedTypes=new Set(["elite_selective","tour_regular","challenger_push","itf_build","doubles_specialist","junior_transition","ncaa_pathway"]);
+      const planType=allowedTypes.has(String(body?.plan_type||""))?String(body.plan_type):"tour_regular";
+      const preferredSurface=["Dur","Terre","Gazon","Indoor","Polyvalent"].includes(String(body?.preferred_surface||""))
+        ?String(body.preferred_surface):"Polyvalent";
+      const targetEvents=n(body?.target_events,22,8,40);
+      const restBias=n(body?.rest_bias,10,1,20);
+      const travelTolerance=n(body?.travel_tolerance,10,1,20);
+      const prestigeBias=n(body?.prestige_bias,10,1,20);
+      const developmentBias=n(body?.development_bias,10,1,20);
+      const doublesBias=n(body?.doubles_bias,String(career.data.career_focus||"mixed")==="doubles_only"?18:10,1,20);
+      const maxConsecutive=n(body?.max_consecutive_weeks,3,1,8);
+      const fatigueTrigger=n(body?.rest_trigger_fatigue,62,35,90);
+      const risk=n(body?.schedule_risk_tolerance,10,1,20);
+      const up=await db.from("player_season_plans").upsert({
+        player_id:managedId,season,plan_type:planType,target_events:targetEvents,
+        base_target_events:targetEvents,preferred_surface:preferredSurface,
+        secondary_surface:String(body?.secondary_surface||"").slice(0,30)||null,
+        rest_bias:restBias,travel_tolerance:travelTolerance,prestige_bias:prestigeBias,
+        development_bias:developmentBias,doubles_bias:doublesBias,
+        max_consecutive_weeks:maxConsecutive,rest_trigger_fatigue:fatigueTrigger,
+        schedule_risk_tolerance:risk,mental_load_target:n(body?.mental_load_target,10,1,20),
+        reason:"Plan utilisateur · Career OS",
+        last_adapted_date:String(career.data.career_date||AGE_REFERENCE_DATE),
+        updated_at:new Date().toISOString()
+      },{onConflict:"player_id,season"}).select("*").single();
+      if(up.error)return h({error:up.error.message},500);
+      await db.from("inbox_items").insert({
+        kind:"season",title:"Plan de saison mis à jour",
+        body:"Le staff a enregistré ton plan "+planType+" avec "+targetEvents+" événements cibles et un seuil de repos à "+fatigueTrigger+"% de fatigue.",
+        action_route:"season",is_read:false,game_date:String(career.data.career_date||AGE_REFERENCE_DATE),
+        priority:"normal",action_type:"open_route",action_label:"Voir le plan",
+        action_payload:{route:"season"},related_entity_type:"player",related_entity_id:managedId,decision_status:"info"
+      });
+      await db.from("career_event_log").insert({
+        event_date:String(career.data.career_date||AGE_REFERENCE_DATE),week:Number(career.data.week||0),
+        system:"season",event_type:"plan_updated",entity_type:"player",entity_id:managedId,
+        summary:"Plan de saison utilisateur mis à jour",payload:up.data
+      });
+      return h({ok:true,plan:up.data});
+    }
+
     if(action==="academy_setting"){
       const field=String(body?.field||"");
       const allowed=new Set(["academy_style","ncaa_pathway","pro_pathway","development_intensity","scholarship_budget","youth_capacity"]);

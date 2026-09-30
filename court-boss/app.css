@@ -630,3 +630,22 @@ body{background:
     max-height:20px;
   }
 }
+
+
+/* NCAA university browser */
+.ncaa-university-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.ncaa-team-card{width:100%;text-align:left;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.10);border-radius:15px;padding:14px;color:inherit;cursor:pointer}
+.ncaa-team-card:hover{border-color:rgba(175,255,72,.38);background:rgba(175,255,72,.045)}
+.ncaa-team-name{display:block;font-size:15px;line-height:1.25;margin-top:3px}
+.ncaa-team-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0 8px}
+.ncaa-team-stats span{display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:10px;background:rgba(0,0,0,.18);min-width:0}
+.ncaa-team-stats b{font-size:14px}
+.ncaa-team-stats small{font-size:9px;letter-spacing:.04em;text-transform:uppercase;opacity:.62;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ncaa-university-title{align-items:flex-start;gap:12px}
+.ncaa-university-title h2{margin:5px 0 4px}
+@media(max-width:700px){
+ .ncaa-university-grid{grid-template-columns:1fr}
+ .ncaa-team-card{padding:12px}
+ .ncaa-team-stats{gap:5px}
+ .ncaa-team-stats span{padding:7px}
+}

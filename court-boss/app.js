@@ -3162,8 +3162,10 @@ window.openTournament=async id=>{
   const ncaaPlayers=d.ncaa_players||[];
   const forfeits=d.forfeits||[];
   const completedDraw=d.completed_draw||[];
-  const mainDrawMatches=d.main_draw_bracket||d.main_draw_matches||d.world_completed_draw||[];
-  const qualifyingDraw=d.qualifying_draw||[];
+  const userQualifyingDraw=completedDraw.filter(m=>/^Q\d+$/.test(String(m.round_name||'')));
+  const userMainDraw=completedDraw.filter(m=>!/^Q\d+$/.test(String(m.round_name||'')));
+  const mainDrawMatches=userMainDraw.length?userMainDraw:(d.main_draw_bracket||d.main_draw_matches||d.world_completed_draw||[]);
+  const qualifyingDraw=userQualifyingDraw.length?userQualifyingDraw:(d.qualifying_draw||[]);
   const luckyLosers=d.lucky_losers||[];
   const acceptanceList=d.acceptance_list||{};
   const acceptanceState=acceptanceList.state||null;

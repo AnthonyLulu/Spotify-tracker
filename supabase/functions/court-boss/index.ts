@@ -6133,6 +6133,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     let matchLearning:any=null;
+    let worldResultSync:any=null;
     if(matchRows.length){
       const rows=matchRows.map(x=>({...x,run_id:runId}));
       const ins=await db.from("tournament_draw_matches").insert(rows);
@@ -6143,6 +6144,13 @@ Deno.serve(async(req:Request)=>{
         p_match_date:String(t.end_date||t.start_date||c.career_date||AGE_REFERENCE_DATE)
       });
       matchLearning=learning.error?{error:learning.error.message}:learning.data;
+
+      if(!isJuniorSingles){
+        const syncWorld=await db.rpc("populate_world_results_from_tournament_run",{
+          p_run_id:Number(runId)
+        });
+        worldResultSync=syncWorld.error?{error:syncWorld.error.message}:syncWorld.data;
+      }
     }
 
     const userAnalytics:any=advBy.get(Number(user.id))||{};
@@ -6337,7 +6345,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,world_result_sync:worldResultSync,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 

@@ -5006,8 +5006,9 @@ Deno.serve(async(req:Request)=>{
             career_date:managedGameDate
           },409);
         }
-        frozenEntryMode=String(qe.entry_method)==="protected_qualifying"
-          ?"protected_qualifying"
+        const frozenQMethod=String(qe.entry_method||"qualifying");
+        frozenEntryMode=frozenQMethod==="protected_qualifying"||frozenQMethod.endsWith("_qualifying")
+          ?frozenQMethod
           :"qualifying";
         frozenEntryPhase="qualifying";
         frozenEntryStatus=qe;
@@ -5206,7 +5207,8 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    let specialExempt=false,specialExemptInfo:any=null;
+    let specialExempt=frozenEntryMode==="special_exempt";
+    let specialExemptInfo:any=specialExempt?frozenEntryStatus:null;
     if(!frozenEntryMode&&!isSinglesFinals&&!isJuniorSingles&&direct&&entryRank>direct&&!wildcardGranted&&!protectedEntryMode){
       const se=await db.rpc("managed_special_exempt_status",{p_target_tournament_id:tid});
       if(se.error)return h({error:se.error.message},500);

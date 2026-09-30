@@ -3219,23 +3219,33 @@ window.openTournament=async id=>{
   const managedMainAlt=acceptanceAlternates.find(p=>Number(p.id)===managedId);
   const managedQAccepted=qualifyingAcceptanceMain.find(p=>Number(p.id)===managedId);
   const managedQAlt=qualifyingAcceptanceAlternates.find(p=>Number(p.id)===managedId);
+  const managedSelectedLL=luckyLosers.find(p=>Number(p.player_id||p.id)===managedId&&p.selected);
   const managedFrozenWithdrawn=[...acceptanceWithdrawn,...qualifyingAcceptanceWithdrawn].find(p=>Number(p.id)===managedId);
+  const gameDate=String(local.date||cr.career_date||'2025-12-01');
+  const mainPlayableOn=String(t.main_draw_start_date||t.start_date||gameDate);
+  const qualifyingPlayableOn=String(t.qualifying_start_date||mainPlayableOn);
+  const frozenCircuit=['ATP','Challenger','ITF'].includes(String(t.circuit||''));
   if(!isJunior&&!isSinglesFinals){
-    if(managedMainAccepted){
-      singleRule={...singleRule,label:managedMainAccepted.status==='promoted'?'ALT → tableau principal':'Tableau principal · accepté',method:'direct',phase:'main',cls:'good',can:true,frozen:true};
+    if(managedSelectedLL){
+      singleRule={...singleRule,label:'Lucky Loser · sélectionné'+(gameDate<mainPlayableOn?' · débute '+df(mainPlayableOn):''),method:'lucky_loser',phase:'main',cls:'good',can:gameDate>=mainPlayableOn,frozen:true};
+    }else if(managedMainAccepted){
+      singleRule={...singleRule,label:(managedMainAccepted.status==='promoted'?'ALT → tableau principal':'Tableau principal · accepté')+(gameDate<mainPlayableOn?' · débute '+df(mainPlayableOn):''),method:managedMainAccepted.status==='promoted'?'alternate':'direct',phase:'main',cls:'good',can:gameDate>=mainPlayableOn,frozen:true};
     }else if(managedQAccepted){
-      singleRule={...singleRule,label:'Qualifications · accepté'+(managedMainAlt?' · ALT MD #'+fmt(managedMainAlt.acceptance_order):''),method:'qualifying',phase:'qualifying',cls:'warn',can:true,frozen:true};
+      singleRule={...singleRule,label:'Qualifications · accepté'+(managedMainAlt?' · ALT MD #'+fmt(managedMainAlt.acceptance_order):'')+(gameDate<qualifyingPlayableOn?' · débute '+df(qualifyingPlayableOn):''),method:'qualifying',phase:'qualifying',cls:'warn',can:gameDate>=qualifyingPlayableOn,frozen:true};
     }else if(managedQAlt){
-      singleRule={...singleRule,label:'ALT Q #'+fmt(managedQAlt.acceptance_order)+(managedMainAlt?' · ALT MD #'+fmt(managedMainAlt.acceptance_order):''),method:'alternate',phase:'qualifying_alternate',cls:'warn',can:true,frozen:true};
+      singleRule={...singleRule,label:'ALT Q #'+fmt(managedQAlt.acceptance_order)+(managedMainAlt?' · ALT MD #'+fmt(managedMainAlt.acceptance_order):'')+' · en attente de promotion',method:'alternate',phase:'qualifying_alternate',cls:'warn',can:false,frozen:true};
     }else if(managedMainAlt){
-      singleRule={...singleRule,label:'ALT tableau #'+fmt(managedMainAlt.acceptance_order),method:'alternate',phase:'main_alternate',cls:'warn',can:true,frozen:true};
+      singleRule={...singleRule,label:'ALT tableau #'+fmt(managedMainAlt.acceptance_order)+' · en attente de promotion',method:'alternate',phase:'main_alternate',cls:'warn',can:false,frozen:true};
     }else if(managedFrozenWithdrawn){
       singleRule={...singleRule,label:'Retiré de la liste figée',method:'withdrawn',phase:'withdrawn',cls:'bad',can:false,frozen:true};
     }
   }
   const rawElig=managedJunior&&!isSinglesFinals?(managedJunior.entry_method==='direct'?'Tableau direct junior':'Engagé junior'):singleRule.label;
   const elig=rawElig;
-  const canAttempt=!teamEvent&&(isSinglesFinals||(!isNcaa&&!isFed))&&singleRule.can;
+  const phasePlayableOn=singleRule.phase==='qualifying'?qualifyingPlayableOn:mainPlayableOn;
+  const calendarReady=!frozenCircuit||gameDate>=phasePlayableOn;
+  const canAttempt=!teamEvent&&(isSinglesFinals||(!isNcaa&&!isFed))&&singleRule.can&&calendarReady;
+  const playWaitLabel=joined&&!played&&!canAttempt?(String(singleRule.phase||'').includes('alternate')?singleRule.label:(gameDate<phasePlayableOn?'Disponible à partir du '+df(phasePlayableOn):singleRule.label)):'';
   const cuts=tmCuts(t);
 
   const rankTitle=isJunior?'Junior':'ATP';

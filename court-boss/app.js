@@ -233,10 +233,56 @@ let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
 let trainingPreview=null,trainingPreviewLoading=false;
+let saveSlots=[],saveSlotsLoading=false,saveSlotBusy=false;
 let local={date:'2025-12-01',week:1,training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],entries:[],shortlist:[],career:null,feed:[],scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}};
 local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
 try{Object.assign(local,JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{}
 function persist(){localStorage.setItem('cbLocal',JSON.stringify(local));const key=courtBossAccessKey();fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey,'X-Court-Boss-Key':key},body:JSON.stringify(local)}).catch(()=>{})}
+async function loadSaveSlots(){
+ if(saveSlotsLoading)return;
+ saveSlotsLoading=true;
+ try{const d=await get('/api/save-slots');saveSlots=d.slots||[]}
+ catch(e){console.warn('Save slots',e)}
+ finally{saveSlotsLoading=false}
+}
+async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
+ if(saveSlotBusy)return;
+ saveSlotBusy=true;
+ try{
+  const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
+  const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
+  const slotName=silent?defaultName:(prompt('Nom de la sauvegarde',defaultName)||defaultName);
+  const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:local})});
+  await loadSaveSlots();
+  if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
+  if(route==='saves')render();
+  return d;
+ }catch(e){if(!silent)alert(e.message);else console.warn('Autosave',e)}
+ finally{saveSlotBusy=false}
+}
+async function loadCareerSlot(slotNo){
+ const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
+ if(!slot)return;
+ if(!confirm('Charger « '+slot.slot_name+' » du '+df(slot.career_date)+' ? Les changements non sauvegardés seront perdus.'))return;
+ saveSlotBusy=true;
+ try{
+  const d=await get('/api/load-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
+  if(d.local_payload&&typeof d.local_payload==='object')local={...local,...d.local_payload};
+  localStorage.setItem('cbLocal',JSON.stringify(local));
+  boot=await get('/api/bootstrap');
+  if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
+  rankRows=[];tourRows=[];management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;
+  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots()]);
+  route='home';render();
+ }catch(e){alert('Chargement impossible : '+e.message)}
+ finally{saveSlotBusy=false}
+}
+async function deleteCareerSlot(slotNo){
+ const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));if(!slot)return;
+ if(!confirm('Supprimer « '+slot.slot_name+' » ?'))return;
+ try{await get('/api/delete-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});await loadSaveSlots();render()}catch(e){alert(e.message)}
+}
+
 function surfaceClass(s){const v=String(s||'');return v==='Terre'?'surface-clay':v==='Gazon'?'surface-grass':/intérieur/i.test(v)?'surface-indoor':'surface-hard'}
 function surfaceLabel(t){
  if(typeof t==='string')return t;
@@ -390,7 +436,7 @@ function publicAttributeKnowledge(p,attrs,report){
 }
 function header(){
  const cr=local.career||boot?.career||{};
- return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||cr.career_date)}</span><div class="grow"></div><button class="ghost icon-btn" onclick="openGlobalSearch()" aria-label="Recherche">⌕</button><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" ${simulating?'disabled':''} onclick="simulateWeek()">${simulating?'Simulation…':'+ 1 semaine'}</button></header>`
+ return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||cr.career_date)}</span><div class="grow"></div><button class="ghost icon-btn" onclick="openGlobalSearch()" aria-label="Recherche">⌕</button><button class="ghost icon-btn" onclick="nav('saves')" aria-label="Sauvegardes">▣</button><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" ${simulating?'disabled':''} onclick="simulateWeek()">${simulating?'Simulation…':'+ 1 semaine'}</button></header>`
 }
 function navBar(){
  const x=[['home','Accueil'],['rankings','Classements'],['calendar','Calendrier'],['academy','Académie'],['more','Plus']];
@@ -438,6 +484,7 @@ window.nav=async r=>{
    await loadStaffWorld();
   }
   if(r==='training'&&!trainingPreview)await loadTrainingPreview();
+  if(r==='saves')await loadSaveSlots();
  }catch(e){
   console.warn('Court Boss route load failed',r,e);
   shell(`<div class="card"><h2>Chargement impossible</h2><p class="muted">${esc(e.message)}</p><div class="row"><button class="primary" onclick="nav('${esc(r)}')">Réessayer</button><button class="ghost" onclick="nav('home')">Accueil</button></div></div>`);
@@ -1799,7 +1846,7 @@ window.openCompetition=async id=>{
 }
 window.competitionSection=name=>{document.querySelectorAll('[data-comp-section]').forEach(x=>x.style.display=x.getAttribute('data-comp-section')===name?'block':'none');document.querySelectorAll('[data-comp-tab]').forEach(x=>x.classList.toggle('active',x.getAttribute('data-comp-tab')===name))}
 function more(){
- const items=[['players','Base joueurs',fmt(worldStats?.searchableRealPlayers||22000)+' profils réels · classement monde jusqu’au #30000 + ITF + Juniors + NCAA + Double'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Choisir et gérer une fédération'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['competitions','Compétitions','Fiches, palmarès et records des tournois'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes']];
+ const items=[['players','Base joueurs',fmt(worldStats?.searchableRealPlayers||22000)+' profils réels · classement monde jusqu’au #30000 + ITF + Juniors + NCAA + Double'],['training','Entraînement','Planifier la semaine'],['scouting','Scouting','Réseau et prospects'],['staff','Staff','Coach, fitness, physio, agent'],['contracts','Contrats','Salaires et échéances'],['finance','Finances','Budget et dépenses'],['medical','Médical','Blessures, fatigue, récupération'],['match','Match Center','Historique et données match'],['tactics','Tactique','Plan de match & coaching'],['fantasy','Fantasy Court','Créer un tournoi personnalisé'],['doubles','Double','Partenaires et compatibilité'],['university','Universitaire','NCAA / ITA'],['davis','Coupe Davis','Choisir et gérer une fédération'],['board','Board','Objectifs et confiance'],['world','Monde','Circuits et profondeur'],['competitions','Compétitions','Fiches, palmarès et records des tournois'],['history','Histoire & nations','Légendes par pays et continent'],['myplayer','Mon joueur','Identité, style et carrière'],['inbox','Boîte de réception','Décisions et alertes'],['saves','Sauvegardes','Autosave, slots manuels & reprise de carrière']];
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
@@ -2649,7 +2696,7 @@ function fantasyPage(){
 function inboxPage(){return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1></div></div><div class="stack">${(boot.inbox||[]).map(x=>`<div class="card click" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')"><div class="row between"><div class="eyebrow">${esc(x.kind)}</div><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div><h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p></div>`).join('')}</div>`}
 function render(){
  if(!boot)return;
- const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage};
+ const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage,saves:saveCenterPage};
  shell((views[route]||more)());
 }
 

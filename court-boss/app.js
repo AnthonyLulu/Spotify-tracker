@@ -1546,7 +1546,8 @@ window.slamLogoHtml=slamLogoHtml;
 function tournamentPhotoUrl(t){
  const direct=String(t?.image_url||"").trim();
  const weak=/Photo de la ville|Fallback circuit|Fallback compétition/i.test(String(t?.image_source_label||""));
- if(t?.id&&(!direct||weak))return API+'/api/tournament-image?id='+encodeURIComponent(t.id);
+ const hotlinkRisk=/itftennis\.com|ncaa\.com|clvaw-cdnwnd\.com|estrepublicain\.fr/i.test(direct);
+ if(t?.id&&(!direct||weak||hotlinkRisk))return API+'/api/tournament-image?id='+encodeURIComponent(t.id)+'&proxy=1';
  return direct;
 }
 function tournamentThumb(t){

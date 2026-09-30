@@ -2847,6 +2847,71 @@ window.markAllInboxRead=async()=>{
  for(const x of unread){try{await managerAction('mark_inbox_read',x.id)}catch{}}
  boot=await get('/api/bootstrap');render();
 }
+
+function seasonPage(){
+ const h=careerHub||{},cr=h.career||career(),p=h.seasonPlan||{},up=(scheduleAdvice?.recommended||boot.upcoming||[]).slice(0,10);
+ const plans=[['elite_selective','Élite sélective'],['tour_regular','Circuit principal'],['challenger_push','Objectif Challenger'],['itf_build','Construction ITF'],['doubles_specialist','Spécialiste double'],['junior_transition','Transition junior'],['ncaa_pathway','Voie NCAA']];
+ const surfaces=['Polyvalent','Dur','Terre','Gazon','Indoor'];
+ const option=(v,l,cur)=>'<option value="'+esc(v)+'" '+(String(cur)===String(v)?'selected':'')+'>'+esc(l)+'</option>';
+ const slider=(id,label,val,min=1,max=20)=>'<div class="list-item"><div class="row between"><span>'+esc(label)+'</span><b id="'+id+'_v">'+fmt(val)+'</b></div><input id="'+id+'" type="range" min="'+min+'" max="'+max+'" value="'+Number(val)+'" oninput="document.getElementById(\''+id+'_v\').textContent=this.value"></div>';
+ return '<div class="section-head"><div><div class="eyebrow">Planning annuel</div><h1>Plan de saison '+String(local.date||'').slice(0,4)+'</h1><div class="muted">Le plan pilote les choix de tournois, le repos, les déplacements, la priorité simple/double et la prise de risque du calendrier.</div></div><button class="primary" onclick="saveManagedSeasonPlan()">Enregistrer le plan</button></div>'+
+ '<div class="grid g4"><div class="card"><div class="eyebrow">Simple</div><div class="big">#'+fmt(cr.singles_rank||0)+'</div></div><div class="card"><div class="eyebrow">Double</div><div class="big">#'+fmt(cr.doubles_rank||0)+'</div></div><div class="card"><div class="eyebrow">Fatigue</div><div class="big '+(Number(cr.fatigue||0)>=70?'bad':Number(cr.fatigue||0)>=50?'warn':'good')+'">'+fmt(cr.fatigue||0)+'%</div></div><div class="card"><div class="eyebrow">Orientation</div><div class="big" style="font-size:17px">'+esc(careerFocusLabel(cr.career_focus||'mixed'))+'</div></div></div>'+
+ '<div class="grid g2" style="margin-top:12px"><div class="card"><h2>Identité de saison</h2>'+
+ '<div class="list-item"><span class="muted mini">Type de plan</span><select id="seasonPlanType" class="select">'+plans.map(x=>option(x[0],x[1],p.plan_type||'tour_regular')).join('')+'</select></div>'+
+ '<div class="list-item"><span class="muted mini">Surface prioritaire</span><select id="seasonPreferredSurface" class="select">'+surfaces.map(x=>option(x,x,p.preferred_surface||'Polyvalent')).join('')+'</select></div>'+
+ '<div class="list-item row between"><span>Tournois cibles</span><input id="seasonTargetEvents" class="input" type="number" min="8" max="40" value="'+Number(p.target_events||22)+'" style="width:90px"></div>'+
+ '<div class="list-item row between"><span>Semaines consécutives max</span><input id="seasonMaxWeeks" class="input" type="number" min="1" max="8" value="'+Number(p.max_consecutive_weeks||3)+'" style="width:90px"></div>'+
+ '<div class="list-item row between"><span>Seuil repos fatigue</span><input id="seasonFatigueTrigger" class="input" type="number" min="35" max="90" value="'+Number(p.rest_trigger_fatigue||62)+'" style="width:90px"></div></div>'+
+ '<div class="card"><h2>Priorités manager</h2>'+slider('seasonRestBias','Repos',p.rest_bias||10)+slider('seasonTravel','Tolérance voyages',p.travel_tolerance||10)+slider('seasonPrestige','Prestige',p.prestige_bias||10)+slider('seasonDevelopment','Développement',p.development_bias||10)+slider('seasonDoubles','Double',p.doubles_bias||10)+slider('seasonRisk','Risque calendrier',p.schedule_risk_tolerance||10)+'</div></div>'+
+ '<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Calendrier conseillé</div><h2>Prochains objectifs</h2></div><button class="ghost" onclick="nav(\'calendar\')">Calendrier complet</button></div>'+
+ (up.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Tournoi</th><th>Niveau</th><th>Surface</th></tr></thead><tbody>'+up.map(t=>'<tr class="click" onclick="openTournament('+Number(t.id)+')"><td>'+df(t.start_date)+'</td><td><b>'+esc(t.name)+'</b></td><td>'+esc(t.category||t.level||t.circuit||'—')+'</td><td>'+esc(surfaceLabel(t))+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Aucune recommandation de calendrier.</div>')+'</div>'+
+ '<div class="card" style="margin-top:12px"><h2>Objectifs du board</h2>'+((h.objectives||boot.board||[]).map(o=>'<div class="list-item"><div class="row between"><b>'+esc(o.objective)+'</b><span>'+fmt(o.progress||0)+'%</span></div><div class="bar"><i style="width:'+Number(o.progress||0)+'%"></i></div><div class="muted micro">'+esc(o.target_value||'')+' · '+df(o.deadline)+'</div></div>').join('')||'<div class="empty">Aucun objectif.</div>')+'</div>';
+}
+window.saveManagedSeasonPlan=async()=>{
+ try{
+  const payload={
+   plan_type:document.getElementById('seasonPlanType')?.value,
+   preferred_surface:document.getElementById('seasonPreferredSurface')?.value,
+   target_events:Number(document.getElementById('seasonTargetEvents')?.value||22),
+   max_consecutive_weeks:Number(document.getElementById('seasonMaxWeeks')?.value||3),
+   rest_trigger_fatigue:Number(document.getElementById('seasonFatigueTrigger')?.value||62),
+   rest_bias:Number(document.getElementById('seasonRestBias')?.value||10),
+   travel_tolerance:Number(document.getElementById('seasonTravel')?.value||10),
+   prestige_bias:Number(document.getElementById('seasonPrestige')?.value||10),
+   development_bias:Number(document.getElementById('seasonDevelopment')?.value||10),
+   doubles_bias:Number(document.getElementById('seasonDoubles')?.value||10),
+   schedule_risk_tolerance:Number(document.getElementById('seasonRisk')?.value||10)
+  };
+  await managerAction('managed_season_plan',0,payload);
+  careerHub=null;await Promise.all([loadCareerHub(true),loadScheduleAdvice()]);
+  alert('Plan de saison enregistré.');render();
+ }catch(e){alert(e.message)}
+}
+function relationshipsPage(){
+ const rows=careerHub?.relationships||[];
+ const groups={friend:0,rival:0,other:0};
+ rows.forEach(r=>{const t=String(r.relation_type||'').toLowerCase();if(t.includes('rival'))groups.rival++;else if(Number(r.affinity||0)>=65)groups.friend++;else groups.other++});
+ return '<div class="section-head"><div><div class="eyebrow">Monde social simulé</div><h1>Relations & rivalités</h1><div class="muted">Affinité, confiance, respect et proximité sportive évoluent avec les matchs, le double et les parcours de carrière.</div></div><span class="pill">'+rows.length+' relations</span></div>'+
+ '<div class="grid g3"><div class="card"><div class="eyebrow">Affinités fortes</div><div class="big">'+groups.friend+'</div></div><div class="card"><div class="eyebrow">Rivalités</div><div class="big">'+groups.rival+'</div></div><div class="card"><div class="eyebrow">Autres relations</div><div class="big">'+groups.other+'</div></div></div>'+
+ '<div class="card" style="margin-top:12px"><div class="stack">'+(rows.map(r=>{const o=Array.isArray(r.other)?r.other[0]:r.other||{};return '<div class="list-item click" onclick="openPlayer('+Number(o.id||0)+')"><div class="row between"><div><b>'+(flags[o.country]||'🏳️')+' '+esc(o.name||'Joueur')+'</b><div class="muted mini">'+esc(r.relation_type||'Affinité sportive')+' · ATP '+(o.ranking?'#'+fmt(o.ranking):'NR')+'</div></div><div style="text-align:right"><b>'+fmt(r.affinity||0)+'/100</b><div class="muted micro">'+(r.is_simulated?'Simulation Court Boss':'Sourcé')+'</div></div></div><div class="bar" style="margin-top:6px"><i style="width:'+Number(r.affinity||0)+'%"></i></div><div class="row between muted micro" style="margin-top:4px"><span>Confiance '+fmt(r.trust||0)+'</span><span>Respect '+fmt(r.respect||0)+'</span><span>Proximité '+fmt(r.closeness||0)+'</span></div></div>'}).join('')||'<div class="empty">Aucune relation connue.</div>')+'</div><div class="muted micro" style="margin-top:10px">Les relations simulées sont des mécaniques de jeu, pas des affirmations sur la vie privée réelle des joueurs.</div></div>';
+}
+function mediaPage(){
+ const media=careerHub?.media||[],events=careerHub?.events||[];
+ return '<div class="section-head"><div><div class="eyebrow">Narration carrière</div><h1>Médias & actualité</h1><div class="muted">La forme, la fatigue, le classement, le staff et les décisions de carrière alimentent les storylines.</div></div><span class="pill">'+media.length+' sujet(s)</span></div>'+
+ '<div class="grid g2"><div class="stack">'+(media.map(x=>'<div class="card"><div class="row between"><div class="eyebrow">'+df(x.event_date)+' · '+esc(x.kind)+'</div><span class="badge '+(x.tone==='positive'?'good':x.tone==='concern'?'warn':'')+'">'+esc(x.tone||'neutral')+'</span></div><h2>'+esc(x.headline)+'</h2><p class="muted">'+esc(x.body)+'</p>'+(x.action_route?'<button class="soft-btn" onclick="nav(\''+esc(x.action_route)+'\')">Voir le contexte</button>':'')+'</div>').join('')||'<div class="card empty">Les premiers sujets apparaîtront au fil des semaines.</div>')+'</div>'+
+ '<div class="card"><div class="row between"><div><div class="eyebrow">Journal Career OS</div><h2>Événements récents</h2></div><span class="badge">'+events.length+'</span></div>'+events.slice(0,30).map(x=>'<div class="list-item"><div class="row between"><b>'+esc(x.summary)+'</b><span class="muted micro">'+df(x.event_date)+'</span></div><div class="muted mini">'+esc(x.system)+' · '+esc(x.event_type)+'</div></div>').join('')+'</div></div>';
+}
+function diagnosticsPage(){
+ const x=careerHub?.health||{},checks=[
+  ['Carrière',x.career_exists],['Joueur géré',x.managed_player_exists],['Académie',x.academy_exists]
+ ];
+ const metric=(l,v)=>'<div class="statbox"><span class="muted mini">'+esc(l)+'</span><b>'+fmt(v||0)+'</b></div>';
+ return '<div class="section-head"><div><div class="eyebrow">QA carrière</div><h1>Diagnostic Career OS</h1><div class="muted">Contrôle rapide des briques vivantes de la sauvegarde.</div></div><button class="primary" onclick="refreshCareerDiagnostics()">Réanalyser</button></div>'+
+ '<div class="grid g3">'+checks.map(c=>'<div class="card"><div class="eyebrow">'+esc(c[0])+'</div><div class="big '+(c[1]?'good':'bad')+'">'+(c[1]?'OK':'KO')+'</div></div>').join('')+'</div>'+
+ '<div class="card" style="margin-top:12px"><div class="row between"><h2>'+esc(x.model||'CB-CAREER-OS-v1')+'</h2><span class="badge good">'+df(x.date||local.date)+'</span></div><div class="statline">'+metric('Staff actif',x.active_staff)+metric('Contrats actifs',x.active_contracts)+metric('Prospects académie',x.academy_prospects)+metric('Joueurs académie',x.academy_active_players)+metric('Scouting actif',x.active_scouting)+metric('Sponsors dispo',x.available_sponsors)+metric('Relations',x.relationships)+metric('Plans saison',x.season_plans)+metric('Inbox non lue',x.unread_inbox)+metric('Blessures actives',x.active_injuries)+'</div></div>';
+}
+window.refreshCareerDiagnostics=async()=>{careerHub=null;await loadCareerHub(true);render()}
+
 function render(){
  if(!boot)return;
  const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage,saves:saveCenterPage,season:seasonPage,media:mediaPage,relationships:relationshipsPage,diagnostics:diagnosticsPage};

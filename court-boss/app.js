@@ -2931,7 +2931,18 @@ window.openCustomCareerCreator=()=>{
 window.createCustomCareerPlayer=async()=>{
  const name=String(document.getElementById('customCareerName')?.value||'').trim();
  if(name.length<2){alert('Entre un nom de joueur.');return}
+ if(local.liveSessionId){alert('Termine le match en cours avant de démarrer une nouvelle carrière.');return}
  try{
+  const reset=await get('/api/new-career',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const base={
+   date:'2025-12-01',week:1,
+   training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
+   entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],career:null,feed:[],
+   scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
+   tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}
+  };
+  local={...base,...(reset.local_payload||{})};
+  localStorage.setItem('cbLocal',JSON.stringify(local));
   const d=await managerAction('create_custom_player',0,{
    name,country:String(document.getElementById('customCareerCountry')?.value||'FRA').toUpperCase(),
    age:Number(document.getElementById('customCareerAge')?.value||18),

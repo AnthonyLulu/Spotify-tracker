@@ -1489,7 +1489,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:48,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v23",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:49,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v24",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -2158,6 +2158,19 @@ Deno.serve(async(req:Request)=>{
     for(const [rawKey,votes] of stageSchoolVotes){
       const winner=[...votes.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0];
       if(winner)stageSchoolKeyMap.set(rawKey,winner);
+    }
+    const explicitStageAliases=new Map<string,string>([
+      [schoolKey("Baylor University"),schoolKey("Baylor")],
+      [schoolKey("Florida State"),schoolKey("Florida St.")],
+      [schoolKey("Michigan State"),schoolKey("Michigan St.")],
+      [schoolKey("Texas A&M University"),schoolKey("Texas A&M")],
+      [schoolKey("University Of Arizona"),schoolKey("Arizona")],
+      [schoolKey("University Of Georgia"),schoolKey("Georgia")],
+      [schoolKey("University of Oklahoma"),schoolKey("Oklahoma")],
+      [schoolKey("Wichita State"),schoolKey("Wichita St.")]
+    ]);
+    for(const [rawKey,rosterKey] of explicitStageAliases){
+      if(rosterDisplayByKey.has(rosterKey))stageSchoolKeyMap.set(rawKey,rosterKey);
     }
     const stagingSchoolKey=(s:any)=>{
       const raw=schoolKey(s?.school);

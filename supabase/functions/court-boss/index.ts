@@ -1670,9 +1670,16 @@ Deno.serve(async(req:Request)=>{
           :/ITA Division I Men.?s National Singles Rankings|ITA official/i.test(ncaaSource)
             ?"official"
             :(metaHasRank&&meta?.ita_rank!=null?"verified_other":"profile");
+        const rawRegistryRank=metaHasRank&&meta?.ita_rank!=null?Number(meta.ita_rank):null;
+        const officialRank=ncaaRankType==="official"||ncaaRankType==="verified_other"
+          ?rawRegistryRank
+          :(metaHasRank?null:(p.ncaa_rank??null));
+        const projectedRank=ncaaRankType==="simulated_depth"?rawRegistryRank:null;
         byId.set(id,{
           ...p,
-          ncaa_rank:metaHasRank?meta.ita_rank:(p.ncaa_rank??null),
+          ncaa_rank:officialRank,
+          ncaa_projected_rank:projectedRank,
+          ncaa_registry_rank:rawRegistryRank,
           ncaa_school:canonicalNcaaSchool(p,meta?.school??p.ncaa_school??p.ncaa_last_school??null),
           ncaa_division:meta?.division??p.ncaa_division??"NCAA Division I",
           ncaa_season:meta?.season??(p.ncaa_current?ncaaSeason:null),
@@ -1712,8 +1719,10 @@ Deno.serve(async(req:Request)=>{
         const typeOrder=(x:any)=>x.ncaa_rank_type==="official"?0:x.ncaa_rank_type==="simulated_depth"?1:x.ncaa_rank!=null?2:3;
         const at=typeOrder(a),bt=typeOrder(b);
         if(at!==bt)return at-bt;
-        if(a.ncaa_rank!=null||b.ncaa_rank!=null){
-          const ac=Number(a.ncaa_rank??999999),bc=Number(b.ncaa_rank??999999);
+        const ar=a.ncaa_rank_type==="simulated_depth"?a.ncaa_projected_rank:a.ncaa_rank;
+        const br=b.ncaa_rank_type==="simulated_depth"?b.ncaa_projected_rank:b.ncaa_rank;
+        if(ar!=null||br!=null){
+          const ac=Number(ar??999999),bc=Number(br??999999);
           if(ac!==bc)return ac-bc;
         }
         if(Boolean(a.ncaa_current)!==Boolean(b.ncaa_current))return a.ncaa_current?-1:1;
@@ -1721,7 +1730,7 @@ Deno.serve(async(req:Request)=>{
       });
       const total=rows.length;
       const officialRanked=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_rank_type==="official"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
-      const simulatedDepth=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_rank_type==="simulated_depth"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
+      const simulatedDepth=rows.filter((x:any)=>x.ncaa_projected_rank!=null&&x.ncaa_rank_type==="simulated_depth"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
       rows=rows.slice(offset,offset+limit).map(({__priority,...x}:any)=>x);
       return h({
         kind,offset,limit,count:total,rows,
@@ -1729,7 +1738,7 @@ Deno.serve(async(req:Request)=>{
         verifiedCurrentRanks:officialRanked,
         simulatedDepthRanks:simulatedDepth,
         officialSnapshotDate:"2025-11-25",
-        coverage:"ITA officiel 1-20 · profondeur 21+ simulée Court Boss au cutoff initial",
+        coverage:"ITA officiel 1-20 au 25/11/2025 · profondeur 21+ affichée uniquement comme projection Court Boss (~)",
         eligibility:"NCAA Division I · classement officiel distingué de la profondeur simulée",
         rankingDate:gameDate
       });
@@ -2763,6 +2772,7 @@ Deno.serve(async(req:Request)=>{
     let worldQualifyingRows:any[]=[];
     let worldQualifyingDraw:any[]=[];
     let worldLuckyLosers:any[]=[];
+    let worldMainBracket:any[]=[];
     const [worldEntriesRes,worldMatchesRes,worldQualEntriesRes,worldLuckyLoserRes]=await Promise.all([
       db.from("world_tournament_entries")
         .select("player_id,seed,draw_slot,entry_method,ranking_at_entry,had_bye,matches_won,result_code,result_label,points_awarded,qualifying_points,prize_awarded,prize_currency,simulated_on,source_label")
@@ -3190,7 +3200,7 @@ Deno.serve(async(req:Request)=>{
       return h({
         tournament:t.data,main:visibleJuniorMain,qualifying:visibleJuniorQual,junior_entries:entered.data??[],
         world_main:worldMainRows,world_completed_draw:worldCompletedDraw,world_qualifying:worldQualifyingRows,
-        main_draw_matches:worldCompletedDraw,qualifying_draw:worldQualifyingDraw,lucky_losers:worldLuckyLosers,
+        main_draw_matches:worldCompletedDraw,main_draw_bracket:worldMainBracket,qualifying_draw:worldQualifyingDraw,lucky_losers:worldLuckyLosers,
         draw_timeline:drawTimeline,draw_phase:drawPhase,reference_date:referenceDate,
         draw_state:{actual:Boolean(worldMainRows.length),model:worldMainRows.length?"itf-junior-seed-zones-v3":"projection",seed_placement:"ITF junior regulatory zones"},
         wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,doubles_run:doublesRun.data??null,
@@ -3275,6 +3285,87 @@ Deno.serve(async(req:Request)=>{
       .limit(1).maybeSingle();
     if(formatPreview.error)return h({error:formatPreview.error.message},500);
     const fr:any=formatPreview.data||{};
+
+    // Full progressive bracket scaffold. Only played matches carry winners/scores,
+    // but every round exists visually from R1 to the final. As feeder matches
+    // finish, their winners become the known participants of the next round.
+    if(worldMainRows.length){
+      const bracketSize=Math.max(
+        Number(fr.bracket_size||0),
+        Number(t.data.singles_draw_size||t.data.draw_size||0),
+        ...worldMainRows.map((x:any)=>Number(x.draw_slot||0))
+      );
+      const roundCodes=Array.isArray(fr.rounds)&&fr.rounds.length
+        ?fr.rounds.map(String)
+        :Array.from({length:Math.max(1,Math.round(Math.log2(Math.max(2,bracketSize))))},(_,i)=>{
+          const size=bracketSize/Math.pow(2,i);
+          return size<=2?"F":size<=4?"SF":size<=8?"QF":size<=16?"R16":"R"+String(size);
+        });
+      const entryBySlot=new Map(worldMainRows.filter((x:any)=>Number(x.draw_slot)>0).map((x:any)=>[Number(x.draw_slot),x]));
+      const entryByPlayer=new Map(worldMainRows.filter((x:any)=>Number(x.id)>0).map((x:any)=>[Number(x.id),x]));
+      const existingByKey=new Map(worldCompletedDraw.map((m:any)=>[String(m.round_no)+"|"+String(m.match_no),m]));
+      const scaffold:any[]=[];
+      const totalSpan=isoDayDiff(String(t.data.main_draw_start_date||t.data.start_date||referenceDate),String(t.data.end_date||t.data.start_date||referenceDate));
+      const scaffoldStart=String(t.data.main_draw_start_date||t.data.start_date||referenceDate);
+      const scheduledFor=(roundNo:number)=>addIsoDays(
+        scaffoldStart,
+        roundCodes.length<=1?0:Math.min(totalSpan,Math.round((roundNo-1)*totalSpan/Math.max(1,roundCodes.length-1)))
+      )||scaffoldStart;
+      const feeder=(roundNo:number,matchNo:number,side:"a"|"b")=>{
+        if(roundNo<=1)return null;
+        const prevMatchNo=side==="a"?matchNo*2-1:matchNo*2;
+        return scaffold.find((m:any)=>Number(m.round_no)===roundNo-1&&Number(m.match_no)===prevMatchNo)||null;
+      };
+      for(let roundNo=1;roundNo<=roundCodes.length;roundNo++){
+        const matchCount=Math.max(1,Math.floor(bracketSize/Math.pow(2,roundNo)));
+        for(let matchNo=1;matchNo<=matchCount;matchNo++){
+          const existing:any=existingByKey.get(String(roundNo)+"|"+String(matchNo))||null;
+          let aId:any=null,bId:any=null;
+          if(roundNo===1){
+            aId=entryBySlot.get(matchNo*2-1)?.id||null;
+            bId=entryBySlot.get(matchNo*2)?.id||null;
+          }else{
+            aId=feeder(roundNo,matchNo,"a")?.winner_id||null;
+            bId=feeder(roundNo,matchNo,"b")?.winner_id||null;
+          }
+          if(existing){
+            if(existing.player_a_id)aId=existing.player_a_id;
+            if(existing.player_b_id)bId=existing.player_b_id;
+          }
+          const aEntry:any=aId?entryByPlayer.get(Number(aId)):null;
+          const bEntry:any=bId?entryByPlayer.get(Number(bId)):null;
+          const scheduledDate=existing?.scheduled_date||scheduledFor(roundNo);
+          scaffold.push({
+            id:existing?.id||null,
+            round_no:roundNo,
+            round_code:String(roundCodes[roundNo-1]||existing?.round_code||""),
+            round_name:roundName(roundCodes[roundNo-1]||existing?.round_code),
+            match_no:matchNo,
+            player_a_id:aId,
+            player_b_id:bId,
+            player_a_name:aId?(worldPlayerMap.get(Number(aId))?.name||existing?.player_a_name||"—"):"À déterminer",
+            player_b_name:bId?(worldPlayerMap.get(Number(bId))?.name||existing?.player_b_name||"—"):"À déterminer",
+            player_a_seed:aEntry?.seed||null,
+            player_b_seed:bEntry?.seed||null,
+            player_a_entry:aEntry?.entry_method||null,
+            player_b_entry:bEntry?.entry_method||null,
+            winner_id:existing?.winner_id||null,
+            winner_name:existing?.winner_name||null,
+            loser_id:existing?.loser_id||null,
+            loser_name:existing?.loser_name||null,
+            score:existing?.score||null,
+            best_of:existing?.best_of||null,
+            scheduled_date:scheduledDate,
+            status:existing?.status==="completed"?"completed":scheduledDate<referenceDate?"pending_result":"scheduled",
+            source:existing?"world_engine":"progressive_scaffold"
+          });
+        }
+      }
+      worldMainBracket=scaffold;
+    }else{
+      worldMainBracket=worldCompletedDraw;
+    }
+
     const qSlots=Math.max(0,Number(fr.qualifier_count||0));
     const wcSlots=Math.max(0,Number(fr.wildcard_count||0));
     const directSlots=Math.max(0,drawSize-qSlots-wcSlots);

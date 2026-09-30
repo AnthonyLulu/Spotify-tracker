@@ -256,6 +256,7 @@ async function loadCareerHub(force=false){
 }
 async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
  if(saveSlotBusy)return;
+ if(local.liveSessionId){if(!silent)alert('Termine le match en cours avant de sauvegarder.');return;}
  saveSlotBusy=true;
  try{
   const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
@@ -270,6 +271,7 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
  finally{saveSlotBusy=false}
 }
 async function loadCareerSlot(slotNo){
+ if(local.liveSessionId){alert('Termine le match en cours avant de charger une sauvegarde.');return;}
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  if(!slot)return;
  if(!confirm('Charger « '+slot.slot_name+' » du '+df(slot.career_date)+' ? Les changements non sauvegardés seront perdus.'))return;
@@ -493,7 +495,7 @@ window.nav=async r=>{
    await loadStaffWorld();
   }
   if(r==='training'&&!trainingPreview)await loadTrainingPreview();
-  if(r==='saves')await loadSaveSlots();
+  if(r==='saves'||r==='launcher')await loadSaveSlots();
   if(['careerhub','season','media','relationships','diagnostics'].includes(r))await loadCareerHub();
  }catch(e){
   console.warn('Court Boss route load failed',r,e);
@@ -2826,9 +2828,49 @@ function saveCenterPage(){
    </div>`;
  }).join('');
  return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
- <div class="notice mini"><b>Snapshot managé v1 :</b> les slots restaurent l’état complet de ta structure et du joueur géré. Le monde global reste piloté par le moteur de simulation de la carrière.</div>
+ <div class="notice mini"><b>Snapshot managé v2 :</b> la carrière, l’académie, le staff, les contrats, les relations, les blessures, le scouting, le NCAA géré, les inscriptions et les résultats du joueur sont restaurés exactement. Le monde IA global continue d’être piloté par sa simulation.</div>
+ <div class="row" style="margin-top:10px"><button class="ghost" onclick="nav('launcher')">Menu carrière</button></div>
  <div class="grid g2" style="margin-top:12px">${cards}</div>`;
 }
+function launcherPage(){
+ const ordered=[...(saveSlots||[])].sort((x,y)=>new Date(y.updated_at||0)-new Date(x.updated_at||0));
+ const latest=ordered[0]||null,auto=(saveSlots||[]).find(x=>Number(x.slot_no)===0)||null;
+ const c=career();
+ return `<div class="section-head"><div><div class="eyebrow">Court Boss · Career OS</div><h1>Menu carrière</h1><div class="muted">Continuer ta partie, revenir sur une sauvegarde ou repartir du 01/12/2025.</div></div><button class="ghost" onclick="nav('home')">Retour au jeu</button></div>
+ <div class="grid g2">
+  <div class="card"><div class="eyebrow">Carrière active</div><h2>${esc(c.player_name||'Joueur')} · semaine ${fmt(local.week||1)}</h2><div class="muted">${df(local.date||c.career_date)} · ATP #${fmt(c.singles_rank||0)} · Double #${fmt(c.doubles_rank||0)}</div><button class="primary" style="width:100%;margin-top:14px" onclick="nav('home')">Continuer</button></div>
+  <div class="card"><div class="eyebrow">Dernière sauvegarde</div><h2>${latest?esc(latest.slot_name):'Aucune sauvegarde'}</h2>${latest?`<div class="muted">${df(latest.career_date)} · semaine ${fmt(latest.week||1)}</div><button class="soft-btn" style="width:100%;margin-top:14px" onclick="loadCareerSlot(${Number(latest.slot_no)})">Charger</button>`:'<div class="muted">Le premier autosave sera créé après une semaine simulée.</div>'}</div>
+ </div>
+ <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Nouvelle partie</div><h2>Repartir sur le monde de référence</h2><div class="muted">Réinitialise la carrière gérée au 01/12/2025. Tes slots manuels restent disponibles, mais l’autosave sera remplacé par la nouvelle carrière.</div></div><span class="badge warn">Reset carrière</span></div><button class="danger-btn" style="margin-top:12px" onclick="startNewCareer()">Nouvelle partie</button></div>
+ <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Sauvegardes</div><h2>Slots & reprise</h2></div><button class="soft-btn" onclick="nav('saves')">Ouvrir le Save Center</button></div><div class="muted mini">${auto?'Autosave : '+df(auto.career_date)+' · semaine '+fmt(auto.week||1):'Aucun autosave pour le moment.'}</div></div>`;
+}
+window.startNewCareer=async()=>{
+ if(local.liveSessionId){alert('Termine le match en cours avant de démarrer une nouvelle carrière.');return;}
+ if(!confirm('Démarrer une nouvelle carrière au 01/12/2025 ? Les changements non sauvegardés de la carrière active seront perdus.'))return;
+ saveSlotBusy=true;
+ try{
+  const d=await get('/api/new-career',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const base={
+   date:'2025-12-01',week:1,
+   training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
+   entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],career:null,feed:[],
+   scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
+   tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}
+  };
+  local={...base,...(d.local_payload||{})};
+  localStorage.setItem('cbLocal',JSON.stringify(local));
+  rankRows=[];tourRows=[];management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;careerHub=null;historyData=null;competitionRows=[];
+  boot=await get('/api/bootstrap');
+  local.career={...(local.career||{}),...(boot.career||{})};
+  local.date=boot.career?.career_date||local.date;
+  local.week=boot.career?.week??local.week;
+  await Promise.all([loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
+  await saveCareerSlot(0,'autosave',true);
+  route='home';render();
+ }catch(e){alert('Nouvelle carrière impossible : '+e.message)}
+ finally{saveSlotBusy=false}
+}
+
 function inboxActionButton(x,type,label,payload,cls='primary'){
  if(!type||!label)return '';
  const p=JSON.stringify(payload||{}).replace(/'/g,'&#39;');
@@ -2841,8 +2883,8 @@ function inboxPage(){
  <div class="inbox-layout"><div class="stack">${rows.map(x=>`<div class="card inbox-card ${x.is_read?'':'is-unread'} ${x.priority==='high'||x.priority==='urgent'?'is-priority':''}" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')">
    <div class="row between"><div class="eyebrow">${esc(x.kind||'info')} · ${x.game_date?df(x.game_date):new Date(x.created_at).toLocaleDateString('fr-FR')}</div><div class="row"><span class="badge ${x.priority==='high'||x.priority==='urgent'?'warn':''}">${esc(x.priority||'normal')}</span><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div></div>
    <h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p>
-   ${x.decision_status==='resolved'?'<span class="badge good">Décision prise</span>':''}
-   ${x.action_type&&x.decision_status!=='resolved'?`<div class="row" style="margin-top:10px;flex-wrap:wrap">${inboxActionButton(x,x.action_type,x.action_label||'Ouvrir',x.action_payload,'primary')}${inboxActionButton(x,x.secondary_action_type,x.secondary_action_label,x.secondary_action_payload,'soft-btn')}</div>`:''}
+   ${x.decision_status==='resolved'?'<span class="badge good">Décision prise</span>':x.decision_status==='expired'?'<span class="badge warn">Expiré</span>':''}
+   ${x.action_type&&!['resolved','expired'].includes(String(x.decision_status||''))?`<div class="row" style="margin-top:10px;flex-wrap:wrap">${inboxActionButton(x,x.action_type,x.action_label||'Ouvrir',x.action_payload,'primary')}${inboxActionButton(x,x.secondary_action_type,x.secondary_action_label,x.secondary_action_payload,'soft-btn')}</div>`:''}
   </div>`).join('')||'<div class="card empty">Aucun message.</div>'}</div></div>`;
 }
 window.runInboxDecision=async(id,type,payload={})=>{
@@ -2982,7 +3024,7 @@ window.refreshCareerDiagnostics=async()=>{careerHub=null;await loadCareerHub(tru
 
 function render(){
  if(!boot)return;
- const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage,saves:saveCenterPage,careerhub:careerHubPage,season:seasonPage,media:mediaPage,relationships:relationshipsPage,diagnostics:diagnosticsPage};
+ const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage,saves:saveCenterPage,careerhub:careerHubPage,season:seasonPage,media:mediaPage,relationships:relationshipsPage,diagnostics:diagnosticsPage,launcher:launcherPage};
  shell((views[route]||more)());
 }
 

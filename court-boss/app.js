@@ -2985,6 +2985,12 @@ window.runInboxDecision=async(id,type,payload={})=>{
     await managerAction('decline_sponsor',Number(payload.offer_id||0));
     careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
+  if(type==='renew_contract'){
+    const d=await managerAction('renew_contract',Number(payload.contract_id||0));
+    careerHub=null;boot=await get('/api/bootstrap');await Promise.allSettled([loadManagement(),loadCareerHub(true)]);
+    alert('Contrat renouvelé jusqu’au '+df(d.end_date)+' · '+euro(d.weekly_salary)+'/sem.');
+    render();return;
+  }
   if(type==='medical_protocol'){
     await managerAction('set_medical_protocol',Number(payload.injury_id||0),{protocol:payload.protocol});
     careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();return;

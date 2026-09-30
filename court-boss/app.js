@@ -445,6 +445,46 @@ window.nav=async r=>{
  }
  await render();
 }
+async function syncLegacySinglesEntries(serverRows=[]){
+ const serverIds=new Set((serverRows||[]).map(x=>Number(x.tournament_id||0)).filter(Boolean));
+ const ids=[...(local.entries||[])].map(Number).filter(Boolean);
+ for(const id of ids){
+  if(serverIds.has(id))continue;
+  const meta=local.entryMeta?.[id]||{};
+  if(meta.circuit&&!['ATP','Challenger','ITF'].includes(String(meta.circuit)))continue;
+  try{
+   await get('/api/tournament-entry',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tournament_id:id,action:'enter',entry_method:String(meta.entry_method||'alternate'),legacy:true})
+   });
+  }catch(e){console.warn('Legacy singles entry sync failed',id,e)}
+ }
+}
+function mergeServerSinglesEntries(rows=[]){
+ local.entries=local.entries||[];local.entryMeta=local.entryMeta||{};
+ for(const row of rows||[]){
+  const id=Number(row.tournament_id||0);if(!id)continue;
+  if(!local.entries.includes(id))local.entries.push(id);
+  const tr=Array.isArray(row.tournaments)?row.tournaments[0]:row.tournaments||{};
+  local.entryMeta[id]={
+   ...(local.entryMeta[id]||{}),
+   entry_start_date:String(row.entry_method||'').includes('qualifying')?(tr.qualifying_start_date||tr.start_date):(tr.main_draw_start_date||tr.start_date),
+   entry_method:row.entry_method||local.entryMeta[id]?.entry_method||'alternate',
+   qualifying_start_date:tr.qualifying_start_date||null,
+   main_draw_start_date:tr.main_draw_start_date||null,
+   name:tr.name||local.entryMeta[id]?.name||'Tournoi',
+   start_date:tr.start_date||local.entryMeta[id]?.start_date||null,
+   end_date:tr.end_date||local.entryMeta[id]?.end_date||tr.start_date||null,
+   country:tr.country||local.entryMeta[id]?.country||null,
+   circuit:tr.circuit||local.entryMeta[id]?.circuit||null,
+   category:tr.category||local.entryMeta[id]?.category||null,
+   status:'Inscription serveur · '+String(row.entry_method||'entrée'),
+   server_entry_id:row.id,
+   requested_on:row.requested_on||null
+  };
+ }
+}
+
 async function init(){
  loading();
  try{
@@ -453,6 +493,8 @@ async function init(){
    local.career={...(local.career||{}),...(boot.career||{})};
    local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
    local.week=boot.career?.week??local.week??1;
+   const serverSinglesEntries=boot.entries||[];
+   mergeServerSinglesEntries(serverSinglesEntries);
    if(String(local.career?.career_focus||'mixed')==='doubles_only'){
      rankKind='doubles';
      tmCalFilters.entry='Double';
@@ -463,6 +505,17 @@ async function init(){
      }
    }
    localStorage.setItem('cbLocal',JSON.stringify(local));
+
+   // Preserve old browser-only saves, but move them to the server once.
+   // In doubles-only careers, active server singles entries are withdrawn instead.
+   if(String(local.career?.career_focus||'mixed')==='doubles_only'){
+     Promise.allSettled((serverSinglesEntries||[]).map(row=>get('/api/tournament-entry',{
+       method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({tournament_id:Number(row.tournament_id),action:'withdraw',entry_method:String(row.entry_method||'alternate')})
+     }))).catch(()=>{});
+   }else{
+     syncLegacySinglesEntries(serverSinglesEntries).catch(e=>console.warn('Singles entry migration failed',e));
+   }
 
    // Render immediately after the small bootstrap. Heavy world/ranking/calendar data
    // is now lazy-loaded by route instead of hammering Postgres at startup.
@@ -1170,11 +1223,22 @@ window.toggleSinglesEntry=async id=>{
  if(String(career().career_focus||'mixed')==='doubles_only'){alert('Mode Double exclusivement : les inscriptions simple sont désactivées.');return}
  local.entries=local.entries||[];local.entryMeta=local.entryMeta||{};
  const exists=local.entries.includes(id);
- if(exists){local.entries=local.entries.filter(x=>x!==id);delete local.entryMeta[id];persist();render();return}
+ if(exists){
+  try{
+   await get('/api/tournament-entry',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tournament_id:id,action:'withdraw',entry_method:String(local.entryMeta?.[id]?.entry_method||'alternate')})
+   });
+  }catch(e){alert('Retrait impossible : '+e.message);return}
+  local.entries=local.entries.filter(x=>x!==id);delete local.entryMeta[id];persist();render();return
+ }
  let t=findTournamentById(id);if(!t)return;
  if(['ATP','Challenger','ITF'].includes(String(t.circuit))){
-  try{const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id));t={...t,...access.tournament,managed_entry_rules:access.entry_rules,managed_pathway_status:access.pathway_status,managed_wildcard_status:access.wildcard_status,entry_rule_context:tournamentEntryContext()};tournamentDetailRows.set(Number(id),t)}
-  catch(e){alert('Impossible de vérifier l’inscription : '+e.message);return}
+  try{
+   const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id));
+   t={...t,...access.tournament,managed_entry_rules:access.entry_rules,managed_pathway_status:access.pathway_status,managed_wildcard_status:access.wildcard_status,entry_rule_context:tournamentEntryContext()};
+   tournamentDetailRows.set(Number(id),t)
+  }catch(e){alert('Impossible de vérifier l’inscription : '+e.message);return}
  }
  if(local.entries.includes(id))return;
  const elig=applyManagedPathwayEligibility(t,singlesEligibility(t));if(!elig.can){alert(elig.label);return}
@@ -1185,7 +1249,23 @@ window.toggleSinglesEntry=async id=>{
  if(conflict){alert("Conflit calendrier avec "+conflict[1].name+" ("+df(conflict[1].start_date)+").");return}
  const dConflict=Object.entries(local.doublesEntryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(window.start_date,window.end_date,existingEntryWindow(eid,e,'doubles').start_date,e.end_date));
  if(dConflict){alert("Tu es déjà engagé en double à "+dConflict[1].name+" cette semaine.");return}
- local.entryMeta[id]={entry_start_date:window.start_date,entry_method:elig.method,qualifying_start_date:t.qualifying_start_date,main_draw_start_date:t.main_draw_start_date,name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,status:elig.label};
+
+ let serverEntry=null;
+ if(['ATP','Challenger','ITF'].includes(String(t.circuit))){
+  try{
+   const saved=await get('/api/tournament-entry',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tournament_id:id,action:'enter',entry_method:String(elig.method||'alternate')})
+   });
+   serverEntry=saved.entry||null;
+  }catch(e){alert('Inscription refusée par le serveur : '+e.message);return}
+ }
+ local.entryMeta[id]={
+   entry_start_date:window.start_date,entry_method:elig.method,
+   qualifying_start_date:t.qualifying_start_date,main_draw_start_date:t.main_draw_start_date,
+   name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,
+   status:elig.label,server_entry_id:serverEntry?.id||null,requested_on:serverEntry?.requested_on||local.date||null
+ };
  local.entries.push(id);persist();render();
 }
 window.toggleDoublesEntry=async id=>{
@@ -2985,6 +3065,24 @@ window.openTournament=async id=>{
     doubleRule=racePair
       ?{label:'Qualifié Race #'+fmt(racePair.race_rank||racePair.seed||'—'),cls:'good',can:true,phase:'finals'}
       :{label:'Non qualifié · Top 8 Race requis',cls:'bad',can:false,phase:'finals'};
+  }
+  const managedMainAccepted=acceptanceMain.find(p=>Number(p.id)===managedId);
+  const managedMainAlt=acceptanceAlternates.find(p=>Number(p.id)===managedId);
+  const managedQAccepted=qualifyingAcceptanceMain.find(p=>Number(p.id)===managedId);
+  const managedQAlt=qualifyingAcceptanceAlternates.find(p=>Number(p.id)===managedId);
+  const managedFrozenWithdrawn=[...acceptanceWithdrawn,...qualifyingAcceptanceWithdrawn].find(p=>Number(p.id)===managedId);
+  if(!isJunior&&!isSinglesFinals){
+    if(managedMainAccepted){
+      singleRule={...singleRule,label:managedMainAccepted.status==='promoted'?'ALT → tableau principal':'Tableau principal · accepté',method:'direct',phase:'main',cls:'good',can:true,frozen:true};
+    }else if(managedQAccepted){
+      singleRule={...singleRule,label:'Qualifications · accepté'+(managedMainAlt?' · ALT MD #'+fmt(managedMainAlt.acceptance_order):''),method:'qualifying',phase:'qualifying',cls:'warn',can:true,frozen:true};
+    }else if(managedQAlt){
+      singleRule={...singleRule,label:'ALT Q #'+fmt(managedQAlt.acceptance_order)+(managedMainAlt?' · ALT MD #'+fmt(managedMainAlt.acceptance_order):''),method:'alternate',phase:'qualifying_alternate',cls:'warn',can:true,frozen:true};
+    }else if(managedMainAlt){
+      singleRule={...singleRule,label:'ALT tableau #'+fmt(managedMainAlt.acceptance_order),method:'alternate',phase:'main_alternate',cls:'warn',can:true,frozen:true};
+    }else if(managedFrozenWithdrawn){
+      singleRule={...singleRule,label:'Retiré de la liste figée',method:'withdrawn',phase:'withdrawn',cls:'bad',can:false,frozen:true};
+    }
   }
   const rawElig=managedJunior&&!isSinglesFinals?(managedJunior.entry_method==='direct'?'Tableau direct junior':'Engagé junior'):singleRule.label;
   const elig=rawElig;

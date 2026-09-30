@@ -983,7 +983,8 @@ async function resolveTournamentImage(t:any){
     MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",
     NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",
     OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",
-    TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming"
+    TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming",
+    DC:"District of Columbia",PR:"Puerto Rico"
   };
   const usStateNames=new Set(Object.values(usStateCodes).map(x=>normalizeName(x)));
   const facilityRe=/\b(?:arena|stadium|sports? cent(?:er|re)|tennis cent(?:er|re)|tennis stadium|tennis club|country club|golf club|coliseum|club|complex|campus|resort|academy|pavilion|courts?|fairgrounds|olympic park)\b/i;
@@ -1004,22 +1005,37 @@ async function resolveTournamentImage(t:any){
   if(commaParts.length>=2){
     const first=commaParts[0],last=commaParts[commaParts.length-1];
     const stateCode=last.toUpperCase();
+    const startsWithFacility=facilityRe.test(first);
+    const cityBeforeRegion=commaParts.length>=3?commaParts[commaParts.length-2]:first;
+
     if(usStateCodes[stateCode]){
-      pushGeo(first+", "+usStateCodes[stateCode]);
-      pushGeo(first);
+      const cityPart=startsWithFacility&&commaParts.length>=3?cityBeforeRegion:first;
+      pushGeo(cityPart+", "+usStateCodes[stateCode]);
+      pushGeo(cityPart);
     }else if(usStateNames.has(normalizeName(last))){
-      pushGeo(first+", "+last);
-      pushGeo(first);
+      const cityPart=startsWithFacility&&commaParts.length>=3?cityBeforeRegion:first;
+      pushGeo(cityPart+", "+last);
+      pushGeo(cityPart);
+    }else if(startsWithFacility){
+      // "Copper Box Arena, London" and "Venue, City, Country/region".
+      const cityPart=commaParts.length>=3?cityBeforeRegion:last;
+      pushGeo(cityPart);
+      if(commaParts.length>=3)pushGeo(last);
     }else{
-      // Arena Varazdin, Varazdin / O2 arena, Prague / Castello, Dusseldorf.
-      pushGeo(last);
-      if(!facilityRe.test(first))pushGeo(first);
+      // Normal geographic values such as "Naples, FL" or "Newport, RI".
+      pushGeo(first);
+      if(commaParts.length===2&&!facilityRe.test(last))pushGeo(last);
     }
   }
-  for(const x of [...rawPlace.matchAll(/\(([^)]+)\)/g)].map(m=>m[1]))pushGeo(x);
+
+  // Parentheses often hold the venue, not the city:
+  // "Genoa (Park Tennis Training)" -> Genoa.
   const noParen=cleanPlace(rawPlace.replace(/\s*\([^)]*\)\s*/g," "));
   if(noParen&&!facilityRe.test(noParen))pushGeo(noParen);
-  if(!geoCandidates.length)pushGeo(rawPlace);
+  for(const x of [...rawPlace.matchAll(/\(([^)]+)\)/g)].map(m=>cleanPlace(m[1]))){
+    if(x&&!facilityRe.test(x))pushGeo(x);
+  }
+  if(!geoCandidates.length&&!facilityRe.test(rawPlace))pushGeo(rawPlace);
   const primaryCity=geoCandidates[0]||rawPlace;
   const syntheticPlace=/^ville\s+\d+$/i.test(primaryCity)||/^(?:rus|isr|ven)\s+tennis\s+center$/i.test(primaryCity);
   if(syntheticPlace&&fallbackImage&&!badCachedImage){
@@ -1029,6 +1045,7 @@ async function resolveTournamentImage(t:any){
     return t;
   }
   const curatedImageSources=[
+    {re:/Chengdu Open/i,url:"https://www.atptour.com/en/tournaments/chengdu/7581/overview"},
     {re:/United Cup/i,url:"https://www.unitedcup.com/en/media/news/united-cup-2026-schedule-released"},
     {re:/Nitto ATP Finals/i,url:"https://www.nittoatpfinals.com/en/"},
     {re:/Next Gen ATP Finals/i,url:"https://www.nextgenatpfinals.com/en/"},
@@ -1237,7 +1254,7 @@ async function resolveTournamentImage(t:any){
       for(const cityName of geoCandidates.slice(0,6)){
         const exactQs=new URLSearchParams({
           action:"query",titles:cityName,redirects:"1",
-          prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
+          prop:"pageimages|info|coordinates",piprop:"thumbnail|original",pithumbsize:"1200",
           inprop:"url",format:"json",origin:"*"
         });
         const exact=await fetch("https://en.wikipedia.org/w/api.php?"+exactQs.toString(),{
@@ -1248,14 +1265,15 @@ async function resolveTournamentImage(t:any){
           const jj:any=await exact.json();
           chosen=(Object.values(jj?.query?.pages||{}) as any[]).find((x:any)=>{
             const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-            return !x?.missing&&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
+            const hasCoordinates=Array.isArray(x?.coordinates)&&x.coordinates.length>0;
+            return !x?.missing&&hasCoordinates&&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
           })||null;
         }
         if(!chosen){
           const cityNorm=normalizeName(cityName).replace(/\s+/g,"");
           const searchQs=new URLSearchParams({
-            action:"query",generator:"search",gsrsearch:`intitle:"${cityName}"`,gsrnamespace:"0",gsrlimit:"6",
-            prop:"pageimages|info",piprop:"thumbnail|original",pithumbsize:"1200",
+            action:"query",generator:"search",gsrsearch:`intitle:"${cityName}"`,gsrnamespace:"0",gsrlimit:"8",
+            prop:"pageimages|info|coordinates",piprop:"thumbnail|original",pithumbsize:"1200",
             inprop:"url",format:"json",origin:"*"
           });
           const search=await fetch("https://en.wikipedia.org/w/api.php?"+searchQs.toString(),{
@@ -1266,9 +1284,17 @@ async function resolveTournamentImage(t:any){
             const jj:any=await search.json();
             const pages=(Object.values(jj?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
             chosen=pages.find((x:any)=>{
-              const title=normalizeName(String(x.title||"")).replace(/\s+/g,"");
+              const titleText=normalizeName(String(x.title||""));
+              const cityText=normalizeName(cityName);
+              const title=titleText.replace(/\s+/g,"");
               const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-              return (title===cityNorm||title.startsWith(cityNorm)||cityNorm.startsWith(title))
+              const hasCoordinates=Array.isArray(x?.coordinates)&&x.coordinates.length>0;
+              const cityTokens=cityText.split(/\s+/).filter(Boolean);
+              const titleTokens=titleText.split(/\s+/).filter(Boolean);
+              const titleMatch=titleText===cityText
+                ||(titleText.startsWith(cityText+" ")&&titleTokens.length<=cityTokens.length+2)
+                ||title===cityNorm;
+              return hasCoordinates&&titleMatch
                 &&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
             })||null;
           }
@@ -2156,7 +2182,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:54,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v5+venue-first-city-normalization+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:55,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v6+venue-city-parser-v3+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

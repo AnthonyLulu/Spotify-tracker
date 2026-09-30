@@ -963,7 +963,7 @@ async function resolveTournamentImage(t:any){
   // Reject document scans/DJVU false positives that Commons can rank as "images".
   const cachedUrl=String(t.image_url||"");
   const badCachedImage=/\.djvu(?:\/|\.|$|\?)|The_New_York_Times|California_a_guide_to_the_Golden_state/i.test(cachedUrl);
-  const weakImage=/Photo de la ville|Fallback circuit|Fallback compétition|réutilisée/i.test(String(t.image_source_label||""))||badCachedImage;
+  const weakImage=/Photo de la ville|Fallback circuit|Fallback compétition|Fallback catégorie|réutilisée/i.test(String(t.image_source_label||""))||badCachedImage;
   if(t.image_url&&!weakImage)return t;
 
   const fallbackImage=weakImage?String(t.image_url||"").trim():"";
@@ -1040,12 +1040,6 @@ async function resolveTournamentImage(t:any){
   if(!geoCandidates.length&&!facilityRe.test(rawPlace))pushGeo(rawPlace);
   const primaryCity=geoCandidates[0]||rawPlace;
   const syntheticPlace=/^ville\s+\d+$/i.test(primaryCity)||/^(?:rus|isr|ven)\s+tennis\s+center$/i.test(primaryCity);
-  if(syntheticPlace&&fallbackImage&&!badCachedImage){
-    t.image_url=fallbackImage;
-    t.image_source_url=fallbackSourceUrl;
-    t.image_source_label=fallbackSourceLabel;
-    return t;
-  }
   const curatedImageSources=[
     {re:/United Cup/i,url:"https://www.unitedcup.com/en/media/news/united-cup-2026-schedule-released"},
     {re:/Nitto ATP Finals/i,url:"https://www.nittoatpfinals.com/en/"},
@@ -1250,7 +1244,7 @@ async function resolveTournamentImage(t:any){
     }catch{}
   }
 
-  if(!t.image_url&&t.city){
+  if(!t.image_url&&t.city&&!syntheticPlace){
     try{
       const rawCity=String(t.city||"").trim();
       let chosen:any=null;
@@ -1317,7 +1311,41 @@ async function resolveTournamentImage(t:any){
       }
     }catch{}
   }
-  if(!t.image_url&&fallbackImage){
+  if(!t.image_url){
+    try{
+      const pool=await db.from("tournaments")
+        .select("id,name,category,circuit,image_url,image_source_url,image_source_label")
+        .eq("is_active",true)
+        .eq("category",String(t.category||""))
+        .neq("id",Number(t.id))
+        .not("image_url","is",null)
+        .limit(120);
+      if(!pool.error){
+        const strong=(pool.data??[]).filter((x:any)=>{
+          const label=String(x.image_source_label||"");
+          const url=String(x.image_url||"");
+          return url
+            &&!/Photo de la ville|Fallback circuit|Fallback compétition|Fallback catégorie|réutilisée/i.test(label)
+            &&!/\.djvu(?:\/|\.|$|\?)|The_New_York_Times|California_a_guide_to_the_Golden_state/i.test(url);
+        });
+        if(strong.length){
+          const ix=Math.abs(Number(t.id||0))%strong.length;
+          const pick:any=strong[ix];
+          t.image_url=String(pick.image_url||"");
+          t.image_source_url=String(pick.image_source_url||"");
+          t.image_source_label="Fallback catégorie · "+String(t.category||t.circuit||"Tour")+" · photo "+String(pick.name||"tournoi similaire");
+          await db.from("tournaments").update({
+            image_url:t.image_url,
+            image_source_url:t.image_source_url,
+            image_source_label:t.image_source_label
+          }).eq("id",t.id);
+        }
+      }
+    }catch{}
+  }
+
+  const syntheticBadFallback=syntheticPlace&&/Photo de la ville|Fallback circuit|Fallback compétition|Fallback catégorie/i.test(fallbackSourceLabel);
+  if(!t.image_url&&fallbackImage&&!badCachedImage&&!syntheticBadFallback){
     t.image_url=fallbackImage;
     t.image_source_url=fallbackSourceUrl;
     t.image_source_label=fallbackSourceLabel;
@@ -2186,7 +2214,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:56,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v7+venue-city-parser-v4+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:57,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v8+venue-city-parser-v4+category-fallback-pool+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

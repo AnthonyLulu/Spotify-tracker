@@ -3762,6 +3762,85 @@ Deno.serve(async(req:Request)=>{
     else if(mainStart&&finalDate&&referenceDate>=mainStart&&referenceDate<=finalDate)drawPhase="live";
     else if(finalDate&&referenceDate>finalDate)drawPhase="completed";
 
+    let worldDoublesEntries:any[]=[];
+    let worldDoublesBracket:any[]=[];
+    if(t.data.doubles){
+      const [worldDoublesEntryRes,worldDoublesMatchRes]=await Promise.all([
+        db.from("world_doubles_tournament_entries")
+          .select("pair_id,entry_method,seed,draw_slot,had_bye,matches_won,result_code,result_label,points_awarded,prize_awarded,last_opponent_pair_id,last_score,simulated_on,source_label")
+          .eq("tournament_id",id)
+          .order("draw_slot",{ascending:true}),
+        db.from("world_doubles_tournament_matches")
+          .select("id,round_no,round_code,match_no,pair_a_id,pair_b_id,winner_pair_id,loser_pair_id,score,pair_a_win_probability,model_version,simulated_on,is_qualifying")
+          .eq("tournament_id",id)
+          .eq("is_qualifying",false)
+          .order("round_no",{ascending:true})
+          .order("match_no",{ascending:true})
+      ]);
+      if(worldDoublesEntryRes.error||worldDoublesMatchRes.error){
+        return h({error:(worldDoublesEntryRes.error||worldDoublesMatchRes.error)?.message},500);
+      }
+      const pairIds=[...new Set([
+        ...(worldDoublesEntryRes.data??[]).map((x:any)=>Number(x.pair_id||0)),
+        ...(worldDoublesMatchRes.data??[]).flatMap((x:any)=>[
+          Number(x.pair_a_id||0),Number(x.pair_b_id||0),Number(x.winner_pair_id||0),Number(x.loser_pair_id||0)
+        ])
+      ].filter(Boolean))];
+      if(pairIds.length){
+        const pairRes=await db.from("world_doubles_partnerships")
+          .select("id,player_a_id,player_b_id,chemistry,compatibility,pair_strength")
+          .in("id",pairIds);
+        if(pairRes.error)return h({error:pairRes.error.message},500);
+        const playerIds=[...new Set((pairRes.data??[]).flatMap((x:any)=>[Number(x.player_a_id||0),Number(x.player_b_id||0)]).filter(Boolean))];
+        const playerRes=playerIds.length
+          ?await db.from("players").select("id,name,country,doubles_ranking").in("id",playerIds)
+          :{data:[],error:null};
+        if(playerRes.error)return h({error:playerRes.error.message},500);
+        const pMap=new Map((playerRes.data??[]).map((p:any)=>[Number(p.id),p]));
+        const pairMap=new Map((pairRes.data??[]).map((p:any)=>{
+          const a:any=pMap.get(Number(p.player_a_id))||{},b:any=pMap.get(Number(p.player_b_id))||{};
+          return [Number(p.id),{
+            id:Number(p.id),
+            player_a_id:Number(p.player_a_id),player_b_id:Number(p.player_b_id),
+            player_ids:[Number(p.player_a_id),Number(p.player_b_id)],
+            name:String(a.name||"—")+" / "+String(b.name||"—"),
+            player_a:a,player_b:b,
+            combined_rank:Number(a.doubles_ranking||999999)+Number(b.doubles_ranking||999999),
+            chemistry:Number(p.chemistry||0),compatibility:Number(p.compatibility||0),pair_strength:Number(p.pair_strength||0)
+          }];
+        }));
+        const entryMap=new Map((worldDoublesEntryRes.data??[]).map((e:any)=>[Number(e.pair_id),e]));
+        worldDoublesEntries=(worldDoublesEntryRes.data??[]).map((e:any)=>{
+          const pair:any=pairMap.get(Number(e.pair_id))||{};
+          return {
+            ...pair,
+            id:Number(e.pair_id),
+            seed:e.seed,draw_slot:e.draw_slot,entry_method:e.entry_method,had_bye:Boolean(e.had_bye),
+            matches_won:Number(e.matches_won||0),result_code:e.result_code,result_label:e.result_label,
+            points_awarded:Number(e.points_awarded||0),prize_awarded:Number(e.prize_awarded||0),
+            simulated_on:e.simulated_on,source_label:e.source_label
+          };
+        });
+        worldDoublesBracket=(worldDoublesMatchRes.data??[]).map((m:any)=>{
+          const a:any=pairMap.get(Number(m.pair_a_id))||null,b:any=pairMap.get(Number(m.pair_b_id))||null;
+          const ae:any=entryMap.get(Number(m.pair_a_id))||null,be:any=entryMap.get(Number(m.pair_b_id))||null;
+          const winner:any=pairMap.get(Number(m.winner_pair_id))||null;
+          return {
+            id:m.id,round_no:m.round_no,round_code:m.round_code,round_name:roundName(m.round_code),match_no:m.match_no,
+            player_a_id:m.pair_a_id,player_b_id:m.pair_b_id,
+            player_a_ids:a?.player_ids||[],player_b_ids:b?.player_ids||[],
+            player_a_name:a?.name||"À déterminer",player_b_name:b?.name||"À déterminer",
+            player_a_seed:ae?.seed||null,player_b_seed:be?.seed||null,
+            player_a_entry:ae?.entry_method||null,player_b_entry:be?.entry_method||null,
+            winner_pair_id:m.winner_pair_id,winner_pair_name:winner?.name||null,
+            loser_pair_id:m.loser_pair_id,
+            score:m.score,scheduled_date:m.simulated_on,simulated_on:m.simulated_on,
+            status:m.winner_pair_id?"completed":"scheduled",source:"world_doubles_engine"
+          };
+        });
+      }
+    }
+
     let doublesMain:any[]=[];
     if(t.data.doubles){
       const isJuniorDouble=String(t.data.circuit)==="Junior";
@@ -4342,6 +4421,7 @@ Deno.serve(async(req:Request)=>{
       format_rule:fr,economics,entry_rules:await managedTournamentEntryRules(t.data),doubles_entry_status:await managedDoublesEntryStatus(t.data),
       qualifying_window:{start:t.data.qualifying_start_date||null,end:t.data.qualifying_end_date||null,draw_size:qDraw,qualifier_slots:qSlots},
       run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:doublesMain,doubles_completed_draw:doublesCompletedDraw,
+      doubles_world_entries:worldDoublesEntries,doubles_draw_bracket:worldDoublesBracket,
       completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
       ranking_kind:"singles",entry_preview_model:"circuit_eligibility_v3",projected_cut_model:tournamentView.projected_cut_model
     });

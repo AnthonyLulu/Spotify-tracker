@@ -1912,7 +1912,7 @@ Deno.serve(async(req:Request)=>{
     if(circuit==="Next Gen") query=query.not("nextgen_ranking","is",null).not("nextgen_source","is",null).not("age","is",null).lte("age",21).or(`nextgen_snapshot_date.is.null,nextgen_snapshot_date.lte.${gameDate}`);
     if(circuit==="ITF") query=query.not("itf_ranking","is",null);
     if(circuit==="Junior") query=query.not("junior_ranking","is",null).not("junior_source","is",null).gte("age",13).lte("age",18);
-    if(circuit==="NCAA") query=query.eq("ncaa_verified",true);
+    if(circuit==="NCAA") query=query.eq("ncaa_current",true);
     if(circuit==="Prospects") query=query.eq("is_real",false).gte("potential",Math.max(70,potentialMin));
 
     if(circuit==="ATP"||circuit==="ATP classés"||circuit==="ATP profond") query=query.order("ranking",{ascending:true,nullsFirst:false});

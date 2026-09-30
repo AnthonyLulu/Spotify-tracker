@@ -1649,6 +1649,9 @@ Deno.serve(async(req:Request)=>{
           .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .eq("season",ncaaSeason)
           .lte("snapshot_date",gameDate)
+          // Official ITA snapshots must survive the bounded current-season pool.
+          // Newer Court Boss depth rows otherwise fill all 500 slots first.
+          .order("ita_rank_official",{ascending:true,nullsFirst:false})
           .order("snapshot_date",{ascending:false})
           .order("ita_rank",{ascending:true,nullsFirst:false}).limit(500),
         db.from("players").select(playerSelect).eq("ncaa_current",true)

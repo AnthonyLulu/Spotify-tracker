@@ -5304,6 +5304,10 @@ Deno.serve(async(req:Request)=>{
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
     if(board.error)return h({error:board.error.message},500);
+    const managedSeasonPlan=await db.rpc("ensure_managed_season_plan",{p_date:date});
+    if(managedSeasonPlan.error)return h({error:managedSeasonPlan.error.message},500);
+    const careerInboxSync=await db.rpc("career_sync_actionable_inbox",{p_date:date,p_week:week});
+    if(careerInboxSync.error)return h({error:careerInboxSync.error.message},500);
     const weeklyDigest=await db.rpc("career_publish_weekly_digest",{p_date:date,p_week:week});
     if(weeklyDigest.error)return h({error:weeklyDigest.error.message},500);
     const actionableInbox=await publishActionableInbox(date);
@@ -5311,7 +5315,7 @@ Deno.serve(async(req:Request)=>{
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});
     if(careerHealth.error)return h({error:careerHealth.error.message},500);
-    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -5414,6 +5418,10 @@ Deno.serve(async(req:Request)=>{
     if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
     const managedId=Number(career.data.managed_player_id||0);
     const year=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+    if(managedId){
+      const ensuredPlan=await db.rpc("ensure_managed_season_plan",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)});
+      if(ensuredPlan.error)return h({error:ensuredPlan.error.message},500);
+    }
     const [health,seasonPlan,media,sponsors,board,timeline,relationships,academy]=await Promise.all([
       db.rpc("career_system_health",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
       managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",year).maybeSingle():Promise.resolve({data:null,error:null} as any),
@@ -9510,6 +9518,8 @@ Deno.serve(async(req:Request)=>{
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
       ]);
       if(up.error||car.error)return h({error:(up.error||car.error)?.message},500);
+      await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
+        .eq("related_entity_type","sponsor_offer").eq("related_entity_id",id);
       await db.from("inbox_items").insert({
         kind:"commercial",title:"Sponsor signé",
         body:"Accord signé avec "+offer.data.brand+". Ton agent négocie "+negotiatedBonus+" € de bonus et "+negotiatedWeekly+" €/sem.",

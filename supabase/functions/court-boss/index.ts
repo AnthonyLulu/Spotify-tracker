@@ -2815,7 +2815,7 @@ Deno.serve(async(req:Request)=>{
     let worldQualifyingDraw:any[]=[];
     let worldLuckyLosers:any[]=[];
     let worldMainBracket:any[]=[];
-    const [worldEntriesRes,worldMatchesRes,worldQualEntriesRes,worldLuckyLoserRes]=await Promise.all([
+    const [worldEntriesRes,worldMatchesRes,worldQualEntriesRes,worldLuckyLoserRes,worldQualStateRes]=await Promise.all([
       db.from("world_tournament_entries")
         .select("player_id,seed,draw_slot,entry_method,ranking_at_entry,had_bye,matches_won,result_code,result_label,points_awarded,qualifying_points,prize_awarded,prize_currency,simulated_on,source_label")
         .eq("tournament_id",id)
@@ -2826,16 +2826,21 @@ Deno.serve(async(req:Request)=>{
         .order("round_no",{ascending:true})
         .order("match_no",{ascending:true}),
       db.from("world_tournament_qualifying_entries")
-        .select("player_id,entry_method,ranking_at_entry,result_code,result_label,qualified,points_awarded,last_opponent_id,last_opponent_name,last_score,simulated_on,source_label")
+        .select("player_id,entry_method,ranking_at_entry,result_code,result_label,qualified,points_awarded,last_opponent_id,last_opponent_name,last_score,simulated_on,source_label,seed,draw_pos,section_no")
         .eq("tournament_id",id)
+        .order("draw_pos",{ascending:true,nullsFirst:false})
         .order("ranking_at_entry",{ascending:true}),
       db.from("world_tournament_lucky_losers")
         .select("player_id,loss_round_code,ranking_at_seeding,ll_order,selected,source_label,created_at")
         .eq("tournament_id",id)
-        .order("ll_order",{ascending:true})
+        .order("ll_order",{ascending:true}),
+      db.from("world_qualifying_states")
+        .select("status,draw_size,bracket_total,qualifier_slots,rounds_count,section_bracket,draw_prepared_on,current_round_no,last_advanced_on,finalized_on,metadata")
+        .eq("tournament_id",id)
+        .maybeSingle()
     ]);
-    if(worldEntriesRes.error||worldMatchesRes.error||worldQualEntriesRes.error||worldLuckyLoserRes.error){
-      return h({error:(worldEntriesRes.error||worldMatchesRes.error||worldQualEntriesRes.error||worldLuckyLoserRes.error)?.message},500);
+    if(worldEntriesRes.error||worldMatchesRes.error||worldQualEntriesRes.error||worldLuckyLoserRes.error||worldQualStateRes.error){
+      return h({error:(worldEntriesRes.error||worldMatchesRes.error||worldQualEntriesRes.error||worldLuckyLoserRes.error||worldQualStateRes.error)?.message},500);
     }
     const worldPlayerIds=[...new Set([
       ...(worldEntriesRes.data??[]).map((x:any)=>Number(x.player_id||0)),
@@ -2917,17 +2922,35 @@ Deno.serve(async(req:Request)=>{
       ...(worldPlayerMap.get(Number(x.player_id))||{}),id:Number(x.player_id),ranking:Number(x.ranking_at_entry||999999),
       entry_method:x.entry_method,result:x.result_label||x.result_code,result_code:x.result_code,qualified:Boolean(x.qualified),
       points_awarded:Number(x.points_awarded||0),last_opponent_id:x.last_opponent_id,last_opponent_name:x.last_opponent_name,
-      last_score:x.last_score,simulated_on:x.simulated_on,source_label:x.source_label,actual_draw:true
+      last_score:x.last_score,simulated_on:x.simulated_on,source_label:x.source_label,
+      seed:x.seed,draw_pos:x.draw_pos,section_no:x.section_no,actual_draw:true
     }));
-    worldQualifyingDraw=(worldMatchesRes.data??[]).filter((x:any)=>Boolean(x.is_qualifying)).map((x:any)=>({
-      id:x.id,round_no:x.round_no,round_code:x.round_code,round_name:roundName(x.round_code),match_no:x.match_no,
-      player_a_id:x.player_a_id,player_b_id:x.player_b_id,
-      player_a_name:worldPlayerMap.get(Number(x.player_a_id))?.name||"—",player_b_name:worldPlayerMap.get(Number(x.player_b_id))?.name||"—",
-      winner_id:x.winner_id,winner_name:worldPlayerMap.get(Number(x.winner_id))?.name||"—",
-      loser_id:x.loser_id,loser_name:worldPlayerMap.get(Number(x.loser_id))?.name||"—",
-      score:x.score,best_of:x.best_of,scheduled_date:x.simulated_on,simulated_on:x.simulated_on,
-      status:String(x.simulated_on||"9999-12-31")<=referenceDate?"completed":"scheduled",source:"world_qualifying_engine"
-    }));
+    const worldQualMeta=new Map(worldQualifyingRows.map((x:any)=>[Number(x.id),x]));
+    worldQualifyingDraw=(worldMatchesRes.data??[])
+      .filter((x:any)=>Boolean(x.is_qualifying))
+      .map((x:any)=>{
+        const aMeta:any=worldQualMeta.get(Number(x.player_a_id))||null;
+        const bMeta:any=worldQualMeta.get(Number(x.player_b_id))||null;
+        const bye=String(x.score||"")==="BYE";
+        const completed=Boolean(x.winner_id)||bye;
+        return {
+          id:x.id,round_no:x.round_no,round_code:x.round_code,round_name:roundName(x.round_code),match_no:x.match_no,
+          player_a_id:x.player_a_id,player_b_id:x.player_b_id,
+          player_a_name:x.player_a_id?(worldPlayerMap.get(Number(x.player_a_id))?.name||"—"):(bye?"BYE":"—"),
+          player_b_name:x.player_b_id?(worldPlayerMap.get(Number(x.player_b_id))?.name||"—"):(bye?"BYE":"—"),
+          player_a_seed:aMeta?.seed||null,player_b_seed:bMeta?.seed||null,
+          player_a_entry:aMeta?.entry_method||(bye&&!x.player_a_id?"bye":null),
+          player_b_entry:bMeta?.entry_method||(bye&&!x.player_b_id?"bye":null),
+          winner_id:completed?x.winner_id:null,
+          winner_name:completed&&x.winner_id?(worldPlayerMap.get(Number(x.winner_id))?.name||"—"):null,
+          loser_id:completed?x.loser_id:null,
+          loser_name:completed&&x.loser_id?(worldPlayerMap.get(Number(x.loser_id))?.name||"—"):null,
+          score:completed?x.score:null,best_of:x.best_of,
+          scheduled_date:x.simulated_on,simulated_on:x.simulated_on,
+          status:completed?"completed":"scheduled",source:"world_qualifying_engine"
+        };
+      })
+      .sort((a:any,b:any)=>Math.abs(Number(a.round_no))-Math.abs(Number(b.round_no))||Number(a.match_no)-Number(b.match_no));
     worldLuckyLosers=(worldLuckyLoserRes.data??[]).map((x:any)=>({
       player_id:Number(x.player_id),name:worldPlayerMap.get(Number(x.player_id))?.name||"—",
       country:worldPlayerMap.get(Number(x.player_id))?.country||null,
@@ -3243,6 +3266,7 @@ Deno.serve(async(req:Request)=>{
         tournament:t.data,main:visibleJuniorMain,qualifying:visibleJuniorQual,junior_entries:entered.data??[],
         world_main:worldMainRows,world_completed_draw:worldCompletedDraw,world_qualifying:worldQualifyingRows,
         main_draw_matches:worldCompletedDraw,main_draw_bracket:worldMainBracket,qualifying_draw:worldQualifyingDraw,lucky_losers:worldLuckyLosers,
+        qualifying_state:worldQualStateRes.data??null,
         draw_timeline:drawTimeline,draw_phase:drawPhase,reference_date:referenceDate,
         draw_state:{actual:Boolean(worldMainRows.length),model:worldMainRows.length?"itf-junior-seed-zones-v3":"projection",seed_placement:"ITF junior regulatory zones"},
         wildcard:wc.data??null,forfeits:forfeits.data??[],run:run.data??null,doubles_run:doublesRun.data??null,
@@ -3523,6 +3547,7 @@ Deno.serve(async(req:Request)=>{
       tournament:tournamentView,main:visibleMain,qualifying:visibleQualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
       world_main:worldMainRows,world_completed_draw:worldCompletedDraw,world_qualifying:worldQualifyingRows,
       main_draw_matches:worldCompletedDraw,qualifying_draw:worldQualifyingDraw,lucky_losers:worldLuckyLosers,
+      qualifying_state:worldQualStateRes.data??null,
       draw_timeline:drawTimeline,draw_phase:drawPhase,reference_date:referenceDate,
       projected_bye_slots:[...projectedByeSlots].sort((a,b)=>a-b),projected_bracket_size:projectedBracket,
       entry_legend:{direct:"DA",wildcard:"WC",qualifying:"Q",qualifier:"Q",qualifier_slot:"Q",lucky_loser:"LL",alternate:"ALT",special_exempt:"SE",performance_bye:"PB",bye:"BYE"},

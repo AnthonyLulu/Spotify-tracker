@@ -254,6 +254,16 @@ async function loadCareerHub(force=false){
  catch(e){careerHub={error:e.message};throw e}
  finally{careerHubLoading=false}
 }
+function invalidateCareerCaches(){
+ rankRows=[];rankCount=0;rankOffset=0;
+ tourRows=[];tourTbc=[];tourCount=0;tourOffset=0;
+ management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;careerHub=null;
+ historyData=null;competitionRows=[];competitionCount=0;competitionOffset=0;
+ doublesHubRows=[];juniorDoublesHubRows=[];doublesRaceRows=[];doublesHubLoading=false;
+ ncaaDoublesRows=[];ncaaDoublesMeta={};ncaaUniversities=[];ncaaUniversitiesMeta={};ncaaUniversityDetail=null;ncaaUniversityLoading=false;
+ dbRows=[];dbCount=0;dbOffset=0;dbLoaded=false;dbLoading=false;
+ staffWorldData=null;staffWorldOffset=0;worldStats=null;
+}
 async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
  if(saveSlotBusy)return;
  if(local.liveSessionId){if(!silent)alert('Termine le match en cours avant de sauvegarder.');return;}
@@ -263,11 +273,17 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
   const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
   const slotName=silent?defaultName:(prompt('Nom de la sauvegarde',defaultName)||defaultName);
   const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:local})});
+  local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||local.date,week:d.slot?.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
+  localStorage.setItem('cbLocal',JSON.stringify(local));
   await loadSaveSlots();
   if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
   if(route==='saves')render();
   return d;
- }catch(e){if(!silent)alert(e.message);else console.warn('Autosave',e)}
+ }catch(e){
+  local.lastSaveState={status:'error',slot_no:Number(slotNo),slot_type:slotType,career_date:local.date,week:local.week,updated_at:new Date().toISOString(),error:String(e?.message||e)};
+  localStorage.setItem('cbLocal',JSON.stringify(local));
+  if(!silent)alert(e.message);else console.warn('Autosave',e)
+ }
  finally{saveSlotBusy=false}
 }
 async function loadCareerSlot(slotNo){
@@ -282,8 +298,8 @@ async function loadCareerSlot(slotNo){
   localStorage.setItem('cbLocal',JSON.stringify(local));
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
-  rankRows=[];tourRows=[];management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;
-  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots()]);
+  invalidateCareerCaches();
+  await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
   route='home';render();
  }catch(e){alert('Chargement impossible : '+e.message)}
  finally{saveSlotBusy=false}
@@ -2828,7 +2844,8 @@ function saveCenterPage(){
    </div>`;
  }).join('');
  return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
- <div class="notice mini"><b>Snapshot managé v2 :</b> la carrière, l’académie, le staff, les contrats, les relations, les blessures, le scouting, le NCAA géré, les inscriptions et les résultats du joueur sont restaurés exactement. Le monde IA global continue d’être piloté par sa simulation.</div>
+ <div class="notice mini"><b>Snapshot managé v2 :</b> la carrière, l’académie, le staff, les contrats, les relations, les blessures, le scouting, le NCAA géré, les inscriptions et les résultats du joueur sont restaurés exactement. L’autosave est écrit juste après la validation serveur d’une semaine, avant les rafraîchissements d’écran.</div>
+ ${local.lastSaveState?`<div class="card" style="margin-top:10px"><div class="row between"><div><div class="eyebrow">Dernière opération de sauvegarde</div><b>${local.lastSaveState.slot_type==='autosave'?'Autosave':local.lastSaveState.slot_type==='quick'?'Quicksave':'Sauvegarde manuelle'} · semaine ${fmt(local.lastSaveState.week||1)}</b></div><span class="badge ${local.lastSaveState.status==='ok'?'good':'bad'}">${local.lastSaveState.status==='ok'?'Sécurisée':'Échec'}</span></div><div class="muted mini" style="margin-top:6px">${df(local.lastSaveState.career_date)} · ${new Date(local.lastSaveState.updated_at).toLocaleString('fr-FR')}${local.lastSaveState.error?' · '+esc(local.lastSaveState.error):''}</div></div>`:''}
  <div class="row" style="margin-top:10px"><button class="ghost" onclick="nav('launcher')">Menu carrière</button></div>
  <div class="grid g2" style="margin-top:12px">${cards}</div>`;
 }
@@ -2859,12 +2876,13 @@ window.startNewCareer=async()=>{
   };
   local={...base,...(d.local_payload||{})};
   localStorage.setItem('cbLocal',JSON.stringify(local));
-  rankRows=[];tourRows=[];management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;careerHub=null;historyData=null;competitionRows=[];
+  invalidateCareerCaches();
   boot=await get('/api/bootstrap');
   local.career={...(local.career||{}),...(boot.career||{})};
   local.date=boot.career?.career_date||local.date;
   local.week=boot.career?.week??local.week;
-  await Promise.all([loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
+  await Promise.allSettled([loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
+  saveSlotBusy=false;
   await saveCareerSlot(0,'autosave',true);
   route='home';render();
  }catch(e){alert('Nouvelle carrière impossible : '+e.message)}
@@ -4463,10 +4481,11 @@ window.simulateWeek=async()=>{
     local.career=cr;persist();
     boot=await get('/api/bootstrap');
     if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
-    await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
-    trainingPreview=null;careerHub=null;if(route==='training')await loadTrainingPreview(true);
-    if(route==='history')await loadHistory();
+    trainingPreview=null;careerHub=null;
     await saveCareerSlot(0,'autosave',true);
+    await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
+    if(route==='training')await loadTrainingPreview(true).catch(()=>{});
+    if(route==='history')await loadHistory().catch(()=>{});
     return;
   }
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
@@ -4488,10 +4507,11 @@ window.simulateWeek=async()=>{
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
-  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries()]);
-  trainingPreview=null;careerHub=null;if(route==='training')await loadTrainingPreview(true);
-  if(route==='history')await loadHistory();
+  trainingPreview=null;careerHub=null;
   await saveCareerSlot(0,'autosave',true);
+  await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
+  if(route==='training')await loadTrainingPreview(true).catch(()=>{});
+  if(route==='history')await loadHistory().catch(()=>{});
  }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }

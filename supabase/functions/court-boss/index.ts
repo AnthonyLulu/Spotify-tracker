@@ -8565,7 +8565,7 @@ Deno.serve(async(req:Request)=>{
             player_id:playerId,ita_rank:null,ita_rank_official:null,projected_rank:projected,
             school:destination,division:"NCAA D1",season,status:"Active",snapshot_date:today,
             source_label:"Court Boss Academy pathway · simulated depth",rank_source_kind:"simulated_depth",class_year:"Freshman"
-          },{onConflict:"player_id,season,snapshot_date"}),
+          },{onConflict:"player_id,season"}),
           db.from("academy_youth").update({
             status:"ncaa",pathway_preference:"ncaa",last_review_date:today
           }).eq("id",id)

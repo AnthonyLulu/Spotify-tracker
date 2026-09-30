@@ -6248,6 +6248,32 @@ Deno.serve(async(req:Request)=>{
     }
 
     const t:any=tour.data,c:any=career.data;
+    const autoQualifiedDoublesFinals=(
+      (String(t.circuit)==="ATP"&&/ATP Finals/i.test(String(t.category||"")))
+      ||(String(t.circuit)==="Junior"&&/Junior Double Finals/i.test(String(t.category||"")))
+    );
+    let persistedDoubleEntry:any=null;
+    if(!autoQualifiedDoublesFinals){
+      const persisted=await db.from("managed_doubles_entries")
+        .select("*")
+        .eq("owner_id","demo")
+        .eq("tournament_id",tid)
+        .eq("player_id",Number(anth.data.id))
+        .eq("partner_id",Number(partnership.data.player_b_id))
+        .eq("status","entered")
+        .maybeSingle();
+      if(persisted.error)return h({error:persisted.error.message},500);
+      if(!persisted.data){
+        return h({
+          error:"Inscris d’abord cette paire au tournoi avant de jouer le double.",
+          requires_persisted_entry:true,
+          tournament_id:tid,
+          partner_id:Number(partnership.data.player_b_id)
+        },409);
+      }
+      persistedDoubleEntry=persisted.data;
+    }
+
     let doublesEntryStatus:any=null;
     let protectedDoubleUse:any=null;
     if(["ATP","Challenger","ITF"].includes(String(t.circuit))||/Grand Chelem/i.test(String(t.category||""))){
@@ -6915,6 +6941,20 @@ Deno.serve(async(req:Request)=>{
     await db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" remportent le double à "+t.name+" !":String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" terminent "+userRound+" en double à "+t.name+"."});
 
     const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:Number(run.data.id),p_date:earned});
+    if(persistedDoubleEntry?.id){
+      const playedEntry=await db.from("managed_doubles_entries").update({
+        status:"played",
+        metadata:{
+          ...(persistedDoubleEntry.metadata||{}),
+          played_run_id:Number(run.data.id),
+          played_on:earned,
+          result:userRound,
+          entry_method:doublesRunEntryMethod
+        },
+        updated_at:new Date().toISOString()
+      }).eq("id",Number(persistedDoubleEntry.id));
+      if(playedEntry.error)return h({error:playedEntry.error.message},500);
+    }
     const board=await db.rpc("update_board_state");
     return h({ok:true,run_id:run.data.id,tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",doubles_entry_status:doublesEntryStatus,entry_method:doublesRunEntryMethod,qualifying_points:qualifyingPointsEarned,protected_ranking_use:protectedDoubleUse,fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }

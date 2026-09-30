@@ -2850,19 +2850,20 @@ window.markAllInboxRead=async()=>{
 
 function seasonPage(){
  const h=careerHub||{},cr=h.career||career(),p=h.seasonPlan||{},up=(scheduleAdvice?.recommended||boot.upcoming||[]).slice(0,10);
- const plans=[['elite_selective','Élite sélective'],['tour_regular','Circuit principal'],['challenger_push','Objectif Challenger'],['itf_build','Construction ITF'],['doubles_specialist','Spécialiste double'],['junior_transition','Transition junior'],['ncaa_pathway','Voie NCAA']];
- const surfaces=['Polyvalent','Dur','Terre','Gazon','Indoor'];
+ const plans=[['balanced','Équilibré'],['elite_selective','Élite sélective'],['tour_regular','Circuit principal'],['challenger_push','Objectif Challenger'],['itf_build','Construction ITF'],['singles_specialist','Spécialiste simple'],['doubles_specialist','Spécialiste double'],['junior_transition','Transition junior'],['ncaa_pathway','Voie NCAA']];
+ const surfaces=['Mixte','Dur','Terre','Gazon','Indoor'];
  const option=(v,l,cur)=>'<option value="'+esc(v)+'" '+(String(cur)===String(v)?'selected':'')+'>'+esc(l)+'</option>';
  const slider=(id,label,val,min=1,max=20)=>'<div class="list-item"><div class="row between"><span>'+esc(label)+'</span><b id="'+id+'_v">'+fmt(val)+'</b></div><input id="'+id+'" type="range" min="'+min+'" max="'+max+'" value="'+Number(val)+'" oninput="document.getElementById(\''+id+'_v\').textContent=this.value"></div>';
  return '<div class="section-head"><div><div class="eyebrow">Planning annuel</div><h1>Plan de saison '+String(local.date||'').slice(0,4)+'</h1><div class="muted">Le plan pilote les choix de tournois, le repos, les déplacements, la priorité simple/double et la prise de risque du calendrier.</div></div><button class="primary" onclick="saveManagedSeasonPlan()">Enregistrer le plan</button></div>'+
  '<div class="grid g4"><div class="card"><div class="eyebrow">Simple</div><div class="big">#'+fmt(cr.singles_rank||0)+'</div></div><div class="card"><div class="eyebrow">Double</div><div class="big">#'+fmt(cr.doubles_rank||0)+'</div></div><div class="card"><div class="eyebrow">Fatigue</div><div class="big '+(Number(cr.fatigue||0)>=70?'bad':Number(cr.fatigue||0)>=50?'warn':'good')+'">'+fmt(cr.fatigue||0)+'%</div></div><div class="card"><div class="eyebrow">Orientation</div><div class="big" style="font-size:17px">'+esc(careerFocusLabel(cr.career_focus||'mixed'))+'</div></div></div>'+
  '<div class="grid g2" style="margin-top:12px"><div class="card"><h2>Identité de saison</h2>'+
  '<div class="list-item"><span class="muted mini">Type de plan</span><select id="seasonPlanType" class="select">'+plans.map(x=>option(x[0],x[1],p.plan_type||'tour_regular')).join('')+'</select></div>'+
- '<div class="list-item"><span class="muted mini">Surface prioritaire</span><select id="seasonPreferredSurface" class="select">'+surfaces.map(x=>option(x,x,p.preferred_surface||'Polyvalent')).join('')+'</select></div>'+
+ '<div class="list-item"><span class="muted mini">Surface prioritaire</span><select id="seasonPreferredSurface" class="select">'+surfaces.map(x=>option(x,x,p.preferred_surface||'Mixte')).join('')+'</select></div>'+
+ '<div class="list-item"><span class="muted mini">Surface secondaire</span><select id="seasonSecondarySurface" class="select">'+surfaces.map(x=>option(x,x,p.secondary_surface||'Terre')).join('')+'</select></div>'+
  '<div class="list-item row between"><span>Tournois cibles</span><input id="seasonTargetEvents" class="input" type="number" min="8" max="40" value="'+Number(p.target_events||22)+'" style="width:90px"></div>'+
  '<div class="list-item row between"><span>Semaines consécutives max</span><input id="seasonMaxWeeks" class="input" type="number" min="1" max="8" value="'+Number(p.max_consecutive_weeks||3)+'" style="width:90px"></div>'+
  '<div class="list-item row between"><span>Seuil repos fatigue</span><input id="seasonFatigueTrigger" class="input" type="number" min="35" max="90" value="'+Number(p.rest_trigger_fatigue||62)+'" style="width:90px"></div></div>'+
- '<div class="card"><h2>Priorités manager</h2>'+slider('seasonRestBias','Repos',p.rest_bias||10)+slider('seasonTravel','Tolérance voyages',p.travel_tolerance||10)+slider('seasonPrestige','Prestige',p.prestige_bias||10)+slider('seasonDevelopment','Développement',p.development_bias||10)+slider('seasonDoubles','Double',p.doubles_bias||10)+slider('seasonRisk','Risque calendrier',p.schedule_risk_tolerance||10)+'</div></div>'+
+ '<div class="card"><h2>Priorités manager</h2>'+slider('seasonRestBias','Repos',p.rest_bias||10)+slider('seasonTravel','Tolérance voyages',p.travel_tolerance||10)+slider('seasonPrestige','Prestige',p.prestige_bias||10)+slider('seasonDevelopment','Développement',p.development_bias||10)+slider('seasonDoubles','Double',p.doubles_bias||10)+slider('seasonRisk','Risque calendrier',p.schedule_risk_tolerance||10)+slider('seasonMental','Charge mentale cible',p.mental_load_target||10)+'</div></div>'+
  '<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Calendrier conseillé</div><h2>Prochains objectifs</h2></div><button class="ghost" onclick="nav(\'calendar\')">Calendrier complet</button></div>'+
  (up.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Tournoi</th><th>Niveau</th><th>Surface</th></tr></thead><tbody>'+up.map(t=>'<tr class="click" onclick="openTournament('+Number(t.id)+')"><td>'+df(t.start_date)+'</td><td><b>'+esc(t.name)+'</b></td><td>'+esc(t.category||t.level||t.circuit||'—')+'</td><td>'+esc(surfaceLabel(t))+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Aucune recommandation de calendrier.</div>')+'</div>'+
  '<div class="card" style="margin-top:12px"><h2>Objectifs du board</h2>'+((h.objectives||boot.board||[]).map(o=>'<div class="list-item"><div class="row between"><b>'+esc(o.objective)+'</b><span>'+fmt(o.progress||0)+'%</span></div><div class="bar"><i style="width:'+Number(o.progress||0)+'%"></i></div><div class="muted micro">'+esc(o.target_value||'')+' · '+df(o.deadline)+'</div></div>').join('')||'<div class="empty">Aucun objectif.</div>')+'</div>';
@@ -2872,6 +2873,7 @@ window.saveManagedSeasonPlan=async()=>{
   const payload={
    plan_type:document.getElementById('seasonPlanType')?.value,
    preferred_surface:document.getElementById('seasonPreferredSurface')?.value,
+   secondary_surface:document.getElementById('seasonSecondarySurface')?.value,
    target_events:Number(document.getElementById('seasonTargetEvents')?.value||22),
    max_consecutive_weeks:Number(document.getElementById('seasonMaxWeeks')?.value||3),
    rest_trigger_fatigue:Number(document.getElementById('seasonFatigueTrigger')?.value||62),
@@ -2880,9 +2882,10 @@ window.saveManagedSeasonPlan=async()=>{
    prestige_bias:Number(document.getElementById('seasonPrestige')?.value||10),
    development_bias:Number(document.getElementById('seasonDevelopment')?.value||10),
    doubles_bias:Number(document.getElementById('seasonDoubles')?.value||10),
-   schedule_risk_tolerance:Number(document.getElementById('seasonRisk')?.value||10)
+   schedule_risk_tolerance:Number(document.getElementById('seasonRisk')?.value||10),
+   mental_load_target:Number(document.getElementById('seasonMental')?.value||10)
   };
-  await managerAction('managed_season_plan',0,payload);
+  await managerAction('update_season_plan',0,{plan:payload});
   careerHub=null;await Promise.all([loadCareerHub(true),loadScheduleAdvice()]);
   alert('Plan de saison enregistré.');render();
  }catch(e){alert(e.message)}

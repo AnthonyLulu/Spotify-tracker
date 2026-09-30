@@ -1489,7 +1489,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:44,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v19",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:45,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v20",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -1644,16 +1644,22 @@ Deno.serve(async(req:Request)=>{
         return String(start)+"-"+String((start+1)%100).padStart(2,"0");
       };
       const ncaaSeason=rankingNcaaSeasonAt(gameDate);
-      const [currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3,collegeTeams,schoolAliases]=await Promise.all([
+      const [officialReg,currentReg,currentPlayers,allAmericanReg,registryPool0,registryPool1,registryPool2,registryPool3,collegeTeams,schoolAliases]=await Promise.all([
         db.from("ncaa_player_registry")
           .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
           .eq("season",ncaaSeason)
           .lte("snapshot_date",gameDate)
-          // Official ITA snapshots must survive the bounded current-season pool.
-          // Newer Court Boss depth rows otherwise fill all 500 slots first.
-          .order("ita_rank_official",{ascending:true,nullsFirst:false})
+          .not("ita_rank_official","is",null)
+          .order("ita_rank_official",{ascending:true})
+          .limit(125),
+        db.from("ncaa_player_registry")
+          .select("id,ita_rank,ita_rank_official,projected_rank,school,division,season,status,snapshot_date,source_url,source_label,players!inner("+playerSelect+")")
+          .eq("season",ncaaSeason)
+          .lte("snapshot_date",gameDate)
+          // Depth is loaded separately. Official ITA rows have their own pool above,
+          // so a future snapshot can never evict ranks 1-20 from the UI.
           .order("snapshot_date",{ascending:false})
-          .order("ita_rank",{ascending:true,nullsFirst:false}).limit(500),
+          .order("ita_rank",{ascending:true,nullsFirst:false}).limit(1000),
         db.from("players").select(playerSelect).eq("ncaa_current",true)
           .lte("ncaa_snapshot_date",gameDate)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*").limit(1500),
@@ -1675,7 +1681,7 @@ Deno.serve(async(req:Request)=>{
         db.from("college_teams").select("id,name").limit(500),
         db.from("ncaa_school_team_aliases").select("school_name,team_id,is_active").eq("is_active",true).limit(1000)
       ]);
-      const e=currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool0.error||registryPool1.error||registryPool2.error||registryPool3.error||collegeTeams.error||schoolAliases.error;
+      const e=officialReg.error||currentReg.error||currentPlayers.error||allAmericanReg.error||registryPool0.error||registryPool1.error||registryPool2.error||registryPool3.error||collegeTeams.error||schoolAliases.error;
       if(e)return h({error:e.message},500);
 
       const ncaaSchoolKey=(v:any)=>String(v||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
@@ -1735,19 +1741,23 @@ Deno.serve(async(req:Request)=>{
         });
       };
 
-      for(const x of currentReg.data??[]){
+      for(const x of officialReg.data??[]){
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
         put(p,x,0);
       }
-      for(const p of currentPlayers.data??[])put(p,{ita_rank:null,season:ncaaSeason,status:"Active pool"},1);
+      for(const x of currentReg.data??[]){
+        const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
+        put(p,x,1);
+      }
+      for(const p of currentPlayers.data??[])put(p,{ita_rank:null,season:ncaaSeason,status:"Active pool"},2);
       for(const x of allAmericanReg.data??[]){
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
-        put(p,{...x,ita_rank:null},2);
+        put(p,{...x,ita_rank:null},3);
       }
       for(const x of [...(registryPool0.data??[]),...(registryPool1.data??[]),...(registryPool2.data??[]),...(registryPool3.data??[])]){
         const p=Array.isArray((x as any).players)?(x as any).players[0]:(x as any).players;
         if(String(p?.data_source||"").startsWith("hidden duplicate merged into "))continue;
-        put(p,x,3);
+        put(p,x,4);
       }
 
       let rows=[...byId.values()];
@@ -1772,7 +1782,7 @@ Deno.serve(async(req:Request)=>{
       const total=rows.length;
       const officialRanked=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_rank_type==="official"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
       const simulatedDepth=rows.filter((x:any)=>x.ncaa_projected_rank!=null&&x.ncaa_rank_type==="simulated_depth"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
-      const officialSource=(currentReg.data??[]).find((x:any)=>/ITA Division I Men.?s National Singles Rankings/i.test(String(x.source_label||""))&&x.source_url);
+      const officialSource=(officialReg.data??[]).find((x:any)=>/ITA Division I Men.?s National Singles Rankings/i.test(String(x.source_label||""))&&x.source_url);
       rows=rows.slice(offset,offset+limit).map(({__priority,...x}:any)=>x);
       return h({
         kind,offset,limit,count:total,rows,

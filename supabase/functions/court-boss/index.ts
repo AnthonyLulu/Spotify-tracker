@@ -2074,7 +2074,7 @@ Deno.serve(async(req:Request)=>{
       db.from("board_objectives").select("*").order("priority",{ascending:true}),
       db.from("inbox_items").select("*").order("created_at",{ascending:false}).limit(20),
       db.from("scouting_assignments").select("*,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,primary_role,nationality,scouting_rating,reputation,regions,workload,burnout,energy,operational_status,rest_until)").order("id"),
-      db.from("scouting_reports").select("*,player:players!scouting_reports_player_id_fkey(id,name,country,ranking,game_world_rank,age,style,photo_url)").order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(60),
+      db.from("scouting_reports").select("*,player:players!scouting_reports_player_id_fkey(id,name,country,ranking,game_world_rank,junior_ranking,age,birth_date,style,photo_url,ncaa_current,career_status)").order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(60),
       db.from("academy_youth").select("*").order("potential",{ascending:false}),
       db.from("federation_state").select("*").eq("nation","FRA").maybeSingle(),
       db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
@@ -10347,6 +10347,79 @@ Deno.serve(async(req:Request)=>{
         action_route:"scouting",is_read:false
       });
       return h({ok:true,focus,scout_profile_id:scoutProfileId||null,scout_name:scoutName,eta_date:eta.toISOString().slice(0,10)});
+    }
+
+
+    if(action==="recruit_scouted_player"){
+      const reportId=Number(body?.report_id||0);
+      const report=await db.from("scouting_reports")
+        .select("*").eq("id",reportId).eq("player_id",id).maybeSingle();
+      if(report.error||!report.data)return h({error:report.error?.message||"Rapport scouting introuvable."},404);
+      if(Number(report.data.confidence||0)<60)return h({error:"Connaissance insuffisante : atteins au moins 60% de confiance avant une approche."},409);
+
+      const player=await db.from("players")
+        .select("id,name,country,ranking,junior_ranking,birth_date,age,current_ability,potential,ncaa_current,career_status")
+        .eq("id",id).maybeSingle();
+      if(player.error||!player.data)return h({error:player.error?.message||"Joueur introuvable."},404);
+      const p:any=player.data;
+      const playerAge=ageAt(p.birth_date,String(career.data.career_date||AGE_REFERENCE_DATE),p.age);
+      if(playerAge>21)return h({error:"Le recrutement académie depuis le scouting est réservé aux joueurs de 21 ans ou moins."},409);
+      if(Boolean(p.ncaa_current))return h({error:"Ce joueur est actuellement NCAA. Utilise la filière universitaire plutôt qu’un contrat académie pro."},409);
+      if(String(p.career_status||"active")!=="active")return h({error:"Ce joueur n’est pas disponible pour un recrutement actif."},409);
+      if(Number(p.id)===Number(career.data.managed_player_id||0))return h({error:"Le joueur principal fait déjà partie de ta structure."},409);
+
+      const existing=await db.from("academy_roster").select("*").eq("player_id",id).maybeSingle();
+      if(existing.error)return h({error:existing.error.message},500);
+      if(existing.data&&existing.data.status==="active")return h({ok:true,already:true,roster:existing.data,budget:Number(career.data.budget||0)});
+
+      const academy=await db.from("academies").select("youth_capacity,academy_level,reputation").eq("id","demo").maybeSingle();
+      if(academy.error)return h({error:academy.error.message},500);
+      const activeRoster=await db.from("academy_roster").select("id",{count:"exact",head:true}).eq("status","active");
+      if(activeRoster.error)return h({error:activeRoster.error.message},500);
+      const capacity=Math.max(4,Number(academy.data?.youth_capacity||8));
+      if(Number(activeRoster.count||0)>=capacity)return h({error:"Capacité académie atteinte. Agrandis la structure ou libère une place."},409);
+
+      const estPa=Math.round((Number(report.data.estimated_pa_min||p.potential||60)+Number(report.data.estimated_pa_max||p.potential||60))/2);
+      const estCa=Math.round((Number(report.data.estimated_ca_min||p.current_ability||45)+Number(report.data.estimated_ca_max||p.current_ability||45))/2);
+      const rank=Number(p.ranking||3000);
+      const signingCost=Math.max(500,Math.round(estPa*70+Math.max(0,1800-rank)*1.4));
+      const weeklyCost=Math.max(100,Math.round(estCa*5+Math.max(0,1200-rank)*.22));
+      let budget=Number(career.data.budget||0);
+      if(budget<signingCost)return h({error:"Budget insuffisant pour l’approche : "+signingCost+" € requis.",signing_cost:signingCost},409);
+      budget-=signingCost;
+
+      const start=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const end=new Date(start+"T12:00:00Z");end.setUTCFullYear(end.getUTCFullYear()+2);
+      const endDate=end.toISOString().slice(0,10);
+      const rosterPayload={
+        player_id:id,source_youth_id:null,contract_start:start,contract_end:endDate,
+        weekly_cost:weeklyCost,squad_role:"Prospect scouté",development_focus:"Équilibré",status:"active"
+      };
+      const roster=existing.data
+        ?await db.from("academy_roster").update(rosterPayload).eq("id",existing.data.id).select("*").single()
+        :await db.from("academy_roster").insert(rosterPayload).select("*").single();
+      if(roster.error)return h({error:roster.error.message},500);
+
+      const budgetUpdate=await db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo");
+      if(budgetUpdate.error)return h({error:budgetUpdate.error.message},500);
+      await db.from("contracts").insert({
+        subject_type:"player",subject_name:p.name,role:"Prospect scouté",
+        weekly_salary:weeklyCost,start_date:start,end_date:endDate,
+        bonuses:{signing_fee:signingCost,source:"scouting_report",report_id:reportId},status:"active"
+      });
+      await db.from("inbox_items").insert({
+        kind:"academy",title:"Recrutement académie · "+p.name,
+        body:p.name+" rejoint l’académie pour 2 ans. Prime "+signingCost+" € · "+weeklyCost+" €/sem.",
+        action_route:"academy",is_read:false,game_date:start,priority:"normal",
+        action_type:"open_route",action_label:"Voir l’académie",action_payload:{route:"academy"},
+        decision_status:"info",related_entity_type:"academy_player",related_entity_id:id
+      });
+      await db.from("career_event_log").insert({
+        event_date:start,week:Number(career.data.week||1),system:"academy",event_type:"scouted_recruitment",
+        summary:"Recrutement de "+p.name,
+        payload:{player_id:id,report_id:reportId,signing_cost:signingCost,weekly_cost:weeklyCost,contract_end:endDate}
+      });
+      return h({ok:true,player_id:id,player_name:p.name,signing_cost:signingCost,weekly_cost:weeklyCost,contract_end:endDate,budget,roster:roster.data});
     }
 
 

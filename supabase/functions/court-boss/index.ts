@@ -1489,7 +1489,7 @@ Deno.serve(async(req:Request)=>{
   const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
   if(!isHealth&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:45,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v20",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:46,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v21",tournament_model:"entry-calendar-prize-v8+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -1657,7 +1657,7 @@ Deno.serve(async(req:Request)=>{
           .eq("season",ncaaSeason)
           .lte("snapshot_date",gameDate)
           // Depth is loaded separately. Official ITA rows have their own pool above,
-          // so a future snapshot can never evict ranks 1-20 from the UI.
+          // so a future snapshot can never evict ranks 1-125 from the UI.
           .order("snapshot_date",{ascending:false})
           .order("ita_rank",{ascending:true,nullsFirst:false}).limit(1000),
         db.from("players").select(playerSelect).eq("ncaa_current",true)
@@ -1792,7 +1792,7 @@ Deno.serve(async(req:Request)=>{
         officialSnapshotDate:"2025-11-25",
         officialSourceLabel:officialSource?.source_label||"ITA Division I Men's National Singles Rankings · 2025-11-25",
         officialSourceUrl:officialSource?.source_url||null,
-        coverage:"ITA officiel 1-20 au 25/11/2025 · profondeur 21+ affichée uniquement comme projection Court Boss (~)",
+        coverage:"ITA officiel 1-125 au 25/11/2025 · profondeur 126+ affichée uniquement comme projection Court Boss (~)",
         eligibility:"NCAA Division I · classement officiel distingué de la profondeur simulée",
         rankingDate:gameDate
       });

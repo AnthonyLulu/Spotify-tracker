@@ -8791,6 +8791,14 @@ Deno.serve(async(req:Request)=>{
       }else if(focus==="singles_only"){
         const managedId=Number(career.data.managed_player_id||0);
         if(managedId){
+          const doublesWd=await db.from("managed_doubles_entries").update({
+            status:"withdrawn",
+            withdrawn_on:String(career.data.career_date||AGE_REFERENCE_DATE),
+            metadata:{withdrawal_reason:"career_focus_singles_only"},
+            updated_at:new Date().toISOString()
+          }).eq("owner_id","demo").eq("player_id",managedId).eq("status","entered");
+          if(doublesWd.error)return h({error:doublesWd.error.message},500);
+
           const nation=String(career.data.selected_federation_nation||career.data.federation_nation||career.data.country||"FRA").toUpperCase();
           const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",managedId).eq("nation",nation).maybeSingle();
           if(!ownDavis.error&&ownDavis.data&&/^Double/i.test(String(ownDavis.data.role||""))){

@@ -1135,6 +1135,23 @@ function specialTeamEventMeta(t:any){
   return null;
 }
 
+async function managedTournamentPathwayBundle(tournamentId:number){
+  const [base,se,pb]=await Promise.all([
+    db.rpc("managed_tournament_pathway_status",{p_target_tournament_id:tournamentId}),
+    db.rpc("managed_special_exempt_status",{p_target_tournament_id:tournamentId}),
+    db.rpc("managed_performance_bye_status",{p_target_tournament_id:tournamentId})
+  ]);
+  const err=base.error||se.error||pb.error;
+  if(err)throw err;
+  const basePath:any=base.data||{eligible:false,reason:"no_pathway"};
+  const special:any=se.data||{eligible:false,reason:"no_special_exempt"};
+  const performance:any=pb.data||{eligible:false,reason:"no_performance_bye"};
+  const pathway=special?.eligible===true
+    ?{eligible:true,mode:"special_exempt",label:"Special Exempt",details:special}
+    :basePath;
+  return {pathway,special_exempt:special,performance_bye:performance};
+}
+
 async function managedTournamentEntryRules(t:any){
   if(specialTeamEventMeta(t)||!["ATP","Challenger","ITF"].includes(String(t.circuit))||/Finals|Next Gen/i.test(String(t.category)))return null;
   const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
@@ -2757,8 +2774,19 @@ Deno.serve(async(req:Request)=>{
     if(t.error||wc.error)return h({error:(t.error||wc.error)?.message},500);
     if(!t.data)return h({error:"Tournoi introuvable"},404);
     try{
-      const entryRules=await managedTournamentEntryRules(t.data);
-      return h({tournament:t.data,entry_rules:entryRules,entry:entryRules?.persisted_entry??null,wildcard_status:wc.data?.status||null})
+      const [entryRules,pathways]=await Promise.all([
+        managedTournamentEntryRules(t.data),
+        managedTournamentPathwayBundle(id)
+      ]);
+      return h({
+        tournament:t.data,
+        entry_rules:entryRules,
+        entry:entryRules?.persisted_entry??null,
+        wildcard_status:wc.data?.status||null,
+        pathway_status:pathways.pathway,
+        special_exempt_status:pathways.special_exempt,
+        performance_bye_status:pathways.performance_bye
+      })
     }catch(e){return h({error:String((e as any)?.message||e)},500)}
   }
 
@@ -2768,7 +2796,13 @@ Deno.serve(async(req:Request)=>{
     const action=String(body?.action||"enter");
     const requestedMethod=String(body?.entry_method||"alternate");
     const legacy=Boolean(body?.legacy);
-    const allowed=new Set(["direct","qualifying","alternate","protected","protected_qualifying","late_entry","wildcard"]);
+    const allowed=new Set([
+      "direct","qualifying","alternate","protected","protected_qualifying","wildcard",
+      "late_entry","special_exempt","junior_reserved",
+      "nextgen_accelerator","nextgen_accelerator_qualifying",
+      "junior_accelerator","junior_accelerator_qualifying",
+      "college_accelerator","college_accelerator_qualifying"
+    ]);
     if(!allowed.has(requestedMethod))return h({error:"Méthode d’entrée invalide."},400);
 
     const [tour,career]=await Promise.all([
@@ -2817,13 +2851,35 @@ Deno.serve(async(req:Request)=>{
     }
     if(action!=="enter")return h({error:"Action d’inscription invalide."},400);
 
-    const methodForEligibility=requestedMethod==="late_entry"?"direct":requestedMethod;
-    const eligibility=await db.rpc("tournament_entry_eligibility",{
-      p_player_id:playerId,p_tournament_id:tid,p_entry_method:methodForEligibility
-    });
-    if(eligibility.error)return h({error:eligibility.error.message},500);
-    const elig:any=eligibility.data||{};
-    if(elig.eligible===false&&!legacy)return h({error:String(elig.reason||"Joueur non éligible à cette entrée."),eligibility:elig},409);
+    const pathwayMethods=new Set([
+      "late_entry","special_exempt","junior_reserved",
+      "nextgen_accelerator","nextgen_accelerator_qualifying",
+      "junior_accelerator","junior_accelerator_qualifying",
+      "college_accelerator","college_accelerator_qualifying"
+    ]);
+    let elig:any={};
+    if(pathwayMethods.has(requestedMethod)){
+      let pathways:any;
+      try{pathways=await managedTournamentPathwayBundle(tid)}
+      catch(e){return h({error:String((e as any)?.message||e)},500)}
+      const path:any=pathways.pathway||{};
+      if(path?.eligible!==true||String(path?.mode||"")!==requestedMethod){
+        if(!legacy)return h({
+          error:"Cette passerelle d’entrée n’est pas disponible pour ce tournoi.",
+          requested_method:requestedMethod,
+          pathway_status:path,
+          special_exempt_status:pathways.special_exempt
+        },409);
+      }
+      elig={eligible:true,reason:"managed_pathway",entry_method:requestedMethod,pathway:path};
+    }else{
+      const eligibility=await db.rpc("tournament_entry_eligibility",{
+        p_player_id:playerId,p_tournament_id:tid,p_entry_method:requestedMethod
+      });
+      if(eligibility.error)return h({error:eligibility.error.message},500);
+      elig=eligibility.data||{};
+      if(elig.eligible===false&&!legacy)return h({error:String(elig.reason||"Joueur non éligible à cette entrée."),eligibility:elig},409);
+    }
 
     if(requestedMethod==="wildcard"){
       const wc=await db.from("wildcard_requests").select("status").eq("tournament_id",tid).maybeSingle();
@@ -2831,12 +2887,15 @@ Deno.serve(async(req:Request)=>{
       if(wc.data?.status!=="accepted"&&!legacy)return h({error:"La wild card n’est pas accordée."},409);
     }
 
+    const pathwayQualifying=requestedMethod.endsWith("_qualifying");
     const deadline=String(
-      requestedMethod==="late_entry"
-        ?tour.data.late_entry_deadline||""
-        :requestedMethod==="qualifying"||requestedMethod==="protected_qualifying"
-          ?tour.data.qualifying_entry_deadline||tour.data.qualifying_signin_date||""
-          :tour.data.main_entry_deadline||tour.data.singles_entry_deadline||tour.data.deadline||""
+      requestedMethod==="special_exempt"
+        ?""
+        :requestedMethod==="late_entry"
+          ?tour.data.late_entry_deadline||""
+          :requestedMethod==="qualifying"||requestedMethod==="protected_qualifying"||pathwayQualifying
+            ?tour.data.qualifying_entry_deadline||tour.data.qualifying_signin_date||""
+            :tour.data.main_entry_deadline||tour.data.singles_entry_deadline||tour.data.deadline||""
     );
     if(deadline&&gameDate>deadline&&!legacy)return h({error:"Deadline simple dépassée : "+deadline,deadline},409);
 
@@ -2847,13 +2906,13 @@ Deno.serve(async(req:Request)=>{
     const entryWindow=(row:any)=>{
       const tr=Array.isArray(row?.tournaments)?row.tournaments[0]:row?.tournaments;
       const m=String(row?.entry_method||"");
-      const q=m==="qualifying"||m==="protected_qualifying";
+      const q=m==="qualifying"||m==="protected_qualifying"||m.endsWith("_qualifying");
       return {
         start:String(q?(tr?.qualifying_start_date||tr?.start_date):(tr?.main_draw_start_date||tr?.start_date)||""),
         end:String(tr?.end_date||tr?.start_date||"")
       };
     };
-    const thisQ=requestedMethod==="qualifying"||requestedMethod==="protected_qualifying";
+    const thisQ=requestedMethod==="qualifying"||requestedMethod==="protected_qualifying"||requestedMethod.endsWith("_qualifying");
     const thisStart=String(thisQ?(tour.data.qualifying_start_date||tour.data.start_date):(tour.data.main_draw_start_date||tour.data.start_date)||"");
     const thisEnd=String(tour.data.end_date||tour.data.start_date||"");
     const conflict=(active.data??[]).find((row:any)=>{
@@ -4827,6 +4886,11 @@ Deno.serve(async(req:Request)=>{
         .maybeSingle();
       if(persisted.error)return h({error:persisted.error.message},500);
 
+      let managedPathways:any={pathway:{eligible:false},special_exempt:{eligible:false},performance_bye:{eligible:false}};
+      try{managedPathways=await managedTournamentPathwayBundle(tid)}
+      catch(e){return h({error:String((e as any)?.message||e)},500)}
+      const livePathway:any=managedPathways.pathway||{eligible:false};
+
       if(persisted.data?.status==="withdrawn"){
         return h({
           error:"Tu t’es retiré de ce tournoi.",
@@ -4947,6 +5011,25 @@ Deno.serve(async(req:Request)=>{
           :"qualifying";
         frozenEntryPhase="qualifying";
         frozenEntryStatus=qe;
+      }else if(persisted.data?.status==="entered"&&livePathway?.eligible===true){
+        const pathwayMode=String(livePathway.mode||"");
+        const pathwayQualifying=pathwayMode.endsWith("_qualifying");
+        const pathwayStart=pathwayQualifying?qualifyingStart:mainStart;
+        if(managedGameDate<pathwayStart){
+          return h({
+            error:pathwayQualifying
+              ?"Passerelle validée vers les qualifications, mais elles n’ont pas encore commencé."
+              :"Passerelle validée vers le tableau principal, mais il n’a pas encore commencé.",
+            entry_status:"pathway_accepted",
+            entry_method:pathwayMode,
+            pathway_status:livePathway,
+            next_playable_date:pathwayStart,
+            career_date:managedGameDate
+          },409);
+        }
+        frozenEntryMode=pathwayMode;
+        frozenEntryPhase=pathwayQualifying?"qualifying":"main";
+        frozenEntryStatus=livePathway;
       }else if(qe?.status==="alternate"||me?.status==="alternate"){
         return h({
           error:qe?.status==="alternate"
@@ -4955,6 +5038,7 @@ Deno.serve(async(req:Request)=>{
           entry_status:"alternate",
           qualifying_alternate_order:qe?.status==="alternate"?Number(qe.acceptance_order||0):null,
           main_alternate_order:me?.status==="alternate"?Number(me.acceptance_order||0):null,
+          pathway_status:livePathway,
           career_date:managedGameDate
         },409);
       }else if(me?.status==="withdrawn"||qe?.status==="withdrawn"){
@@ -4970,7 +5054,9 @@ Deno.serve(async(req:Request)=>{
           error:"Tu n’es pas dans la liste d’acceptation de ce tournoi.",
           entry_status:"not_accepted",
           main_acceptance_frozen:Boolean(mainState.data),
-          qualifying_acceptance_frozen:Boolean(qState.data)
+          qualifying_acceptance_frozen:Boolean(qState.data),
+          pathway_status:livePathway,
+          requires_persisted_entry:livePathway?.eligible===true&&persisted.data?.status!=="entered"
         },409);
       }
     }

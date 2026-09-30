@@ -473,6 +473,10 @@ window.openFantasyV2=openFantasyV2;
 
 const cbBaseNav=window.nav;
 window.nav=async function(r){
+  if(r==='launcher'){
+    await window.showCareerLauncher?.(true);
+    return;
+  }
   if(r==='season'){
     route='season';window.scrollTo({top:0,behavior:'smooth'});
     if(!seasonSummary)await loadSeasonSummary();await loadCbSeasonHistory();

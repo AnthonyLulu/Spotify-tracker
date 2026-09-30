@@ -1163,10 +1163,15 @@ async function captureManagedSaveSnapshot(){
   const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
   if(career.error||!career.data)throw new Error(career.error?.message||"Career missing");
   const managedId=Number(career.data.managed_player_id||0);
+  const nation=String(career.data.federation_nation||career.data.selected_federation_nation||career.data.country||"FRA");
+
   const [
-    academy,finance,facilities,staff,contracts,roster,members,youth,training,trainingProgress,
-    medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,
-    entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media
+    academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,
+    training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,
+    entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media,
+    seasonPlans,relationships,staffAssignments,staffExternalOffers,eventLog,shortlist,
+    collegeState,collegeOffers,ncaaRegistry,federation,davisSquad,seasonHistory,
+    managedInjuries,trainingLoad,partnerships,matchHistory,tournamentRuns,doublesRuns,doublesMatchHistory
   ]=await Promise.all([
     db.from("academies").select("*").eq("id","demo").maybeSingle(),
     db.from("finances").select("*").eq("id","demo").maybeSingle(),
@@ -1175,7 +1180,9 @@ async function captureManagedSaveSnapshot(){
     db.from("contracts").select("*").order("id"),
     db.from("academy_roster").select("*").order("id"),
     db.from("academy_members").select("*").order("id"),
+    db.from("academy_member_progress").select("*").order("member_id"),
     db.from("academy_youth").select("*").order("id"),
+    db.from("academy_intake_history").select("*").eq("academy_id","demo").order("id"),
     db.from("training_plan").select("*").order("day_index"),
     db.from("user_training_progress").select("*").order("attribute"),
     db.from("medical_plan").select("*").eq("id","demo").maybeSingle(),
@@ -1193,30 +1200,67 @@ async function captureManagedSaveSnapshot(){
     managedId?db.from("player_agency_representation").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("player_doubles_commitments").select("*").eq("player_id",managedId):Promise.resolve({data:[],error:null} as any),
     managedId?db.from("doubles_partner_offers").select("*").or("from_player_id.eq."+managedId+",to_player_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
-    db.from("inbox_items").select("*").order("id",{ascending:false}).limit(250),
-    db.from("media_events").select("*").order("id",{ascending:false}).limit(100)
+    db.from("inbox_items").select("*").order("id"),
+    db.from("media_events").select("*").order("id"),
+    managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).order("season"):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("player_relationships").select("*").or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("player_staff_assignments").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("user_staff_external_offers").select("*").order("id"),
+    db.from("career_event_log").select("*").order("id"),
+    db.from("shortlist").select("*").order("added_at"),
+    db.from("college_career_state").select("*").eq("id","demo").maybeSingle(),
+    db.from("college_offers").select("*").order("id"),
+    managedId?db.from("ncaa_player_registry").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("federation_state").select("*").eq("nation",nation).maybeSingle(),
+    db.from("davis_squad").select("*").eq("nation",nation).order("id"),
+    db.from("season_history").select("*").order("id"),
+    managedId?db.from("injuries").select("*").eq("player_id",managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("player_training_load_profiles").select("*").eq("player_id",managedId).order("as_of_date"):Promise.resolve({data:[],error:null} as any),
+    managedId?db.from("doubles_partnerships").select("*").or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("match_history").select("*").eq("user_involved",true).order("id"),
+    db.from("tournament_runs").select("*").order("id"),
+    db.from("doubles_runs").select("*").order("id"),
+    db.from("doubles_match_history").select("*").order("id")
   ]);
-  const all=[academy,finance,facilities,staff,contracts,roster,members,youth,training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media];
+
+  const all=[academy,finance,facilities,staff,contracts,roster,members,memberProgress,youth,intakeHistory,training,trainingProgress,medical,scouting,scoutingReports,sponsors,board,player,attrs,development,ceilings,entries,doublesEntries,wildcards,agency,doublesCommitments,partnerOffers,inbox,media,seasonPlans,relationships,staffAssignments,staffExternalOffers,eventLog,shortlist,collegeState,collegeOffers,ncaaRegistry,federation,davisSquad,seasonHistory,managedInjuries,trainingLoad,partnerships,matchHistory,tournamentRuns,doublesRuns,doublesMatchHistory];
   const err=all.find((x:any)=>x?.error)?.error;
   if(err)throw new Error(err.message||"Snapshot failed");
+
+  const ownProfileIds=[...new Set((staff.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean))];
+  const [staffProfiles,staffTraining]=await Promise.all([
+    ownProfileIds.length?db.from("staff_profiles").select("*").in("id",ownProfileIds).order("id"):Promise.resolve({data:[],error:null} as any),
+    db.from("staff_training_enrollments").select("*").eq("user_managed",true).order("id")
+  ]);
+  if(staffProfiles.error||staffTraining.error)throw new Error((staffProfiles.error||staffTraining.error)?.message||"Staff snapshot failed");
+
   return {
-    model:"CB-MANAGED-SAVE-v1",
+    model:"CB-MANAGED-SAVE-v2",
     captured_at:new Date().toISOString(),
     career_date:career.data.career_date,
     week:career.data.week,
     managed_player_id:managedId||null,
+    federation_nation:nation,
     career:career.data,
     academy:academy.data,
     finance:finance.data,
     facilities:facilities.data??[],
     staff:staff.data??[],
+    staff_profiles:staffProfiles.data??[],
+    staff_training:staffTraining.data??[],
+    staff_assignments:staffAssignments.data??[],
+    staff_external_offers:staffExternalOffers.data??[],
     contracts:contracts.data??[],
     academy_roster:roster.data??[],
     academy_members:members.data??[],
+    academy_member_progress:memberProgress.data??[],
     academy_youth:youth.data??[],
+    academy_intake_history:intakeHistory.data??[],
     training_plan:training.data??[],
     training_progress:trainingProgress.data??[],
+    training_load:trainingLoad.data??[],
     medical_plan:medical.data,
+    managed_injuries:managedInjuries.data??[],
     scouting_assignments:scouting.data??[],
     scouting_reports:scoutingReports.data??[],
     sponsor_offers:sponsors.data??[],
@@ -1225,19 +1269,36 @@ async function captureManagedSaveSnapshot(){
     managed_attributes:attrs.data,
     managed_development:development.data,
     managed_ceilings:ceilings.data,
+    season_plans:seasonPlans.data??[],
+    relationships:relationships.data??[],
     entries:entries.data??[],
     managed_doubles_entries:doublesEntries.data??[],
     wildcard_requests:wildcards.data??[],
     agency:agency.data??[],
     doubles_commitments:doublesCommitments.data??[],
     partner_offers:partnerOffers.data??[],
+    doubles_partnerships:partnerships.data??[],
     inbox:inbox.data??[],
-    media_events:media.data??[]
+    media_events:media.data??[],
+    career_event_log:eventLog.data??[],
+    shortlist:shortlist.data??[],
+    college_state:collegeState.data,
+    college_offers:collegeOffers.data??[],
+    ncaa_registry:ncaaRegistry.data??[],
+    federation_state:federation.data,
+    davis_squad:davisSquad.data??[],
+    season_history:seasonHistory.data??[],
+    match_history:matchHistory.data??[],
+    tournament_runs:tournamentRuns.data??[],
+    doubles_runs:doublesRuns.data??[],
+    doubles_match_history:doublesMatchHistory.data??[]
   };
 }
 
 async function restoreManagedSaveSnapshot(snapshot:any){
-  if(!snapshot||String(snapshot.model||"")!=="CB-MANAGED-SAVE-v1")throw new Error("Unsupported save snapshot");
+  const model=String(snapshot?.model||"");
+  if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2"].includes(model))throw new Error("Unsupported save snapshot");
+
   const upsertOne=async(table:string,row:any,onConflict?:string)=>{
     if(!row)return;
     const q=onConflict?db.from(table).upsert(row,{onConflict}):db.from(table).upsert(row);
@@ -1248,18 +1309,83 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     const q=onConflict?db.from(table).upsert(rows,{onConflict}):db.from(table).upsert(rows);
     const r=await q;if(r.error)throw new Error(table+": "+r.error.message);
   };
+  const deleteAll=async(table:string,column="id")=>{
+    const r=await db.from(table).delete().not(column,"is",null);
+    if(r.error)throw new Error(table+" cleanup: "+r.error.message);
+  };
+
+  const managedId=Number(snapshot.managed_player_id||snapshot.career?.managed_player_id||0);
+  const nation=String(snapshot.federation_nation||snapshot.career?.federation_nation||snapshot.career?.selected_federation_nation||snapshot.career?.country||"FRA");
+
+  if(model==="CB-MANAGED-SAVE-v2"){
+    // Exact managed-world rewind. Global AI/world tournament state is intentionally not rewound.
+    await deleteAll("inbox_items");
+    await deleteAll("media_events");
+    await deleteAll("career_event_log");
+    await deleteAll("scouting_reports");
+    await deleteAll("scouting_assignments");
+    await deleteAll("sponsor_offers");
+    await deleteAll("board_objectives");
+    await deleteAll("contracts");
+    await deleteAll("academy_member_progress","member_id");
+    await deleteAll("academy_roster");
+    await deleteAll("academy_members");
+    await deleteAll("academy_intake_history");
+    await deleteAll("academy_youth");
+    await deleteAll("facilities");
+    await deleteAll("staff_training_enrollments");
+    await deleteAll("staff");
+    await deleteAll("training_plan","day_index");
+    await deleteAll("user_training_progress","attribute");
+    await deleteAll("shortlist");
+    await deleteAll("college_offers");
+    await db.from("college_career_state").delete().eq("id","demo");
+    await deleteAll("season_history");
+    await deleteAll("tournament_runs");
+    await deleteAll("doubles_match_history");
+    await deleteAll("doubles_runs");
+    await db.from("match_history").delete().eq("user_involved",true);
+    await db.from("managed_doubles_entries").delete().eq("owner_id","demo");
+    if(managedId){
+      await db.from("entries").delete().eq("player_id",managedId);
+      await db.from("player_agency_representation").delete().eq("player_id",managedId);
+      await db.from("player_doubles_commitments").delete().eq("player_id",managedId);
+      await db.from("doubles_partner_offers").delete().or("from_player_id.eq."+managedId+",to_player_id.eq."+managedId);
+      await db.from("doubles_partnerships").delete().or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId);
+      await db.from("player_relationships").delete().or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId);
+      await db.from("player_staff_assignments").delete().eq("player_id",managedId);
+      await db.from("player_season_plans").delete().eq("player_id",managedId);
+      await db.from("player_training_load_profiles").delete().eq("player_id",managedId);
+      await db.from("injuries").delete().eq("player_id",managedId);
+      await db.from("ncaa_player_registry").delete().eq("player_id",managedId);
+      await db.from("ranking_history").delete().eq("player_id",managedId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+      await db.from("doubles_ranking_history").delete().eq("player_id",managedId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+    }
+    await db.from("wildcard_requests").delete().not("id","is",null);
+    await db.from("user_staff_external_offers").delete().not("id","is",null);
+    await db.from("davis_squad").delete().eq("nation",nation);
+  }
+
   await upsertOne("career_state",snapshot.career,"id");
   await upsertOne("academies",snapshot.academy,"id");
   await upsertOne("finances",snapshot.finance,"id");
   await upsertMany("facilities",snapshot.facilities,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("staff_profiles",snapshot.staff_profiles,"id");
   await upsertMany("staff",snapshot.staff,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("staff_training_enrollments",snapshot.staff_training,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_staff_assignments",snapshot.staff_assignments,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("user_staff_external_offers",snapshot.staff_external_offers,"id");
   await upsertMany("contracts",snapshot.contracts,"id");
   await upsertMany("academy_youth",snapshot.academy_youth,"id");
   await upsertMany("academy_roster",snapshot.academy_roster,"id");
   await upsertMany("academy_members",snapshot.academy_members,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("academy_member_progress",snapshot.academy_member_progress,"member_id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("academy_intake_history",snapshot.academy_intake_history,"id");
   await upsertMany("training_plan",snapshot.training_plan,"day_index");
   await upsertMany("user_training_progress",snapshot.training_progress,"attribute");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_training_load_profiles",snapshot.training_load,"player_id,as_of_date");
   await upsertOne("medical_plan",snapshot.medical_plan,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("injuries",snapshot.managed_injuries,"id");
   await upsertMany("scouting_assignments",snapshot.scouting_assignments,"id");
   await upsertMany("scouting_reports",snapshot.scouting_reports,"id");
   await upsertMany("sponsor_offers",snapshot.sponsor_offers,"id");
@@ -1268,15 +1394,58 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   await upsertOne("player_attributes",snapshot.managed_attributes,"player_id");
   await upsertOne("player_development_profiles",snapshot.managed_development,"player_id");
   await upsertOne("player_attribute_ceilings",snapshot.managed_ceilings,"player_id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_season_plans",snapshot.season_plans,"player_id,season");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_relationships",snapshot.relationships,"id");
   await upsertMany("entries",snapshot.entries,"id");
   await upsertMany("managed_doubles_entries",snapshot.managed_doubles_entries,"id");
   await upsertMany("wildcard_requests",snapshot.wildcard_requests,"id");
   await upsertMany("player_agency_representation",snapshot.agency,"player_id");
   await upsertMany("player_doubles_commitments",snapshot.doubles_commitments,"player_id");
   await upsertMany("doubles_partner_offers",snapshot.partner_offers,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("doubles_partnerships",snapshot.doubles_partnerships,"id");
   await upsertMany("inbox_items",snapshot.inbox,"id");
   await upsertMany("media_events",snapshot.media_events,"id");
-  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model:snapshot.model};
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("career_event_log",snapshot.career_event_log,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("shortlist",snapshot.shortlist,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertOne("college_career_state",snapshot.college_state,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("college_offers",snapshot.college_offers,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("ncaa_player_registry",snapshot.ncaa_registry,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertOne("federation_state",snapshot.federation_state,"nation");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("davis_squad",snapshot.davis_squad,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("season_history",snapshot.season_history,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("match_history",snapshot.match_history,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("tournament_runs",snapshot.tournament_runs,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("doubles_runs",snapshot.doubles_runs,"id");
+  if(model==="CB-MANAGED-SAVE-v2")await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
+
+  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model,snapshot_scope:model==="CB-MANAGED-SAVE-v2"?"managed_world_exact_v2":"managed_world_v1"};
+}
+
+async function ensureCareerBaselineTemplate(){
+  const existing=await db.from("game_career_templates").select("id,game_version").eq("id","default-2025-12-01").maybeSingle();
+  if(existing.error)throw new Error(existing.error.message);
+  if(existing.data)return {ok:true,created:false,id:existing.data.id};
+
+  const career=await db.from("career_state").select("career_date,week").eq("id","demo").maybeSingle();
+  if(career.error||!career.data)throw new Error(career.error?.message||"Career missing");
+  if(String(career.data.career_date)!==AGE_REFERENCE_DATE||Number(career.data.week||1)!==1){
+    return {ok:false,created:false,reason:"baseline_window_passed"};
+  }
+
+  const snapshot=await captureManagedSaveSnapshot();
+  const localPayload={
+    date:AGE_REFERENCE_DATE,week:1,
+    training:["Service","Retour","Coup droit","Récupération","Déplacements","Match play","Repos"],
+    entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],feed:[],
+    scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
+    tactics:{aggression:58,risk:52,net:28,returnPos:"Neutre"}
+  };
+  const ins=await db.from("game_career_templates").insert({
+    id:"default-2025-12-01",managed_snapshot:snapshot,local_payload:localPayload,
+    game_version:"2026.10-career-os-v2",updated_at:new Date().toISOString()
+  });
+  if(ins.error)throw new Error(ins.error.message);
+  return {ok:true,created:true,id:"default-2025-12-01"};
 }
 
 function specialTeamEventMeta(t:any){

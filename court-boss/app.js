@@ -3215,9 +3215,10 @@ function tournamentTimelineHtml(rows,phase){
  "</div></div>";
 }
 function projectedTournamentR1(entries,byeSlots,bracketSize){
- const xs=(entries||[]).filter(x=>Number(x.draw_slot)>0);
+ const drawPos=x=>Number(x?.draw_slot||x?.draw_pos||0);
+ const xs=(entries||[]).filter(x=>drawPos(x)>0);
  if(!xs.length)return [];
- const slotMap=new Map(xs.map(x=>[Number(x.draw_slot),x.withdrawn_pending?{...x,id:null,name:'Vacance · LL/ALT à déterminer',entry_method:'withdrawn_pending'}:x]));
+ const slotMap=new Map(xs.map(x=>[drawPos(x),x.withdrawn_pending?{...x,id:null,name:'Vacance · LL/ALT à déterminer',entry_method:'withdrawn_pending'}:x]));
  const byes=new Set((byeSlots||[]).map(Number));
  let size=Number(bracketSize||0);
  if(!size)size=Math.pow(2,Math.ceil(Math.log2(Math.max(2,...xs.map(x=>Number(x.draw_slot)||0)))));
@@ -3231,52 +3232,119 @@ function projectedTournamentR1(entries,byeSlots,bracketSize){
  }
  return out;
 }
-function tournamentBracketHtml(matches,entries,byeSlots,bracketSize,title){
+function tournamentBracketHtml(matches,entries,byeSlots,bracketSize,title,options={}){
+ const opts=options||{};
  let rows=Array.isArray(matches)?matches.filter(Boolean):[];
- if(!rows.length)rows=projectedTournamentR1(entries,byeSlots,bracketSize);
- if(!rows.length)return "<div class='card'><h2>"+esc(title||'Tableau')+"</h2><div class='empty'>Le tirage n’est pas encore publié.</div></div>";
- let size=Number(bracketSize||0);
+ const normalizedEntries=(entries||[]).map(x=>({...x,draw_slot:Number(x?.draw_slot||x?.draw_pos||0)||null}));
+ if(!rows.length)rows=projectedTournamentR1(normalizedEntries,byeSlots,bracketSize);
+ if(!rows.length)return "<div class='tm-bracket-card'><div class='tm-bracket-empty'><div class='eyebrow'>Tirage</div><h2>"+esc(title||'Tableau')+"</h2><div class='empty'>Le tirage n’est pas encore publié.</div></div></div>";
+
+ const entryById=new Map(normalizedEntries.filter(x=>Number(x.id)>0).map(x=>[Number(x.id),x]));
+ const managedIds=[...new Set((Array.isArray(opts.managedIds)?opts.managedIds:[opts.managedId??career()?.managed_player_id]).map(Number).filter(Boolean))];
+ const sections=Math.max(1,Number(opts.sectionCount||1));
+ let sectionBracket=Math.max(0,Number(opts.sectionBracket||0));
+ let size=Math.max(0,Number(bracketSize||0));
+ if(sectionBracket>0)size=sections*sectionBracket;
  if(!size){
-  const maxSlot=Math.max(2,...(entries||[]).map(x=>Number(x.draw_slot)||0));
+  const maxSlot=Math.max(2,...normalizedEntries.map(x=>Number(x.draw_slot)||0));
   size=Math.pow(2,Math.ceil(Math.log2(maxSlot)));
  }
- size=Math.max(2,Math.pow(2,Math.ceil(Math.log2(size))));
- const totalRounds=Math.max(1,Math.round(Math.log2(size)));
+ if(!sectionBracket)sectionBracket=Math.max(2,size);
+ size=Math.max(2,size);
+
+ let totalRounds=Math.max(0,Number(opts.roundCount||0));
+ if(!totalRounds)totalRounds=Math.max(1,Math.round(Math.log2(Math.max(2,sectionBracket))));
+
+ const existingKeys=[...new Set(rows.map(m=>String(m.round_no??m.round_code??m.round_name??'')))];
+ const keyed=existingKeys.map(key=>({
+  key,
+  rows:rows.filter(m=>String(m.round_no??m.round_code??m.round_name??'')===key)
+ })).sort((a,b)=>b.rows.length-a.rows.length||Number(a.key)-Number(b.key));
+ const displayRows=[];
+
  const roundLabel=r=>{
-  if(r===1)return '1er tour';
   if(r===totalRounds)return 'Finale';
   if(r===totalRounds-1)return 'Demi-finales';
   if(r===totalRounds-2)return 'Quarts de finale';
   if(r===totalRounds-3)return 'Huitièmes';
-  return r+'e tour';
+  const drawAtRound=Math.round(sectionBracket/Math.pow(2,r-1));
+  return drawAtRound>=16?'R'+drawAtRound:(r===1?'1er tour':r+'e tour');
  };
+
  for(let r=1;r<=totalRounds;r++){
-  if(rows.some(m=>Number(m.round_no||0)===r))continue;
-  const count=Math.max(1,size/Math.pow(2,r));
-  for(let m=1;m<=count;m++)rows.push({
-   round_no:r,round_name:roundLabel(r),match_no:m,
-   player_a_id:null,player_b_id:null,player_a_name:'À déterminer',player_b_name:'À déterminer',
-   scheduled_date:null,status:'scheduled',score:null,placeholder:true
-  });
+  const existing=keyed[r-1]?.rows||[];
+  const matchesPerSection=Math.max(1,Math.round(sectionBracket/Math.pow(2,r)));
+  const expected=Math.max(1,sections*matchesPerSection);
+  if(existing.length){
+   existing.slice().sort((a,b)=>Number(a.match_no||0)-Number(b.match_no||0)).forEach((m,i)=>displayRows.push({...m,_display_round:r,_display_match:Number(m.match_no||i+1)}));
+  }else{
+   for(let m=1;m<=expected;m++)displayRows.push({
+    round_no:r,round_name:roundLabel(r),match_no:m,_display_round:r,_display_match:m,
+    player_a_id:null,player_b_id:null,player_a_name:'À déterminer',player_b_name:'À déterminer',
+    scheduled_date:null,status:'scheduled',score:null,placeholder:true
+   });
+  }
  }
- rows.sort((a,b)=>Number(a.round_no||99)-Number(b.round_no||99)||Number(a.match_no||99)-Number(b.match_no||99));
- const roundNos=[...new Set(rows.map(m=>Number(m.round_no||0)).filter(Boolean))].sort((a,b)=>a-b);
- const pLine=(id,name,seed,code)=>{
-  const ec=code?tournamentEntryCode(code):'';
-  const label=(seed?'['+seed+'] ':'')+(ec&&ec!=='DA'?'('+ec+') ':'')+String(name||'À déterminer');
-  return id?"<div class='click' onclick='openPlayer("+Number(id)+")'>"+esc(label)+"</div>":"<div>"+esc(label)+"</div>";
+
+ const sideIds=(id,ids)=>Array.isArray(ids)&&ids.length?ids.map(Number).filter(Boolean):(id?[Number(id)]:[]);
+ const playerLine=(id,ids,name,seed,code,winnerId)=>{
+  const idsList=sideIds(id,ids);
+  const meta=id?entryById.get(Number(id))||{}:{};
+  const country=meta.country||null;
+  const ranking=Number(meta.ranking||meta.ranking_at_entry||0);
+  const ec=tournamentEntryCode(code||meta.entry_method||'');
+  const managed=idsList.some(x=>managedIds.includes(x));
+  const won=(winnerId&&idsList.includes(Number(winnerId)))||String(name||'')==='BYE';
+  const empty=!name||String(name)==='À déterminer'||String(name)==='—';
+  const seedText=seed?'['+seed+']':'';
+  const rankText=ranking>0&&ranking<999999?'#'+fmt(ranking):'';
+  const click=id&&idsList.length===1?" onclick='openPlayer("+Number(id)+")'":'';
+  return "<div class='tm-bracket-player"+(managed?' is-managed':'')+(won?' is-winner':'')+(empty?' is-empty':'')+(id&&idsList.length===1?' click':'')+"'"+click+">"+
+   "<span class='tm-bracket-seed'>"+esc(seedText)+"</span>"+
+   "<span class='tm-bracket-name'>"+(country?(flags[country]||'🏳️')+' ':'')+esc(String(name||'À déterminer'))+"</span>"+
+   (ec&&ec!=='DA'?"<span class='tm-bracket-entry'>"+esc(ec)+"</span>":"<span class='tm-bracket-entry'></span>")+
+   "<span class='tm-bracket-rank'>"+esc(rankText)+"</span>"+
+  "</div>";
  };
- const played=rows.filter(m=>m.status==='completed'&&!m.placeholder&&m.score!=='BYE').length;
- return "<div class='card'><div class='row between'><div><div class='eyebrow'>Tirage évolutif</div><h2>"+esc(title||'Tableau')+"</h2></div><span class='badge'>"+played+" joué"+(played>1?'s':'')+" · "+size+" slots</span></div>"+
-  "<div style='display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding:10px 0'>"+
-  roundNos.map(r=>"<div style='min-width:255px;flex:0 0 255px'><div class='row between' style='margin-bottom:7px'><b>"+esc((rows.find(m=>Number(m.round_no||0)===r)?.round_name)||roundLabel(r))+"</b></div>"+
-    rows.filter(m=>Number(m.round_no||0)===r).map(m=>"<div class='list-item' style='margin-bottom:8px;opacity:"+(m.placeholder?.72:1)+"'>"+
-      "<div class='row between'><span class='muted micro'>"+(m.scheduled_date?df(m.scheduled_date):'À programmer')+"</span><span class='badge "+(m.status==='completed'?'good':'')+"'>"+(m.score==='BYE'?'BYE':m.status==='completed'?'Joué':'À jouer')+"</span></div>"+
-      "<div style='margin-top:5px'>"+pLine(m.player_a_id,m.player_a_name,m.player_a_seed,m.player_a_entry)+"</div>"+
-      "<div>"+pLine(m.player_b_id,m.player_b_name,m.player_b_seed,m.player_b_entry)+"</div>"+
-      (m.score&&m.score!=='BYE'?"<div class='muted mini' style='margin-top:5px'><b>"+esc(m.score)+"</b>"+(m.winner_name?' · '+esc(m.winner_name):'')+"</div>":"")+
-    "</div>").join('')+"</div>").join('')+
-  "</div></div>";
+
+ const rowHeight=Number(opts.rowHeight||32);
+ const gridHeight=Math.max(230,size*rowHeight);
+ const gridCols="repeat("+totalRounds+", minmax(218px,236px))";
+ const played=displayRows.filter(m=>m.status==='completed'&&!m.placeholder&&m.score!=='BYE').length;
+ const hasManaged=displayRows.some(m=>sideIds(m.player_a_id,m.player_a_ids).some(x=>managedIds.includes(x))||sideIds(m.player_b_id,m.player_b_ids).some(x=>managedIds.includes(x)));
+ const sectionBadge=sections>1?" · "+sections+" sections":'';
+
+ const cards=displayRows.map(m=>{
+  const r=Number(m._display_round||1);
+  const matchNo=Math.max(1,Number(m._display_match||m.match_no||1));
+  const perSection=Math.max(1,Math.round(sectionBracket/Math.pow(2,r)));
+  const sectionNo=Math.min(sections-1,Math.floor((matchNo-1)/perSection));
+  const within=(matchNo-1)%perSection;
+  const span=Math.max(2,Math.pow(2,r));
+  const start=sectionNo*sectionBracket+within*span+1;
+  const aIds=sideIds(m.player_a_id,m.player_a_ids),bIds=sideIds(m.player_b_id,m.player_b_ids);
+  const managed=aIds.some(x=>managedIds.includes(x))||bIds.some(x=>managedIds.includes(x));
+  const completed=m.status==='completed'||Boolean(m.winner_id)||Boolean(m.winner_pair_id);
+  const winnerId=m.winner_id||m.winner_pair_id||null;
+  const status=m.score==='BYE'?'BYE':completed?'Terminé':'À jouer';
+  return "<div class='tm-bracket-match"+(managed?' is-managed':'')+(completed?' is-completed':'')+(m.placeholder?' is-placeholder':'')+"' style='grid-column:"+r+";grid-row:"+start+" / span "+span+"'>"+
+    "<div class='tm-bracket-match-meta'><span>"+(m.scheduled_date?df(m.scheduled_date):esc(String(m.round_name||roundLabel(r))))+"</span><b>"+status+"</b></div>"+
+    playerLine(m.player_a_id,m.player_a_ids,m.player_a_name,m.player_a_seed,m.player_a_entry,winnerId)+
+    playerLine(m.player_b_id,m.player_b_ids,m.player_b_name,m.player_b_seed,m.player_b_entry,winnerId)+
+    (m.score&&m.score!=='BYE'?"<div class='tm-bracket-score'>"+esc(m.score)+(m.winner_name?" · "+esc(m.winner_name):m.winner_pair_name?" · "+esc(m.winner_pair_name):"")+"</div>":"")+
+   "</div>";
+ }).join('');
+
+ return "<div class='tm-bracket-card'>"+
+  "<div class='tm-bracket-toolbar'><div><div class='eyebrow'>Tableau</div><h2>"+esc(title||'Tableau principal')+"</h2><div class='muted mini'>"+played+" match"+(played>1?'s':'')+" joué"+(played>1?'s':'')+" · "+size+" lignes"+sectionBadge+"</div></div>"+
+  "<div class='tm-bracket-actions'>"+(hasManaged?"<button class='soft-btn' onclick='focusManagedDraw()'>Mon joueur</button>":"")+"<span class='badge'>"+totalRounds+" tours</span></div></div>"+
+  "<div class='tm-bracket-scroll'>"+
+   "<div class='tm-bracket-round-heads' style='grid-template-columns:"+gridCols+"'>"+
+    Array.from({length:totalRounds},(_,i)=>"<div class='tm-bracket-round-title'>"+esc(roundLabel(i+1))+"</div>").join('')+
+   "</div>"+
+   "<div class='tm-bracket-grid' style='grid-template-columns:"+gridCols+";grid-template-rows:repeat("+size+", "+rowHeight+"px);min-height:"+gridHeight+"px'>"+cards+"</div>"+
+  "</div>"+
+ "</div>";
 }
 
 function luckyLoserHtml(rows){

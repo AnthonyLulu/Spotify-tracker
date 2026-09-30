@@ -1000,17 +1000,25 @@ async function resolveTournamentImage(t:any){
     if(v.length>=3&&!geoCandidates.some(x=>normalizeName(x)===normalizeName(v)))geoCandidates.push(v);
   };
 
-  const commaParts=rawPlace.split(",").map(x=>cleanPlace(x)).filter(Boolean);
   const parentheticalParts=[...rawPlace.matchAll(/\(([^)]+)\)/g)].map(m=>cleanPlace(m[1])).filter(Boolean);
   const parentheticalVenue=parentheticalParts.find(x=>facilityRe.test(x))||"";
-  const venueCandidate=commaParts.length>=2&&facilityRe.test(commaParts[0])
-    ?commaParts[0]
+  // Anything in parentheses is metadata/venue/district, never the primary city.
+  // Examples: Genoa (Park Tennis Training), Istanbul (Enka), Guangzhou (Huangpu).
+  const parenBase=cleanPlace(rawPlace.split("(")[0]);
+  const geoRawPlace=cleanPlace(rawPlace.replace(/\([^)]*\)/g," "));
+  const commaParts=geoRawPlace.split(",").map(x=>cleanPlace(x)).filter(Boolean);
+  const rawFirstPart=cleanPlace(rawPlace.split(",")[0]);
+  const venueCandidate=(commaParts.length>=2&&facilityRe.test(rawFirstPart))
+    ?rawFirstPart
     :parentheticalVenue;
+
+  // When parentheses exist, always try the visible city before the qualifier.
+  if(parenBase&&parenBase!==geoRawPlace&&!facilityRe.test(parenBase))pushGeo(parenBase);
 
   if(commaParts.length>=2){
     const first=commaParts[0],last=commaParts[commaParts.length-1];
     const stateCode=last.toUpperCase();
-    const startsWithFacility=facilityRe.test(first);
+    const startsWithFacility=facilityRe.test(rawFirstPart);
     const cityBeforeRegion=commaParts.length>=3?commaParts[commaParts.length-2]:first;
 
     if(usStateCodes[stateCode]){
@@ -1022,23 +1030,27 @@ async function resolveTournamentImage(t:any){
       pushGeo(cityPart+", "+last);
       pushGeo(cityPart);
     }else if(startsWithFacility){
+      // "complex, city, country/state" => city+region first, never complex as city.
       const cityPart=commaParts.length>=3?cityBeforeRegion:last;
+      if(commaParts.length>=3)pushGeo(cityPart+", "+last);
       pushGeo(cityPart);
-      if(commaParts.length>=3)pushGeo(last);
     }else{
+      // Prefer a disambiguated city+region/country, then the bare city.
+      pushGeo(first+", "+last);
       pushGeo(first);
-      if(commaParts.length===2&&!facilityRe.test(last))pushGeo(last);
     }
+  }else if(commaParts.length===1){
+    pushGeo(commaParts[0]);
   }
 
-  // "Genoa (Park Tennis Training)" -> city Genoa, venue Park Tennis Training.
-  const noParen=cleanPlace(rawPlace.replace(/\s*\([^)]*\)\s*/g," "));
-  if(noParen&&!facilityRe.test(noParen))pushGeo(noParen);
-  for(const x of parentheticalParts){
-    if(x&&!facilityRe.test(x))pushGeo(x);
+  // A qualifier can be a useful fallback only if no base city was available.
+  if(!parenBase){
+    for(const x of parentheticalParts){
+      if(x&&!facilityRe.test(x)&&!/^(?:cancelled|canceled)$/i.test(x))pushGeo(x);
+    }
   }
-  if(!geoCandidates.length&&!facilityRe.test(rawPlace))pushGeo(rawPlace);
-  const primaryCity=geoCandidates[0]||rawPlace;
+  if(!geoCandidates.length&&!facilityRe.test(geoRawPlace))pushGeo(geoRawPlace);
+  const primaryCity=geoCandidates[0]||geoRawPlace||rawPlace;
   const syntheticPlace=/^ville\s+\d+$/i.test(primaryCity)||/^(?:rus|isr|ven)\s+tennis\s+center$/i.test(primaryCity);
   const curatedImageSources=[
     {re:/United Cup/i,url:"https://www.unitedcup.com/en/media/news/united-cup-2026-schedule-released"},
@@ -1247,54 +1259,59 @@ async function resolveTournamentImage(t:any){
   if(!t.image_url&&t.city&&!syntheticPlace){
     try{
       const rawCity=String(t.city||"").trim();
+      const nonGeoTitleRe=/\b(?:berry|actor|actress|singer|musician|film|album|song|surname|given name|disambiguation)\b/i;
+      const pageLooksGeographic=(x:any,cityName:string)=>{
+        const raw=String(x?.original?.source||x?.thumbnail?.source||"");
+        const hasCoordinates=Array.isArray(x?.coordinates)&&x.coordinates.length>0;
+        const titleText=normalizeName(String(x?.title||""));
+        const cityText=normalizeName(cityName);
+        const cityBase=normalizeName(String(cityName).split(",")[0]||cityName);
+        const titleCompact=titleText.replace(/\s+/g,"");
+        const cityCompact=cityText.replace(/\s+/g,"");
+        const baseCompact=cityBase.replace(/\s+/g,"");
+        const titleTokens=titleText.split(/\s+/).filter(Boolean);
+        const baseTokens=cityBase.split(/\s+/).filter(Boolean);
+        const titleMatch=titleText===cityText
+          ||titleText===cityBase
+          ||titleCompact===cityCompact
+          ||titleCompact===baseCompact
+          ||(cityBase&&titleText.startsWith(cityBase+" ")&&titleTokens.length<=baseTokens.length+3);
+        const disambiguation=Boolean(x?.pageprops?.disambiguation);
+        return !x?.missing&&!disambiguation&&hasCoordinates&&titleMatch&&!nonGeoTitleRe.test(titleText)
+          &&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)
+          &&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
+      };
       let chosen:any=null;
       let chosenCity="";
       for(const cityName of geoCandidates.slice(0,6)){
         const exactQs=new URLSearchParams({
           action:"query",titles:cityName,redirects:"1",
-          prop:"pageimages|info|coordinates",piprop:"thumbnail|original",pithumbsize:"1200",
+          prop:"pageimages|info|coordinates|pageprops",piprop:"thumbnail|original",pithumbsize:"1200",
           inprop:"url",format:"json",origin:"*"
         });
         const exact=await fetch("https://en.wikipedia.org/w/api.php?"+exactQs.toString(),{
-          headers:{"User-Agent":"CourtBoss/1.0 (+normalized-city-photo-fallback-v2)"},
+          headers:{"User-Agent":"CourtBoss/1.0 (+normalized-city-photo-fallback-v3)"},
           signal:timeoutSignal()
         });
         if(exact.ok){
           const jj:any=await exact.json();
-          chosen=(Object.values(jj?.query?.pages||{}) as any[]).find((x:any)=>{
-            const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-            const hasCoordinates=Array.isArray(x?.coordinates)&&x.coordinates.length>0;
-            return !x?.missing&&hasCoordinates&&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
-          })||null;
+          chosen=(Object.values(jj?.query?.pages||{}) as any[]).find((x:any)=>pageLooksGeographic(x,cityName))||null;
         }
         if(!chosen){
-          const cityNorm=normalizeName(cityName).replace(/\s+/g,"");
+          const cityBase=String(cityName).split(",")[0].trim()||cityName;
           const searchQs=new URLSearchParams({
-            action:"query",generator:"search",gsrsearch:`intitle:"${cityName}"`,gsrnamespace:"0",gsrlimit:"8",
-            prop:"pageimages|info|coordinates",piprop:"thumbnail|original",pithumbsize:"1200",
+            action:"query",generator:"search",gsrsearch:`intitle:"${cityBase}"`,gsrnamespace:"0",gsrlimit:"10",
+            prop:"pageimages|info|coordinates|pageprops",piprop:"thumbnail|original",pithumbsize:"1200",
             inprop:"url",format:"json",origin:"*"
           });
           const search=await fetch("https://en.wikipedia.org/w/api.php?"+searchQs.toString(),{
-            headers:{"User-Agent":"CourtBoss/1.0 (+normalized-city-search-fallback-v2)"},
+            headers:{"User-Agent":"CourtBoss/1.0 (+normalized-city-search-fallback-v3)"},
             signal:timeoutSignal()
           });
           if(search.ok){
             const jj:any=await search.json();
             const pages=(Object.values(jj?.query?.pages||{}) as any[]).sort((a:any,b:any)=>Number(a.index??999)-Number(b.index??999));
-            chosen=pages.find((x:any)=>{
-              const titleText=normalizeName(String(x.title||""));
-              const cityText=normalizeName(cityName);
-              const title=titleText.replace(/\s+/g,"");
-              const raw=String(x?.original?.source||x?.thumbnail?.source||"");
-              const hasCoordinates=Array.isArray(x?.coordinates)&&x.coordinates.length>0;
-              const cityTokens=cityText.split(/\s+/).filter(Boolean);
-              const titleTokens=titleText.split(/\s+/).filter(Boolean);
-              const titleMatch=titleText===cityText
-                ||(titleText.startsWith(cityText+" ")&&titleTokens.length<=cityTokens.length+2)
-                ||title===cityNorm;
-              return hasCoordinates&&titleMatch
-                &&raw&&!/logo|icon|flag|map|coat.of.arms|djvu/i.test(raw)&&!/\.(?:pdf|djvu)(?:\/|\.|$|\?)/i.test(raw);
-            })||null;
+            chosen=pages.find((x:any)=>pageLooksGeographic(x,cityName))||null;
           }
         }
         if(chosen){chosenCity=cityName;break}
@@ -1311,7 +1328,7 @@ async function resolveTournamentImage(t:any){
       }
     }catch{}
   }
-  if(!t.image_url){
+  if(!t.image_url&&(syntheticPlace||!geoCandidates.length)){
     try{
       const pool=await db.from("tournaments")
         .select("id,name,category,circuit,image_url,image_source_url,image_source_label")
@@ -2214,7 +2231,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:57,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v8+venue-city-parser-v4+category-fallback-pool+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:60,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v8+venue-city-parser-v6+geo-page-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"matchup-v4/point-v3+full-tournament-attrs",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

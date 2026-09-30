@@ -2844,7 +2844,7 @@ function saveCenterPage(){
    </div>`;
  }).join('');
  return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
- <div class="notice mini"><b>Snapshot managé v2 :</b> la carrière, l’académie, le staff, les contrats, les relations, les blessures, le scouting, le NCAA géré, les inscriptions et les résultats du joueur sont restaurés exactement. L’autosave est écrit juste après la validation serveur d’une semaine, avant les rafraîchissements d’écran.</div>
+ <div class="notice mini"><b>Snapshot managé v2 exact :</b> la carrière, l’académie, le staff, les contrats, les relations, les blessures, le scouting, le NCAA géré, les inscriptions et les résultats du joueur sont restaurés exactement. L’autosave est écrit juste après la validation serveur d’une semaine, avant les rafraîchissements d’écran.</div>
  ${local.lastSaveState?`<div class="card" style="margin-top:10px"><div class="row between"><div><div class="eyebrow">Dernière opération de sauvegarde</div><b>${local.lastSaveState.slot_type==='autosave'?'Autosave':local.lastSaveState.slot_type==='quick'?'Quicksave':'Sauvegarde manuelle'} · semaine ${fmt(local.lastSaveState.week||1)}</b></div><span class="badge ${local.lastSaveState.status==='ok'?'good':'bad'}">${local.lastSaveState.status==='ok'?'Sécurisée':'Échec'}</span></div><div class="muted mini" style="margin-top:6px">${df(local.lastSaveState.career_date)} · ${new Date(local.lastSaveState.updated_at).toLocaleString('fr-FR')}${local.lastSaveState.error?' · '+esc(local.lastSaveState.error):''}</div></div>`:''}
  <div class="row" style="margin-top:10px"><button class="ghost" onclick="nav('launcher')">Menu carrière</button></div>
  <div class="grid g2" style="margin-top:12px">${cards}</div>`;
@@ -2858,7 +2858,7 @@ function launcherPage(){
   <div class="card"><div class="eyebrow">Carrière active</div><h2>${esc(c.player_name||'Joueur')} · semaine ${fmt(local.week||1)}</h2><div class="muted">${df(local.date||c.career_date)} · ATP #${fmt(c.singles_rank||0)} · Double #${fmt(c.doubles_rank||0)}</div><button class="primary" style="width:100%;margin-top:14px" onclick="nav('home')">Continuer</button></div>
   <div class="card"><div class="eyebrow">Dernière sauvegarde</div><h2>${latest?esc(latest.slot_name):'Aucune sauvegarde'}</h2>${latest?`<div class="muted">${df(latest.career_date)} · semaine ${fmt(latest.week||1)}</div><button class="soft-btn" style="width:100%;margin-top:14px" onclick="loadCareerSlot(${Number(latest.slot_no)})">Charger</button>`:'<div class="muted">Le premier autosave sera créé après une semaine simulée.</div>'}</div>
  </div>
- <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Nouvelle partie</div><h2>Repartir sur le monde de référence</h2><div class="muted">Réinitialise la carrière gérée au 01/12/2025. Tes slots manuels restent disponibles, mais l’autosave sera remplacé par la nouvelle carrière.</div></div><span class="badge warn">Reset carrière</span></div><button class="danger-btn" style="margin-top:12px" onclick="startNewCareer()">Nouvelle partie</button></div>
+ <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Nouvelle partie</div><h2>Repartir sur le monde de référence</h2><div class="muted">Réinitialise la carrière gérée au 01/12/2025, puis ouvre la base mondiale pour choisir le joueur à manager. Tes slots manuels restent disponibles.</div></div><span class="badge warn">Reset carrière</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button class="danger-btn" onclick="startNewCareer()">Choisir un joueur réel</button><button class="soft-btn" onclick="openCustomCareerCreator()">Créer mon joueur</button></div></div>
  <div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Sauvegardes</div><h2>Slots & reprise</h2></div><button class="soft-btn" onclick="nav('saves')">Ouvrir le Save Center</button></div><div class="muted mini">${auto?'Autosave : '+df(auto.career_date)+' · semaine '+fmt(auto.week||1):'Aucun autosave pour le moment.'}</div></div>`;
 }
 window.startNewCareer=async()=>{
@@ -2884,9 +2884,66 @@ window.startNewCareer=async()=>{
   await Promise.allSettled([loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
   saveSlotBusy=false;
   await saveCareerSlot(0,'autosave',true);
-  route='home';render();
+  route='players';
+  if(!countryRows.length)await loadCountries();
+  await loadPlayerDatabase();
+  render();
+  alert('Nouvelle carrière prête. Choisis maintenant le joueur que tu veux gérer dans la base mondiale.');
  }catch(e){alert('Nouvelle carrière impossible : '+e.message)}
  finally{saveSlotBusy=false}
+}
+
+window.startCareerWithPlayer=async(id,name='ce joueur')=>{
+ const targetId=Number(id||0);if(!targetId)return;
+ if(!confirm('Gérer '+name+' ? La carrière active sera réinitialisée autour de ce joueur au 01/12/2025. Tes sauvegardes manuelles restent disponibles.'))return;
+ saveSlotBusy=true;
+ try{
+  await managerAction('take_over_player',targetId,{date:'2025-12-01'});
+  local.date='2025-12-01';local.week=1;local.entries=[];local.entryMeta={};local.doublesEntries=[];local.doublesEntryMeta={};local.partnerId=null;local.shortlist=[];
+  local.playedTournaments={};local.liveSessionId=null;
+  localStorage.setItem('cbLocal',JSON.stringify(local));
+  rankRows=[];tourRows=[];management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;careerHub=null;historyData=null;competitionRows=[];
+  boot=await get('/api/bootstrap');
+  local.career={...(local.career||{}),...(boot.career||{})};
+  local.date=boot.career?.career_date||local.date;local.week=boot.career?.week??1;
+  await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
+  saveSlots=[];await saveCareerSlot(0,'autosave',true);await loadSaveSlots();
+  persist();closeOverlay();route='home';render();
+ }catch(e){alert('Prise en main impossible : '+e.message)}
+ finally{saveSlotBusy=false}
+}
+
+window.openCustomCareerCreator=()=>{
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Nouvelle partie</div><h1>Créer ton joueur</h1><div class="muted">Profil fictif Court Boss, intégré au même monde que les joueurs réels.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+  <div class="grid g2" style="margin-top:12px">
+   <label class="field"><span>Nom</span><input id="customCareerName" class="input" placeholder="Prénom Nom"></label>
+   <label class="field"><span>Pays</span><input id="customCareerCountry" class="input" value="FRA" maxlength="3"></label>
+   <label class="field"><span>Âge</span><input id="customCareerAge" class="input" type="number" min="15" max="35" value="18"></label>
+   <label class="field"><span>Niveau de départ</span><select id="customCareerTier" class="select"><option>Débutant</option><option selected>ITF</option><option>Challenger</option><option>Espoir</option></select></label>
+   <label class="field"><span>Main</span><select id="customCareerHand" class="select"><option>Droitier</option><option>Gaucher</option></select></label>
+   <label class="field"><span>Revers</span><select id="customCareerBackhand" class="select"><option>2 mains</option><option>1 main</option></select></label>
+   <label class="field"><span>Style</span><select id="customCareerStyle" class="select"><option>All-court</option><option>Serveur</option><option>Contreur</option><option>Attaquant</option><option>Terre battue</option></select></label>
+   <label class="field"><span>Potentiel</span><input id="customCareerPotential" class="input" type="number" min="55" max="99" value="82"></label>
+  </div>
+  <button class="primary" style="width:100%;margin-top:14px" onclick="createCustomCareerPlayer()">Créer et démarrer la carrière</button>
+ </div></div>`;
+}
+window.createCustomCareerPlayer=async()=>{
+ const name=String(document.getElementById('customCareerName')?.value||'').trim();
+ if(name.length<2){alert('Entre un nom de joueur.');return}
+ try{
+  const d=await managerAction('create_custom_player',0,{
+   name,country:String(document.getElementById('customCareerCountry')?.value||'FRA').toUpperCase(),
+   age:Number(document.getElementById('customCareerAge')?.value||18),
+   tier:document.getElementById('customCareerTier')?.value||'ITF',
+   handedness:document.getElementById('customCareerHand')?.value||'Droitier',
+   backhand:document.getElementById('customCareerBackhand')?.value||'2 mains',
+   style:document.getElementById('customCareerStyle')?.value||'All-court',
+   potential:Number(document.getElementById('customCareerPotential')?.value||82)
+  });
+  closeOverlay();
+  await startCareerWithPlayer(Number(d.player?.id||0),String(d.player?.name||name));
+ }catch(e){alert('Création impossible : '+e.message)}
 }
 
 function inboxActionButton(x,type,label,payload,cls='primary'){

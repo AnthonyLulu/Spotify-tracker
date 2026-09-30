@@ -511,6 +511,113 @@ window.render=function(){
 
 window.rolloverSeasonV2=rolloverSeasonV2;
 
+
+let cbCareerLauncherBusy=false;
+function careerLauncherSlotCards(){
+  const rows=[...(saveSlots||[])].sort((a,b)=>Number(a.slot_no)-Number(b.slot_no));
+  if(!rows.length)return '<div class="career-launch-empty">Aucune sauvegarde de slot pour ce navigateur. Tu peux continuer la carrière actuelle ou en créer une nouvelle.</div>';
+  return rows.map(x=>`
+    <button class="career-launch-save" onclick="launcherLoadSlot(${Number(x.slot_no)})">
+      <span class="career-launch-save-type">${Number(x.slot_no)===0?'AUTOSAVE':Number(x.slot_no)===9?'QUICKSAVE':'SLOT '+Number(x.slot_no)}</span>
+      <strong>${esc(x.slot_name||'Sauvegarde')}</strong>
+      <small>${df(x.career_date)} · semaine ${fmt(x.week||1)} · ${esc(x.player_name||'Joueur')}</small>
+    </button>`).join('');
+}
+function renderCareerLauncher(){
+  const c=career();
+  const latest=[...(saveSlots||[])].sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')))[0]||null;
+  app.innerHTML=`<div class="career-launcher">
+    <div class="career-launch-bg"></div>
+    <div class="career-launch-shell">
+      <div class="career-launch-brand"><span>COURT</span> <b>BOSS</b><small>TENNIS MANAGER</small></div>
+      <div class="career-launch-copy">
+        <div class="eyebrow">Career OS</div>
+        <h1>Construis une carrière.<br>Fais vivre le circuit.</h1>
+        <p>Management, calendrier mondial, académie, NCAA, staff, scouting, finances, relations et matchs dans une seule sauvegarde persistante.</p>
+      </div>
+      <div class="career-launch-primary">
+        <button class="career-launch-main" onclick="enterCurrentCareer()">
+          <span>CONTINUER</span>
+          <strong>${esc(c.player_name||'Carrière actuelle')}</strong>
+          <small>${df(local.date||c.career_date)} · ATP #${fmt(c.singles_rank||0)} · Double #${fmt(c.doubles_rank||0)}</small>
+        </button>
+        ${latest?`<button class="career-launch-secondary" onclick="launcherLoadSlot(${Number(latest.slot_no)})"><span>Dernière sauvegarde</span><b>${esc(latest.slot_name||'Sauvegarde')}</b><small>${df(latest.career_date)} · semaine ${fmt(latest.week||1)}</small></button>`:''}
+        <button class="career-launch-new" onclick="openNewCareerPicker()"><span>NOUVELLE CARRIÈRE</span><small>Choisir un joueur réel dans la base mondiale</small></button>
+      </div>
+      <div class="career-launch-saves">
+        <div class="row between"><div><div class="eyebrow">Sauvegardes</div><h2>Charger une partie</h2></div><button class="ghost" onclick="enterCurrentCareer();nav('saves')">Gérer les slots</button></div>
+        <div class="career-launch-save-grid">${careerLauncherSlotCards()}</div>
+      </div>
+    </div>
+  </div>`;
+}
+window.showCareerLauncher=async function(force=false){
+  if(cbCareerLauncherBusy)return;
+  if(!force&&sessionStorage.getItem('courtBossCareerEntered')==='1')return;
+  cbCareerLauncherBusy=true;
+  try{await loadSaveSlots()}catch{}
+  cbCareerLauncherBusy=false;
+  renderCareerLauncher();
+};
+window.enterCurrentCareer=function(){
+  sessionStorage.setItem('courtBossCareerEntered','1');
+  route='home';
+  render();
+};
+window.launcherLoadSlot=async function(slotNo){
+  sessionStorage.setItem('courtBossCareerEntered','1');
+  await loadCareerSlot(Number(slotNo));
+};
+window.openNewCareerPicker=async function(){
+  app.innerHTML=`<div class="career-picker">
+    <div class="career-picker-head">
+      <button class="ghost" onclick="showCareerLauncher(true)">← Retour</button>
+      <div><div class="eyebrow">Nouvelle carrière</div><h1>Choisir ton joueur</h1><div class="muted">Commence avec un joueur réel actif. Ses attributs deviennent connus précisément une fois la carrière créée.</div></div>
+    </div>
+    <div class="card career-picker-search">
+      <input id="careerPickerSearch" class="input" placeholder="Rechercher un joueur…" oninput="careerPickerSearch(this.value)">
+      <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+        <button class="soft-btn" onclick="careerPickerPreset('top')">Top ATP</button>
+        <button class="soft-btn" onclick="careerPickerPreset('young')">Jeunes</button>
+        <button class="soft-btn" onclick="careerPickerPreset('france')">France</button>
+        <button class="soft-btn" onclick="careerPickerPreset('deep')">Défi circuit profond</button>
+      </div>
+    </div>
+    <div id="careerPickerResults" class="career-picker-results"><div class="loader">Chargement des joueurs…</div></div>
+  </div>`;
+  await careerPickerPreset('top');
+};
+window.careerPickerPreset=async function(kind){
+  const params=new URLSearchParams({offset:'0',limit:'30',circuit:'Tous réels'});
+  if(kind==='young')params.set('age_max','21');
+  if(kind==='france')params.set('country','FRA');
+  if(kind==='deep'){params.set('offset','500');params.set('limit','40')}
+  await renderCareerPickerResults(params);
+};
+window.careerPickerSearch=async function(q){
+  q=String(q||'').trim();
+  if(q.length<2){await careerPickerPreset('top');return}
+  const params=new URLSearchParams({offset:'0',limit:'40',circuit:'Tous réels',q});
+  await renderCareerPickerResults(params);
+};
+async function renderCareerPickerResults(params){
+  const box=document.getElementById('careerPickerResults');if(!box)return;
+  box.innerHTML='<div class="loader">Recherche dans la base mondiale…</div>';
+  try{
+    const d=await get('/api/search-players?'+params.toString());
+    const rows=(d.rows||[]).filter(p=>p.is_real!==false&&String(p.career_status||'active')!=='retired');
+    box.innerHTML=rows.length?rows.map(p=>`<div class="career-picker-player">
+      <div class="career-picker-avatar">${playerPhotoMarkup(p)}</div>
+      <div class="grow">
+        <div class="eyebrow">${flags[p.country]||'🏳️'} ${esc(p.country||'')}</div>
+        <h2>${esc(p.name)}</h2>
+        <div class="muted mini">${p.ranking?'ATP #'+fmt(p.ranking):'ATP NR'} · ${ageLabel(p,true)} · ${esc(p.style||'Style à découvrir')}</div>
+      </div>
+      <button class="primary" onclick="startCareerWithPlayer(${p.id},${JSON.stringify(String(p.name||'Joueur'))})">Gérer</button>
+    </div>`).join(''):'<div class="card empty">Aucun joueur trouvé.</div>';
+  }catch(e){box.innerHTML='<div class="notice bad">'+esc(e.message)+'</div>'}
+}
+
 window.startCareerWithPlayer=async function(id,name){
   if(!confirm("Démarrer une nouvelle carrière avec "+name+" ? Les résultats de la carrière actuelle seront réinitialisés."))return;
   overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création de la nouvelle carrière…</div></div></div>';
@@ -534,6 +641,7 @@ window.startCareerWithPlayer=async function(id,name){
       facilityLevels:{}
     });
     persist();
+    sessionStorage.setItem('courtBossCareerEntered','1');
     boot=await get('/api/bootstrap');
     if(boot.career)local.career={...boot.career};
     rankKind='singles';rankOffset=0;rankQuery='';
@@ -545,6 +653,7 @@ window.startCareerWithPlayer=async function(id,name){
     delete local.liveSessionId;cbLiveSession=null;cbLiveOpponent=null;persist();
     closeOverlay();
     route='home';
+    await saveCareerSlot(0,'autosave',true);
     shell(home());
   }catch(e){
     overlay.innerHTML='<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Nouvelle carrière impossible</h2><p class="muted">'+esc(e.message)+'</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>';
@@ -1301,3 +1410,5 @@ document.addEventListener('click',e=>{
   const hi=e.target.closest?.('[data-tournament-history-index]');
   if(hi)window.openTournamentHistoryItem(Number(hi.dataset.tournamentHistoryIndex));
 });
+
+setTimeout(()=>{ if(!sessionStorage.getItem('courtBossCareerEntered')) window.showCareerLauncher?.(); },0);

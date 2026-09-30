@@ -3211,6 +3211,7 @@ function diagnosticsPage(){
   ['Carrière',x.career_exists],['Joueur géré',x.managed_player_exists],['Académie',x.academy_exists],
   ['Plan saison',Number(i.missing_season_plan||0)===0],['Inbox',Number(i.duplicate_pending_inbox||0)===0&&Number(i.expired_pending_decisions||0)===0],
   ['Académie capacité',Number(i.academy_overflow||0)===0],['Contrats',Number(i.overdue_active_contracts||0)===0],
+  ['Sauvegardes',Boolean(i.baseline_template_integrity)&&Number(i.invalid_save_snapshots||0)===0&&Number(i.save_metadata_mismatches||0)===0&&Number(i.save_local_payload_mismatches||0)===0&&Number(i.invalid_save_slot_shape||0)===0],
   ['Staff',Number(i.duplicate_staff_profiles||0)===0],['Relations',Number(i.self_relationships||0)===0]
  ];
  const metric=(l,v,alert=false)=>'<div class="statbox"><span class="muted mini">'+esc(l)+'</span><b class="'+(alert&&Number(v)>0?'bad':'')+'">'+fmt(v||0)+'</b></div>';
@@ -3225,17 +3226,21 @@ function diagnosticsPage(){
   issue('Profils staff dupliqués',i.duplicate_staff_profiles),
   issue('Joueurs académie orphelins',i.orphan_academy_roster),
   issue('Contrats actifs déjà périmés',i.overdue_active_contracts),
+  issue('Snapshots de sauvegarde invalides',i.invalid_save_snapshots),
+  issue('Métadonnées de sauvegarde incohérentes',i.save_metadata_mismatches),
+  issue('Payloads locaux de sauvegarde incohérents',i.save_local_payload_mismatches),
+  issue('Forme de slot de sauvegarde invalide',i.invalid_save_slot_shape),
   issue('Relations avec soi-même',i.self_relationships)
  ].filter(Boolean).join('');
  return '<div class="section-head"><div><div class="eyebrow">QA carrière</div><h1>Diagnostic Career OS</h1><div class="muted">Audit automatique de la sauvegarde, des décisions, de l’académie et des systèmes manager.</div></div><button class="primary" onclick="refreshCareerDiagnostics()">Réanalyser</button></div>'+
- '<div class="notice '+(i.ok===false?'bad':'good')+'"><b>'+(i.ok===false?'Anomalies détectées':'Intégrité carrière OK')+'</b><br><span class="muted mini">'+esc(i.model||'CB-CAREER-INTEGRITY-v1')+' · '+df(i.date||local.date)+'</span></div>'+
+ '<div class="notice '+(i.ok===false?'bad':'good')+'"><b>'+(i.ok===false?'Anomalies détectées':'Intégrité carrière OK')+'</b><br><span class="muted mini">'+esc(i.model||'CB-CAREER-INTEGRITY-v2')+' · '+df(i.date||local.date)+'</span></div>'+
  '<div class="grid g3" style="margin-top:12px">'+baseChecks.map(c=>'<div class="card"><div class="eyebrow">'+esc(c[0])+'</div><div class="big '+(c[1]?'good':'bad')+'">'+(c[1]?'OK':'KO')+'</div></div>').join('')+'</div>'+
  '<div class="grid g2" style="margin-top:12px">'+
   '<div class="card"><div class="row between"><div><div class="eyebrow">Santé générale</div><h2>'+esc(x.model||'CB-CAREER-OS-v1')+'</h2></div><span class="badge good">'+df(x.date||local.date)+'</span></div><div class="statline">'+metric('Staff actif',x.active_staff)+metric('Contrats actifs',x.active_contracts)+metric('Prospects académie',x.academy_prospects)+metric('Joueurs académie',x.academy_active_players)+metric('Scouting actif',x.active_scouting)+metric('Sponsors dispo',x.available_sponsors)+metric('Relations',x.relationships)+metric('Plans saison',x.season_plans)+metric('Inbox non lue',x.unread_inbox)+metric('Blessures actives',x.active_injuries)+'</div></div>'+
   '<div class="card"><div class="row between"><div><div class="eyebrow">Intégrité durable</div><h2>Contrôles de cohérence</h2></div><span class="badge '+(i.ok===false?'bad':'good')+'">'+(i.ok===false?'À corriger':'0 erreur bloquante')+'</span></div>'+
    (issues||'<div class="notice good" style="margin-top:10px">Aucune anomalie bloquante détectée.</div>')+
-   '<div class="statline" style="margin-top:10px">'+metric('Capacité académie',i.academy_capacity)+metric('Jeunes actifs',i.academy_active_youth)+metric('Slots legacy',i.legacy_save_slots,true)+metric('Questions média anciennes',i.stale_media_questions,true)+'</div>'+
-   '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:9px"><span class="badge '+(i.baseline_template_ready?'good':'warn')+'">Template nouvelle partie '+(i.baseline_template_ready?'prêt':'absent')+'</span><span class="badge">Double principal '+fmt(i.active_doubles_commitments||0)+'</span></div>'+
+   '<div class="statline" style="margin-top:10px">'+metric('Capacité académie',i.academy_capacity)+metric('Jeunes actifs',i.academy_active_youth)+metric('Slots',i.save_slots_total)+metric('Slots legacy',i.legacy_save_slots,true)+metric('Snapshots invalides',i.invalid_save_snapshots,true)+metric('Métadonnées save',i.save_metadata_mismatches,true)+metric('Payloads save',i.save_local_payload_mismatches,true)+metric('Questions média anciennes',i.stale_media_questions,true)+'</div>'+
+   '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:9px"><span class="badge '+(i.baseline_template_integrity?'good':'bad')+'">Template nouvelle partie '+(i.baseline_template_integrity?'intègre':'à réparer')+'</span><span class="badge '+(Number(i.invalid_save_slot_shape||0)===0?'good':'bad')+'">Structure slots '+(Number(i.invalid_save_slot_shape||0)===0?'OK':'KO')+'</span><span class="badge">Double principal '+fmt(i.active_doubles_commitments||0)+'</span></div>'+
   '</div>'+
  '</div>';
 }

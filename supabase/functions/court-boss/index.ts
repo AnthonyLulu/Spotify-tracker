@@ -1731,6 +1731,7 @@ Deno.serve(async(req:Request)=>{
       const total=rows.length;
       const officialRanked=rows.filter((x:any)=>x.ncaa_rank!=null&&x.ncaa_rank_type==="official"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
       const simulatedDepth=rows.filter((x:any)=>x.ncaa_projected_rank!=null&&x.ncaa_rank_type==="simulated_depth"&&String(x.ncaa_snapshot_date||"")<=gameDate).length;
+      const officialSource=(currentReg.data??[]).find((x:any)=>/ITA Division I Men.?s National Singles Rankings/i.test(String(x.source_label||""))&&x.source_url);
       rows=rows.slice(offset,offset+limit).map(({__priority,...x}:any)=>x);
       return h({
         kind,offset,limit,count:total,rows,
@@ -1738,6 +1739,8 @@ Deno.serve(async(req:Request)=>{
         verifiedCurrentRanks:officialRanked,
         simulatedDepthRanks:simulatedDepth,
         officialSnapshotDate:"2025-11-25",
+        officialSourceLabel:officialSource?.source_label||"ITA Division I Men's National Singles Rankings · 2025-11-25",
+        officialSourceUrl:officialSource?.source_url||null,
         coverage:"ITA officiel 1-20 au 25/11/2025 · profondeur 21+ affichée uniquement comme projection Court Boss (~)",
         eligibility:"NCAA Division I · classement officiel distingué de la profondeur simulée",
         rankingDate:gameDate

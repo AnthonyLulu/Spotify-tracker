@@ -680,7 +680,7 @@ window.jumpRanking=async()=>{
 function ncaaRanking(){
  const rows=rankRows||[],startRow=rankCount?rankOffset+1:0,endRow=Math.min(rankOffset+rows.length,rankCount);
  const doubleRows=ncaaDoublesRows||[];
- const modeTabs=`<div class="tabs rank-tabs" style="margin:12px 0"><button class="${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')">Simple · Top ${fmt(rankMeta?.officialCapacity||125)}</button><button class="${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')">Double · Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</button></div>`;
+ const modeTabs=`<div class="tabs rank-tabs" style="margin:12px 0"><button class="${ncaaView==='singles'?'active':''}" onclick="setNcaaView('singles')">Simple · ${fmt(rankMeta?.verifiedCurrentRanks||0)} ITA officiels + profondeur</button><button class="${ncaaView==='doubles'?'active':''}" onclick="setNcaaView('doubles')">Double · Top ${fmt(ncaaDoublesMeta?.officialCapacity||90)}</button></div>`;
  const singlesTable=`
   <div class="notice mini" style="margin-top:10px"><b>NCAA / ITA au 01/12/2025</b> · <b>${fmt(rankMeta?.verifiedCurrentRanks||0)} rangs ITA officiels</b> au snapshot du ${df(rankMeta?.officialSnapshotDate||'2025-11-25')} · la profondeur Court Boss est séparée et précédée de <b>~</b>. Un <b>~#21</b> est une projection de gameplay, jamais le vrai ITA #21. L’UTR utilise aussi ~ lorsqu’il est estimé.</div>
   <div class="table-wrap live-rank-table" style="margin-top:10px"><table class="table"><thead><tr><th>Rang</th><th>Référence</th><th>Joueur</th><th>Âge 01/12/25</th><th>Université</th><th>Division</th><th>UTR</th><th>ATP</th><th>Statut</th></tr></thead><tbody>

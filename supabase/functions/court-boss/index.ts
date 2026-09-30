@@ -10534,6 +10534,20 @@ Deno.serve(async(req:Request)=>{
         ||principalMember.data?.display_name||""
       ).trim();
 
+      const currentTournamentRuns=await db.from("tournament_runs").select("id");
+      if(currentTournamentRuns.error)return h({error:"Reset carrière impossible : "+currentTournamentRuns.error.message},500);
+      const tournamentRunIds=(currentTournamentRuns.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
+      if(tournamentRunIds.length){
+        const drawDelete=await db.from("tournament_draw_matches").delete().in("run_id",tournamentRunIds);
+        if(drawDelete.error)return h({error:"Reset carrière impossible : "+drawDelete.error.message},500);
+      }
+      const currentDoublesRuns=await db.from("doubles_runs").select("id");
+      if(currentDoublesRuns.error)return h({error:"Reset carrière impossible : "+currentDoublesRuns.error.message},500);
+      const doublesRunIds=(currentDoublesRuns.data??[]).map((x:any)=>Number(x.id)).filter(Boolean);
+      if(doublesRunIds.length){
+        const doublesHistoryDelete=await db.from("doubles_match_history").delete().in("run_id",doublesRunIds);
+        if(doublesHistoryDelete.error)return h({error:"Reset carrière impossible : "+doublesHistoryDelete.error.message},500);
+      }
       const resetOps:any[]=[
         db.from("tournament_runs").delete().gte("id",0),
         db.from("doubles_runs").delete().gte("id",0),

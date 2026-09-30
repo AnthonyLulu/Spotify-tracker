@@ -2210,6 +2210,197 @@ Deno.serve(async(req:Request)=>{
     return h({kind:"ncaa-university",season,referenceDate,team:team.data,count:rows.length,rows});
   }
 
+
+  if(path.endsWith("/api/ncaa-universities")&&req.method==="GET"){
+    const season="2025-26";
+    const snapshot="2025-11-25";
+    const cutoff="2025-12-01";
+    const schoolParam=(u.searchParams.get("school")??"").trim().slice(0,180);
+    const q=(u.searchParams.get("q")??"").trim().slice(0,100);
+    const [rosterRes,stagingRes]=await Promise.all([
+      db.from("ncaa_roster_reference")
+        .select("athlete_id,full_name,name_norm,season,division,conference,school,class_standing,country,source_url,player_id")
+        .eq("season",season).limit(5000),
+      db.from("ita_ncaa_singles_staging")
+        .select("ita_rank,player_name,ita_player_id,school,conference,ranking_points,wins,losses")
+        .eq("season",season).eq("snapshot_date",snapshot).limit(200)
+    ]);
+    const baseError=rosterRes.error||stagingRes.error;
+    if(baseError)return h({error:baseError.message},500);
+
+    const schoolKey=(v:any)=>normalizeName(String(v||""));
+    const rosterAll=rosterRes.data??[];
+    const stagingAll=stagingRes.data??[];
+
+    if(!schoolParam){
+      const bySchool=new Map<string,any>();
+      const ensure=(raw:any)=>{
+        const name=String(raw||"").trim();
+        const key=schoolKey(name);
+        if(!key)return null;
+        let row=bySchool.get(key);
+        if(!row){
+          row={key,name,roster_count:0,official_ranked_count:0,best_ita_rank:null,conference:null,division:null,source_url:null};
+          bySchool.set(key,row);
+        }
+        return row;
+      };
+      for(const rr of rosterAll){
+        const row=ensure((rr as any).school); if(!row)continue;
+        row.roster_count++;
+        row.conference=row.conference||(rr as any).conference||null;
+        row.division=row.division||(rr as any).division||"NCAA Division I";
+        row.source_url=row.source_url||(rr as any).source_url||null;
+      }
+      for(const s of stagingAll){
+        const row=ensure((s as any).school); if(!row)continue;
+        const rank=Number((s as any).ita_rank||0)||null;
+        row.official_ranked_count++;
+        if(rank!=null&&(row.best_ita_rank==null||rank<row.best_ita_rank))row.best_ita_rank=rank;
+        row.conference=row.conference||(s as any).conference||null;
+        row.division=row.division||"NCAA Division I";
+      }
+      let rows=[...bySchool.values()];
+      if(q){
+        const nq=normalizeName(q);
+        rows=rows.filter((x:any)=>normalizeName(x.name).includes(nq)||normalizeName(x.conference||"").includes(nq));
+      }
+      rows.sort((a:any,b:any)=>{
+        const ar=Number(a.best_ita_rank??999999),br=Number(b.best_ita_rank??999999);
+        if(ar!==br)return ar-br;
+        if(Number(b.roster_count)!==Number(a.roster_count))return Number(b.roster_count)-Number(a.roster_count);
+        return String(a.name).localeCompare(String(b.name));
+      });
+      return h({
+        kind:"ncaa-universities",season,snapshot_date:snapshot,cutoff,
+        count:rows.length,rows,
+        rosterRows:rosterAll.length,officialRankedPlayers:stagingAll.length
+      });
+    }
+
+    const targetKey=schoolKey(schoolParam);
+    const rosterRows=rosterAll.filter((x:any)=>schoolKey(x.school)===targetKey);
+    const stagedRows=stagingAll.filter((x:any)=>schoolKey(x.school)===targetKey);
+    const stagedIds=new Set(stagedRows.map((x:any)=>String(x.ita_player_id||"")).filter(Boolean));
+    const mapRes=await db.from("ita_ncaa_singles_player_map")
+      .select("ita_player_id,player_id")
+      .eq("season",season).eq("snapshot_date",snapshot).limit(200);
+    if(mapRes.error)return h({error:mapRes.error.message},500);
+    const mappedPlayerByIta=new Map<string,number>(
+      (mapRes.data??[])
+        .filter((x:any)=>stagedIds.has(String(x.ita_player_id||"")))
+        .map((x:any)=>[String(x.ita_player_id),Number(x.player_id)])
+    );
+
+    const ids=new Set<number>();
+    for(const rr of rosterRows)if((rr as any).player_id!=null)ids.add(Number((rr as any).player_id));
+    for(const s of stagedRows){
+      const id=mappedPlayerByIta.get(String((s as any).ita_player_id||""));
+      if(id)ids.add(id);
+    }
+    const playerIds=[...ids];
+
+    let playerData:any[]=[];
+    let registryData:any[]=[];
+    let rankingHistory:any[]=[];
+    if(playerIds.length){
+      const [pRes,rRes,hRes]=await Promise.all([
+        db.from("players")
+          .select("id,name,country,birth_date,age,age_snapshot_date,ranking,ranking_current,ranking_snapshot_date,ncaa_utr_rating,ncaa_utr_verified,ncaa_current,ncaa_status")
+          .in("id",playerIds).limit(500),
+        db.from("ncaa_player_registry")
+          .select("player_id,ita_rank_official,projected_rank,status,snapshot_date")
+          .eq("season",season).in("player_id",playerIds).lte("snapshot_date",cutoff).limit(1000),
+        db.from("ranking_history")
+          .select("player_id,snapshot_date,ranking,points")
+          .in("player_id",playerIds).eq("snapshot_date",cutoff).limit(500)
+      ]);
+      const detailError=pRes.error||rRes.error||hRes.error;
+      if(detailError)return h({error:detailError.message},500);
+      playerData=pRes.data??[];
+      registryData=rRes.data??[];
+      rankingHistory=hRes.data??[];
+    }
+
+    const playerById=new Map<number,any>(playerData.map((x:any)=>[Number(x.id),x]));
+    const atpById=new Map<number,any>(rankingHistory.map((x:any)=>[Number(x.player_id),x]));
+    const regById=new Map<number,any>();
+    for(const r of registryData){
+      const id=Number((r as any).player_id),old=regById.get(id);
+      const score=(r as any).ita_rank_official!=null?0:(r as any).projected_rank!=null?1:2;
+      const oldScore=old?(old.ita_rank_official!=null?0:old.projected_rank!=null?1:2):99;
+      if(!old||score<oldScore||String((r as any).snapshot_date||"")>String(old.snapshot_date||""))regById.set(id,r);
+    }
+    const stagedByPlayerId=new Map<number,any>();
+    for(const s of stagedRows){
+      const id=mappedPlayerByIta.get(String((s as any).ita_player_id||""));
+      if(id)stagedByPlayerId.set(id,s);
+    }
+
+    const merged=new Map<string,any>();
+    const put=(base:any,playerId:any=null)=>{
+      const id=playerId!=null?Number(playerId):null;
+      const p=id?playerById.get(id):null;
+      const st=id?stagedByPlayerId.get(id):null;
+      const reg=id?regById.get(id):null;
+      const atp=id?atpById.get(id):null;
+      const name=String(p?.name||st?.player_name||base?.full_name||"").trim();
+      if(!name)return;
+      const key=id?"id:"+id:"name:"+normalizeName(name);
+      const existing=merged.get(key)||{};
+      const birth=p?.birth_date||null;
+      const age=ageAt(birth,cutoff,p?.age,p?.age_snapshot_date);
+      const row={
+        ...existing,
+        id:id||null,
+        name,
+        country:p?.country||base?.country||null,
+        class_standing:base?.class_standing||existing.class_standing||null,
+        division:base?.division||"NCAA Division I",
+        conference:base?.conference||existing.conference||null,
+        university:String(base?.school||schoolParam),
+        ita_rank:st?.ita_rank??reg?.ita_rank_official??existing.ita_rank??null,
+        projected_rank:reg?.projected_rank??existing.projected_rank??null,
+        atp_rank:atp?.ranking??null,
+        atp_points:atp?.points??null,
+        utr_rating:p?.ncaa_utr_rating??null,
+        utr_verified:Boolean(p?.ncaa_utr_verified),
+        age,
+        ncaa_current:Boolean(p?.ncaa_current??true),
+        ncaa_status:p?.ncaa_status||reg?.status||"Active",
+        source_url:base?.source_url||existing.source_url||null
+      };
+      merged.set(key,row);
+    };
+    for(const rr of rosterRows)put(rr,(rr as any).player_id);
+    for(const s of stagedRows){
+      const id=mappedPlayerByIta.get(String((s as any).ita_player_id||""));
+      put({school:(s as any).school,conference:(s as any).conference,division:"NCAA Division I"},id||null);
+    }
+
+    const rows=[...merged.values()].sort((a:any,b:any)=>{
+      const ar=Number(a.ita_rank??999999),br=Number(b.ita_rank??999999);
+      if(ar!==br)return ar-br;
+      const aa=Number(a.atp_rank??999999),ba=Number(b.atp_rank??999999);
+      if(aa!==ba)return aa-ba;
+      return String(a.name).localeCompare(String(b.name));
+    });
+    const conference=rosterRows.find((x:any)=>x.conference)?.conference||stagedRows.find((x:any)=>x.conference)?.conference||null;
+    return h({
+      kind:"ncaa-university",season,snapshot_date:snapshot,cutoff,
+      university:{
+        name:rosterRows[0]?.school||stagedRows[0]?.school||schoolParam,
+        conference,
+        division:rosterRows[0]?.division||"NCAA Division I",
+        roster_count:rows.length,
+        official_ranked_count:rows.filter((x:any)=>x.ita_rank!=null).length,
+        atp_ranked_count:rows.filter((x:any)=>x.atp_rank!=null).length,
+        best_ita_rank:rows.find((x:any)=>x.ita_rank!=null)?.ita_rank??null
+      },
+      rows
+    });
+  }
+
   if(path.endsWith("/api/ncaa-doubles")&&req.method==="GET"){
     const offset=n(u.searchParams.get("offset"),0,0,500);
     const limit=n(u.searchParams.get("limit"),100,1,100);

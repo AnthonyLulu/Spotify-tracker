@@ -2715,7 +2715,75 @@ function fantasyPage(){
  const rows=local.fantasy||[];
  return `<div class="section-head"><div><div class="eyebrow">Mode créatif</div><h1>Fantasy Court</h1><div class="muted">Crée ton propre tournoi, surface et format.</div></div><button class="primary" onclick="createFantasy()">Nouveau tournoi</button></div><div class="stack">${rows.map((t,i)=>`<div class="card click" onclick="openFantasy(${i})"><div class="row between"><div><div class="eyebrow">${esc(t.category)}</div><h2>${esc(t.name)}</h2><div class="muted">${esc(surfaceLabel(t))} · ${t.draw} joueurs</div></div><button class="danger-btn" onclick="event.stopPropagation();deleteFantasy(${i})">Supprimer</button></div></div>`).join('')||'<div class="card empty">Aucun tournoi personnalisé. Crée le premier.</div>'}</div>`
 }
-function inboxPage(){return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1></div></div><div class="stack">${(boot.inbox||[]).map(x=>`<div class="card click" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')"><div class="row between"><div class="eyebrow">${esc(x.kind)}</div><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div><h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p></div>`).join('')}</div>`}
+function saveCenterPage(){
+ const byNo=new Map((saveSlots||[]).map(x=>[Number(x.slot_no),x]));
+ const cards=[0,1,2,3].map(n=>{
+  const x=byNo.get(n),auto=n===0;
+  return `<div class="card save-slot ${x?'has-save':''}">
+    <div class="row between"><div><div class="eyebrow">${auto?'Autosave':'Slot '+n}</div><h2>${esc(x?.slot_name||(auto?'Autosave hebdomadaire':'Slot vide'))}</h2></div><span class="badge ${x?'good':''}">${x?'Disponible':'Vide'}</span></div>
+    ${x?`<div class="list-item row between"><span>Date carrière</span><b>${df(x.career_date)}</b></div><div class="list-item row between"><span>Semaine</span><b>${fmt(x.week||1)}</b></div><div class="list-item row between"><span>Joueur</span><b>${esc(x.player_name||'—')}</b></div><div class="muted micro" style="margin-top:7px">Dernière écriture : ${new Date(x.updated_at).toLocaleString('fr-FR')}</div>`:auto?'<div class="muted">L’autosave sera créé après la prochaine semaine simulée.</div>':'<div class="empty">Aucune sauvegarde dans ce slot.</div>'}
+    <div class="row" style="margin-top:12px;flex-wrap:wrap">
+      ${x?`<button class="primary" onclick="loadCareerSlot(${n})">Charger</button>`:''}
+      <button class="soft-btn" ${saveSlotBusy?'disabled':''} onclick="saveCareerSlot(${n},'${auto?'autosave':'manual'}')">${x?'Écraser':'Sauvegarder ici'}</button>
+      ${x&&!auto?`<button class="danger-btn" onclick="deleteCareerSlot(${n})">Supprimer</button>`:''}
+    </div>
+   </div>`;
+ }).join('');
+ return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 3 slots manuels. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(1,'manual')">Sauvegarde rapide</button></div>
+ <div class="notice mini"><b>Snapshot managé v1 :</b> les slots restaurent l’état complet de ta structure et du joueur géré. Le monde global reste piloté par le moteur de simulation de la carrière.</div>
+ <div class="grid g2" style="margin-top:12px">${cards}</div>`;
+}
+function inboxActionButton(x,type,label,payload,cls='primary'){
+ if(!type||!label)return '';
+ const p=JSON.stringify(payload||{}).replace(/'/g,'&#39;');
+ return `<button class="${cls}" onclick='event.stopPropagation();runInboxDecision(${Number(x.id)},${JSON.stringify(String(type))},${p})'>${esc(label)}</button>`;
+}
+function inboxPage(){
+ const rows=[...(boot.inbox||[])].sort((a,b)=>Number(a.is_read)-Number(b.is_read)||({urgent:0,high:1,normal:2}[a.priority]??2)-({urgent:0,high:1,normal:2}[b.priority]??2)||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+ const unread=rows.filter(x=>!x.is_read).length,decisions=rows.filter(x=>x.decision_status==='pending'&&x.action_type&&!['open_route'].includes(x.action_type)).length;
+ return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1><div class="muted">${unread} non lu(s) · ${decisions} décision(s) en attente</div></div><button class="soft-btn" onclick="markAllInboxRead()">Tout marquer lu</button></div>
+ <div class="inbox-layout"><div class="stack">${rows.map(x=>`<div class="card inbox-card ${x.is_read?'':'is-unread'} ${x.priority==='high'||x.priority==='urgent'?'is-priority':''}" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')">
+   <div class="row between"><div class="eyebrow">${esc(x.kind||'info')} · ${x.game_date?df(x.game_date):new Date(x.created_at).toLocaleDateString('fr-FR')}</div><div class="row"><span class="badge ${x.priority==='high'||x.priority==='urgent'?'warn':''}">${esc(x.priority||'normal')}</span><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div></div>
+   <h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p>
+   ${x.decision_status==='resolved'?'<span class="badge good">Décision prise</span>':''}
+   ${x.action_type&&x.decision_status!=='resolved'?`<div class="row" style="margin-top:10px;flex-wrap:wrap">${inboxActionButton(x,x.action_type,x.action_label||'Ouvrir',x.action_payload,'primary')}${inboxActionButton(x,x.secondary_action_type,x.secondary_action_label,x.secondary_action_payload,'soft-btn')}</div>`:''}
+  </div>`).join('')||'<div class="card empty">Aucun message.</div>'}</div></div>`;
+}
+window.runInboxDecision=async(id,type,payload={})=>{
+ try{
+  if(type==='open_route'){
+    try{await managerAction('mark_inbox_read',id)}catch{}
+    boot=await get('/api/bootstrap');
+    await nav(payload.route||'home');
+    return;
+  }
+  if(type==='academy_pathway'){
+    const youthId=Number(payload.youth_id||0);
+    const d=await managerAction('academy_pathway',youthId,{decision:payload.decision});
+    boot=await get('/api/bootstrap');await loadManagement();
+    alert(payload.decision==='ncaa'?'Départ NCAA confirmé : '+d.destination:'Passage professionnel confirmé.');
+    render();return;
+  }
+  if(type==='accept_sponsor'){
+    await managerAction('accept_sponsor',Number(payload.offer_id||0));
+    boot=await get('/api/bootstrap');await loadManagement();render();return;
+  }
+  if(type==='medical_protocol'){
+    await managerAction('set_medical_protocol',0,{protocol:payload.protocol});
+    boot=await get('/api/bootstrap');render();return;
+  }
+  if(type==='respond_partner_offer'){
+    await managerAction('respond_partner_offer',Number(payload.offer_id||0),{decision:payload.decision||'decline'});
+    boot=await get('/api/bootstrap');await loadManagement();render();return;
+  }
+  await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap');render();
+ }catch(e){alert(e.message)}
+}
+window.markAllInboxRead=async()=>{
+ const unread=(boot.inbox||[]).filter(x=>!x.is_read);
+ for(const x of unread){try{await managerAction('mark_inbox_read',x.id)}catch{}}
+ boot=await get('/api/bootstrap');render();
+}
 function render(){
  if(!boot)return;
  const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage,saves:saveCenterPage};

@@ -5883,7 +5883,44 @@ Deno.serve(async(req:Request)=>{
         }
       }
       academyPlayerTraining.processed++;
-      academyPlayerTraining.players.push({player_id:pid,name:String(p0.name||"Joueur"),focus,load,improvement});
+      const postFatigue=Math.max(0,Math.min(100,Number(p0.fatigue||15)+fatigueDelta));
+      const reportRow={player_id:pid,name:String(p0.name||"Joueur"),focus,load,improvement,fatigue:postFatigue};
+      academyPlayerTraining.players.push(reportRow);
+
+      const highLoad=load>=13||postFatigue>=65;
+      if(improvement||highLoad){
+        const title=improvement
+          ?"Progression · "+String(p0.name||"Joueur")
+          :"Charge à surveiller · "+String(p0.name||"Joueur");
+        const bodyText=improvement
+          ?String(p0.name||"Le joueur")+" progresse en "+String(improvement.attribute)+" ("+String(improvement.from)+" → "+String(improvement.to)+"). Focus de la semaine : "+focus+"."
+          :String(p0.name||"Le joueur")+" termine la semaine avec une charge "+String(load)+" et une fatigue estimée à "+String(postFatigue)+". Ajuste son plan si nécessaire.";
+        await db.from("inbox_items").insert({
+          kind:"training",title,body:bodyText,action_route:"training",game_date:date,
+          priority:highLoad?"high":"normal",
+          action_type:"open_route",action_label:"Ouvrir son entraînement",
+          action_payload:{route:"training",player_id:pid},
+          decision_status:"info",related_entity_type:"player",related_entity_id:pid,is_read:false
+        });
+      }
+    }
+
+    if(academyPlayerTraining.processed>0){
+      const improved=academyPlayerTraining.players.filter((x:any)=>x.improvement).length;
+      const overloaded=academyPlayerTraining.players.filter((x:any)=>Number(x.load||0)>=13||Number(x.fatigue||0)>=65).length;
+      const summary=academyPlayerTraining.players
+        .map((x:any)=>String(x.name)+": "+String(x.focus)+" · charge "+String(x.load)+(x.improvement?" · progression "+String(x.improvement.attribute):""))
+        .join(" | ");
+      await db.from("inbox_items").insert({
+        kind:"training",
+        title:"Rapport entraînement académie · semaine "+String(week),
+        body:String(academyPlayerTraining.processed)+" joueur(s) suivis. "+String(improved)+" progression(s) visible(s), "+String(overloaded)+" charge(s) à surveiller. "+summary.slice(0,1400),
+        action_route:"training",game_date:date,
+        priority:overloaded>0?"high":"normal",
+        action_type:"open_route",action_label:"Voir les plans individuels",
+        action_payload:{route:"training"},
+        decision_status:"info",is_read:false
+      });
     }
 
     const academyDev=await db.rpc("simulate_academy_roster_week",{p_week:week,p_date:date});
@@ -11616,6 +11653,8 @@ Deno.serve(async(req:Request)=>{
       slotType==="autosave"?"Autosave":slotType==="quick"?"Sauvegarde rapide":"Sauvegarde "+slotNo
     )).slice(0,80);
     const snapshot=await captureManagedSaveSnapshot();
+    const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
+    const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";
     const payload=body?.local_payload&&typeof body.local_payload==="object"?{...body.local_payload}:{};
     delete payload.liveSessionId;
     delete payload.liveMatch;
@@ -11627,7 +11666,7 @@ Deno.serve(async(req:Request)=>{
       career_date:snapshot.career_date,week:snapshot.week,
       player_name:snapshot.career?.player_name||null,
       managed_player_id:snapshot.managed_player_id||null,
-      snapshot_scope:"managed_world_exact_v2",game_version:"2026.10-career-os-v2",
+      snapshot_scope:snapshotScope,game_version:saveGameVersion,
       updated_at:new Date().toISOString()
     },{onConflict:"browser_key,slot_no"}).select("id,slot_no,slot_type,slot_name,career_date,week,player_name,updated_at").single();
     if(save.error)return h({error:save.error.message},500);
@@ -11639,7 +11678,7 @@ Deno.serve(async(req:Request)=>{
       event_date:snapshot.career_date,week:snapshot.week,system:"save",event_type:"save_created",
       entity_type:"save_slot",entity_id:save.data.id,
       summary:"Sauvegarde "+slotName,
-      payload:{slot_no:slotNo,slot_type:slotType,snapshot_scope:"managed_world_exact_v2"}
+      payload:{slot_no:slotNo,slot_type:slotType,snapshot_scope:snapshotScope,snapshot_model:snapshot.model}
     });
     return h({ok:true,slot:save.data,snapshot_model:snapshot.model});
   }

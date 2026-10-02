@@ -1517,7 +1517,7 @@ async function captureManagedSaveSnapshot(){
     managedInjuriesAll,managedTrainingLoadAll,managedSeasonPlansAll,
     managedEntriesAll,managedDoublesEntriesAll,managedAgencyAll,managedDoublesCommitmentsAll,
     managedPartnerHistoryAll,managedPartnerOffersAll,managedPartnershipsAll,managedRelationshipsAll,
-    managedSponsorsAll,managedStaffAssignmentsAll,managedNcaaRegistryAll
+    managedSponsorsAll,managedStaffAssignmentsAll,managedNcaaRegistryAll,managedRankingPointsAll
   ]=await Promise.all([
     academyManagedPlayerIds.length?db.from("players").select("*").in("id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("player_attributes").select("*").in("player_id",academyManagedPlayerIds).order("player_id"):Promise.resolve({data:[],error:null} as any),
@@ -1536,18 +1536,19 @@ async function captureManagedSaveSnapshot(){
     academyManagedPlayerIds.length?db.from("player_relationships").select("*").or("player_a_id.in.("+academyManagedPlayerIds.join(",")+"),player_b_id.in.("+academyManagedPlayerIds.join(",")+")").order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("player_sponsors").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("player_staff_assignments").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
-    academyManagedPlayerIds.length?db.from("ncaa_player_registry").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any)
+    academyManagedPlayerIds.length?db.from("ncaa_player_registry").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
+    academyManagedPlayerIds.length?db.from("user_ranking_points").select("*").eq("owner_id","demo").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any)
   ]);
   const multiPlayerErr=
     managedPlayersAll.error||managedAttributesAll.error||managedDevelopmentAll.error||managedCeilingsAll.error||
     managedInjuriesAll.error||managedTrainingLoadAll.error||managedSeasonPlansAll.error||
     managedEntriesAll.error||managedDoublesEntriesAll.error||managedAgencyAll.error||managedDoublesCommitmentsAll.error||
     managedPartnerHistoryAll.error||managedPartnerOffersAll.error||managedPartnershipsAll.error||managedRelationshipsAll.error||
-    managedSponsorsAll.error||managedStaffAssignmentsAll.error||managedNcaaRegistryAll.error;
+    managedSponsorsAll.error||managedStaffAssignmentsAll.error||managedNcaaRegistryAll.error||managedRankingPointsAll.error;
   if(multiPlayerErr)throw new Error(multiPlayerErr.message||"Multi-player snapshot failed");
 
   return {
-    model:"CB-MANAGED-SAVE-v4",
+    model:"CB-MANAGED-SAVE-v5",
     captured_at:new Date().toISOString(),
     career_date:career.data.career_date,
     week:career.data.week,
@@ -1601,6 +1602,7 @@ async function captureManagedSaveSnapshot(){
     managed_sponsors_all:managedSponsorsAll.data??[],
     managed_staff_assignments_all:managedStaffAssignmentsAll.data??[],
     managed_ncaa_registry_all:managedNcaaRegistryAll.data??[],
+    managed_ranking_points_all:managedRankingPointsAll.data??[],
     season_plans:seasonPlans.data??[],
     relationships:relationships.data??[],
     player_sponsors:playerSponsors.data??[],
@@ -1632,7 +1634,7 @@ async function captureManagedSaveSnapshot(){
 
 async function restoreManagedSaveSnapshot(snapshot:any){
   const model=String(snapshot?.model||"");
-  if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))throw new Error("Unsupported save snapshot");
+  if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))throw new Error("Unsupported save snapshot");
 
   const upsertOne=async(table:string,row:any,onConflict?:string)=>{
     if(!row)return;
@@ -1656,7 +1658,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   let currentNation=nation;
   let currentStaffProfileIds:number[]=[];
   let currentAcademyPlayerIds:number[]=[];
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)){
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)){
     const currentCareer=await db.from("career_state")
       .select("managed_player_id,federation_nation,selected_federation_nation,country")
       .eq("id","demo").maybeSingle();
@@ -1671,24 +1673,24 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     const currentStaffProfiles=await db.from("staff").select("profile_id");
     if(currentStaffProfiles.error)throw new Error("staff profile cleanup: "+currentStaffProfiles.error.message);
     currentStaffProfileIds=[...new Set((currentStaffProfiles.data??[]).map((x:any)=>Number(x.profile_id)).filter(Boolean))];
-    if(["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)){
+    if(["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)){
       const currentAcademy=await db.from("academy_roster").select("player_id").not("player_id","is",null);
       if(currentAcademy.error)throw new Error("academy player cleanup: "+currentAcademy.error.message);
       currentAcademyPlayerIds=[...new Set((currentAcademy.data??[]).map((x:any)=>Number(x.player_id)).filter(Boolean))];
     }
   }
-  const snapshotManagedPlayerIds=["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)
+  const snapshotManagedPlayerIds=["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)
     ?[...new Set((snapshot.managed_players??[]).map((x:any)=>Number(x.id)).filter(Boolean))]
     :[];
-  const managedCleanupIds=model==="CB-MANAGED-SAVE-v4"
+  const managedCleanupIds=["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)
     ?[...new Set([currentManagedId,managedId,...currentAcademyPlayerIds,...snapshotManagedPlayerIds].filter(Boolean))]
     :[...new Set([currentManagedId,managedId].filter(Boolean))];
-  const academyStateCleanupIds=["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)
+  const academyStateCleanupIds=["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)
     ?[...new Set([managedId,...snapshotManagedPlayerIds].filter(Boolean))]
     :[];
   const nationCleanup=[...new Set([currentNation,nation].filter(Boolean))];
 
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)){
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)){
     // Exact managed-world rewind. Global AI/world tournament state is intentionally not rewound.
     await deleteAll("inbox_items");
     await deleteAll("finance_transactions");
@@ -1740,6 +1742,10 @@ async function restoreManagedSaveSnapshot(snapshot:any){
       await db.from("doubles_ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
     }
     await db.from("wildcard_requests").delete().not("id","is",null);
+    if(model==="CB-MANAGED-SAVE-v5"){
+      const pointsCleanup=await db.from("user_ranking_points").delete().eq("owner_id","demo");
+      if(pointsCleanup.error)throw new Error("user_ranking_points cleanup: "+pointsCleanup.error.message);
+    }
     await db.from("user_staff_external_offers").delete().not("id","is",null);
     const peerIds=[...new Set([
       ...currentStaffProfileIds,
@@ -1755,7 +1761,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     }
   }
 
-  if(["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)&&academyStateCleanupIds.length){
+  if(["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)&&academyStateCleanupIds.length){
     for(const playerId of academyStateCleanupIds){
       const injuryDel=await db.from("injuries").delete().eq("player_id",playerId);
       if(injuryDel.error)throw new Error("v3 injuries cleanup: "+injuryDel.error.message);
@@ -1769,20 +1775,20 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   await upsertOne("career_state",snapshot.career,"id");
   await upsertOne("academies",snapshot.academy,"id");
   await upsertOne("finances",snapshot.finance,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("finance_transactions",snapshot.finance_transactions,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("finance_transactions",snapshot.finance_transactions,"id");
   await upsertMany("facilities",snapshot.facilities,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("staff_profiles",snapshot.staff_profiles,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("staff_profiles",snapshot.staff_profiles,"id");
   await upsertMany("staff",snapshot.staff,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("staff_training_enrollments",snapshot.staff_training,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("staff_peer_relationships",snapshot.staff_peer_relationships,"staff_a_id,staff_b_id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("player_staff_assignments",snapshot.staff_assignments,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("user_staff_external_offers",snapshot.staff_external_offers,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("staff_training_enrollments",snapshot.staff_training,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("staff_peer_relationships",snapshot.staff_peer_relationships,"staff_a_id,staff_b_id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("player_staff_assignments",snapshot.staff_assignments,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("user_staff_external_offers",snapshot.staff_external_offers,"id");
   await upsertMany("contracts",snapshot.contracts,"id");
   await upsertMany("academy_youth",snapshot.academy_youth,"id");
   await upsertMany("academy_roster",snapshot.academy_roster,"id");
   await upsertMany("academy_members",snapshot.academy_members,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("academy_member_progress",snapshot.academy_member_progress,"member_id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("academy_intake_history",snapshot.academy_intake_history,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("academy_member_progress",snapshot.academy_member_progress,"member_id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("academy_intake_history",snapshot.academy_intake_history,"id");
   await upsertMany("training_plan",snapshot.training_plan,"day_index");
   await upsertMany("user_training_progress",snapshot.training_progress,"attribute");
   if(model==="CB-MANAGED-SAVE-v2")await upsertMany("player_training_load_profiles",snapshot.training_load,"player_id");
@@ -1796,7 +1802,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   await upsertOne("player_attributes",snapshot.managed_attributes,"player_id");
   await upsertOne("player_development_profiles",snapshot.managed_development,"player_id");
   await upsertOne("player_attribute_ceilings",snapshot.managed_ceilings,"player_id");
-  if(["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model)){
+  if(["CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)){
     await upsertMany("players",snapshot.managed_players,"id");
     await upsertMany("player_attributes",snapshot.managed_attributes_all,"player_id");
     await upsertMany("player_development_profiles",snapshot.managed_development_all,"player_id");
@@ -1804,7 +1810,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     await upsertMany("injuries",snapshot.managed_injuries_all,"id");
     await upsertMany("player_training_load_profiles",snapshot.training_load_all,"player_id");
     await upsertMany("player_season_plans",snapshot.season_plans_all,"player_id,season");
-    if(model==="CB-MANAGED-SAVE-v4"){
+    if(["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model)){
       await upsertMany("entries",snapshot.managed_entries_all,"id");
       await upsertMany("managed_doubles_entries",snapshot.managed_doubles_entries_all,"id");
       await upsertMany("player_agency_representation",snapshot.managed_agency_all,"player_id");
@@ -1816,37 +1822,38 @@ async function restoreManagedSaveSnapshot(snapshot:any){
       await upsertMany("player_sponsors",snapshot.managed_sponsors_all,"id");
       await upsertMany("player_staff_assignments",snapshot.managed_staff_assignments_all,"id");
       await upsertMany("ncaa_player_registry",snapshot.managed_ncaa_registry_all,"id");
+      if(model==="CB-MANAGED-SAVE-v5")await upsertMany("user_ranking_points",snapshot.managed_ranking_points_all,"id");
     }
   }else if(["CB-MANAGED-SAVE-v2"].includes(model)){
     await upsertMany("player_season_plans",snapshot.season_plans,"player_id,season");
   }
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3"].includes(model))await upsertMany("player_relationships",snapshot.relationships,"id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3"].includes(model))await upsertMany("player_sponsors",snapshot.player_sponsors,"id");
-  if(model!=="CB-MANAGED-SAVE-v4")await upsertMany("entries",snapshot.entries,"id");
-  if(model!=="CB-MANAGED-SAVE-v4")await upsertMany("managed_doubles_entries",snapshot.managed_doubles_entries,"id");
+  if(!["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("entries",snapshot.entries,"id");
+  if(!["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("managed_doubles_entries",snapshot.managed_doubles_entries,"id");
   await upsertMany("wildcard_requests",snapshot.wildcard_requests,"id");
-  if(model!=="CB-MANAGED-SAVE-v4")await upsertMany("player_agency_representation",snapshot.agency,"player_id");
-  if(model!=="CB-MANAGED-SAVE-v4")await upsertMany("player_doubles_commitments",snapshot.doubles_commitments,"player_id");
+  if(!["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("player_agency_representation",snapshot.agency,"player_id");
+  if(!["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("player_doubles_commitments",snapshot.doubles_commitments,"player_id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3"].includes(model))await upsertMany("player_doubles_partner_history",snapshot.doubles_partner_history,"id");
-  if(model!=="CB-MANAGED-SAVE-v4")await upsertMany("doubles_partner_offers",snapshot.partner_offers,"id");
+  if(!["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("doubles_partner_offers",snapshot.partner_offers,"id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3"].includes(model))await upsertMany("doubles_partnerships",snapshot.doubles_partnerships,"id");
   await upsertMany("inbox_items",snapshot.inbox,"id");
   await upsertMany("media_events",snapshot.media_events,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("career_event_log",snapshot.career_event_log,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("shortlist",snapshot.shortlist,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertOne("college_career_state",snapshot.college_state,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("college_offers",snapshot.college_offers,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("career_event_log",snapshot.career_event_log,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("shortlist",snapshot.shortlist,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertOne("college_career_state",snapshot.college_state,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("college_offers",snapshot.college_offers,"id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3"].includes(model))await upsertMany("ncaa_player_registry",snapshot.ncaa_registry,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertOne("federation_state",snapshot.federation_state,"nation");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("davis_squad",snapshot.davis_squad,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("season_history",snapshot.season_history,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("match_history",snapshot.match_history,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("tournament_runs",snapshot.tournament_runs,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("tournament_draw_matches",snapshot.tournament_draw_matches,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("doubles_runs",snapshot.doubles_runs,"id");
-  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4"].includes(model))await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertOne("federation_state",snapshot.federation_state,"nation");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("davis_squad",snapshot.davis_squad,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("season_history",snapshot.season_history,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("match_history",snapshot.match_history,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("tournament_runs",snapshot.tournament_runs,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("tournament_draw_matches",snapshot.tournament_draw_matches,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("doubles_runs",snapshot.doubles_runs,"id");
+  if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5"].includes(model))await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
 
-  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model,snapshot_scope:model==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":model==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":model==="CB-MANAGED-SAVE-v2"?"managed_world_exact_v2":"managed_world_v1"};
+  return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model,snapshot_scope:model==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":model==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":model==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":model==="CB-MANAGED-SAVE-v2"?"managed_world_exact_v2":"managed_world_v1"};
 }
 
 async function ensureCareerBaselineTemplate(){
@@ -11919,8 +11926,8 @@ Deno.serve(async(req:Request)=>{
       slotType==="autosave"?"Autosave":slotType==="quick"?"Sauvegarde rapide":"Sauvegarde "+slotNo
     )).slice(0,80);
     const snapshot=await captureManagedSaveSnapshot();
-    const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
-    const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"2026.10-career-os-v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";
+    const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
+    const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"2026.10-career-os-v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"2026.10-career-os-v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";
     const payload=body?.local_payload&&typeof body.local_payload==="object"?{...body.local_payload}:{};
     delete payload.liveSessionId;
     delete payload.liveMatch;

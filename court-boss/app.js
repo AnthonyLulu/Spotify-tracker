@@ -2609,12 +2609,11 @@ function liveMatchPanel(){
   ${lp.model?`<div class="muted micro match-model-line">Moteur : ${esc(lp.model)} · P(point) serveur ${lp.server_win_probability??'—'}% · Elo surface ${Math.round(Number(lp.server_surface_elo||0))} vs ${Math.round(Number(lp.returner_surface_elo||0))}</div>`:''}
 
   ${committed?`<div class="notice good match-result-actions"><b>Résultat validé et intégré à la carrière.</b></div><button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Fermer le match</button>`
-  :finished?`<div class="notice warn match-result-actions"><b>Score final provisoire.</b><br><span class="muted mini">Tu peux le valider, sauvegarder ce score pour décider plus tard, ou l’annuler et revenir au dernier checkpoint.</span></div>
+  :finished?`<div class="notice warn match-result-actions"><b>Score final provisoire.</b><br><span class="muted mini">Sauvegarder le rend officiel. Tu peux aussi figer ce score comme brouillon, ou ne pas sauvegarder et revenir au checkpoint.</span></div>
    <div class="fm-result-controls">
-    <button class="primary" onclick="commitLiveMatch(false)">Valider sans sauvegarder</button>
-    <button class="soft-btn" onclick="commitLiveMatch(true)">Valider + sauvegarder</button>
-    <button class="soft-btn" onclick="saveLiveCheckpoint()">Sauvegarder ce score</button>
-    <button class="danger-btn" onclick="discardLiveMatch()">Annuler / rejouer</button>
+    <button class="primary" onclick="commitLiveMatch()">💾 Sauvegarder le résultat</button>
+    <button class="soft-btn" onclick="saveLiveCheckpoint()">Figer comme brouillon</button>
+    <button class="danger-btn" onclick="discardLiveMatch()">Ne pas sauvegarder / rejouer</button>
    </div>`
   :`<div class="fm-live-toolbar">
    <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button>

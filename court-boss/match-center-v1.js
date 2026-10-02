@@ -1,0 +1,165 @@
+/* Court Boss Match Center V1 */
+(function(){
+  const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
+  const committed=s=>String(s?.status||'')==='committed';
+  const pct=(n,d)=>Number(d||0)>0?Math.round(Number(n||0)*100/Number(d)):0;
+  const score=s=>{
+    const sets=(Array.isArray(s?.score_log)?s.score_log:[]).filter(x=>x?.set_finished);
+    return sets.length?sets.map(x=>String(x.user_games)+'-'+String(x.opponent_games)).join(' '):'Sets '+Number(s?.user_sets||0)+'-'+Number(s?.opponent_sets||0);
+  };
+  const safe=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v);
+  const cap=(v,a,b)=>typeof clamp==='function'?clamp(Number(v),a,b):Math.max(a,Math.min(b,Number(v)));
+  const wi=c=>{const v=String(c||'').toLowerCase();if(v.includes('vent'))return '≋';if(v.includes('humide'))return '◌';if(v.includes('chaud'))return '☀';if(v.includes('nuage'))return '☁';if(v.includes('indoor'))return '⌂';return '☀'};
+  const speed=v=>{const n=Number(v||1);return n<.82?'Lent':n<.96?'Moyen-lent':n<1.08?'Moyen':n<1.2?'Rapide':'Très rapide'};
+  const mood=v=>{const n=Number(v||70);return n>=86?'En feu':n>=75?'Confiant':n>=62?'Stable':n>=50?'Tendu':'Fragile'};
+  const tact=()=>({aggression:58,risk:52,net:28,returnPos:'Neutre',serveTarget:'Mixte',focusSide:'Mixte',tempo:'Normal',variety:'Équilibrée',effort:70,...(local.tactics||{})});
+
+  window.cbSetMatchTactic=(k,v)=>{
+    local.tactics=local.tactics||{};
+    local.tactics[k]=['aggression','risk','net','effort'].includes(k)?Number(v):v;
+    persist();render();
+  };
+
+  function env(meta,userName,oppName){
+    const w=meta?.weather||{},m=meta?.mood||{},t=meta?.tournament||null;
+    return `<div class="cb-env-card">
+      <div class="cb-env-top">
+        <div class="cb-event-brand">
+          ${t?.logo_url?`<img class="cb-event-logo" src="${safe(t.logo_url)}" alt="" onerror="this.style.display='none'">`:'<div class="cb-event-logo-fallback">CB</div>'}
+          <div><div class="eyebrow">${t?safe(t.name):'Match Center'}</div><b>${t?[safe(t.city),safe(t.venue)].filter(Boolean).join(' · '):'Session manager'}</b></div>
+        </div>
+        <span class="badge">${safe(meta?.surface||'Dur')}</span>
+      </div>
+      <div class="cb-env-grid">
+        <div><small>Conditions</small><b>${wi(w.condition)} ${safe(w.condition||'Stable')}</b></div>
+        <div><small>Température</small><b>${Math.round(Number(w.temperature_c||21))}°C</b></div>
+        <div><small>Vent</small><b>${Math.round(Number(w.wind_kph||0))} km/h</b></div>
+        <div><small>Humidité</small><b>${Math.round(Number(w.humidity_pct||50))}%</b></div>
+        <div><small>Court</small><b>${speed(meta?.court_speed)} · ${Number(meta?.court_speed||1).toFixed(2)}</b></div>
+        <div><small>Altitude</small><b>${Math.round(Number(meta?.altitude_m||0))} m</b></div>
+      </div>
+      <div class="cb-mood-grid">
+        <div><span>${safe(userName)}</span><b>${Math.round(Number(m.user||70))}/100 · ${mood(m.user)}</b></div>
+        <div><span>${safe(oppName)}</span><b>${Math.round(Number(m.opponent||70))}/100 · ${mood(m.opponent)}</b></div>
+      </div>
+      <div class="muted micro cb-env-note">Conditions, vitesse du court, altitude et humeur alimentent réellement le calcul des points.</div>
+    </div>`;
+  }
+
+  function coaching(){
+    const t=tact();
+    return `<div class="cb-coach-grid">
+      <div class="cb-coach-slider"><div><span>Agressivité</span><b>${t.aggression}%</b></div><input type="range" min="1" max="100" value="${t.aggression}" oninput="cbSetMatchTactic('aggression',this.value)"></div>
+      <div class="cb-coach-slider"><div><span>Risque</span><b>${t.risk}%</b></div><input type="range" min="1" max="100" value="${t.risk}" oninput="cbSetMatchTactic('risk',this.value)"></div>
+      <div class="cb-coach-slider"><div><span>Filet</span><b>${t.net}%</b></div><input type="range" min="1" max="100" value="${t.net}" oninput="cbSetMatchTactic('net',this.value)"></div>
+      <div class="cb-coach-slider"><div><span>Effort</span><b>${t.effort}%</b></div><input type="range" min="45" max="100" value="${t.effort}" oninput="cbSetMatchTactic('effort',this.value)"></div>
+      <label>Retour<select onchange="cbSetMatchTactic('returnPos',this.value)"><option ${t.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${t.returnPos==='Neutre'?'selected':''}>Neutre</option><option ${t.returnPos==='Reculée'?'selected':''}>Reculée</option></select></label>
+      <label>Cible service<select onchange="cbSetMatchTactic('serveTarget',this.value)"><option ${t.serveTarget==='Mixte'?'selected':''}>Mixte</option><option ${t.serveTarget==='T'?'selected':''}>T</option><option ${t.serveTarget==='Large'?'selected':''}>Large</option><option ${t.serveTarget==='Corps'?'selected':''}>Corps</option></select></label>
+      <label>Côté ciblé<select onchange="cbSetMatchTactic('focusSide',this.value)"><option ${t.focusSide==='Mixte'?'selected':''}>Mixte</option><option ${t.focusSide==='Revers'?'selected':''}>Revers</option><option ${t.focusSide==='Coup droit'?'selected':''}>Coup droit</option></select></label>
+      <label>Tempo<select onchange="cbSetMatchTactic('tempo',this.value)"><option ${t.tempo==='Lent'?'selected':''}>Lent</option><option ${t.tempo==='Normal'?'selected':''}>Normal</option><option ${t.tempo==='Rapide'?'selected':''}>Rapide</option></select></label>
+      <label>Variation<select onchange="cbSetMatchTactic('variety',this.value)"><option ${t.variety==='Sécurisée'?'selected':''}>Sécurisée</option><option ${t.variety==='Équilibrée'?'selected':''}>Équilibrée</option><option ${t.variety==='Créative'?'selected':''}>Créative</option></select></label>
+    </div>`;
+  }
+
+  liveMatchPanel=function(){
+    const s=local.liveMatch;
+    const selectedSurface=local.matchSurface||'Dur',selectedIndoor=!!local.matchIndoor;
+    if(!s)return `<div class="card cb-launch-card">
+      <div class="row between"><div><div class="eyebrow">Court Boss Match Engine</div><h2>Jouer ou simuler</h2><div class="muted">Même moteur pour le live et la simulation. Aucun résultat n'est définitif avant validation.</div></div><span class="badge good">Point par point</span></div>
+      <div class="match-surface-pills cb-surface-pills">
+        <button class="${selectedSurface==='Dur'&&!selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',false)">Dur ext.</button>
+        <button class="${selectedSurface==='Dur'&&selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',true)">Dur indoor</button>
+        <button class="${selectedSurface==='Terre'?'active':''}" onclick="setMatchSurface('Terre',false)">Terre</button>
+        <button class="${selectedSurface==='Gazon'?'active':''}" onclick="setMatchSurface('Gazon',false)">Gazon</button>
+      </div>
+      <div class="cb-launch-actions"><button class="primary" onclick="startLiveMatch()">▶ Jouer en live</button><button class="soft-btn" onclick="simulatePracticeMatch()">⚡ Simulation rapide</button></div>
+      <div class="muted micro cb-launch-foot">Un checkpoint est créé avant le premier point. Fermer sans sauvegarder revient avant le match.</div>
+    </div>`;
+
+    const c=activePlayerCareerView(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{},meta=st._meta||{};
+    const userName=c.player_name||'Joueur',oppName=opp.name||'Adversaire';
+    const us=Number(s.user_sets||0),os=Number(s.opponent_sets||0),ug=Number(s.user_games||0),og=Number(s.opponent_games||0),up=Number(s.user_points||0),op=Number(s.opponent_points||0);
+    const done=finished(s),isCommitted=committed(s);
+    const ux=cap(lp.user_x??48,12,88),uy=cap(lp.user_y??78,55,90),ox=cap(lp.opp_x??52,12,88),oy=cap(lp.opp_y??22,10,45),bx=cap(lp.ball_x??50,10,90),by=cap(lp.ball_y??50,8,92);
+    const surface=String(s.surface||'Dur'),courtClass=/terre|clay/i.test(surface)?'clay':/gazon|grass/i.test(surface)?'grass':'hard',indoor=/intérieur|indoor/i.test(surface);
+    const uInit=safe(userName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase()),oInit=safe(oppName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
+    const momentum=cap(s.momentum||50,10,90),pA=typeof pointLabel==='function'?pointLabel(up,op,'A'):String(up),pB=typeof pointLabel==='function'?pointLabel(up,op,'B'):String(op);
+    const ending=String(lp.ending||lp.shot||'').replaceAll('_',' '),setScore=score(s);
+
+    return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
+      <div class="card fm-live-match cb-live-card">
+        <div class="fm-match-top"><div><div class="eyebrow">${safe(meta.round||'Match live')} · ${safe(surface)}</div><h2>${safe(userName)} vs ${safe(oppName)}</h2></div><span class="badge ${isCommitted?'good':done?'warn':''}">${isCommitted?'Validé':done?'À valider':'Set '+Number(s.set_no||1)}</span></div>
+        <div class="fm-scoreboard cb-scoreboard">
+          <div class="fm-score-name">${s.serving_user?'● ':''}${safe(userName)} <small>${flags?.[c.country]||''}</small></div><b>${us}</b><b>${ug}</b><strong>${pA}</strong>
+          <div class="fm-score-name">${!s.serving_user?'● ':''}${safe(oppName)} <small>${flags?.[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pB}</strong>
+        </div>
+        <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court">
+          <i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-court-line service vertical"></i><i class="fm-net"></i>
+          <div class="fm-player-dot opponent cb-dot" style="left:${ox}%;top:${oy}%"><span>${oInit}</span><small>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
+          <div class="fm-player-dot user cb-dot" style="left:${ux}%;top:${uy}%"><span>${uInit}</span><small>${safe(userName.split(' ').slice(-1)[0]||'MOI')}</small></div><i class="fm-ball cb-ball" style="left:${bx}%;top:${by}%"></i>
+          ${lp.shot?`<div class="fm-rally-call cb-rally"><b>${safe(ending)}</b> · ${Number(lp.rally||0)} coups · ${safe(lp.zone||'neutre')}</div>`:''}
+        </div>
+        <div class="fm-momentum"><span>${safe(oppName)}</span><div><i style="left:${momentum}%"></i></div><span>${safe(userName)}</span></div>
+        <div class="cb-stat-grid">
+          <div><span>Winners</span><b>${st.user_winners||0} - ${st.opp_winners||0}</b></div><div><span>Fautes</span><b>${st.user_errors||0} - ${st.opp_errors||0}</b></div><div><span>Aces</span><b>${st.user_aces||0} - ${st.opp_aces||0}</b></div>
+          <div><span>1res IN</span><b>${pct(st.user_first_serves_in,st.user_first_serves)}% - ${pct(st.opp_first_serves_in,st.opp_first_serves)}%</b></div><div><span>DF</span><b>${st.user_double_faults||0} - ${st.opp_double_faults||0}</b></div><div><span>Filet</span><b>${st.user_net_points_won||0}/${st.user_net_points||0}</b></div>
+        </div>
+        ${!done?`<div class="cb-live-controls">
+          <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button><button class="soft-btn" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn" onclick="setLiveSpeed(4)">4x</button></div>
+          <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
+          <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
+        </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching()}</details>`
+        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé dans la carrière.</p></div><button class="primary" onclick="clearLiveMatch()">Nouveau match</button></div>`
+        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Tu peux le garder, le sauvegarder, ou l'annuler.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1(false)">Valider sans sauvegarder</button><button class="soft-btn" onclick="commitLiveMatchV1(true)">Valider + quicksave</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
+      </div></div>`;
+  };
+
+  window.quickSaveLiveV1=async()=>{try{await saveCareerSlot(9,'quick',true);render()}catch(e){alert(e.message)}};
+
+  window.commitLiveMatchV1=async saveAfter=>{
+    const s=local.liveMatch;if(!s||!finished(s))return;
+    try{
+      const d=await get('/api/live-match/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s.id})});
+      applyLiveMatchResponse(d);
+      boot=await get('/api/bootstrap');
+      if(boot.career&&Number(s.managed_player_id||0)===Number(primaryManagedPlayerId()||0))local.career={...(local.career||{}),...boot.career};
+      else await loadActiveManagedContext(true,Number(s.managed_player_id||0)).catch(()=>{});
+      if(typeof loadSeasonSummary==='function')await loadSeasonSummary().catch(()=>{});
+      if(saveAfter){await saveCareerSlot(9,'quick',true);clearPendingLiveRollback()}
+      persist();render();
+    }catch(e){alert('Validation impossible : '+e.message)}
+  };
+
+  window.discardLiveMatchV1=async()=>{
+    const s=local.liveMatch;if(!s)return;
+    if(committed(s)){alert('Ce résultat est déjà validé. Recharge une sauvegarde antérieure pour revenir en arrière.');return}
+    if(!confirm('Annuler ce match et revenir à l’état d’avant-match ?'))return;
+    try{
+      await get('/api/live-match/discard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s.id})});
+      const pid=Number(s.managed_player_id||0);if(pid){liveMatchSessionsByPlayer.delete(pid);liveMatchOpponentsByPlayer.delete(pid)}
+      clearLiveMatchView();if(!window.hasManagedLiveMatches?.())clearPendingLiveRollback();persist();render();
+    }catch(e){alert('Annulation impossible : '+e.message)}
+  };
+
+  window.simulatePracticeMatch=async()=>{
+    const playerId=activeManagedId()||primaryManagedPlayerId()||0,cr=activePlayerCareerView();
+    if(String(cr.career_focus||'mixed')==='doubles_only'){alert('Orientation Double exclusivement : la simulation simple est désactivée.');return}
+    if(local.liveMatch&&String(local.liveMatch.status)==='active'){alert('Un match live est déjà en cours pour ce joueur.');return}
+    try{
+      await ensureLivePreMatchCheckpoint();
+      const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
+      let d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:tact()})});
+      applyLiveMatchResponse(d);
+      for(let i=0;i<80&&String(local.liveMatch?.status||'')==='active';i++){
+        d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:tact()})});
+        applyLiveMatchResponse(d);
+      }
+      persist();render();
+      const ss=local.liveMatch,sc=score(ss);
+      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1(false)">Garder sans sauvegarder</button><button class="soft-btn" onclick="closeOverlay();commitLiveMatchV1(true)">Garder + quicksave</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Rejouer / annuler</button></div></div></div>`;
+    }catch(e){alert('Simulation rapide impossible : '+e.message)}
+  };
+
+  window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
+  console.info('Court Boss Match Center V1 active');
+})();

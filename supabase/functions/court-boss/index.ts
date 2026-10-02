@@ -9550,6 +9550,211 @@ Deno.serve(async(req:Request)=>{
     };
   };
 
+  const liveIsoAddDays=(iso:string,days:number)=>{
+    const d=new Date(String(iso||AGE_REFERENCE_DATE)+"T12:00:00Z");
+    d.setUTCDate(d.getUTCDate()+Number(days||0));
+    return d.toISOString().slice(0,10);
+  };
+  const liveIsoDayDiff=(a:string,b:string)=>{
+    const x=new Date(String(a||AGE_REFERENCE_DATE)+"T12:00:00Z").getTime();
+    const y=new Date(String(b||a||AGE_REFERENCE_DATE)+"T12:00:00Z").getTime();
+    return Math.max(0,Math.round((y-x)/86400000));
+  };
+  const ensureManagedWorldLiveMatch=async(t:any,playerId:number,entryMethod:string,gameDate:string)=>{
+    if(!["ATP","Challenger","ITF"].includes(String(t?.circuit||"")))return {supported:false,match:null,phase:"other"};
+    const qualifyingEntry=entryMethod==="qualifying"||entryMethod==="protected_qualifying"||entryMethod.endsWith("_qualifying");
+
+    if(qualifyingEntry){
+      let qs=await db.from("world_qualifying_states")
+        .select("status,current_round_no,rounds_count")
+        .eq("tournament_id",Number(t.id)).maybeSingle();
+      if(qs.error)return {supported:true,error:qs.error.message,phase:"qualifying"};
+      if(!qs.data){
+        const prepared=await db.rpc("prepare_world_qualifying_tournament",{
+          p_tournament_id:Number(t.id),
+          p_prepared_on:String(t.qualifying_start_date||t.start_date||gameDate)
+        });
+        if(prepared.error)return {supported:true,error:prepared.error.message,phase:"qualifying"};
+        qs=await db.from("world_qualifying_states")
+          .select("status,current_round_no,rounds_count")
+          .eq("tournament_id",Number(t.id)).maybeSingle();
+        if(qs.error)return {supported:true,error:qs.error.message,phase:"qualifying"};
+      }
+      for(let attempt=0;attempt<5&&qs.data&&String(qs.data.status||"")!=="completed";attempt++){
+        const qRound=Math.max(1,Number(qs.data.current_round_no||0)+1);
+        const row=await db.from("world_tournament_matches")
+          .select("id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
+          .eq("tournament_id",Number(t.id)).eq("is_qualifying",true).eq("round_no",-qRound)
+          .or(`player_a_id.eq.${playerId},player_b_id.eq.${playerId}`)
+          .limit(1).maybeSingle();
+        if(row.error)return {supported:true,error:row.error.message,phase:"qualifying"};
+        if(!row.data){
+          return {supported:true,error:"Le tableau des qualifications ne contient pas encore ce joueur au tour attendu.",phase:"qualifying",qualifying_rounds:Number(qs.data.rounds_count||0)};
+        }
+        if(Number(row.data.winner_id||0)>0){
+          const progressed=await db.rpc("advance_world_qualifying_tournament",{
+            p_tournament_id:Number(t.id),p_to_date:String(row.data.simulated_on||gameDate)
+          });
+          if(progressed.error)return {supported:true,error:progressed.error.message,phase:"qualifying"};
+          qs=await db.from("world_qualifying_states")
+            .select("status,current_round_no,rounds_count")
+            .eq("tournament_id",Number(t.id)).maybeSingle();
+          if(qs.error)return {supported:true,error:qs.error.message,phase:"qualifying"};
+          continue;
+        }
+        const opponentId=Number(row.data.player_a_id)===playerId?Number(row.data.player_b_id||0):Number(row.data.player_a_id||0);
+        if(!opponentId){
+          const progressed=await db.rpc("advance_world_qualifying_tournament",{
+            p_tournament_id:Number(t.id),p_to_date:String(row.data.simulated_on||gameDate)
+          });
+          if(progressed.error)return {supported:true,error:progressed.error.message,phase:"qualifying"};
+          qs=await db.from("world_qualifying_states")
+            .select("status,current_round_no,rounds_count")
+            .eq("tournament_id",Number(t.id)).maybeSingle();
+          if(qs.error)return {supported:true,error:qs.error.message,phase:"qualifying"};
+          continue;
+        }
+        return {supported:true,phase:"qualifying",match:row.data,opponent_id:opponentId,
+          round_code:String(row.data.round_code||("Q"+qRound)),qualifying_rounds:Number(qs.data.rounds_count||0)};
+      }
+      if(qs.data&&String(qs.data.status||"")!=="completed"){
+        return {supported:true,error:"Progression des qualifications bloquée.",phase:"qualifying",qualifying_rounds:Number(qs.data.rounds_count||0)};
+      }
+    }
+
+    let state=await db.from("world_tournament_states")
+      .select("status,current_round_no,rounds_count,bracket_size,rule_key")
+      .eq("tournament_id",Number(t.id)).maybeSingle();
+    if(state.error)return {supported:true,error:state.error.message,phase:"main"};
+    if(!state.data){
+      const prepared=await db.rpc("prepare_world_knockout_tournament",{
+        p_tournament_id:Number(t.id),
+        p_prepared_on:String(t.qualifying_end_date||t.main_draw_start_date||t.start_date||gameDate)
+      });
+      if(prepared.error)return {supported:true,error:prepared.error.message,phase:"main"};
+      state=await db.from("world_tournament_states")
+        .select("status,current_round_no,rounds_count,bracket_size,rule_key")
+        .eq("tournament_id",Number(t.id)).maybeSingle();
+      if(state.error)return {supported:true,error:state.error.message,phase:"main"};
+    }
+    if(!state.data)return {supported:true,error:"Tableau principal introuvable après préparation.",phase:"main"};
+
+    const rule=await db.from("tournament_format_rules")
+      .select("rounds").eq("rule_key",String(state.data.rule_key||"")).limit(1).maybeSingle();
+    if(rule.error)return {supported:true,error:rule.error.message,phase:"main"};
+    const roundCodes=Array.isArray(rule.data?.rounds)?rule.data.rounds.map(String):[];
+
+    for(let attempt=0;attempt<7;attempt++){
+      const currentRound=Math.max(1,Number(state.data.current_round_no||0)+1);
+      const roundsCount=Math.max(1,Number(state.data.rounds_count||roundCodes.length||1));
+      if(currentRound>roundsCount)return {supported:true,phase:"main",champion:true,match:null};
+      const roundCode=String(roundCodes[currentRound-1]||(
+        currentRound===roundsCount?"F":currentRound===roundsCount-1?"SF":"R"+String(Math.max(2,Number(state.data.bracket_size||32)/Math.pow(2,currentRound-1)))
+      ));
+      const mainStart=String(t.main_draw_start_date||t.start_date||gameDate);
+      const end=String(t.end_date||mainStart);
+      const span=liveIsoDayDiff(mainStart,end);
+      const scheduledDate=liveIsoAddDays(mainStart,roundsCount<=1?0:Math.round((currentRound-1)*span/Math.max(1,roundsCount-1)));
+
+      const existing=await db.from("world_tournament_matches")
+        .select("id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
+        .eq("tournament_id",Number(t.id)).eq("is_qualifying",false).eq("round_no",currentRound)
+        .or(`player_a_id.eq.${playerId},player_b_id.eq.${playerId}`)
+        .limit(1).maybeSingle();
+      if(existing.error)return {supported:true,error:existing.error.message,phase:"main"};
+      if(existing.data){
+        if(Number(existing.data.winner_id||0)>0){
+          const progressed=await db.rpc("advance_world_knockout_tournament",{
+            p_tournament_id:Number(t.id),p_to_date:String(existing.data.simulated_on||scheduledDate)
+          });
+          if(progressed.error)return {supported:true,error:progressed.error.message,phase:"main"};
+          state=await db.from("world_tournament_states")
+            .select("status,current_round_no,rounds_count,bracket_size,rule_key")
+            .eq("tournament_id",Number(t.id)).maybeSingle();
+          if(state.error)return {supported:true,error:state.error.message,phase:"main"};
+          continue;
+        }
+        const opponentId=Number(existing.data.player_a_id)===playerId?Number(existing.data.player_b_id||0):Number(existing.data.player_a_id||0);
+        if(opponentId)return {supported:true,phase:"main",match:existing.data,opponent_id:opponentId,round_code:String(existing.data.round_code||roundCode)};
+      }
+
+      let playerA=0,playerB=0,matchNo=0;
+      if(currentRound===1){
+        const own=await db.from("world_tournament_entries")
+          .select("draw_slot").eq("tournament_id",Number(t.id)).eq("player_id",playerId).maybeSingle();
+        if(own.error)return {supported:true,error:own.error.message,phase:"main"};
+        if(!own.data?.draw_slot)return {supported:true,error:"Le joueur n’est pas positionné dans le tableau principal.",phase:"main"};
+        const slot=Number(own.data.draw_slot);
+        matchNo=Math.ceil(slot/2);
+        const slotA=matchNo*2-1,slotB=matchNo*2;
+        const pair=await db.from("world_tournament_entries")
+          .select("player_id,draw_slot").eq("tournament_id",Number(t.id)).in("draw_slot",[slotA,slotB]);
+        if(pair.error)return {supported:true,error:pair.error.message,phase:"main"};
+        playerA=Number((pair.data??[]).find((x:any)=>Number(x.draw_slot)===slotA)?.player_id||0);
+        playerB=Number((pair.data??[]).find((x:any)=>Number(x.draw_slot)===slotB)?.player_id||0);
+      }else{
+        const previous=await db.from("world_tournament_matches")
+          .select("match_no,winner_id").eq("tournament_id",Number(t.id)).eq("is_qualifying",false)
+          .eq("round_no",currentRound-1).eq("winner_id",playerId).limit(1).maybeSingle();
+        if(previous.error)return {supported:true,error:previous.error.message,phase:"main"};
+        if(!previous.data)return {supported:true,error:"Le tour précédent n’est pas encore consolidé pour ce joueur.",phase:"main"};
+        matchNo=Math.ceil(Number(previous.data.match_no||1)/2);
+        const feeders=await db.from("world_tournament_matches")
+          .select("match_no,winner_id").eq("tournament_id",Number(t.id)).eq("is_qualifying",false)
+          .eq("round_no",currentRound-1).in("match_no",[matchNo*2-1,matchNo*2]);
+        if(feeders.error)return {supported:true,error:feeders.error.message,phase:"main"};
+        playerA=Number((feeders.data??[]).find((x:any)=>Number(x.match_no)===matchNo*2-1)?.winner_id||0);
+        playerB=Number((feeders.data??[]).find((x:any)=>Number(x.match_no)===matchNo*2)?.winner_id||0);
+      }
+
+      if(playerA!==playerId&&playerB!==playerId){
+        return {supported:true,error:"Le joueur n’est plus présent dans le tableau mondial à ce tour.",phase:"main"};
+      }
+      const opponentId=playerA===playerId?playerB:playerA;
+      if(!opponentId){
+        const progressed=await db.rpc("advance_world_knockout_tournament",{
+          p_tournament_id:Number(t.id),p_to_date:scheduledDate
+        });
+        if(progressed.error)return {supported:true,error:progressed.error.message,phase:"main"};
+        state=await db.from("world_tournament_states")
+          .select("status,current_round_no,rounds_count,bracket_size,rule_key")
+          .eq("tournament_id",Number(t.id)).maybeSingle();
+        if(state.error)return {supported:true,error:state.error.message,phase:"main"};
+        continue;
+      }
+
+      const bestOf=String(t.circuit||"")==="ATP"&&String(t.category||"")==="Grand Chelem"?5:3;
+      const pending:any={
+        tournament_id:Number(t.id),round_no:currentRound,round_code:roundCode,match_no:matchNo,
+        player_a_id:playerA||null,player_b_id:playerB||null,winner_id:null,loser_id:null,score:null,best_of:bestOf,
+        player_a_win_probability:null,court_speed:Number(t.court_speed??(/terre/i.test(String(t.surface||""))?.68:/gazon/i.test(String(t.surface||""))?1.15:t.indoor?1.18:1)),
+        model_version:"CB-MATCH-ENGINE-v4-LIVE-PENDING",
+        matchup_components:{status:"managed_live_pending",managed_player_id:playerId},
+        simulated_on:scheduledDate,is_qualifying:false
+      };
+      let ins=await db.from("world_tournament_matches").insert(pending).select("*").single();
+      if(ins.error){
+        const again=await db.from("world_tournament_matches")
+          .select("id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
+          .eq("tournament_id",Number(t.id)).eq("round_no",currentRound).eq("match_no",matchNo).maybeSingle();
+        if(again.error||!again.data)return {supported:true,error:ins.error.message,phase:"main"};
+        ins={data:again.data,error:null} as any;
+      }
+      const row:any=ins.data;
+      if(Number(row.winner_id||0)>0){
+        state=await db.from("world_tournament_states")
+          .select("status,current_round_no,rounds_count,bracket_size,rule_key")
+          .eq("tournament_id",Number(t.id)).maybeSingle();
+        if(state.error)return {supported:true,error:state.error.message,phase:"main"};
+        continue;
+      }
+      const actualOpponent=Number(row.player_a_id)===playerId?Number(row.player_b_id||0):Number(row.player_a_id||0);
+      if(!actualOpponent)return {supported:true,error:"Adversaire du tableau indisponible.",phase:"main"};
+      return {supported:true,phase:"main",match:row,opponent_id:actualOpponent,round_code:String(row.round_code||roundCode)};
+    }
+    return {supported:true,error:"Impossible de réserver le prochain match du tableau.",phase:"main"};
+  };
+
   if(path.endsWith("/api/live-match/start")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const tactics=body?.tactics||{};
@@ -9582,7 +9787,7 @@ Deno.serve(async(req:Request)=>{
         .eq("player_id",playerId).eq("status","Active")
         .order("started_at",{ascending:false}).limit(1).maybeSingle(),
       tournamentId
-        ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,singles_draw_size,draw_size,qualifying_draw_size").eq("id",tournamentId).maybeSingle()
+        ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,level,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,main_draw_start_date,qualifying_start_date,qualifying_end_date,singles_draw_size,draw_size,qualifying_draw_size").eq("id",tournamentId).maybeSingle()
         :Promise.resolve({data:null,error:null} as any)
     ]);
     if(managed.error||activeInjury.error||tournament.error)return h({error:(managed.error||activeInjury.error||tournament.error)?.message},500);
@@ -9662,19 +9867,17 @@ Deno.serve(async(req:Request)=>{
       }
 
       if(!opponentId){
-        const worldMatch=await db.from("world_tournament_matches")
-          .select("id,round_no,round_code,player_a_id,player_b_id,is_qualifying,winner_id")
-          .eq("tournament_id",tournamentId).eq("is_qualifying",inQualifying).is("winner_id",null)
-          .or(`player_a_id.eq.${playerId},player_b_id.eq.${playerId}`)
-          .order("round_no",{ascending:true}).limit(1).maybeSingle();
-        if(worldMatch.error)return h({error:worldMatch.error.message},500);
-        if(worldMatch.data){
-          const candidate=Number(worldMatch.data.player_a_id)===playerId?Number(worldMatch.data.player_b_id||0):Number(worldMatch.data.player_a_id||0);
-          if(candidate&&!faced.has(candidate)){
+        const exactWorld=await ensureManagedWorldLiveMatch(tournament.data,playerId,liveEntryMethod,String(career.data.career_date||AGE_REFERENCE_DATE));
+        if(exactWorld?.error)return h({error:String(exactWorld.error),tournament_id:tournamentId,world_phase:exactWorld.phase||null},409);
+        if(exactWorld?.champion)return h({error:"Ce joueur a déjà remporté le tournoi.",champion:true},409);
+        if(Number(exactWorld?.qualifying_rounds||0)>0)qualifyingRounds=Number(exactWorld.qualifying_rounds);
+        if(exactWorld?.match&&Number(exactWorld.opponent_id||0)>0){
+          const candidate=Number(exactWorld.opponent_id||0);
+          if(!faced.has(candidate)){
             opponentId=candidate;
-            worldMatchId=Number(worldMatch.data.id||0)||null;
-            tournamentRoundOverride=String(worldMatch.data.round_code||tournamentRoundOverride||"");
-            opponentSource="world_draw";
+            worldMatchId=Number(exactWorld.match.id||0)||null;
+            tournamentRoundOverride=String(exactWorld.round_code||exactWorld.match.round_code||tournamentRoundOverride||"");
+            opponentSource=exactWorld.phase==="qualifying"?"world_qualifying_draw":"world_draw";
           }
         }
       }
@@ -10284,14 +10487,46 @@ Deno.serve(async(req:Request)=>{
     });
     const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});
 
+    let worldProgress:any=null;
     if(tournamentLive&&Number(meta.world_match_id||0)>0){
+      const worldRow=await db.from("world_tournament_matches")
+        .select("id,tournament_id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
+        .eq("id",Number(meta.world_match_id)).maybeSingle();
+      if(worldRow.error||!worldRow.data)return h({error:worldRow.error?.message||"Match du tableau mondial introuvable."},500);
+      const wr:any=worldRow.data;
+      const a=Number(wr.player_a_id||0),b=Number(wr.player_b_id||0),oppId=Number(opp?.id||0);
+      if(!((a===playerId&&b===oppId)||(b===playerId&&a===oppId))){
+        return h({error:"Le match live ne correspond plus à la case du tableau mondial.",world_match_id:wr.id},409);
+      }
+      const winnerId=won?playerId:oppId,loserId=won?oppId:playerId;
+      if(Number(wr.winner_id||0)>0&&Number(wr.winner_id)!==winnerId){
+        return h({error:"Cette case du tableau possède déjà un autre résultat.",world_match_id:wr.id},409);
+      }
+      let worldScore=score;
+      if(a!==playerId){
+        const inverted=await db.rpc("world_invert_tennis_score",{p_score:score});
+        if(!inverted.error&&inverted.data)worldScore=String(inverted.data);
+      }
       const worldUpdate=await db.from("world_tournament_matches").update({
-        winner_id:won?playerId:Number(opp?.id||0),
-        loser_id:won?Number(opp?.id||0):playerId,
-        score,
-        simulated_on:matchDate
-      }).eq("id",Number(meta.world_match_id));
+        winner_id:winnerId,loser_id:loserId,score:worldScore,
+        model_version:"CB-MATCH-ENGINE-v4-LIVE",
+        matchup_components:{
+          ...(wr.matchup_components||{}),status:"completed",source:"managed_live",
+          live_session_id:id,managed_player_id:playerId,form:meta.form||{},
+          weather:meta.weather||{},tactics:session.data.tactics||{}
+        },
+        simulated_on:String(wr.simulated_on||matchDate)
+      }).eq("id",Number(wr.id));
       if(worldUpdate.error)return h({error:worldUpdate.error.message},500);
+
+      const progressed=Boolean(wr.is_qualifying)
+        ?await db.rpc("advance_world_qualifying_tournament",{
+            p_tournament_id:tournamentId,p_to_date:String(wr.simulated_on||matchDate)
+          })
+        :await db.rpc("advance_world_knockout_tournament",{
+            p_tournament_id:tournamentId,p_to_date:String(wr.simulated_on||matchDate)
+          });
+      worldProgress=progressed.error?{ok:false,error:progressed.error.message}:progressed.data;
     }
 
     if(tournamentTerminal){
@@ -10402,7 +10637,7 @@ Deno.serve(async(req:Request)=>{
       result:{won,score,tournament_name:tournamentName,round},
       condition:nextCondition,fatigue_added:fatigueAdd,
       tournament_live:tournamentLive,tournament_terminal:tournamentTerminal,next_match_available:nextTournamentMatch,
-      tournament_outcome:tournamentOutcome,
+      tournament_outcome:tournamentOutcome,world_progress:worldProgress,
       elo:elo.error?{error:elo.error.message}:elo.data,
       analytics:learned.error?{error:learned.error.message}:learned.data
     });

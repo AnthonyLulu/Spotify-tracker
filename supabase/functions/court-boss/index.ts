@@ -2475,7 +2475,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:66,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v4+canonical-point-game+temporary-form+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:67,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v5+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -9410,26 +9410,26 @@ Deno.serve(async(req:Request)=>{
   }
 
 
-  // CB-MATCH-ENGINE-v4 · deterministic match-day environment + tournament identity.
+  // CB-MATCH-ENGINE-v5 · deterministic match-day environment + tournament identity.
   const liveMatchHash=(value:string)=>{
     let h=2166136261;
     for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619)}
     return Math.abs(h>>>0);
   };
-  const liveFormModifier=(value:any)=>{
+  const liveFormMultiplier=(value:any)=>{
     const form=Math.max(0,Math.min(100,Number(value??70)));
-    if(form>=92)return 3;
-    if(form>=82)return 2;
-    if(form>=72)return 1;
-    if(form>=55)return 0;
-    if(form>=45)return -1;
-    if(form>=35)return -2;
-    return -3;
+    if(form>=92)return 1.06;
+    if(form>=82)return 1.04;
+    if(form>=72)return 1.02;
+    if(form>=55)return 1.00;
+    if(form>=45)return 0.98;
+    if(form>=35)return 0.96;
+    return 0.94;
   };
-  const liveRuntimeAvgAttr=(attrs:any,keys:string[],formBonus=0)=>keys.reduce((sum,k)=>sum+Math.max(1,Math.min(20,Number(attrs?.[k]??10)+formBonus)),0)/Math.max(1,keys.length);
-  const liveRuntimeConditionScore=(player:any,attrs:any,formBonus:number,meta:any,pointsPlayed:number,effort=60)=>{
+  const liveRuntimeAvgAttr=(attrs:any,keys:string[],formMultiplier=1)=>keys.reduce((sum,k)=>sum+Math.max(1,Math.min(20,Number(attrs?.[k]??10)*formMultiplier)),0)/Math.max(1,keys.length);
+  const liveRuntimeConditionScore=(player:any,attrs:any,formMultiplier:number,meta:any,pointsPlayed:number,effort=60)=>{
     const weather:any=meta?.weather||{};
-    const stamina=liveRuntimeAvgAttr(attrs,["stamina","natural_fitness","recovery","rally_tolerance","work_rate"],formBonus);
+    const stamina=liveRuntimeAvgAttr(attrs,["stamina","natural_fitness","recovery","rally_tolerance","work_rate"],formMultiplier);
     const baseFitness=Math.max(25,Math.min(100,Number(player?.fitness??88)));
     const baseFatigue=Math.max(0,Math.min(100,Number(player?.fatigue??18)));
     const weatherLoad=Math.max(0,Number(weather.weather_difficulty||0))/20;
@@ -9449,28 +9449,28 @@ Deno.serve(async(req:Request)=>{
     const indoor=lowerSurface.includes("intérieur")||lowerSurface.includes("indoor");
     const clay=surface==="Terre"||lowerSurface.includes("clay");
     const grass=surface==="Gazon"||lowerSurface.includes("grass");
-    const userFormBonus=Number(ctx.userFormBonus||0),oppFormBonus=Number(ctx.oppFormBonus||0);
+    const userFormMultiplier=Number(ctx.userFormMultiplier||1),oppFormMultiplier=Number(ctx.oppFormMultiplier||1);
     const sAttr:any=serverIsUser?ua:oa,rAttr:any=serverIsUser?oa:ua;
-    const sFormBonus=serverIsUser?userFormBonus:oppFormBonus,rFormBonus=serverIsUser?oppFormBonus:userFormBonus;
+    const sFormMultiplier=serverIsUser?userFormMultiplier:oppFormMultiplier,rFormMultiplier=serverIsUser?oppFormMultiplier:userFormMultiplier;
     const surfaceKey=clay?"clay_affinity":grass?"grass_affinity":"hard_affinity";
-    const groundEdge=liveRuntimeAvgAttr(sAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"],sFormBonus)
-      -liveRuntimeAvgAttr(rAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"],rFormBonus);
-    const movementEdge=liveRuntimeAvgAttr(sAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],sFormBonus)
-      -liveRuntimeAvgAttr(rAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],rFormBonus);
-    const mentalEdge=liveRuntimeAvgAttr(sAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],sFormBonus)
-      -liveRuntimeAvgAttr(rAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],rFormBonus);
-    const netEdge=liveRuntimeAvgAttr(sAttr,["volley","touch","half_volley","smash","net_positioning","transition_game","reaction"],sFormBonus)
-      -liveRuntimeAvgAttr(rAttr,["passing_shot","lob","reaction","movement","defensive_skill","court_positioning","speed"],rFormBonus);
-    const touchEdge=liveRuntimeAvgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"],sFormBonus)
-      -liveRuntimeAvgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"],rFormBonus);
-    const surfaceEdge=Math.max(1,Math.min(20,Number(sAttr?.[surfaceKey]??10)+sFormBonus))-Math.max(1,Math.min(20,Number(rAttr?.[surfaceKey]??10)+rFormBonus));
-    const formEdge=serverIsUser?userFormBonus-oppFormBonus:oppFormBonus-userFormBonus;
+    const groundEdge=liveRuntimeAvgAttr(sAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"],sFormMultiplier)
+      -liveRuntimeAvgAttr(rAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"],rFormMultiplier);
+    const movementEdge=liveRuntimeAvgAttr(sAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],sFormMultiplier)
+      -liveRuntimeAvgAttr(rAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],rFormMultiplier);
+    const mentalEdge=liveRuntimeAvgAttr(sAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],sFormMultiplier)
+      -liveRuntimeAvgAttr(rAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],rFormMultiplier);
+    const netEdge=liveRuntimeAvgAttr(sAttr,["volley","touch","half_volley","smash","net_positioning","transition_game","reaction"],sFormMultiplier)
+      -liveRuntimeAvgAttr(rAttr,["passing_shot","lob","reaction","movement","defensive_skill","court_positioning","speed"],rFormMultiplier);
+    const touchEdge=liveRuntimeAvgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"],sFormMultiplier)
+      -liveRuntimeAvgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"],rFormMultiplier);
+    const surfaceEdge=Math.max(1,Math.min(20,Number(sAttr?.[surfaceKey]??10)*sFormMultiplier))-Math.max(1,Math.min(20,Number(rAttr?.[surfaceKey]??10)*rFormMultiplier));
+    const formEdge=(serverIsUser?userFormMultiplier-oppFormMultiplier:oppFormMultiplier-userFormMultiplier)*50;
 
     const targetWing=String(tactics.targetWing||"Mixte"),spinPlan=String(tactics.spin||"Mixte"),tempo=String(tactics.tempo||"Neutre");
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100),effort=n(tactics.effort,60,20,100);
     const ret=String(tactics.returnPos||"Neutre");
-    const opponentBh=liveRuntimeAvgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],oppFormBonus);
-    const opponentFh=liveRuntimeAvgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormBonus);
+    const opponentBh=liveRuntimeAvgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],oppFormMultiplier);
+    const opponentFh=liveRuntimeAvgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormMultiplier);
     const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,opponentFh-opponentBh))*.00115:
       targetWing==="Coup droit"?Math.max(-4,Math.min(4,opponentBh-opponentFh))*.00115:0;
     const spinEdge=spinPlan==="Lift"?(clay?.006:grass?-.003:.002):
@@ -9491,8 +9491,8 @@ Deno.serve(async(req:Request)=>{
     const wind=Math.max(0,Number(weather.wind_kph||0));
     const moodUser=Number(mood.user||70),moodOpp=Number(mood.opponent||70);
     const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
-    const userCondition=liveRuntimeConditionScore(ctx.managed,ua,userFormBonus,meta,Number(ctx.pointsPlayed||0),effort);
-    const oppCondition=liveRuntimeConditionScore(ctx.opp,oa,oppFormBonus,meta,Number(ctx.pointsPlayed||0),60);
+    const userCondition=liveRuntimeConditionScore(ctx.managed,ua,userFormMultiplier,meta,Number(ctx.pointsPlayed||0),effort);
+    const oppCondition=liveRuntimeConditionScore(ctx.opp,oa,oppFormMultiplier,meta,Number(ctx.pointsPlayed||0),60);
     const conditionEdge=(serverIsUser?userCondition-oppCondition:oppCondition-userCondition)*.018;
 
     const firstServeIn=ctx.firstServeIn;
@@ -9530,16 +9530,16 @@ Deno.serve(async(req:Request)=>{
     const homeOpp=Boolean(t?.country&&opp?.country&&String(t.country)===String(opp.country));
     const userForm=Math.max(0,Math.min(100,Number(managed?.form??70)));
     const oppForm=Math.max(0,Math.min(100,Number(opp?.form??70)));
-    const userFormBonus=liveFormModifier(userForm),oppFormBonus=liveFormModifier(oppForm);
+    const userFormMultiplier=liveFormMultiplier(userForm),oppFormMultiplier=liveFormMultiplier(oppForm);
     const grandSlam=Boolean(t&&String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||"")));
     const setsToWin=grandSlam?3:2;
     return {
-      engine:"CB-MATCH-ENGINE-v4",
+      engine:"CB-MATCH-ENGINE-v5",
       surface,indoor,sets_to_win:setsToWin,best_of:setsToWin*2-1,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
-      form:{user:userForm,opponent:oppForm,user_bonus:userFormBonus,opponent_bonus:oppFormBonus,scale:"runtime_match_attributes",mode:"temporary_runtime_only",persists_to_player_attributes:false,min:-3,max:3},
+      form:{user:userForm,opponent:oppForm,user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_multiplier_runtime_only",persists_to_player_attributes:false,min_multiplier:.94,max_multiplier:1.06},
       tournament:t?{
         id:Number(t.id),name:String(t.name||"Tournoi"),city:t.city||null,country:t.country||null,
         venue:t.venue||null,circuit:t.circuit||null,category:t.category||null,
@@ -9728,7 +9728,7 @@ Deno.serve(async(req:Request)=>{
         tournament_id:Number(t.id),round_no:currentRound,round_code:roundCode,match_no:matchNo,
         player_a_id:playerA||null,player_b_id:playerB||null,winner_id:null,loser_id:null,score:null,best_of:bestOf,
         player_a_win_probability:null,court_speed:Number(t.court_speed??(/terre/i.test(String(t.surface||""))?.68:/gazon/i.test(String(t.surface||""))?1.15:t.indoor?1.18:1)),
-        model_version:"CB-MATCH-ENGINE-v4-LIVE-PENDING",
+        model_version:"CB-MATCH-ENGINE-v5-LIVE-PENDING",
         matchup_components:{status:"managed_live_pending",managed_player_id:playerId},
         simulated_on:scheduledDate,is_qualifying:false
       };
@@ -9942,7 +9942,7 @@ Deno.serve(async(req:Request)=>{
     if(ins.error)return h({error:ins.error.message},500);
 
     return h({
-      ok:true,engine:"CB-MATCH-ENGINE-v4",
+      ok:true,engine:"CB-MATCH-ENGINE-v5",
       managed_player_id:playerId,
       managed_player:{id:managed.data.id,name:managed.data.name,country:managed.data.country,ranking:managed.data.ranking},
       session:ins.data,match_environment:environment,round,opponent_source:opponentSource,world_match_id:worldMatchId,
@@ -9963,7 +9963,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       error:"Endpoint obsolète : ce raccourci modifiait autrefois la carrière avant validation.",
       replacement:"/api/live-match/point ou /api/live-match/game",
-      engine:"CB-MATCH-ENGINE-v4",
+      engine:"CB-MATCH-ENGINE-v5",
       provisional_only:true
     },410);
   }
@@ -10000,7 +10000,7 @@ Deno.serve(async(req:Request)=>{
     const weather:any=meta.weather||{};
     const mood:any=meta.mood||{};
     const formMeta:any=meta.form||{};
-    const userFormBonus=Number(formMeta.user_bonus||0),oppFormBonus=Number(formMeta.opponent_bonus||0);
+    const userFormMultiplier=Number(formMeta.user_multiplier||1),oppFormMultiplier=Number(formMeta.opponent_multiplier||1);
     const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
     const altitude=Math.max(0,Number(meta.altitude_m||0));
     const wind=Math.max(0,Number(weather.wind_kph||0));
@@ -10022,10 +10022,10 @@ Deno.serve(async(req:Request)=>{
     const grass=surface==="Gazon"||surface.toLowerCase().includes("grass");
     const sAttr:any=serverIsUser?ua:oa;
     const rAttr:any=serverIsUser?oa:ua;
-    const sFormBonus=serverIsUser?userFormBonus:oppFormBonus;
-    const rFormBonus=serverIsUser?oppFormBonus:userFormBonus;
+    const sFormMultiplier=serverIsUser?userFormMultiplier:oppFormMultiplier;
+    const rFormMultiplier=serverIsUser?oppFormMultiplier:userFormMultiplier;
     const avgAttr=liveRuntimeAvgAttr;
-    const formEdge=serverIsUser?userFormBonus-oppFormBonus:oppFormBonus-userFormBonus;
+    const formEdge=(serverIsUser?userFormMultiplier-oppFormMultiplier:oppFormMultiplier-userFormMultiplier)*50;
 
     let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
       -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)
@@ -10036,7 +10036,7 @@ Deno.serve(async(req:Request)=>{
       dfBase*(serverIsUser?(1+Math.max(-20,risk-50)*.005):1)
     ));
     const kernel=livePointKernel({
-      tm,ua,oa,serverIsUser,userFormBonus,oppFormBonus,tactics,meta,pressure,
+      tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure,
       managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
       momentum:Number(session.data.momentum||50),surface,firstServeIn
     });
@@ -10067,8 +10067,8 @@ Deno.serve(async(req:Request)=>{
       +(tempo==="Patient"?.75:tempo==="Rapide"?-.60:0)
       +(spinPlan==="Lift"&&clay ? .40 : spinPlan==="Slice"&&grass ? -.25 : 0)
       +(serverIsUser?(55-risk)*.012:0)
-      +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],sFormBonus)
-        -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],rFormBonus))*.035
+      +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],sFormMultiplier)
+        -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],rFormMultiplier))*.035
     ));
     const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(18,
       2+Math.floor(-Math.log(Math.max(.001,1-Math.random()))*Math.max(1,rallyMean-2))
@@ -10096,7 +10096,7 @@ Deno.serve(async(req:Request)=>{
       :returnDepthRoll<Math.max(45,returnDepthScore*.62+28)?"moyen":"court";
     const serverNetChance=Math.max(0,Math.min(.55,
       Number(tm.server_net_approach_pct||10)/100+(serverIsUser?net*.0015:0)
-      +(avgAttr(sAttr,["volley","touch","half_volley","net_positioning","transition_game"],sFormBonus)-10)*.0014
+      +(avgAttr(sAttr,["volley","touch","half_volley","net_positioning","transition_game"],sFormMultiplier)-10)*.0014
     ));
     const returnerNetChance=Math.max(0,Math.min(.40,Number(tm.returner_net_approach_pct||8)/100));
     const netRoll=Math.random();
@@ -10120,7 +10120,7 @@ Deno.serve(async(req:Request)=>{
       server_win_probability:Math.round(serverWinProb*1000)/10,
       server_surface_elo:Number(tm.server_surface_elo||0),
       returner_surface_elo:Number(tm.returner_surface_elo||0),
-      model:"CB-MATCH-ENGINE-v4 · point model",
+      model:"CB-MATCH-ENGINE-v5 · point model",
       full_attribute_edge:Math.round(pointAttrEdge*10000)/10000,
       environment_effects:{
         court_speed:courtSpeed,wind_kph:wind,temperature_c:temperature,humidity_pct:humidity,
@@ -10295,7 +10295,7 @@ Deno.serve(async(req:Request)=>{
     const meta:any=session.data.stats?._meta||{};
     const weather:any=meta.weather||{};
     const formMeta:any=meta.form||{};
-    const userFormBonus=Number(formMeta.user_bonus||0),oppFormBonus=Number(formMeta.opponent_bonus||0);
+    const userFormMultiplier=Number(formMeta.user_multiplier||1),oppFormMultiplier=Number(formMeta.opponent_multiplier||1);
     const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
     const altitude=Math.max(0,Number(meta.altitude_m||0));
     const wind=Math.max(0,Number(weather.wind_kph||0));
@@ -10310,14 +10310,14 @@ Deno.serve(async(req:Request)=>{
     const tm:any=matchup.error?{}:(matchup.data||{});
     const oa:any=opp.player_attributes||{};
     const kernel=livePointKernel({
-      tm,ua,oa,serverIsUser,userFormBonus,oppFormBonus,tactics,meta,pressure:0,
+      tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:0,
       managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
       momentum:Number(session.data.momentum||50),surface,firstServeIn:null
     });
     const serverPointP=kernel.serverWinProb;
     const formCore=["serve_power","serve_precision","first_serve_quality","second_serve_quality","return_game","forehand","forehand_power","forehand_accuracy","backhand","backhand_power","backhand_accuracy","movement","speed","stamina","concentration","decision_making","big_points"];
-    const userFormLift=liveRuntimeAvgAttr(ua,formCore,userFormBonus)-liveRuntimeAvgAttr(ua,formCore,0);
-    const oppFormLift=liveRuntimeAvgAttr(oa,formCore,oppFormBonus)-liveRuntimeAvgAttr(oa,formCore,0);
+    const userFormLift=liveRuntimeAvgAttr(ua,formCore,userFormMultiplier)-liveRuntimeAvgAttr(ua,formCore,1);
+    const oppFormLift=liveRuntimeAvgAttr(oa,formCore,oppFormMultiplier)-liveRuntimeAvgAttr(oa,formCore,1);
     const serverFormLift=serverIsUser?userFormLift:oppFormLift;
     const q=1-serverPointP;
     const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);
@@ -10385,7 +10385,7 @@ Deno.serve(async(req:Request)=>{
       serving_user:!session.data.serving_user,momentum:momentumNew,tactics,stats,score_log:log,
       last_point:{
         winner:userWon?"user":"opponent",server:serverIsUser?"user":"opponent",
-        model:"CB-MATCH-ENGINE-v4 · canonical game kernel",
+        model:"CB-MATCH-ENGINE-v5 · canonical game kernel",
         server_win_probability:Math.round(serverPointP*1000)/10,
         runtime_condition_edge:Math.round(kernel.conditionEdge*10000)/10000,
         form_modifier_runtime_only:true,
@@ -10405,7 +10405,7 @@ Deno.serve(async(req:Request)=>{
       opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},
       game_winner:userWon?String(managed.data.name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner,
       completed,win_probability:Math.round(prob*100),
-      engine:"CB-MATCH-ENGINE-v4",simulation_granularity:"game",
+      engine:"CB-MATCH-ENGINE-v5",simulation_granularity:"game",
       runtime_form_persistence:false
     });
   }
@@ -10466,7 +10466,7 @@ Deno.serve(async(req:Request)=>{
       winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
       score,user_involved:true,
       match_data:{
-        live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v4",
+        live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v5",
         stats,tactics:session.data.tactics||{},environment:meta
       }
     }).select("id").single();
@@ -10509,7 +10509,7 @@ Deno.serve(async(req:Request)=>{
       }
       const worldUpdate=await db.from("world_tournament_matches").update({
         winner_id:winnerId,loser_id:loserId,score:worldScore,
-        model_version:"CB-MATCH-ENGINE-v4-LIVE",
+        model_version:"CB-MATCH-ENGINE-v5-LIVE",
         matchup_components:{
           ...(wr.matchup_components||{}),status:"completed",source:"managed_live",
           live_session_id:id,managed_player_id:playerId,form:meta.form||{},

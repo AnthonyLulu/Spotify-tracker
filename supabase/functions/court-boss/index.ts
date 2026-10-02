@@ -1892,6 +1892,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   if(liveCheckpoint){
     await upsertMany("live_match_sessions",snapshot.live_match_sessions??[],"id");
     await upsertMany("live_match_events",snapshot.live_match_events??[],"id");
+    await upsertMany("live_match_point_events",snapshot.live_match_point_events??[],"id");
   }
 
   return {ok:true,career_date:snapshot.career_date,week:snapshot.week,model:storedModel,snapshot_scope:liveCheckpoint?"managed_squad_live_checkpoint_exact_v7":model==="CB-MANAGED-SAVE-v6"?"managed_squad_ledgers_exact_v6":model==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":model==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":model==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":model==="CB-MANAGED-SAVE-v2"?"managed_world_exact_v2":"managed_world_v1",live_match_sessions:liveCheckpoint?(snapshot.live_match_sessions??[]):[]};
@@ -12811,6 +12812,7 @@ Deno.serve(async(req:Request)=>{
       ].filter(Boolean))];
       let liveSessions:any[]=[];
       let liveEvents:any[]=[];
+      let livePointEvents:any[]=[];
       if(livePlayerIds.length){
         const live=await db.from("live_match_sessions")
           .select("*").in("managed_player_id",livePlayerIds).in("status",["active","finished"]).order("id");
@@ -12818,12 +12820,21 @@ Deno.serve(async(req:Request)=>{
         liveSessions=live.data??[];
         const liveIds=liveSessions.map((x:any)=>Number(x.id)).filter(Boolean);
         if(liveIds.length){
-          const events=await db.from("live_match_events").select("*").in("session_id",liveIds).order("id");
-          if(events.error)return h({error:events.error.message},500);
+          const [events,pointEvents]=await Promise.all([
+            db.from("live_match_events").select("*").in("session_id",liveIds).order("id"),
+            db.from("live_match_point_events").select("*").in("session_id",liveIds).order("id")
+          ]);
+          if(events.error||pointEvents.error)return h({error:(events.error||pointEvents.error)?.message},500);
           liveEvents=events.data??[];
+          livePointEvents=pointEvents.data??[];
         }
       }
-      snapshot={...baseSnapshot,model:"CB-MANAGED-SAVE-v7",live_match_sessions:liveSessions,live_match_events:liveEvents};
+      snapshot={
+        ...baseSnapshot,model:"CB-MANAGED-SAVE-v7",
+        live_match_sessions:liveSessions,
+        live_match_events:liveEvents,
+        live_match_point_events:livePointEvents
+      };
     }
     const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"managed_squad_live_checkpoint_exact_v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"managed_squad_ledgers_exact_v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
     const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"2026.10-career-os-v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"2026.10-career-os-v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"2026.10-career-os-v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"2026.10-career-os-v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";

@@ -948,7 +948,9 @@ async function loadActiveManagedContext(force=false,requestedId=null){
   activeManagedContext=d;
   local.activeManagedPlayerId=Number(d.player_id||playerId);
   local.entries=[];local.entryMeta={};
+  local.doublesEntries=[];local.doublesEntryMeta={};
   mergeServerSinglesEntries(d.entries||[]);
+  mergeServerDoublesEntries(d.doubles_entries||[]);
   persist();
   return d;
  }finally{activeManagedContextLoading=false}
@@ -1230,9 +1232,18 @@ function calWeekEnd(date){const d=new Date(calWeekStart(date)+"T12:00:00");d.set
 function calGameWeek(date){return Math.floor((new Date(calWeekStart(date)+"T12:00:00")-new Date("2025-12-01T12:00:00"))/604800000)+1}
 function calShortDate(date){return new Date(String(date)+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}).replace(".","")}
 function activeDoublesPartner(){
- const m=(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(p=>Number(p?.id)===Number(local.partnerId))
-   ||(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean);
- return m||doublesHubRows.find(p=>Number(p.id)===Number(local.partnerId))||null;
+ const playerId=activeManagedId(),primaryId=primaryManagedPlayerId();
+ const rows=management?.partnerships||[];
+ const own=rows.find(x=>Number(x.player_a_id)===playerId||Number(x.player_b_id)===playerId);
+ if(own){
+  const pa=Array.isArray(own.player_a)?own.player_a[0]:own.player_a;
+  const pb=Array.isArray(own.player_b)?own.player_b[0]:own.player_b;
+  return Number(own.player_a_id)===playerId?(pb||own.partner||null):(pa||null);
+ }
+ if(playerId!==primaryId)return null;
+ const fallback=rows.map(x=>x.partner||x.player_b).find(p=>Number(p?.id)===Number(local.partnerId))
+   ||rows.map(x=>x.partner||x.player_b).find(Boolean);
+ return fallback||doublesHubRows.find(p=>Number(p.id)===Number(local.partnerId))||null;
 }
 function tournamentStatus(t){
  const now=String(local.date||"2025-12-01"),start=String(t.start_date||""),end=String(t.end_date||t.start_date||""),deadline=String(t.singles_entry_deadline||t.deadline||"");
@@ -1510,7 +1521,7 @@ function managedRegulatoryPathwaysHtml(t,fr){
 }
 
 function doublesEligibility(t){
- const partner=activeDoublesPartner(),c=career(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
+ const partner=activeDoublesPartner(),c=activePlayerCareerView(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
  const server=t?.managed_doubles_entry_status;
  if(server){
    return {
@@ -1827,14 +1838,15 @@ window.toggleSinglesEntry=async id=>{
  local.entries.push(id);persist();render();
 }
 window.toggleDoublesEntry=async id=>{
- if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les inscriptions double sont désactivées.');return}
+ const playerId=activeManagedId(),activeView=activePlayerCareerView();
+ if(String(activeView.career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les inscriptions double sont désactivées.');return}
  local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
  const exists=local.doublesEntries.includes(id);
  if(exists){
   try{
    await get('/api/doubles-entry',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({tournament_id:Number(id),action:'withdraw'})
+    body:JSON.stringify({tournament_id:Number(id),player_id:playerId,action:'withdraw'})
    });
   }catch(e){alert('Retrait double impossible : '+e.message);return}
   local.doublesEntries=local.doublesEntries.filter(x=>x!==id);
@@ -1845,7 +1857,7 @@ window.toggleDoublesEntry=async id=>{
  let t=findTournamentById(id);if(!t)return;
  let checked=null;
  try{
-   checked=await get('/api/doubles-entry-status?id='+encodeURIComponent(id));
+   checked=await get('/api/doubles-entry-status?id='+encodeURIComponent(id)+'&player_id='+encodeURIComponent(playerId));
    t={...t,...checked.tournament,managed_doubles_entry_status:checked.doubles_entry_status};
    tournamentDetailRows.set(Number(id),t);
  }catch(e){alert('Impossible de vérifier l’inscription double : '+e.message);return}
@@ -1870,18 +1882,18 @@ window.toggleDoublesEntry=async id=>{
  try{
   saved=await get('/api/doubles-entry',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({tournament_id:Number(id),action:'enter'})
+   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,action:'enter'})
   });
  }catch(e){alert('Inscription double refusée par le serveur : '+e.message);return}
 
- const partner=saved?.partner||activeDoublesPartner();
+ const partner=saved?.partner||checked?.doubles_entry_status?.partner||activeDoublesPartner();
  const entry=saved?.entry||{};
  local.doublesEntryMeta[id]={
    entry_start_date:window.start_date,
    entry_method:entry.entry_method||(elig.requiresQualifying?(elig.qualifyingEntryMethod||'qualifying'):'direct'),
    entry_phase:entry.entry_phase||elig.phase||'advance',
    name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,
-   partner_id:entry.partner_id||partner?.id,partner_name:partner?.name,
+   player_id:playerId,partner_id:entry.partner_id||partner?.id,partner_name:partner?.name,
    status:saved?.doubles_entry_status?.label||elig.label,
    projected_acceptance:saved?.doubles_entry_status?.projected_acceptance??elig.projectedAcceptance,
    projected_cut:entry.projected_cut??elig.projectedCut,
@@ -4084,6 +4096,12 @@ window.openTournament=async id=>{
     const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id)+'&player_id='+encodeURIComponent(activeManagedId()));
     d={...d,entry_rules:access.entry_rules??d.entry_rules,pathway_status:access.pathway_status??d.pathway_status,special_exempt_status:access.special_exempt_status??d.special_exempt_status,performance_bye_status:access.performance_bye_status??d.performance_bye_status};
     t={...t,...(access.tournament||{})};
+   }catch{}
+  }
+  if(t.doubles){
+   try{
+    const dAccess=await get('/api/doubles-entry-status?id='+encodeURIComponent(id)+'&player_id='+encodeURIComponent(activeTournamentPlayerId));
+    d={...d,doubles_entry_status:dAccess.doubles_entry_status??d.doubles_entry_status,managed_doubles_entry:dAccess.managed_doubles_entry??d.managed_doubles_entry};
    }catch{}
   }
   t.entry_rule_context=tournamentEntryContext();

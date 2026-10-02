@@ -1,4 +1,4 @@
-/* Court Boss Match Center V2 */
+/* Court Boss Match Center V3 */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -133,9 +133,9 @@
           const detail=out.terminal
             ?'<p>Parcours terminé · '+safe(out.user_round||'')+' · '+Number(out.user_points||0)+' pts · '+Number(out.user_prize_eur||0).toLocaleString('fr-FR')+' €</p>'
             :'<p>Résultat validé. '+(r.tournament_live?'Le parcours tournoi continue.':'Tu peux maintenant poursuivre ta carrière.')+'</p>';
-          return `<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3>${detail}</div><div class="cb-result-actions">${next}<button class="soft-btn" onclick="saveCommittedLiveV1()">Sauvegarder maintenant</button><button class="soft-btn" onclick="clearLiveMatch()">Fermer</button></div></div>`;
+          return `<div class="cb-result-box committed"><div><small>Résultat officiel · sauvegardé</small><h3>${safe(setScore)}</h3>${detail}</div><div class="cb-result-actions">${next}<button class="soft-btn" onclick="clearLiveMatch()">Fermer</button></div></div>`;
         })()
-        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne valides pas. Tu peux valider sans sauvegarder, valider puis sauvegarder, ou annuler.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1(false)">Valider le résultat</button><button class="soft-btn" onclick="commitLiveMatchV1(true)">Valider + sauvegarder</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
+        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne sauvegardes pas. Sauvegarder rend ce résultat officiel. Le brouillon fige le score sans l’intégrer à la carrière. Ne pas sauvegarder efface le match.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1()">💾 Sauvegarder le résultat</button><button class="soft-btn" onclick="quickSaveLiveV1()">Figer comme brouillon</button><button class="danger-btn" onclick="discardLiveMatchV1()">Ne pas sauvegarder / rejouer</button></div></div>`}
       </div></div>`;
   };
 
@@ -158,10 +158,10 @@
     }catch(e){alert('Sauvegarde impossible : '+e.message)}
   };
 
-  window.commitLiveMatchV1=async(saveAfter=false)=>{
+  window.commitLiveMatchV1=async()=>{
     const current=local.liveMatch;if(!current||!finished(current)||committed(current))return;
-    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch(Boolean(saveAfter));
-    alert('Validation sécurisée indisponible.');
+    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch();
+    alert('Sauvegarde sécurisée indisponible.');
   };
 
   window.nextTournamentLiveMatchV1=async()=>{
@@ -193,10 +193,10 @@
       }
       persist();render();
       const ss=local.liveMatch,sc=score(ss);
-      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1(false)">Valider le résultat</button><button class="soft-btn" onclick="closeOverlay();commitLiveMatchV1(true)">Valider + sauvegarder</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Rejouer / annuler</button></div></div></div>`;
+      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1()">💾 Sauvegarder ce résultat</button><button class="soft-btn" onclick="closeOverlay();quickSaveLiveV1()">Figer comme brouillon</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Ne pas sauvegarder / rejouer</button></div></div></div>`;
     }catch(e){alert('Simulation rapide impossible : '+e.message)}
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V2 active');
+  console.info('Court Boss Match Center V3 active');
 })();

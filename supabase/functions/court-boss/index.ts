@@ -7162,7 +7162,7 @@ Deno.serve(async(req:Request)=>{
     let specialExempt=frozenEntryMode==="special_exempt";
     let specialExemptInfo:any=specialExempt?frozenEntryStatus:null;
     if(!frozenEntryMode&&!isSinglesFinals&&!isJuniorSingles&&direct&&entryRank>direct&&!wildcardGranted&&!protectedEntryMode){
-      const se=await db.rpc("managed_special_exempt_status",{p_target_tournament_id:tid});
+      const se=await db.rpc("player_special_exempt_status",{p_player_id:managedId,p_target_tournament_id:tid});
       if(se.error)return h({error:se.error.message},500);
       specialExempt=Boolean(se.data?.eligible);
       specialExemptInfo=se.data||null;
@@ -7877,7 +7877,7 @@ Deno.serve(async(req:Request)=>{
       if(pbSlots>0){
         const [pbCandidates,managedPb]=await Promise.all([
           db.rpc("tournament_performance_bye_candidate_ids",{p_target_tournament_id:tid}),
-          db.rpc("managed_performance_bye_status",{p_target_tournament_id:tid})
+          db.rpc("player_performance_bye_status",{p_player_id:managedId,p_target_tournament_id:tid})
         ]);
         if(pbCandidates.error||managedPb.error)return h({error:(pbCandidates.error||managedPb.error)?.message},500);
         pbCandidateSet=new Set((pbCandidates.data??[]).map((x:any)=>Number(x.player_id)).filter(Boolean));

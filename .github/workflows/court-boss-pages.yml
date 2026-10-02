@@ -29,6 +29,7 @@ jobs:
           node --check court-boss/app.js
           node --check court-boss/tactics.js
           node --check court-boss/modules.js
+          node --check court-boss/match-center-v1.js
 
       - name: Run tournament integrity tests
         run: node --test tests/tournament-integrity.test.mjs
@@ -236,10 +237,10 @@ jobs:
             }));
             const play=page.getByRole('button',{name:'Jouer'}).first();
             await play.click();
-            await page.locator('.court2d').waitFor();
-            if(await page.locator('.court-player').count()!==2)throw new Error('match viewer needs two player circles');
-            if(await page.locator('.court-ball').count()!==1)throw new Error('match viewer needs one ball');
-            await page.getByRole('button',{name:'1 point'}).click();
+            await page.locator('.cb-court').waitFor();
+            if(await page.locator('.fm-player-dot').count()!==2)throw new Error('match viewer needs two player circles');
+            if(await page.locator('.fm-ball').count()!==1)throw new Error('match viewer needs one ball');
+            await page.getByRole('button',{name:'Point',exact:true}).click();
             await page.getByText('6 coups').waitFor();
 
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));

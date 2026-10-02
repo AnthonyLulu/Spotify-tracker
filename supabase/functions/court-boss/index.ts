@@ -9466,7 +9466,7 @@ Deno.serve(async(req:Request)=>{
         .eq("player_id",playerId).eq("status","Active")
         .order("started_at",{ascending:false}).limit(1).maybeSingle(),
       tournamentId
-        ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,singles_draw_size,draw_size,qualifying_draw_size,prize_currency,prize_breakdown").eq("id",tournamentId).maybeSingle()
+        ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,singles_draw_size,draw_size,qualifying_draw_size").eq("id",tournamentId).maybeSingle()
         :Promise.resolve({data:null,error:null} as any)
     ]);
     if(managed.error||activeInjury.error||tournament.error)return h({error:(managed.error||activeInjury.error||tournament.error)?.message},500);
@@ -10320,7 +10320,7 @@ Deno.serve(async(req:Request)=>{
 
     if(tournamentTerminal){
       const [tour,entry,oldRun]=await Promise.all([
-        db.from("tournaments").select("id,name,circuit,category,level,start_date,end_date,prize_currency,prize_breakdown,prize_breakdown_is_estimate").eq("id",tournamentId).maybeSingle(),
+        db.from("tournaments").select("id,name,circuit,category,level,start_date,end_date,prize_money,prize_currency,singles_prize_by_result,qualifying_prize_by_result,singles_prize_is_estimate,qualifying_prize_is_estimate,prize_breakdown_is_estimate").eq("id",tournamentId).maybeSingle(),
         db.from("entries").select("id,entry_method,metadata").eq("tournament_id",tournamentId).eq("player_id",playerId).order("id",{ascending:false}).limit(1).maybeSingle(),
         db.from("tournament_runs").select("id").eq("tournament_id",tournamentId).eq("managed_player_id",playerId).limit(1).maybeSingle()
       ]);

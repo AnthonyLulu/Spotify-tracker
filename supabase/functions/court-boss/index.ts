@@ -11269,124 +11269,137 @@ Deno.serve(async(req:Request)=>{
     if(action==="set_career_focus"){
       const focus=String(body?.focus||"").trim().toLowerCase();
       if(!["singles_only","singles_priority","mixed","doubles_only"].includes(focus))return h({error:"Orientation de carrière invalide"},400);
-      const result=await db.rpc("set_managed_career_focus",{
-        p_focus:focus,
-        p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
-      });
+
+      const primaryId=Number(career.data.managed_player_id||0);
+      const playerId=n(body?.player_id,primaryId,1,99999999);
+      const isPrimary=playerId===primaryId;
+      let playerName=String(career.data.player_name||"Joueur");
+      let playerCountry=String(career.data.country||"FRA").toUpperCase();
+
+      if(!isPrimary){
+        const [roster,player]=await Promise.all([
+          db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle(),
+          db.from("players").select("id,name,country,career_focus").eq("id",playerId).maybeSingle()
+        ]);
+        if(roster.error||player.error)return h({error:(roster.error||player.error)?.message},500);
+        if(!roster.data||!player.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+        playerName=String(player.data.name||"Joueur");
+        playerCountry=String(player.data.country||"FRA").toUpperCase();
+      }
+
+      const focusDate=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const result=isPrimary
+        ?await db.rpc("set_managed_career_focus",{p_focus:focus,p_date:focusDate})
+        :await db.rpc("set_player_career_focus",{p_player_id:playerId,p_focus:focus,p_date:focusDate});
       if(result.error)return h({error:result.error.message},500);
+
       const labels:any={singles_only:"Simple exclusivement",singles_priority:"Simple prioritaire",mixed:"Simple + double",doubles_only:"Double exclusivement"};
       let needsPartner=false;
       let davisRole:any=null;
+
       if(focus==="doubles_only"){
-        const managedId=Number(career.data.managed_player_id||0);
-        if(managedId){
-          const activeSingles=await db.from("entries")
-            .select("tournament_id")
-            .eq("player_id",managedId).eq("status","entered");
-          if(activeSingles.error)return h({error:activeSingles.error.message},500);
-          const activeTournamentIds=[...new Set((activeSingles.data??[]).map((x:any)=>Number(x.tournament_id)).filter(Boolean))];
+        const activeSingles=await db.from("entries")
+          .select("tournament_id")
+          .eq("player_id",playerId).eq("status","entered");
+        if(activeSingles.error)return h({error:activeSingles.error.message},500);
+        const activeTournamentIds=[...new Set((activeSingles.data??[]).map((x:any)=>Number(x.tournament_id)).filter(Boolean))];
 
-          const wd=await db.from("entries").update({
-            status:"withdrawn",
-            withdrawn_on:String(career.data.career_date||AGE_REFERENCE_DATE),
-            updated_at:new Date().toISOString()
-          }).eq("player_id",managedId).eq("status","entered");
-          if(wd.error)return h({error:wd.error.message},500);
+        const wd=await db.from("entries").update({
+          status:"withdrawn",withdrawn_on:focusDate,updated_at:new Date().toISOString()
+        }).eq("player_id",playerId).eq("status","entered");
+        if(wd.error)return h({error:wd.error.message},500);
 
-          for(const tournamentId of activeTournamentIds){
-            const tr=await db.from("tournaments")
-              .select("qualifying_start_date,main_draw_start_date,start_date")
-              .eq("id",tournamentId).maybeSingle();
-            const gameDateFocus=String(career.data.career_date||AGE_REFERENCE_DATE);
-            const qStart=String(tr.data?.qualifying_start_date||tr.data?.main_draw_start_date||tr.data?.start_date||gameDateFocus);
-            const phase=gameDateFocus<qStart?"pre_q":"post_q";
+        for(const tournamentId of activeTournamentIds){
+          const tr=await db.from("tournaments")
+            .select("qualifying_start_date,main_draw_start_date,start_date")
+            .eq("id",tournamentId).maybeSingle();
+          const qStart=String(tr.data?.qualifying_start_date||tr.data?.main_draw_start_date||tr.data?.start_date||focusDate);
+          const phase=focusDate<qStart?"pre_q":"post_q";
 
-            await db.from("world_tournament_acceptance_entries").update({
-              status:"withdrawn",withdrawn_on:gameDateFocus,withdrawal_phase:phase,
-              withdrawal_reason:"career_focus_doubles_only",updated_at:new Date().toISOString()
-            }).eq("tournament_id",tournamentId).eq("player_id",managedId)
-              .in("status",["accepted","promoted","alternate"]);
+          await db.from("world_tournament_acceptance_entries").update({
+            status:"withdrawn",withdrawn_on:focusDate,withdrawal_phase:phase,
+            withdrawal_reason:"career_focus_doubles_only",updated_at:new Date().toISOString()
+          }).eq("tournament_id",tournamentId).eq("player_id",playerId)
+            .in("status",["accepted","promoted","alternate"]);
 
-            await db.from("world_qualifying_acceptance_entries").update({
-              status:"withdrawn",withdrawn_on:gameDateFocus,withdrawal_phase:"pre_q",
-              withdrawal_reason:"career_focus_doubles_only",updated_at:new Date().toISOString()
-            }).eq("tournament_id",tournamentId).eq("player_id",managedId)
-              .in("status",["accepted","promoted","alternate"]);
+          await db.from("world_qualifying_acceptance_entries").update({
+            status:"withdrawn",withdrawn_on:focusDate,withdrawal_phase:"pre_q",
+            withdrawal_reason:"career_focus_doubles_only",updated_at:new Date().toISOString()
+          }).eq("tournament_id",tournamentId).eq("player_id",playerId)
+            .in("status",["accepted","promoted","alternate"]);
 
-            await db.rpc("refresh_world_tournament_acceptance_list",{p_tournament_id:tournamentId,p_date:gameDateFocus});
-            await db.rpc("refresh_world_qualifying_acceptance_list",{p_tournament_id:tournamentId,p_date:gameDateFocus});
-          }
+          await db.rpc("refresh_world_tournament_acceptance_list",{p_tournament_id:tournamentId,p_date:focusDate});
+          await db.rpc("refresh_world_qualifying_acceptance_list",{p_tournament_id:tournamentId,p_date:focusDate});
         }
-        const pair=managedId
-          ?await db.from("doubles_partnerships").select("id,player_b_id").eq("player_a_id",managedId).order("id",{ascending:false}).limit(1).maybeSingle()
-          :{data:null,error:null};
-        needsPartner=!pair.data;
 
-        if(managedId&&pair.data?.player_b_id){
-          const syncMetric=await db.rpc("doubles_pair_metrics",{
-            p_a:managedId,p_b:Number(pair.data.player_b_id),
-            p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
-          });
+        const pair=await db.from("doubles_partnerships")
+          .select("id,player_a_id,player_b_id")
+          .or("player_a_id.eq."+playerId+",player_b_id.eq."+playerId)
+          .order("id",{ascending:false}).limit(1).maybeSingle();
+        if(pair.error)return h({error:pair.error.message},500);
+        const partnerId=pair.data
+          ?(Number(pair.data.player_a_id)===playerId?Number(pair.data.player_b_id):Number(pair.data.player_a_id))
+          :0;
+        needsPartner=!partnerId;
+
+        if(partnerId){
+          const syncMetric=await db.rpc("doubles_pair_metrics",{p_a:playerId,p_b:partnerId,p_date:focusDate});
           if(!syncMetric.error){
             const mm:any=(syncMetric.data??[])[0]||{};
             await db.from("player_doubles_commitments").upsert({
-              player_id:managedId,
-              season:Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4)),
-              primary_partner_id:Number(pair.data.player_b_id),
-              started_at:String(career.data.career_date||AGE_REFERENCE_DATE),
-              last_review_date:String(career.data.career_date||AGE_REFERENCE_DATE),
+              player_id:playerId,
+              season:Number(focusDate.slice(0,4)),
+              primary_partner_id:partnerId,
+              started_at:focusDate,
+              last_review_date:focusDate,
               commitment:Math.max(65,Math.min(100,Math.round(Number(mm.affinity_score||70))+6)),
               affinity:Math.max(0,Math.min(100,Number(mm.chemistry||70))),
               reason:"Partenaire principal confirmé lors du passage en Double exclusivement.",
-              source_label:"Utilisateur · carrière double exclusivement",
-              active:true,
-              updated_at:new Date().toISOString()
+              source_label:"Utilisateur · groupe géré · carrière double exclusivement",
+              active:true,updated_at:new Date().toISOString()
             },{onConflict:"player_id"});
           }
         }
 
-        if(managedId){
-          const nation=String(career.data.selected_federation_nation||career.data.federation_nation||career.data.country||"FRA").toUpperCase();
-          const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",managedId).eq("nation",nation).maybeSingle();
-          if(!ownDavis.error&&ownDavis.data&&/^Simple/i.test(String(ownDavis.data.role||""))){
-            const taken=await db.from("davis_squad").select("role,player_id").eq("nation",nation).in("role",["Double A","Double B"]);
-            const used=new Set((taken.data??[]).filter((x:any)=>Number(x.player_id)!==managedId).map((x:any)=>String(x.role)));
-            davisRole=!used.has("Double A")?"Double A":!used.has("Double B")?"Double B":"Réserve";
-            await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
-          }
+        const nation=(isPrimary?String(career.data.selected_federation_nation||career.data.federation_nation||playerCountry):playerCountry).toUpperCase();
+        const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",playerId).eq("nation",nation).maybeSingle();
+        if(!ownDavis.error&&ownDavis.data&&/^Simple/i.test(String(ownDavis.data.role||""))){
+          const taken=await db.from("davis_squad").select("role,player_id").eq("nation",nation).in("role",["Double A","Double B"]);
+          const used=new Set((taken.data??[]).filter((x:any)=>Number(x.player_id)!==playerId).map((x:any)=>String(x.role)));
+          davisRole=!used.has("Double A")?"Double A":!used.has("Double B")?"Double B":"Réserve";
+          await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
         }
       }else if(focus==="singles_only"){
-        const managedId=Number(career.data.managed_player_id||0);
-        if(managedId){
-          const doublesWd=await db.from("managed_doubles_entries").update({
-            status:"withdrawn",
-            withdrawn_on:String(career.data.career_date||AGE_REFERENCE_DATE),
-            metadata:{withdrawal_reason:"career_focus_singles_only"},
-            updated_at:new Date().toISOString()
-          }).eq("owner_id","demo").eq("player_id",managedId).eq("status","entered");
-          if(doublesWd.error)return h({error:doublesWd.error.message},500);
+        const doublesWd=await db.from("managed_doubles_entries").update({
+          status:"withdrawn",withdrawn_on:focusDate,
+          metadata:{withdrawal_reason:"career_focus_singles_only"},
+          updated_at:new Date().toISOString()
+        }).eq("owner_id","demo").eq("player_id",playerId).eq("status","entered");
+        if(doublesWd.error)return h({error:doublesWd.error.message},500);
 
-          const nation=String(career.data.selected_federation_nation||career.data.federation_nation||career.data.country||"FRA").toUpperCase();
-          const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",managedId).eq("nation",nation).maybeSingle();
-          if(!ownDavis.error&&ownDavis.data&&/^Double/i.test(String(ownDavis.data.role||""))){
-            const taken=await db.from("davis_squad").select("role,player_id").eq("nation",nation).in("role",["Simple 1","Simple 2"]);
-            const used=new Set((taken.data??[]).filter((x:any)=>Number(x.player_id)!==managedId).map((x:any)=>String(x.role)));
-            davisRole=!used.has("Simple 1")?"Simple 1":!used.has("Simple 2")?"Simple 2":"Réserve";
-            await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
-          }
+        const nation=(isPrimary?String(career.data.selected_federation_nation||career.data.federation_nation||playerCountry):playerCountry).toUpperCase();
+        const ownDavis=await db.from("davis_squad").select("id,role").eq("player_id",playerId).eq("nation",nation).maybeSingle();
+        if(!ownDavis.error&&ownDavis.data&&/^Double/i.test(String(ownDavis.data.role||""))){
+          const taken=await db.from("davis_squad").select("role,player_id").eq("nation",nation).in("role",["Simple 1","Simple 2"]);
+          const used=new Set((taken.data??[]).filter((x:any)=>Number(x.player_id)!==playerId).map((x:any)=>String(x.role)));
+          davisRole=!used.has("Simple 1")?"Simple 1":!used.has("Simple 2")?"Simple 2":"Réserve";
+          await db.from("davis_squad").update({role:davisRole}).eq("id",ownDavis.data.id);
         }
       }
+
       await db.from("inbox_items").insert({
-        kind:"career",title:"Orientation de carrière modifiée",
+        kind:"career",title:"Orientation de carrière · "+playerName,
         body:"Nouvelle orientation : "+labels[focus]+(needsPartner?" · choisis maintenant un partenaire dans le hub Double.":"."),
-        action_route:needsPartner?"doubles":"myplayer",is_read:false
+        action_route:needsPartner?"doubles":"myplayer",is_read:false,
+        related_entity_type:"player",related_entity_id:playerId
       });
       const [boardRefresh,sponsorRefresh]=await Promise.all([
         db.rpc("update_board_state"),
-        db.rpc("refresh_sponsor_offer_eligibility",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)})
+        db.rpc("refresh_sponsor_offer_eligibility",{p_date:focusDate})
       ]);
       return h({
-        ok:true,...(result.data||{}),label:labels[focus],needs_partner:needsPartner,davis_role:davisRole,
+        ok:true,...(result.data||{}),player_id:playerId,player_name:playerName,
+        label:labels[focus],needs_partner:needsPartner,davis_role:davisRole,
         board:boardRefresh.error?{error:boardRefresh.error.message}:boardRefresh.data,
         sponsor_visibility:sponsorRefresh.error?{error:sponsorRefresh.error.message}:sponsorRefresh.data
       });

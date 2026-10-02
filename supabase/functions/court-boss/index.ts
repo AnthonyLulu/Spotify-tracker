@@ -9266,7 +9266,7 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/rollover-season")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
-    const newYear=n(body?.new_year,new Date().getFullYear()+1,2027,2100);
+    const newYear=n(body?.new_year,new Date().getFullYear()+1,2027,9999);
     const current=await db.from("career_state").select("season_year,career_date").eq("id","demo").maybeSingle();
     if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
     if(newYear<=Number(current.data.season_year||2025))return h({error:"La nouvelle saison doit être supérieure à la saison actuelle."},409);

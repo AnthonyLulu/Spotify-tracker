@@ -5611,7 +5611,7 @@ Deno.serve(async(req:Request)=>{
               db.from("staff_candidates").update({status:"available",interview_status:"not_started"}).eq("profile_id",member.data.profile_id),
               db.from("player_staff_assignments").update({
                 active:false,end_date:date,ended_reason:"Fin de contrat"
-              }).eq("player_id",Number(current.data.managed_player_id||0)).eq("staff_profile_id",member.data.profile_id).eq("active",true)
+              }).eq("staff_profile_id",member.data.profile_id).eq("active",true)
             ]);
           }
         }
@@ -10783,10 +10783,10 @@ Deno.serve(async(req:Request)=>{
       }).eq("staff_a_id",lo).eq("staff_b_id",hi);
       if(relUp.error)return h({error:relUp.error.message},500);
       const managedId=Number(career.data.managed_player_id||0);
-      if(managedId){
+      {
         const links=await db.from("player_staff_assignments")
           .select("id,satisfaction,team_chemistry,trust,affinity")
-          .eq("player_id",managedId).eq("active",true).in("staff_profile_id",[lo,hi]);
+          .eq("active",true).in("staff_profile_id",[lo,hi]);
         if(!links.error){
           for(const x of links.data??[]){
             await db.from("player_staff_assignments").update({
@@ -10802,8 +10802,8 @@ Deno.serve(async(req:Request)=>{
       for(const sp of ps){
         await db.from("staff_career_events").insert({
           staff_profile_id:sp.id,event_date:today,event_type:"conflict_mediated",
-          player_id:managedId||null,
-          description:"Médiation interne : conflit réduit de "+reduction+" points."
+          player_id:null,
+          description:"Médiation interne de l’académie : conflit réduit de "+reduction+" points."
         });
       }
       await db.from("inbox_items").insert({kind:"staff",title:"Médiation du staff",body:"La tension interne baisse à "+newConflict+"/100.",action_route:"staff",is_read:false});
@@ -10830,8 +10830,8 @@ Deno.serve(async(req:Request)=>{
       if(up.error)return h({error:up.error.message},500);
       await db.from("staff_career_events").insert({
         staff_profile_id:member.data.profile_id,event_date:today,event_type:"rest_period",
-        player_id:career.data.managed_player_id||null,role:member.data.role,
-        description:"Deux semaines de récupération pour réduire fatigue professionnelle et surcharge."
+        player_id:null,role:member.data.role,
+        description:"Deux semaines de récupération du staff de l’académie pour réduire fatigue professionnelle et surcharge."
       });
       await db.from("inbox_items").insert({kind:"staff",title:"Repos du staff",body:(member.data.name||member.data.role)+" est mis au repos jusqu'au "+until.toISOString().slice(0,10)+".",action_route:"staff",is_read:false});
       return h({ok:true,rest_until:until.toISOString().slice(0,10)});
@@ -10864,7 +10864,7 @@ Deno.serve(async(req:Request)=>{
           trust:Math.min(100,75+Number(sp.loyalty||10)),
           satisfaction:Math.min(100,78+Math.round(Number(sp.loyalty||10)/2)),
           last_review_date:today
-        }).eq("player_id",career.data.managed_player_id).eq("staff_profile_id",offer.data.staff_profile_id).eq("active",true),
+        }).eq("staff_profile_id",offer.data.staff_profile_id).eq("active",true),
         db.from("user_staff_external_offers").update({status:"matched"}).eq("id",id),
         db.from("staff_profiles").update({loyalty:Math.min(20,Number(sp.loyalty||10)+1),updated_at:new Date().toISOString()}).eq("id",offer.data.staff_profile_id),
         db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo")
@@ -10874,8 +10874,8 @@ Deno.serve(async(req:Request)=>{
 
       await db.from("staff_career_events").insert({
         staff_profile_id:offer.data.staff_profile_id,event_date:today,event_type:"retained_after_offer",
-        player_id:career.data.managed_player_id,role:member.data.role,
-        description:"A choisi de rester après une revalorisation alignée sur une offre concurrente."
+        player_id:null,role:member.data.role,
+        description:"A choisi de rester dans l’académie après une revalorisation alignée sur une offre concurrente."
       });
       await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
         .eq("related_entity_type","staff_external_offer").eq("related_entity_id",id);
@@ -10897,7 +10897,7 @@ Deno.serve(async(req:Request)=>{
       }
       await db.from("player_staff_assignments").update({
         active:false,end_date:today,ended_reason:"Départ accepté après offre extérieure"
-      }).eq("player_id",career.data.managed_player_id).eq("staff_profile_id",offer.data.staff_profile_id).eq("active",true);
+      }).eq("staff_profile_id",offer.data.staff_profile_id).eq("active",true);
 
       const fit=await db.rpc("staff_fit_score",{p_player_id:offer.data.competitor_player_id,p_staff_id:offer.data.staff_profile_id,p_role:sp.primary_role||member.data?.role||"Coach"});
       const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
@@ -10916,7 +10916,7 @@ Deno.serve(async(req:Request)=>{
       ]);
       await db.from("staff_career_events").insert({
         staff_profile_id:offer.data.staff_profile_id,event_date:today,event_type:"left_user_for_offer",
-        player_id:offer.data.competitor_player_id,other_player_id:career.data.managed_player_id,
+        player_id:offer.data.competitor_player_id,other_player_id:null,
         role:sp.primary_role||member.data?.role||"Staff",
         description:"Le joueur géré a accepté son départ après une offre extérieure."
       });

@@ -77,3 +77,22 @@
 .tm-managed-player-meta{display:flex;gap:9px;flex-wrap:wrap;margin:7px 0 5px;font-size:10px;color:#a6bab0}
 .tm-managed-player-card>small{display:block;margin-top:7px;color:#7fdca9;font-weight:800}
 @media(max-width:700px){.tm-managed-roster-grid{grid-template-columns:1fr}}
+
+
+/* Career OS squad inbox + medical */
+.tm-inbox-player-filter{display:flex;gap:6px;overflow-x:auto;margin:0 0 9px;padding-bottom:2px}
+.tm-inbox-player-filter button{flex:0 0 auto;border:1px solid var(--border);background:rgba(255,255,255,.018);color:var(--muted);border-radius:10px;padding:7px 10px;font-size:11px;font-weight:800}
+.tm-inbox-player-filter button.active{border-color:rgba(94,234,151,.42);background:rgba(94,234,151,.08);color:var(--text)}
+.tm-squad-medical{margin-bottom:12px}
+.tm-squad-medical-grid{display:grid;gap:7px;margin-top:11px}
+.tm-squad-medical-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(210px,1.4fr) auto;gap:10px;align-items:center;padding:10px 11px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.018)}
+.tm-squad-medical-row.warn{border-color:rgba(255,177,75,.28);background:rgba(255,177,75,.035)}
+.tm-squad-medical-row>div:first-child b,.tm-squad-medical-row>div:first-child small{display:block}
+.tm-squad-medical-row>div:first-child small{margin-top:3px;color:var(--muted)}
+.tm-squad-medical-kpis{display:flex;gap:8px;flex-wrap:wrap}
+.tm-squad-medical-kpis span{font-size:10px;color:var(--muted);padding:5px 7px;border-radius:8px;background:rgba(255,255,255,.035)}
+.tm-squad-medical-kpis b{color:var(--text)}
+@media(max-width:760px){
+ .tm-squad-medical-row{grid-template-columns:1fr}
+ .tm-squad-medical-row .soft-btn{width:100%}
+}

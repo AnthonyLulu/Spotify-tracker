@@ -234,7 +234,7 @@ let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réel
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
 let trainingPreview=null,trainingPreviewLoading=false;
 let saveSlots=[],saveSlotsLoading=false,saveSlotBusy=false,saveSlotQueue=Promise.resolve(),saveSlotQueueDepth=0;
-let careerHub=null,careerHubLoading=false;
+let careerHub=null,careerHubLoading=false,activeManagedContext=null,activeManagedContextLoading=false;
 function baseLocalState(){
  return {
   date:'2025-12-01',week:1,
@@ -534,13 +534,17 @@ function navBar(){
  return `<nav class="bottom-nav">${x.map(i=>`<button class="${route===i[0]?'active':''}" onclick="nav('${i[0]}')">${i[1]}</button>`).join('')}</nav>`
 }
 function managerStrip(){
- const c=career(),fin=boot?.finance||{},doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
+ const c=career(),fin=boot?.finance||{},ap=activeManagedContext?.player||null;
+ const activeId=activeManagedId(),primaryId=primaryManagedPlayerId();
+ const view=ap&&Number(ap.id)===activeId?ap:null;
+ const doublesOnly=String((view?.career_focus??c.career_focus)||'mixed')==='doubles_only';
+ const rank=doublesOnly?Number(view?.doubles_ranking??c.doubles_rank||0):Number(view?.ranking??c.singles_rank||0);
  return `<div class="manager-strip">
   <div class="manager-cell"><span>Semaine</span><b>${local.week||1}</b></div>
-  <div class="manager-cell"><span>${doublesOnly?'Double':'ATP'}</span><b>#${fmt(doublesOnly?c.doubles_rank||0:c.singles_rank||0)}</b></div>
+  <div class="manager-cell"><span>${doublesOnly?'Double':'ATP'}</span><b>#${fmt(rank)}</b></div>
   <div class="manager-cell"><span>Budget</span><b>${euro(c.budget??fin.balance??0)}</b></div>
-  <div class="manager-cell wide"><span>Date carrière</span><b>${df(local.date||c.career_date)}</b></div>
-  <button class="manager-world" onclick="nav('world')">Monde ▸</button>
+  <div class="manager-cell wide"><span>${activeId!==primaryId?'Joueur actif':'Date carrière'}</span><b>${activeId!==primaryId?esc(view?.name||'Académie'):df(local.date||c.career_date)}</b></div>
+  <button class="manager-world" onclick="${activeId!==primaryId?"nav('academy')":"nav('world')"}">${activeId!==primaryId?'Groupe ▸':'Monde ▸'}</button>
  </div>`
 }
 function shell(body){app.innerHTML=`<div class="app-shell">${header()}${managerStrip()}<main class="page">${body}</main>${navBar()}</div>`}
@@ -746,7 +750,13 @@ async function init(){
    shell(`<div class="card"><h2>Connexion au monde impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="location.reload()">Réessayer</button></div>`);
  }
 }
-async function loadManagement(){try{management=await get('/api/management')}catch{management={contracts:[],college:[],shortlist:[]}}}
+async function loadManagement(){
+ try{
+  management=await get('/api/management');
+  const target=Number(local.activeManagedPlayerId||primaryManagedPlayerId()||0);
+  if(target)await loadActiveManagedContext(true,target).catch(()=>{});
+ }catch{management={contracts:[],college:[],shortlist:[]}}
+}
 async function loadStaffWorld(){
  if(staffWorldLoading)return;
  staffWorldLoading=true;
@@ -885,6 +895,48 @@ function career(){
  c.singles_rank=c.singles_rank??742;c.doubles_rank=c.doubles_rank??1284;c.points=c.points??34;c.player_name=c.player_name||'Anthony';c.country=c.country||'FRA';
  return c;
 }
+function primaryManagedPlayerId(){return Number((boot?.career||local?.career||{}).managed_player_id||0)}
+function managedSquadIds(){
+ const primary=primaryManagedPlayerId();
+ const ids=[primary,...(management?.academyRoster||[]).filter(x=>String(x.status||'active')==='active').map(x=>Number(x.player_id||x.players?.id||0))].filter(Boolean);
+ return [...new Set(ids)];
+}
+function activeManagedId(){
+ const primary=primaryManagedPlayerId();
+ const wanted=Number(local.activeManagedPlayerId||primary||0);
+ const ids=managedSquadIds();
+ return ids.includes(wanted)?wanted:(primary||ids[0]||0);
+}
+async function loadActiveManagedContext(force=false,requestedId=null){
+ const playerId=Number(requestedId||activeManagedId()||primaryManagedPlayerId()||0);
+ if(!playerId)return null;
+ if(activeManagedContextLoading)return activeManagedContext;
+ if(activeManagedContext&&!force&&Number(activeManagedContext.player_id)===playerId)return activeManagedContext;
+ activeManagedContextLoading=true;
+ try{
+  const d=await get('/api/managed-player-context?player_id='+encodeURIComponent(playerId));
+  activeManagedContext=d;
+  local.activeManagedPlayerId=Number(d.player_id||playerId);
+  local.entries=[];local.entryMeta={};
+  mergeServerSinglesEntries(d.entries||[]);
+  persist();
+  return d;
+ }finally{activeManagedContextLoading=false}
+}
+window.setActiveManagedPlayer=async id=>{
+ const target=Number(id||0);
+ if(!target||!managedSquadIds().includes(target))return alert('Ce joueur ne fait pas partie du groupe géré.');
+ local.activeManagedPlayerId=target;
+ local.trainingPlayerId=target;
+ trainingPreview=null;
+ careerHub=null;
+ persist();
+ try{
+  await loadActiveManagedContext(true,target);
+  if(route==='training')await loadTrainingPreview(true).catch(()=>{});
+  render();
+ }catch(e){alert(e.message)}
+};
 function home(){
  const c=career(),doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
  const next=doublesOnly
@@ -915,7 +967,7 @@ function home(){
   </div>
   <div class="card click" onclick="nav('finance')"><div class="eyebrow">Académie</div><h2>${esc(academy.name||'Court Boss Academy')}</h2><div class="statline"><div class="statbox"><span class="muted mini">Budget</span><b>${euro(c.budget??academy.budget??14800)}</b></div><div class="statbox"><span class="muted mini">Board</span><b>${academy.board_confidence||76}%</b></div></div><p class="muted mini" style="margin-top:10px">${esc(academy.philosophy||'Développement complet du joueur')}</p></div>
  </section>
- ${managedSquad.length>1?`<section class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Groupe géré</div><h2>${managedSquad.length} joueurs sous ta responsabilité</h2><div class="muted mini">Profil, progression et plan hebdomadaire accessibles en un clic.</div></div><button class="ghost" onclick="nav('academy')">Académie</button></div><div class="stack" style="margin-top:8px">${managedSquad.map(p=>`<div class="list-item row between"><span class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted micro">${esc(p.role)}${p.ranking?' · ATP #'+fmt(p.ranking):''}</div></span><div class="row"><button class="soft-btn" onclick="openPlayer(${p.id})">Profil</button><button class="primary" onclick="trainAcademyPlayer(${p.id})">Entraîner</button></div></div>`).join('')}</div></section>`:''}
+ ${managedSquad.length>1?`<section class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Groupe géré</div><h2>${managedSquad.length} joueurs sous ta responsabilité</h2><div class="muted mini">Choisis le joueur actif pour le calendrier, le plan de saison et l'entraînement.</div></div><button class="ghost" onclick="nav('academy')">Académie</button></div><div class="stack" style="margin-top:8px">${managedSquad.map(p=>`<div class="list-item row between"><span class="click" onclick="openPlayer(${p.id})"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted micro">${esc(p.role)}${p.ranking?' · ATP #'+fmt(p.ranking):''}</div></span><div class="row">${activeManagedId()===p.id?'<span class="badge good">Actif</span>':`<button class="soft-btn" onclick="setActiveManagedPlayer(${p.id})">Gérer</button>`}<button class="soft-btn" onclick="openPlayer(${p.id})">Profil</button><button class="primary" onclick="trainAcademyPlayer(${p.id})">Entraîner</button></div></div>`).join('')}</div></section>`:''}
  <div class="quick-grid" style="margin-top:12px">
   ${quickActions.map(x=>`<div class="quick" onclick="nav('${x[0]}')"><span class="muted mini">${x[1]}</span><strong>${x[2]}</strong></div>`).join('')}
  </div>

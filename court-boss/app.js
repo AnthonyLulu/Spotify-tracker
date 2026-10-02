@@ -962,6 +962,10 @@ async function loadActiveManagedContext(force=false,requestedId=null){
 window.setActiveManagedPlayer=async id=>{
  const target=Number(id||0);
  if(!target||!managedSquadIds().includes(target))return alert('Ce joueur ne fait pas partie du groupe géré.');
+ const liveOwner=Number(local.liveMatch?.managed_player_id||0);
+ if(local.liveMatch?.status==='active'&&liveOwner&&target!==liveOwner){
+  return alert('Termine le match live en cours avant de changer de joueur géré.');
+ }
  local.activeManagedPlayerId=target;
  local.trainingPlayerId=target;
  trainingPreview=null;
@@ -2494,27 +2498,33 @@ function matchPage(){
  <div class="stack">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(activePlayerCareerView().player_name||'Joueur')?'good':'bad'}">${m.winner===(activePlayerCareerView().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
 }
 window.setMatchSurface=(surface,indoor=false)=>{local.matchSurface=surface;local.matchIndoor=!!indoor;persist();render()}
+function applyLiveMatchResponse(d){
+ if(!d?.session)return;
+ local.liveMatch=d.session;
+ if(d.opponent)local.liveOpponent=d.opponent;
+ local.liveSessionId=local.liveMatch?.status==='active'?Number(local.liveMatch.id||0)||null:null;
+}
 window.startLiveMatch=async()=>{
  const livePlayer=activePlayerCareerView();
  if(String(livePlayer.career_focus||'mixed')==='doubles_only'){alert('Orientation Double exclusivement : le Match Center simple est désactivé pour ce joueur.');return}
  try{
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
   const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:activeManagedId()||primaryManagedPlayerId()||0,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;local.liveOpponent=d.opponent||null;persist();render();
+  applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
 window.playLivePoint=async()=>{
  if(!local.liveMatch)return;
  try{
   const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}persist();render();
+  applyLiveMatchResponse(d);if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveGame=async()=>{
  if(!local.liveMatch||local.liveMatch.status==='completed')return;
  try{
   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+  applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveSet=async()=>{
@@ -2523,7 +2533,7 @@ window.simulateLiveSet=async()=>{
  try{
   for(let i=0;i<20;i++){
    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-   local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;
+   applyLiveMatchResponse(d);
    if(local.liveMatch.status==='completed'||Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0)!==startSets)break;
   }
   persist();render();
@@ -2534,7 +2544,7 @@ window.simulateLiveMatch=async()=>{
  try{
   for(let i=0;i<60;i++){
    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-   local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;
+   applyLiveMatchResponse(d);
    if(local.liveMatch.status==='completed')break;
   }
   persist();render();
@@ -2553,7 +2563,7 @@ async function liveAutoTick(){
  liveAutoBusy=true;
  try{
    const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-   local.liveMatch=d.session;if(d.opponent)local.liveOpponent=d.opponent;persist();render();
+   applyLiveMatchResponse(d);persist();render();
    if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
  }catch(e){
    if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}
@@ -2566,7 +2576,7 @@ window.toggleLiveAuto=()=>{
  liveAutoTimer=setInterval(liveAutoTick,Math.max(180,900/liveAutoSpeed));
  liveAutoTick();render();
 }
-window.clearLiveMatch=()=>{if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}delete local.liveMatch;delete local.liveOpponent;persist();render()}
+window.clearLiveMatch=()=>{if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}delete local.liveMatch;delete local.liveOpponent;local.liveSessionId=null;persist();render()}
 function doublesPage(){
  const c=career(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);

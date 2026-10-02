@@ -873,8 +873,8 @@ async function loadCompetitions(){
 }
 
 async function loadRankingLedger(){try{rankingLedger=await get('/api/ranking-ledger?date='+(local.date||RANKING_SNAPSHOT)+'&player_id='+encodeURIComponent(activeManagedId()||primaryManagedPlayerId()||0))}catch(e){const v=activePlayerCareerView();rankingLedger={total:Number(v.points||0),active:[],expired:[],player_id:activeManagedId()}}}
-async function loadSeasonSummary(){try{seasonSummary=await get('/api/season-summary')}catch(e){seasonSummary={stats:{tournaments:0,titles:0,finals:0,prize:0,matches:0,wins:0},singles:[],doubles:[],singles_points:[],doubles_points:[]}}}
-async function loadScheduleAdvice(){try{scheduleAdvice=await get('/api/schedule-advice')}catch(e){scheduleAdvice={recommended:[]}}}
+async function loadSeasonSummary(){try{seasonSummary=await get('/api/season-summary?player_id='+encodeURIComponent(activeManagedId()||primaryManagedPlayerId()||0))}catch(e){seasonSummary={stats:{tournaments:0,titles:0,finals:0,prize:0,matches:0,wins:0},singles:[],doubles:[],singles_points:[],doubles_points:[],player_id:activeManagedId()}}}
+async function loadScheduleAdvice(){try{scheduleAdvice=await get('/api/schedule-advice?player_id='+encodeURIComponent(activeManagedId()||primaryManagedPlayerId()||0))}catch(e){scheduleAdvice={recommended:[],player_id:activeManagedId()}}}
 async function loadDoublesHub(){
  if(doublesHubLoading)return;
  doublesHubLoading=true;
@@ -970,6 +970,8 @@ window.setActiveManagedPlayer=async id=>{
   tournamentDetailRows.clear();
   await Promise.all([
    loadRankingLedger().catch(()=>{}),
+   loadSeasonSummary().catch(()=>{}),
+   loadScheduleAdvice().catch(()=>{}),
    loadTournaments().catch(()=>{}),
    loadManagement().catch(()=>{})
   ]);
@@ -978,7 +980,7 @@ window.setActiveManagedPlayer=async id=>{
  }catch(e){alert(e.message)}
 };
 function home(){
- const c=career(),doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
+ const c=activePlayerCareerView(),doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
  const next=doublesOnly
   ?((scheduleAdvice?.recommended||[]).find(t=>t.doubles)||boot.upcoming?.find(t=>t.doubles)||boot.upcoming?.[0])
   :boot.upcoming?.[0];

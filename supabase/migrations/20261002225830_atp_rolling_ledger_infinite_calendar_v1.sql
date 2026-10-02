@@ -533,17 +533,45 @@ calc as (
         o.official_points-coalesce(s.total_points,0) delta
  from official o
  left join lateral public.atp_player_ranking_summary(o.player_id,date '2025-12-01') s on true
+),
+anchors as (
+ select c.player_id,c.delta,b.label,b.earned_date,b.drop_date,b.points,b.rank_category,b.estimated,
+        row_number() over(
+          partition by c.player_id
+          order by
+            case
+              when c.delta<0 and b.rank_category='Finals' then 0
+              when c.delta>0 and b.rank_category='United Cup' then 0
+              when b.estimated then 1
+              when b.rank_category in ('ATP500','ATP250','Challenger') then 2
+              else 3
+            end,
+            b.points desc,b.earned_date desc
+        ) rn
+ from calc c
+ join lateral public.atp_player_breakdown(c.player_id,date '2025-12-01') b on true
+ where c.delta<>0
+   and b.counting=true
+   and b.rank_category<>'Reconciliation'
+),
+chosen as (
+ select * from anchors where rn=1
 )
 insert into public.atp_defending_points_ledger(
  player_id,source_season,source_event_key,tournament_name,source_tournament_id,event_date,drop_date,
  rank_category,result_code,raw_points,points,counting_at_snapshot,is_estimated,source_label
 )
-select c.player_id,2025,'hist:ranking-reconciliation','Réconciliation classement ATP 01/12/2025',null,
-       date '2025-12-01',date '2026-11-30','Reconciliation',null,0,c.delta,true,true,
-       'Court Boss · écart résiduel entre historique détaillé et total ATP officiel du 01/12/2025'
-from calc c where c.delta<>0
+select c.player_id,2025,'hist:ranking-reconciliation',
+       'Ajustement historique · '||coalesce(c.label,'résultat 2025'),null,
+       c.earned_date,c.drop_date,'Reconciliation',null,0,c.delta,true,true,
+       'Court Boss · reliquat du snapshot officiel rattaché à une vraie semaine de sortie 2025'
+from chosen c
 on conflict(player_id,source_season,source_event_key) do update set
-  points=excluded.points,drop_date=excluded.drop_date,source_label=excluded.source_label;
+  tournament_name=excluded.tournament_name,
+  event_date=excluded.event_date,
+  drop_date=excluded.drop_date,
+  points=excluded.points,
+  source_label=excluded.source_label;
 
 update public.atp_defending_points_ledger l
 set counting_at_snapshot=b.counting

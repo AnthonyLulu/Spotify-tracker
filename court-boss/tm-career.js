@@ -23,6 +23,7 @@
   let baseTrainingPage = typeof training === 'function' ? training : null;
   let baseLoadTrainingPreview = typeof loadTrainingPreview === 'function' ? loadTrainingPreview : null;
   let tmInboxFilter = 'all';
+  let tmInboxPlayerId = 0;
 
   function ensureLocalCareerConfig(){
     if(!local.difficulty)local.difficulty='normal';
@@ -454,6 +455,30 @@
     };
   }
 
+  const oldMedicalPage=typeof medicalPage==='function'?medicalPage:null;
+  if(oldMedicalPage){
+    medicalPage=function(){
+      const core=oldMedicalPage();
+      const rosterRows=(management&&management.academyRoster)||[];
+      const primary=Number((career()&&career().managed_player_id)||local.primaryPlayerId||0);
+      const active=rosterRows.filter(r=>String(r.status||'active')==='active'&&Number((r.players||{}).id||r.player_id||0)>0).slice(0,8);
+      if(active.length<=1)return core;
+      const known=boot.injuries||[];
+      const block='<div class="card tm-squad-medical"><div class="row between"><div><div class="eyebrow">Groupe géré</div><h2>État médical de l’effectif</h2><div class="muted mini">Vue rapide des 1 à 8 joueurs avant de modifier les charges.</div></div><button class="soft-btn" onclick="nav(\'training\')">Plans individuels</button></div>'
+        +'<div class="tm-squad-medical-grid">'+active.map(r=>{
+          const p=r.players||{},id=Number(p.id||r.player_id),isPrimary=id===primary;
+          const c0=isPrimary?career():p;
+          const fatigue=Number(c0.fatigue??p.fatigue??0),fitness=Number(c0.fitness??p.fitness??90),form=Number(c0.form??p.form??70);
+          const injury=known.find(i=>Number(i.player_id||i.players?.id||0)===id&&String(i.status||'Active')==='Active');
+          const status=injury?String(injury.injury_type||'Blessure'):String(c0.injury_status||p.injury_status||'Fit');
+          const danger=Boolean(injury)||status!=='Fit'||fatigue>=65||fitness<70;
+          return '<div class="tm-squad-medical-row '+(danger?'warn':'')+'"><div><b>'+(isPrimary?'★ ':'')+(flags[p.country]||'🏳️')+' '+esc(p.name||'Joueur')+'</b><small>'+esc(status)+'</small></div><div class="tm-squad-medical-kpis"><span>Forme <b>'+form+'</b></span><span>Fit <b>'+fitness+'</b></span><span>Fatigue <b>'+fatigue+'</b></span></div><button class="soft-btn" onclick="trainAcademyPlayer('+id+')">Ajuster</button></div>';
+        }).join('')+'</div></div>';
+      const hook='<div class="grid g4">';
+      return core.includes(hook)?core.replace(hook,block+hook):block+core;
+    };
+  }
+
   const oldCareerHubPage=typeof careerHubPage==='function'?careerHubPage:null;
   if(oldCareerHubPage){
     careerHubPage=function(){
@@ -495,6 +520,13 @@
   if(oldInbox){
     inboxPage=function(){
       const all=[...(boot.inbox||[])].sort((a,b)=>Number(a.is_read)-Number(b.is_read)||({urgent:0,high:1,normal:2}[a.priority]??2)-({urgent:0,high:1,normal:2}[b.priority]??2)||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+      const roster=academyRosterPlayers();
+      const playerMap=new Map(roster.map(x=>[Number(x.id),x]));
+      const linkedPlayerId=x=>{
+        const entityType=String(x?.related_entity_type||'');
+        const direct=['player','academy_player'].includes(entityType)?Number(x?.related_entity_id||0):0;
+        return Number(x?.action_payload?.player_id||direct||0);
+      };
       const groups=[
         ['all','Tous',()=>true],
         ['decisions','Décisions',x=>x.decision_status==='pending'&&x.action_type&&x.action_type!=='open_route'],
@@ -505,13 +537,15 @@
         ['business','Business',x=>['sponsor','finance','media'].includes(String(x.kind||''))]
       ];
       const finder=groups.find(g=>g[0]===tmInboxFilter)||groups[0];
-      const rows=all.filter(finder[2]);
+      const rows=all.filter(finder[2]).filter(x=>!tmInboxPlayerId||linkedPlayerId(x)===tmInboxPlayerId);
       const unread=all.filter(x=>!x.is_read).length;
       const decisions=all.filter(x=>x.decision_status==='pending'&&x.action_type&&!['open_route'].includes(x.action_type)).length;
       return '<div class="section-head"><div><div class="eyebrow">Communication · Manager Inbox</div><h1>Boîte de réception</h1><div class="muted">'+unread+' non lu(s) · '+decisions+' décision(s) en attente</div></div><button class="soft-btn" onclick="markAllInboxRead()">Tout marquer lu</button></div>'
+        +(roster.length>1?'<div class="tm-inbox-player-filter"><button class="'+(!tmInboxPlayerId?'active':'')+'" onclick="tmSetInboxPlayer(0)">Tout le groupe</button>'+roster.map(p=>'<button class="'+(tmInboxPlayerId===Number(p.id)?'active':'')+'" onclick="tmSetInboxPlayer('+Number(p.id)+')">'+(Number(p.id)===Number((career()||{}).managed_player_id)?'★ ':'')+esc(p.name)+'</button>').join('')+'</div>':'')
         +'<div class="tm-inbox-tabs">'+groups.map(g=>'<button class="'+(tmInboxFilter===g[0]?'active':'')+'" onclick="tmSetInboxFilter(\''+g[0]+'\')">'+esc(g[1])+' <span>'+all.filter(g[2]).length+'</span></button>').join('')+'</div>'
         +'<div class="stack">'+rows.map(x=>'<div class="card inbox-card '+(x.is_read?'':'is-unread')+' '+(x.priority==='high'||x.priority==='urgent'?'is-priority':'')+'" onclick="openInboxItem('+x.id+',\''+esc(x.action_route||'home')+'\')">'
           +'<div class="row between"><div><div class="eyebrow">'+esc(senderByKind[String(x.kind||'')]||'Court Boss')+' · '+(x.game_date?df(x.game_date):new Date(x.created_at).toLocaleDateString('fr-FR'))+'</div><span class="muted micro">'+esc(x.kind||'info')+'</span></div><div class="row"><span class="badge '+(x.priority==='high'||x.priority==='urgent'?'warn':'')+'">'+esc(x.priority||'normal')+'</span><span class="badge '+(x.is_read?'':'good')+'">'+(x.is_read?'Lu':'Nouveau')+'</span></div></div>'
+          +(linkedPlayerId(x)&&playerMap.get(linkedPlayerId(x))?'<div class="muted micro" style="margin-top:6px">Joueur · <b>'+esc(playerMap.get(linkedPlayerId(x)).name)+'</b></div>':'')
           +'<h2>'+esc(x.title)+'</h2><p class="muted">'+esc(x.body)+'</p>'
           +(x.decision_status==='resolved'?'<span class="badge good">Décision prise</span>':x.decision_status==='expired'?'<span class="badge warn">Expiré</span>':'')
           +(x.action_type&&!['resolved','expired'].includes(String(x.decision_status||''))?'<div class="row" style="margin-top:10px;flex-wrap:wrap">'+inboxActionButton(x,x.action_type,x.action_label||'Ouvrir',x.action_payload,'primary')+inboxActionButton(x,x.secondary_action_type,x.secondary_action_label,x.secondary_action_payload,'soft-btn')+'</div>':'')
@@ -520,6 +554,7 @@
     };
   }
   window.tmSetInboxFilter=function(value){tmInboxFilter=value||'all';render();};
+  window.tmSetInboxPlayer=function(value){tmInboxPlayerId=Number(value||0);render();};
 
   const oldLauncher=typeof launcherPage==='function'?launcherPage:null;
   if(oldLauncher){

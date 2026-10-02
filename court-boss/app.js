@@ -4703,7 +4703,7 @@ window.simulateWeek=async()=>{
     return;
   }
   const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training,difficulty:local.difficulty||'normal',player_training:local.playerTraining||{}})});
-  local.lastTrainingReport=sim.training||null;
+  local.lastTrainingReport=sim.training||null;local.lastAcademyTrainingReport=sim.academyPlayerTraining||null;
   local.date=sim.date||nextDate;local.week=sim.week||nextWeek;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}
   if(sim.userDoublesRanking){cr.doubles_rank=sim.userDoublesRanking.rank;cr.doubles_points=sim.userDoublesRanking.points}

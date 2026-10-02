@@ -8829,7 +8829,7 @@ Deno.serve(async(req:Request)=>{
         staff_bonus:Number(finState.data?.staff_bonus||0)+staffPerformanceBonus
       }).eq("id","demo");
     }
-    await db.from("news_items").insert({body:userRound==="Champion"?String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" remportent le double à "+t.name+" !":String(c.player_name||anthony.name||"Le joueur")+" et "+partner.name+" terminent "+userRound+" en double à "+t.name+"."});
+    await db.from("news_items").insert({body:userRound==="Champion"?String(anthony.name||c.player_name||"Le joueur")+" et "+partner.name+" remportent le double à "+t.name+" !":String(anthony.name||c.player_name||"Le joueur")+" et "+partner.name+" terminent "+userRound+" en double à "+t.name+"."});
     await recordFinanceTransactions([
       {transaction_key:"doubles-run:"+run.data.id+":prize",game_date:earned,week:Number(c.week||0)||null,category:"prize_money",amount:prizeEur,source_type:"doubles_run",source_id:Number(run.data.id),description:"Prize money double · "+String(t.name),metadata:{result:userRound,partner_id:partner.id}},
       {transaction_key:"doubles-run:"+run.data.id+":travel",game_date:earned,week:Number(c.week||0)||null,category:"travel",amount:-travelCost,source_type:"doubles_run",source_id:Number(run.data.id),description:"Voyage double · "+String(t.name)},

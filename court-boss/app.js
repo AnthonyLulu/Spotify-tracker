@@ -2496,7 +2496,13 @@ function liveMatchPanel(){
 }
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
- const all=[...(local.practiceMatches||[]),...(boot.matches||[])],doublesOnly=String(career().career_focus||'mixed')==='doubles_only';
+ const activeId=activeManagedId()||primaryManagedPlayerId()||0;
+ const localMatches=(local.practiceMatches||[]).filter(m=>!m.managed_player_id||Number(m.managed_player_id)===activeId);
+ const serverMatches=(boot.matches||[]).filter(m=>{
+  const mid=Number(m.managed_player_id||0);
+  return mid?mid===activeId:activeId===primaryManagedPlayerId();
+ });
+ const all=[...localMatches,...serverMatches],doublesOnly=String(activePlayerCareerView().career_focus||'mixed')==='doubles_only';
  return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" ${doublesOnly?'disabled':''} onclick="simulatePracticeMatch()">Simulation rapide</button></div>
  ${doublesOnly?'<div class="notice good"><b>Carrière Double exclusivement</b> · les matchs simples sont coupés. Utilise le hub Double et les fiches tournoi pour jouer.</div>':liveMatchPanel()}
  <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Plan de jeu</h2>
@@ -4679,15 +4685,41 @@ window.setRecovery=mode=>{
 window.applyRecovery=()=>setMedicalProtocol('Récupération active');
 window.setTactic=(k,v)=>{local.tactics=local.tactics||{};local.tactics[k]=['aggression','risk','net'].includes(k)?Number(v):v;persist();render()}
 window.simulatePracticeMatch=async()=>{
-  const cr=career();let opp={name:'Adversaire ATP',current_ability:55,form:70,fatigue:20};
-  try{const d=await get('/api/rankings?kind=singles&offset='+Math.max(0,(cr.singles_rank||742)-3)+'&limit=5');opp=d.rows.find(x=>x.name!==cr.player_name)||opp}catch{}
-  const strength=(cr.current_ability||56)+(cr.form||72)*.18-(cr.fatigue||18)*.12+(local.tactics?.aggression||58)*.03;
-  const other=(opp.current_ability||55)+(opp.form||70)*.18-(opp.fatigue||20)*.12;
-  const win=strength>=other+(Math.random()*12-6);
-  const score=win?(Math.random()>.5?'6-4 6-3':'7-6 3-6 6-2'):(Math.random()>.5?'4-6 3-6':'6-4 4-6 3-6');
-  const md={premieres_balles:58+Math.floor(Math.random()*16)+'%',winners:18+Math.floor(Math.random()*20),fautes_directes:12+Math.floor(Math.random()*18),rallye_moyen:3+Math.floor(Math.random()*6)};
-  local.practiceMatches=local.practiceMatches||[];local.practiceMatches.unshift({tournament_name:'Match entraînement',round:'Simulation',player_a:cr.player_name||'Anthony',player_b:opp.name,winner:win?(cr.player_name||'Anthony'):opp.name,score,surface:'Dur',match_date:local.date,match_data:md});
-  cr.fatigue=clamp((cr.fatigue||18)+10,0,100);cr.form=clamp((cr.form||72)+(win?2:-1),0,100);local.career=cr;persist();render();
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const cr=activePlayerCareerView();
+ if(String(cr.career_focus||'mixed')==='doubles_only'){
+  alert('Orientation Double exclusivement : la simulation simple est désactivée pour ce joueur.');
+  return;
+ }
+ if(local.liveMatch?.status==='active'){
+  alert('Termine le match live en cours avant de lancer une simulation rapide.');
+  return;
+ }
+ try{
+  const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
+  const started=await get('/api/live-match/start',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{}})
+  });
+  let state=started;
+  for(let i=0;i<5&&!state.complete;i++){
+   state=await get('/api/live-match/advance',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({session_id:started.session.id,tactics:local.tactics||{}})
+   });
+   if(state.session?.status==='completed')break;
+  }
+  local.liveSessionId=null;
+  delete local.liveMatch;
+  delete local.liveOpponent;
+  boot=await get('/api/bootstrap');
+  if(playerId===primaryManagedPlayerId()&&boot.career){
+   local.career={...(local.career||{}),...boot.career};
+  }else{
+   await loadActiveManagedContext(true,playerId).catch(()=>{});
+  }
+  persist();render();
+ }catch(e){alert('Simulation rapide impossible : '+e.message)}
 }
 window.openMatch=idx=>{
   const all=[...(local.practiceMatches||[]),...(boot.matches||[])],m=all[idx];if(!m)return;

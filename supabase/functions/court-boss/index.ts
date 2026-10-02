@@ -1514,7 +1514,7 @@ async function captureManagedSaveSnapshot(){
   ].filter(Boolean))];
   const [
     managedPlayersAll,managedAttributesAll,managedDevelopmentAll,managedCeilingsAll,
-    managedInjuriesAll,managedTrainingLoadAll,managedSeasonPlansAll,
+    managedInjuriesAll,managedTrainingLoadAll,managedTrainingProgressAll,managedSeasonPlansAll,
     managedEntriesAll,managedDoublesEntriesAll,managedAgencyAll,managedDoublesCommitmentsAll,
     managedPartnerHistoryAll,managedPartnerOffersAll,managedPartnershipsAll,managedRelationshipsAll,
     managedSponsorsAll,managedStaffAssignmentsAll,managedNcaaRegistryAll,managedRankingPointsAll,managedDoublesRankingPointsAll
@@ -1525,6 +1525,7 @@ async function captureManagedSaveSnapshot(){
     academyManagedPlayerIds.length?db.from("player_attribute_ceilings").select("*").in("player_id",academyManagedPlayerIds).order("player_id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("injuries").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("player_training_load_profiles").select("*").in("player_id",academyManagedPlayerIds).order("player_id").order("as_of_date"):Promise.resolve({data:[],error:null} as any),
+    academyManagedPlayerIds.length?db.from("managed_player_training_progress").select("*").in("player_id",academyManagedPlayerIds).order("player_id").order("attribute"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("player_season_plans").select("*").in("player_id",academyManagedPlayerIds).order("player_id").order("season"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("entries").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("managed_doubles_entries").select("*").eq("owner_id","demo").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
@@ -1542,7 +1543,7 @@ async function captureManagedSaveSnapshot(){
   ]);
   const multiPlayerErr=
     managedPlayersAll.error||managedAttributesAll.error||managedDevelopmentAll.error||managedCeilingsAll.error||
-    managedInjuriesAll.error||managedTrainingLoadAll.error||managedSeasonPlansAll.error||
+    managedInjuriesAll.error||managedTrainingLoadAll.error||managedTrainingProgressAll.error||managedSeasonPlansAll.error||
     managedEntriesAll.error||managedDoublesEntriesAll.error||managedAgencyAll.error||managedDoublesCommitmentsAll.error||
     managedPartnerHistoryAll.error||managedPartnerOffersAll.error||managedPartnershipsAll.error||managedRelationshipsAll.error||
     managedSponsorsAll.error||managedStaffAssignmentsAll.error||managedNcaaRegistryAll.error||managedRankingPointsAll.error||managedDoublesRankingPointsAll.error;
@@ -1591,6 +1592,7 @@ async function captureManagedSaveSnapshot(){
     managed_ceilings_all:managedCeilingsAll.data??[],
     managed_injuries_all:managedInjuriesAll.data??[],
     training_load_all:managedTrainingLoadAll.data??[],
+    managed_training_progress_all:managedTrainingProgressAll.data??[],
     season_plans_all:managedSeasonPlansAll.data??[],
     managed_entries_all:managedEntriesAll.data??[],
     managed_doubles_entries_all:managedDoublesEntriesAll.data??[],
@@ -1773,6 +1775,10 @@ async function restoreManagedSaveSnapshot(snapshot:any){
       if(injuryDel.error)throw new Error("v3 injuries cleanup: "+injuryDel.error.message);
       const loadDel=await db.from("player_training_load_profiles").delete().eq("player_id",playerId);
       if(loadDel.error)throw new Error("v3 training load cleanup: "+loadDel.error.message);
+      if(model==="CB-MANAGED-SAVE-v6"){
+        const xpDel=await db.from("managed_player_training_progress").delete().eq("player_id",playerId);
+        if(xpDel.error)throw new Error("v6 managed training XP cleanup: "+xpDel.error.message);
+      }
       const seasonDel=await db.from("player_season_plans").delete().eq("player_id",playerId);
       if(seasonDel.error)throw new Error("v3 season plan cleanup: "+seasonDel.error.message);
     }
@@ -1815,6 +1821,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     await upsertMany("player_attribute_ceilings",snapshot.managed_ceilings_all,"player_id");
     await upsertMany("injuries",snapshot.managed_injuries_all,"id");
     await upsertMany("player_training_load_profiles",snapshot.training_load_all,"player_id");
+    if(model==="CB-MANAGED-SAVE-v6")await upsertMany("managed_player_training_progress",snapshot.managed_training_progress_all,"player_id,attribute");
     await upsertMany("player_season_plans",snapshot.season_plans_all,"player_id,season");
     if(["CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model)){
       await upsertMany("entries",snapshot.managed_entries_all,"id");

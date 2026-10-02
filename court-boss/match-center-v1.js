@@ -57,10 +57,10 @@
         <div><span>${safe(oppName)}</span><b>${Math.round(Number(m.opponent||70))}/100 · ${mood(m.opponent)}</b></div>
       </div>
       <div class="cb-form-grid">
-        <div><span>Forme ${safe(userName)}</span><b class="${Number(f.user_bonus||0)>0?'good':Number(f.user_bonus||0)<0?'bad':''}">${Math.round(Number(f.user||70))}/100 · ${Number(f.user_bonus||0)>0?'+':''}${Number(f.user_bonus||0)} stats</b></div>
-        <div><span>Forme ${safe(oppName)}</span><b class="${Number(f.opponent_bonus||0)>0?'good':Number(f.opponent_bonus||0)<0?'bad':''}">${Math.round(Number(f.opponent||70))}/100 · ${Number(f.opponent_bonus||0)>0?'+':''}${Number(f.opponent_bonus||0)} stats</b></div>
+        <div><span>Forme ${safe(userName)}</span><b class="${Number(f.user_multiplier||1)>1?'good':Number(f.user_multiplier||1)<1?'bad':''}">${Math.round(Number(f.user||70))}/100 · ${fm(f.user_multiplier)}</b></div>
+        <div><span>Forme ${safe(oppName)}</span><b class="${Number(f.opponent_multiplier||1)>1?'good':Number(f.opponent_multiplier||1)<1?'bad':''}">${Math.round(Number(f.opponent||70))}/100 · ${fm(f.opponent_multiplier)}</b></div>
       </div>
-      <div class="muted micro cb-env-note">Météo, surface, fatigue et moral alimentent le même kernel. La forme ajoute temporairement de -3 à +3 aux attributs de match : aucune note de base n’est réécrite.</div>
+      <div class="muted micro cb-env-note">Météo, surface, fatigue et moral alimentent le même kernel. La forme est un multiplicateur temporaire de match : aucune note de base n’est réécrite.</div>
     </div>`;
   }
 

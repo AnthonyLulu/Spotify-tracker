@@ -9546,7 +9546,7 @@ Deno.serve(async(req:Request)=>{
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
-      form:{user:userForm,opponent:oppForm,user_bonus:liveFormBonus(userForm),opponent_bonus:liveFormBonus(oppForm),user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_integer_bonus_runtime_only",persists_to_player_attributes:false,min_bonus:-3,max_bonus:3},
+      form:{user:userForm,opponent:oppForm,user_bonus:liveFormBonus(userForm),opponent_bonus:liveFormBonus(oppForm),user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_multiplier_runtime_only",persists_to_player_attributes:false,min_multiplier:.94,max_multiplier:1.06,source_bonus_step_min:-3,source_bonus_step_max:3},
       tournament:t?{
         id:Number(t.id),name:String(t.name||"Tournoi"),city:t.city||null,country:t.country||null,
         venue:t.venue||null,circuit:t.circuit||null,category:t.category||null,

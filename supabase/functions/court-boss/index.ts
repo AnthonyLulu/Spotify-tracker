@@ -9380,6 +9380,16 @@ Deno.serve(async(req:Request)=>{
     for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619)}
     return Math.abs(h>>>0);
   };
+  const liveFormModifier=(value:any)=>{
+    const form=Math.max(0,Math.min(100,Number(value??70)));
+    if(form>=92)return 3;
+    if(form>=82)return 2;
+    if(form>=72)return 1;
+    if(form>=55)return 0;
+    if(form>=45)return -1;
+    if(form>=35)return -2;
+    return -3;
+  };
   const buildLiveMatchEnvironment=(t:any,managed:any,opp:any,gameDate:string,surfaceOverride?:string)=>{
     const rawSurface=String(surfaceOverride||t?.surface||"Dur");
     const indoor=Boolean(t?.indoor)||/intérieur|indoor/i.test(rawSurface)||/indoor/i.test(String(t?.environment_profile||t?.environment||""));
@@ -9401,12 +9411,16 @@ Deno.serve(async(req:Request)=>{
     )));
     const homeUser=Boolean(t?.country&&managed?.country&&String(t.country)===String(managed.country));
     const homeOpp=Boolean(t?.country&&opp?.country&&String(t.country)===String(opp.country));
+    const userForm=Math.max(0,Math.min(100,Number(managed?.form??70)));
+    const oppForm=Math.max(0,Math.min(100,Number(opp?.form??70)));
+    const userFormBonus=liveFormModifier(userForm),oppFormBonus=liveFormModifier(oppForm);
     return {
       engine:"CB-MATCH-ENGINE-v2",
       surface,indoor,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
+      form:{user:userForm,opponent:oppForm,user_bonus:userFormBonus,opponent_bonus:oppFormBonus,scale:"all_match_attributes",min:-3,max:3},
       tournament:t?{
         id:Number(t.id),name:String(t.name||"Tournoi"),city:t.city||null,country:t.country||null,
         venue:t.venue||null,circuit:t.circuit||null,category:t.category||null,
@@ -9695,6 +9709,8 @@ Deno.serve(async(req:Request)=>{
     const meta:any=session.data.stats?._meta||{};
     const weather:any=meta.weather||{};
     const mood:any=meta.mood||{};
+    const formMeta:any=meta.form||{};
+    const userFormBonus=Number(formMeta.user_bonus||0),oppFormBonus=Number(formMeta.opponent_bonus||0);
     const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
     const altitude=Math.max(0,Number(meta.altitude_m||0));
     const wind=Math.max(0,Number(weather.wind_kph||0));
@@ -9730,14 +9746,15 @@ Deno.serve(async(req:Request)=>{
     const touchEdge=(avgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"])
       -avgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"]));
     const surfaceEdge=Number(sAttr?.[surfaceKey]??10)-Number(rAttr?.[surfaceKey]??10);
-    const pointAttrEdge=Math.max(-.035,Math.min(.035,
+    const formEdge=serverIsUser?userFormBonus-oppFormBonus:oppFormBonus-userFormBonus;
+    const pointAttrEdge=Math.max(-.05,Math.min(.05,
       groundEdge*.00135+movementEdge*.00085+mentalEdge*(pressure?.00145:.00070)+
-      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011
+      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+formEdge*.0032
     ));
 
     let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
       -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)
-      -wind*.00075-Math.max(0,temperature-30)*.0012));
+      -wind*.00075-Math.max(0,temperature-30)*.0012+formEdge*.0016));
     const firstServeIn=Math.random()<firstIn;
     const dfBase=Number(tm.double_fault_pct||4)/100;
     const doubleFault=!firstServeIn&&Math.random()<Math.max(.006,Math.min(.12,
@@ -9753,7 +9770,7 @@ Deno.serve(async(req:Request)=>{
       serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     }
     const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
-    serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018;
+    serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0032;
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
 
     const serverWon=!doubleFault&&Math.random()<serverWinProb;
@@ -9993,6 +10010,8 @@ Deno.serve(async(req:Request)=>{
     const meta:any=session.data.stats?._meta||{};
     const weather:any=meta.weather||{};
     const mood:any=meta.mood||{};
+    const formMeta:any=meta.form||{};
+    const userFormBonus=Number(formMeta.user_bonus||0),oppFormBonus=Number(formMeta.opponent_bonus||0);
     const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
     const altitude=Math.max(0,Number(meta.altitude_m||0));
     const wind=Math.max(0,Number(weather.wind_kph||0));
@@ -10015,7 +10034,8 @@ Deno.serve(async(req:Request)=>{
         (Number(session.data.momentum||50)-50)*.0008;
     }
     const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
-    serverPointP+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018;
+    const serverFormBonus=serverIsUser?userFormBonus:oppFormBonus,returnerFormBonus=serverIsUser?oppFormBonus:userFormBonus;
+    serverPointP+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+(serverFormBonus-returnerFormBonus)*.0032;
     serverPointP=Math.max(.32,Math.min(.86,serverPointP));
     const q=1-serverPointP;
     const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);

@@ -10853,25 +10853,35 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="choose_partner"){
-      if(String(career.data.career_focus||"mixed")==="singles_only"){
+      const primaryId=Number(career.data.managed_player_id||0);
+      const playerId=n(body?.player_id,primaryId,1,99999999);
+      const isPrimary=playerId===primaryId;
+
+      if(!isPrimary){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      }
+
+      const [anth,partner]=await Promise.all([
+        db.from("players").select("id,name,country,career_focus").eq("id",playerId).maybeSingle(),
+        db.from("players").select("id,name,current_ability,doubles_ranking,career_focus").eq("id",id).maybeSingle()
+      ]);
+      if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
+
+      const anthFocus=String(anth.data.career_focus||(isPrimary?career.data.career_focus:"mixed")||"mixed");
+      if(anthFocus==="singles_only"){
         return h({error:"Orientation Simple exclusivement : choisis d'abord une autre orientation pour former une paire."},409);
       }
-      const anth=await getManagedPlayer("id");
-      const partner=await db.from("players").select("id,name,current_ability,doubles_ranking,career_focus").eq("id",id).maybeSingle();
-      if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
       if(Number(anth.data.id)===Number(id))return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
       if(String(partner.data.career_focus||"mixed")==="singles_only")return h({error:"Ce joueur a choisi une carrière Simple exclusivement."},409);
 
       const today=String(career.data?.career_date||AGE_REFERENCE_DATE);
       const season=Number(today.slice(0,4));
       const oldCommit=await db.from("player_doubles_commitments")
-        .select("*").eq("player_id",Number(anth.data.id)).maybeSingle();
+        .select("*").eq("player_id",playerId).maybeSingle();
 
-      const metric=await db.rpc("doubles_pair_metrics",{
-        p_a:Number(anth.data.id),
-        p_b:Number(id),
-        p_date:today
-      });
+      const metric=await db.rpc("doubles_pair_metrics",{p_a:playerId,p_b:Number(id),p_date:today});
       if(metric.error)return h({error:metric.error.message},500);
       const m:any=(metric.data??[])[0]||{};
       const chemistry=Number(m.chemistry||60);
@@ -10879,17 +10889,18 @@ Deno.serve(async(req:Request)=>{
       const pair_strength=Number(m.pair_strength||60);
       const affinityScore=Number(m.affinity_score||0);
 
-      await db.from("doubles_partnerships").delete().eq("player_a_id",anth.data.id);
+      const oldPairs=await db.from("doubles_partnerships")
+        .delete().or("player_a_id.eq."+playerId+",player_b_id.eq."+playerId);
+      if(oldPairs.error)return h({error:oldPairs.error.message},500);
+
       const ins=await db.from("doubles_partnerships").insert({
-        player_a_id:anth.data.id,
-        player_b_id:id,
-        chemistry,compatibility,pair_strength
+        player_a_id:playerId,player_b_id:id,chemistry,compatibility,pair_strength
       });
       if(ins.error)return h({error:ins.error.message},500);
 
       if(!oldCommit.error&&oldCommit.data&&oldCommit.data.active&&Number(oldCommit.data.primary_partner_id)!==Number(id)){
         await db.from("player_doubles_partner_history").insert({
-          player_id:Number(anth.data.id),
+          player_id:playerId,
           partner_id:Number(oldCommit.data.primary_partner_id),
           start_date:String(oldCommit.data.started_at||today),
           end_date:today,
@@ -10901,10 +10912,9 @@ Deno.serve(async(req:Request)=>{
         });
       }
 
-      const commitment=Math.max(60,Math.min(100,Math.round(affinityScore)+
-        (String(career.data?.career_focus||"mixed")==="doubles_only"?6:2)));
+      const commitment=Math.max(60,Math.min(100,Math.round(affinityScore)+(anthFocus==="doubles_only"?6:2)));
       const commitmentUp=await db.from("player_doubles_commitments").upsert({
-        player_id:Number(anth.data.id),
+        player_id:playerId,
         season,
         primary_partner_id:Number(id),
         started_at:(!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)===Number(id))
@@ -10916,17 +10926,17 @@ Deno.serve(async(req:Request)=>{
           ((!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)!==Number(id))?1:0),
         previous_partner_id:(!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)!==Number(id))
           ?Number(oldCommit.data.primary_partner_id):oldCommit.data?.previous_partner_id||null,
-        reason:String(career.data?.career_focus||"mixed")==="doubles_only"
+        reason:anthFocus==="doubles_only"
           ?"Partenaire principal choisi pour une carrière exclusivement en double."
           :"Partenaire principal choisi par le joueur.",
-        source_label:"Utilisateur · partenaire double",
+        source_label:"Utilisateur · partenaire double · groupe géré",
         active:true,
         updated_at:new Date().toISOString()
       },{onConflict:"player_id"});
       if(commitmentUp.error)return h({error:commitmentUp.error.message},500);
 
-      const pa=Math.min(Number(anth.data.id),Number(id)),pb=Math.max(Number(anth.data.id),Number(id));
-      await db.from("player_relationships").upsert({
+      const pa=Math.min(playerId,Number(id)),pb=Math.max(playerId,Number(id));
+      const rel=await db.from("player_relationships").upsert({
         player_a_id:pa,player_b_id:pb,
         relation_type:chemistry>=91&&compatibility>=86?"Ami / partenaire":"Partenaire de double",
         affinity:chemistry,
@@ -10935,18 +10945,24 @@ Deno.serve(async(req:Request)=>{
         closeness:Math.round(chemistry*.70+compatibility*.30),
         is_simulated:true,
         source_label:"Court Boss · relation issue du choix de partenaire",
-        formed_date:today,
-        last_update:today,
-        active:true
+        formed_date:today,last_update:today,active:true
       },{onConflict:"player_a_id,player_b_id"});
+      if(rel.error)return h({error:rel.error.message},500);
+
+      await db.from("inbox_items").insert({
+        kind:"double",title:"Nouveau partenaire · "+String(anth.data.name||"Joueur"),
+        body:String(partner.data.name||"Le joueur")+" devient son partenaire principal.",
+        action_route:"doubles",is_read:false,related_entity_type:"player",related_entity_id:playerId
+      });
 
       return h({
-        ok:true,chemistry,compatibility,pair_strength,
-        affinity_score:affinityScore,
-        commitment,
-        primary_partner:true
+        ok:true,player_id:playerId,player_name:String(anth.data.name||""),
+        partner_id:Number(id),partner_name:String(partner.data.name||""),
+        chemistry,compatibility,pair_strength,affinity_score:affinityScore,
+        commitment,primary_partner:true
       });
     }
+
 
     if(action==="davis_role"){
       const role=String(body?.role||"Réserve").slice(0,40);
@@ -11410,12 +11426,20 @@ Deno.serve(async(req:Request)=>{
       const field=String(body?.field||"");
       const allowed=["player_name","country","style","age","height_cm","weight_kg"];
       if(!allowed.includes(field))return h({error:"Champ non modifiable"},400);
+
+      const primaryId=Number(career.data.managed_player_id||0);
+      const playerId=n(body?.player_id,primaryId,1,99999999);
+      const isPrimary=playerId===primaryId;
+      if(!isPrimary){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      }
+
       let value:any=body?.value;
       if(["age","height_cm","weight_kg"].includes(field))value=n(value,0,1,250);
       else value=String(value??"").trim().slice(0,80);
-      const up:any={updated_at:new Date().toISOString()};up[field]=value;
-      const cu=await db.from("career_state").update(up).eq("id","demo");
-      if(cu.error)return h({error:cu.error.message},500);
+
       const pu:any={};
       if(field==="player_name")pu.name=value;
       if(field==="country")pu.country=value;
@@ -11423,13 +11447,20 @@ Deno.serve(async(req:Request)=>{
       if(field==="age")pu.age=value;
       if(field==="height_cm")pu.height_cm=value;
       if(field==="weight_kg")pu.weight_kg=value;
+
       if(Object.keys(pu).length){
-        const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
-        if(managed.error||!managed.data?.managed_player_id)return h({error:managed.error?.message||"Managed player missing"},500);
-        const p=await db.from("players").update(pu).eq("id",managed.data.managed_player_id);
+        const p=await db.from("players").update(pu).eq("id",playerId).select("id,name,country,style,age,height_cm,weight_kg").maybeSingle();
         if(p.error)return h({error:p.error.message},500);
       }
-      return h({ok:true,field,value});
+
+      if(isPrimary){
+        const up:any={updated_at:new Date().toISOString()};
+        up[field]=value;
+        const cu=await db.from("career_state").update(up).eq("id","demo");
+        if(cu.error)return h({error:cu.error.message},500);
+      }
+
+      return h({ok:true,field,value,player_id:playerId,is_primary:isPrimary});
     }
 
 

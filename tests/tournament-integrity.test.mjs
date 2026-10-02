@@ -102,7 +102,8 @@ function backend(){
 test('Entry API returns authoritative decisions for all supported modes without writes',async()=>{
  const b=backend();const r=await b.handler(new Request('https://example.test/api/tournament-entry-status?id=7'));const result=await r.json();
  assert.equal(r.status,200);
- assert.deepEqual(['direct','qualifying','wildcard','alternate','protected','protected_qualifying'].filter(k=>!Object.hasOwn(result.entry_rules,k)),[]);\n assert.equal(result.entry_rules.player_id,1);assert.equal(result.entry_rules.persisted_entry,null);
+ assert.deepEqual(['direct','qualifying','wildcard','alternate','protected','protected_qualifying'].filter(k=>!Object.hasOwn(result.entry_rules,k)),[]);
+ assert.equal(result.entry_rules.player_id,1);assert.equal(result.entry_rules.persisted_entry,null);
  assert.equal(result.entry_rules.wildcard.eligible,false);
  assert.equal(result.entry_rules.protected.entry_method,'protected');
  assert.equal(b.writes.length,0);
@@ -169,7 +170,8 @@ test('Backend fills a partial active doubles field instead of capping projection
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.doesNotMatch(code,/wanted=Math\.min\(32,drawSize\)/);
  assert.match(code,/doublesMain\.length<doublesDrawSize/);
- assert.match(code,/const pairPoolTarget=Math\.max\(0,drawSize-1\+\(managedDoubleQualifying\?3:0\)\)/);\n assert.match(code,/pairs\.length<pairPoolTarget/);
+ assert.match(code,/const pairPoolTarget=Math\.max\(0,drawSize-1\+\(managedDoubleQualifying\?3:0\)\)/);
+ assert.match(code,/pairs\.length<pairPoolTarget/);
  assert.match(code,/source:isJuniorDouble\?"junior-ranking-projection":"ranking-projection"/);
 });
 
@@ -276,7 +278,8 @@ test('Doubles entry status is server authoritative and uses combined best rankin
 
 test('Doubles draw composition follows ATP Challenger ITF and Grand Slam slots',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.match(code,/model:"atp_250_2026"/);\n assert.match(code,/model:"atp_500_2026"/);
+ assert.match(code,/model:"atp_250_2026"/);
+ assert.match(code,/model:"atp_500_2026"/);
  assert.match(code,/model:"masters_1000_2026"/);
  assert.match(code,/const advance=Math\.min\(10,draw\),onsite=/);
  assert.match(code,/return \{draw,direct:advance\+onsite,advance,onsite,wildcards:/);

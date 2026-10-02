@@ -4843,6 +4843,8 @@ window.simulateWeek=async()=>{
     local.career=cr;persist();
     boot=await get('/api/bootstrap');
     if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
+    const rolloverActiveId=activeManagedId();
+    if(rolloverActiveId&&rolloverActiveId!==primaryManagedPlayerId())await loadActiveManagedContext(true,rolloverActiveId).catch(()=>{});
     trainingPreview=null;careerHub=null;
     const autosave=await saveCareerSlot(0,'autosave',true);
     if(!autosave?.ok)throw new Error('La semaine a été validée côté serveur mais l’autosave a échoué. Ouvre le Save Center et sauvegarde avant de continuer.');
@@ -4870,6 +4872,8 @@ window.simulateWeek=async()=>{
   local.career=cr;persist();
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
+  const weeklyActiveId=activeManagedId();
+  if(weeklyActiveId&&weeklyActiveId!==primaryManagedPlayerId())await loadActiveManagedContext(true,weeklyActiveId).catch(()=>{});
   trainingPreview=null;careerHub=null;
   const autosave=await saveCareerSlot(0,'autosave',true);
   if(!autosave?.ok)throw new Error('La semaine a été validée côté serveur mais l’autosave a échoué. Ouvre le Save Center et sauvegarde avant de continuer.');

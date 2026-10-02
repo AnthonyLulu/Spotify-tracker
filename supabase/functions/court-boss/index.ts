@@ -5252,8 +5252,17 @@ Deno.serve(async(req:Request)=>{
     let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const current=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
-    const managed=await getManagedPlayer("id,name,age,birth_date,current_ability,potential");
-    if(managed.error||!managed.data)return h({error:managed.error?.message||"Managed player missing"},500);
+    const primaryPlayerId=Number(current.data.managed_player_id||0);
+    const requestedPlayerId=n(body?.player_id,primaryPlayerId,1,99999999);
+    const isPrimary=requestedPlayerId===primaryPlayerId;
+    const managed=isPrimary
+      ?await getManagedPlayer("id,name,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,injury_status,career_focus")
+      :await db.from("players").select("id,name,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,injury_status,career_focus").eq("id",requestedPlayerId).maybeSingle();
+    if(managed.error||!managed.data)return h({error:managed.error?.message||"Academy player missing"},500);
+    if(!isPrimary){
+      const rosterCheck=await db.from("academy_roster").select("id").eq("player_id",requestedPlayerId).eq("status","active").maybeSingle();
+      if(rosterCheck.error||!rosterCheck.data)return h({error:"Ce joueur ne fait pas partie de ton académie."},403);
+    }
     const [devRow,staffRows,facilityRows]=await Promise.all([
       db.from("player_development_profiles")
         .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,resilience,discipline,competitive_drive,coaching_environment,staff_stability,development_context,burnout_susceptibility,confidence_volatility")
@@ -5266,9 +5275,13 @@ Deno.serve(async(req:Request)=>{
     const weights:any={"Service":2,"Retour":2,"Coup droit":2,"Revers":2,"Déplacements":3,"Endurance":3,"Match play":3,"Double":2,"Récupération":0,"Repos":-1};
     const load=sessions.reduce((sum:number,s:string)=>sum+Number(weights[s]??1),0);
     const playerAge=ageAt(managed.data.birth_date,String(current.data.career_date||AGE_REFERENCE_DATE),managed.data.age)||Number(managed.data.age||24);
-    const fatigue=Number(current.data.fatigue||0),fitness=Number(current.data.fitness||90),morale=Number(current.data.morale||70);
-    const injury=String(current.data.injury_status||"Fit");
-    const careerFocus=String(current.data.career_focus||"mixed");
+    const fatigue=Number(isPrimary?current.data.fatigue:(managed.data as any).fatigue||0);
+    const fitness=Number(isPrimary?current.data.fitness:(managed.data as any).fitness||90);
+    const morale=Number(isPrimary?current.data.morale:(managed.data as any).morale||70);
+    const injury=String((isPrimary?current.data.injury_status:(managed.data as any).injury_status)||"Fit");
+    const careerFocus=String((isPrimary?current.data.career_focus:(managed.data as any).career_focus)||"mixed");
+    const difficultyKey=["discovery","normal","manager","hardcore"].includes(String(body?.difficulty||"normal"))?String(body?.difficulty||"normal"):"normal";
+    const difficultyTrainingMult=({discovery:1.12,normal:1,manager:.94,hardcore:.88} as any)[difficultyKey]||1;
     const personalBase=Math.max(.76,Math.min(1.26,
       .72+Number(dev.development_rate||10)*.012+Number(dev.professionalism||10)*.010+Number(dev.coachability||10)*.011+Number(dev.staff_stability||8)*.004
     ));
@@ -5316,7 +5329,7 @@ Deno.serve(async(req:Request)=>{
     if(maxHardRun>=4)warnings.push("Quatre séances exigeantes consécutives ou plus : surcharge probable.");
     if(careerFocus==="doubles_only"&&sessions.filter((s:string)=>s==="Double").length<2)warnings.push("Profil double exclusif : ajoute au moins deux séances Double.");
     if(careerFocus==="singles_only"&&sessions.filter((s:string)=>s==="Double").length>1)warnings.push("Profil simple exclusif : trop de volume consacré au Double.");
-    const multiplier=personalBase*ageMult*conditionMult*(.84+avgStaff/80+avgFacility/20);
+    const multiplier=personalBase*ageMult*conditionMult*(.84+avgStaff/80+avgFacility/20)*difficultyTrainingMult;
     const risk=injury!=="Fit"?"Élevé":load>maxLoad+2||fatigue>=65?"Élevé":load>maxLoad||fatigue>=50?"Modéré":"Maîtrisé";
     return h({
       ok:true,model:"development-v2",player_name:managed.data.name,age:playerAge,
@@ -5324,7 +5337,7 @@ Deno.serve(async(req:Request)=>{
       current_stars:Math.max(.5,Math.min(5,Math.round(Number(managed.data.current_ability||0)/10)/2)),
       potential_stars:Math.max(.5,Math.min(5,Math.round(Number(managed.data.potential||0)/10)/2)),
       load,recommended_load:{min:minLoad,max:maxLoad},risk,multiplier:Number(multiplier.toFixed(3)),
-      fatigue,fitness,morale,injury_status:injury,career_focus:careerFocus,
+      fatigue,fitness,morale,injury_status:injury,career_focus:careerFocus,difficulty:difficultyKey,is_primary:isPrimary,
       development:{type:String(dev.development_type||"standard"),phase:String(dev.development_context?.phase||((playerAge<=21&&Number(managed.data.potential||0)-Number(managed.data.current_ability||0)>=12)?"prospect":playerAge<Number(dev.peak_age||25)?"developing":playerAge>Number(dev.decline_start_age||30)?"decline":Number(managed.data.current_ability||0)>=Number(managed.data.potential||0)-2?"plateau":"prime")),development_rate:Number(dev.development_rate||10),professionalism:Number(dev.professionalism||10),coachability:Number(dev.coachability||10),resilience:Number(dev.resilience||10),discipline:Number(dev.discipline||10),competitive_drive:Number(dev.competitive_drive||10),confidence_volatility:Number(dev.confidence_volatility||10),burnout_susceptibility:Number(dev.burnout_susceptibility||10),peak_age:Number(dev.peak_age||25),decline_start_age:Number(dev.decline_start_age||30)},
       staff_score:Number(avgStaff.toFixed(1)),facility_score:Number(avgFacility.toFixed(1)),
       targets:Object.entries(targetScores).map(([session,score])=>({session,score:Number(Number(score).toFixed(2))})).sort((a:any,b:any)=>b.score-a.score),
@@ -5398,6 +5411,8 @@ Deno.serve(async(req:Request)=>{
     }).eq("id","demo");
     if(sync.error)return h({error:sync.error.message},500);
 
+    const difficultyKey=["discovery","normal","manager","hardcore"].includes(String(body?.difficulty||"normal"))?String(body?.difficulty||"normal"):"normal";
+    const difficultyTrainingMult=({discovery:1.12,normal:1,manager:.94,hardcore:.88} as any)[difficultyKey]||1;
     let trainingSessions=Array.isArray(body?.training)?body.training.slice(0,7):[];
     const careerFocus=String(current.data.career_focus||"mixed");
     if(careerFocus==="doubles_only"&&!trainingSessions.length){
@@ -5480,7 +5495,7 @@ Deno.serve(async(req:Request)=>{
             :careerFocus==="singles_priority"&&String(s)==="Double"
               ?.90
               :1;
-        const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult*personalDevMult;
+        const mult=(.67+sessionStaff(String(s))/36+avgFacility/12)*focusMult*personalDevMult*difficultyTrainingMult;
         const targets=map[String(s)]||[];
         const spread=Math.max(.42,Math.min(1,2.4/Math.max(1,targets.length)));
         for(const a of targets)xp[a]=(xp[a]||0)+.52*mult*spread;
@@ -5768,6 +5783,64 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
+    const academyPlans=body?.player_training&&typeof body.player_training==="object"?body.player_training:{};
+    const academyPlayerTraining:any={processed:0,attribute_improvements:0,players:[]};
+    const secondaryRoster=await db.from("academy_roster")
+      .select("id,player_id,development_focus,squad_role,source_youth_id")
+      .eq("status","active").neq("squad_role","Joueur principal").is("source_youth_id",null);
+    if(secondaryRoster.error)return h({error:secondaryRoster.error.message},500);
+    const focusMap:any={
+      "Service":"Service","Retour":"Retour","Coup droit":"Fond de court","Revers":"Fond de court",
+      "Déplacements":"Déplacements","Endurance":"Physique","Match play":"Mental","Double":"Double"
+    };
+    const focusAttr:any={
+      "Service":"serve_precision","Retour":"return_game","Fond de court":"forehand",
+      "Déplacements":"movement","Physique":"stamina","Mental":"tactics","Double":"doubles"
+    };
+    for(const rr of secondaryRoster.data??[]){
+      const pid=Number((rr as any).player_id||0);
+      const planRaw=(academyPlans as any)[String(pid)];
+      const plan=Array.isArray(planRaw)?planRaw.slice(0,7).map(String):[];
+      if(!pid||!plan.length)continue;
+      const count:any={};
+      for(const ss of plan){
+        const f=focusMap[ss];if(f)count[f]=(count[f]||0)+1;
+      }
+      const focus=(Object.entries(count).sort((a:any,b:any)=>Number(b[1])-Number(a[1]))[0]?.[0] as string)||String((rr as any).development_focus||"Équilibré");
+      const rosterFocus=await db.from("academy_roster").update({development_focus:focus}).eq("id",(rr as any).id);
+      if(rosterFocus.error)return h({error:rosterFocus.error.message},500);
+      await db.from("academy_members").update({development_focus:focus}).eq("player_id",pid).eq("status","active");
+
+      const playerRow=await db.from("players").select("id,name,current_ability,potential,form,fitness,morale,fatigue").eq("id",pid).maybeSingle();
+      if(playerRow.error||!playerRow.data)continue;
+      const load=plan.reduce((sum:number,ss:string)=>sum+(["Endurance","Match play","Déplacements"].includes(ss)?3:["Service","Retour","Coup droit","Revers","Double"].includes(ss)?2:ss==="Récupération"?0:-1),0);
+      const p0:any=playerRow.data;
+      const fatigueDelta=Math.max(-3,Math.min(8,Math.round((load-8)/2)));
+      const conditionUp=await db.from("players").update({
+        fatigue:Math.max(0,Math.min(100,Number(p0.fatigue||15)+fatigueDelta)),
+        fitness:Math.max(45,Math.min(100,Number(p0.fitness||90)+(load<=10?1:-2))),
+        form:Math.max(35,Math.min(100,Number(p0.form||70)+(load>=7&&load<=12?1:0))),
+        morale:Math.max(35,Math.min(100,Number(p0.morale||75)+(load>=6&&load<=12?1:0)))
+      }).eq("id",pid);
+      if(conditionUp.error)return h({error:conditionUp.error.message},500);
+
+      let improvement:any=null;
+      const cycle=({discovery:4,normal:5,manager:6,hardcore:7} as any)[difficultyKey]||5;
+      const attr=focusAttr[focus];
+      if(attr&&Number(p0.current_ability||0)<Number(p0.potential||0)&&((pid+week)%cycle===0)){
+        const ar=await db.from("player_attributes").select(attr).eq("player_id",pid).maybeSingle();
+        if(!ar.error&&ar.data){
+          const before=Number((ar.data as any)[attr]||10);
+          if(before<20){
+            const au=await db.from("player_attributes").update({[attr]:before+1}).eq("player_id",pid);
+            if(!au.error){improvement={attribute:attr,from:before,to:before+1};academyPlayerTraining.attribute_improvements++;}
+          }
+        }
+      }
+      academyPlayerTraining.processed++;
+      academyPlayerTraining.players.push({player_id:pid,name:String(p0.name||"Joueur"),focus,load,improvement});
+    }
+
     const academyDev=await db.rpc("simulate_academy_roster_week",{p_week:week,p_date:date});
     if(academyDev.error)return h({error:academyDev.error.message},500);
     const academyIntake=await db.rpc("academy_refresh_intake",{p_date:date});
@@ -5854,7 +5927,7 @@ Deno.serve(async(req:Request)=>{
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});
     if(careerHealth.error)return h({error:careerHealth.error.message},500);
-    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -10961,6 +11034,24 @@ Deno.serve(async(req:Request)=>{
         return h({error:(target.error||previousCareer.error||baseline.error||rankAtDate.error||doublePointsBaseline.error||doubleRankAtDate.error||principalRoster.error||principalMember.error)?.message||"Joueur introuvable"},404);
       }
       const p:any=target.data;
+      const extraIds=[...new Set((Array.isArray(body?.additional_player_ids)?body.additional_player_ids:[])
+        .map((x:any)=>Number(x)).filter((x:number)=>Number.isFinite(x)&&x>0&&x!==Number(p.id)).slice(0,7))];
+      let extraPlayers:any[]=[];
+      if(extraIds.length){
+        const extraRows=await db.from("players")
+          .select("id,name,country,ranking,doubles_ranking,itf_ranking,current_ability,potential,career_status")
+          .in("id",extraIds);
+        if(extraRows.error)return h({error:extraRows.error.message},500);
+        extraPlayers=extraRows.data??[];
+        if(extraPlayers.length!==extraIds.length)return h({error:"Un des joueurs sélectionnés est introuvable."},404);
+        if(extraPlayers.some((x:any)=>String(x.career_status||"active")==="retired"))return h({error:"Un joueur retraité ne peut pas rejoindre l'académie de départ."},409);
+      }
+      const academyInput=body?.academy&&typeof body.academy==="object"?body.academy:{};
+      const academyLevel=n(academyInput?.level,2,1,4);
+      const academyCapacity=({1:2,2:4,3:6,4:8} as any)[academyLevel]||4;
+      if(1+extraPlayers.length>academyCapacity)return h({error:"Cette académie accepte au maximum "+academyCapacity+" joueurs au départ."},409);
+      const difficultyKey=["discovery","normal","manager","hardcore"].includes(String(body?.difficulty||"normal"))?String(body?.difficulty||"normal"):"normal";
+      const managerProfile=body?.manager_profile&&typeof body.manager_profile==="object"?body.manager_profile:{};
       const attrs:any=Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes||{};
       const previousId=Number(previousCareer.data?.managed_player_id||0);
       const managedIds=[...new Set([previousId,Number(p.id)].filter(Boolean))];
@@ -11101,6 +11192,36 @@ Deno.serve(async(req:Request)=>{
         if(am.error)return h({error:am.error.message},500);
       }
 
+      const academyName=String(academyInput?.name||"Court Boss Academy").trim().slice(0,80)||"Court Boss Academy";
+      const academyCountry=String(academyInput?.country||p.country||"FRA").trim().toUpperCase().slice(0,3)||"FRA";
+      const academyReputation=n(academyInput?.reputation,academyLevel===4?80:academyLevel===3?66:academyLevel===2?50:34,20,95);
+      const academyBudget=Math.max(5000,Math.min(200000,Number(academyInput?.budget||({1:9000,2:15000,3:26000,4:45000} as any)[academyLevel])));
+      const academyReach=n(academyInput?.recruitment_reach,academyLevel,1,5);
+      const academyIntensity=n(academyInput?.development_intensity,academyLevel,1,5);
+      const academyUpdate=await db.from("academies").update({
+        name:academyName,country:academyCountry,academy_level:academyLevel,
+        reputation:academyReputation,budget:academyBudget,
+        youth_capacity:Math.max(academyCapacity,n(academyInput?.capacity,academyCapacity,academyCapacity,30)),
+        recruitment_reach:academyReach,development_intensity:academyIntensity
+      }).eq("id","demo");
+      if(academyUpdate.error)return h({error:academyUpdate.error.message},500);
+
+      for(let i=0;i<extraPlayers.length;i++){
+        const ep:any=extraPlayers[i];
+        const role="Joueur académie";
+        const rr=await db.from("academy_roster").insert({
+          player_id:Number(ep.id),source_youth_id:null,contract_start:startDate,contract_end:academyContractEnd,
+          weekly_cost:0,squad_role:role,development_focus:"Équilibré",status:"active"
+        });
+        if(rr.error)return h({error:"Ajout académie impossible pour "+String(ep.name)+": "+rr.error.message},500);
+        const mm=await db.from("academy_members").insert({
+          member_type:"player",player_id:Number(ep.id),youth_id:null,display_name:String(ep.name),
+          country:String(ep.country||"FRA"),role,development_focus:"Équilibré",weekly_cost:0,
+          contract_end:academyContractEnd,status:"active",joined_at:startDate
+        });
+        if(mm.error)return h({error:"Ajout membre impossible pour "+String(ep.name)+": "+mm.error.message},500);
+      }
+
       const principalContract=previousPrincipalName
         ?await db.from("contracts").select("id").eq("subject_type","player").eq("subject_name",previousPrincipalName).eq("status","active").limit(1).maybeSingle()
         :await db.from("contracts").select("id").eq("subject_type","player").eq("role","Joueur").eq("status","active").eq("weekly_salary",0).limit(1).maybeSingle();
@@ -11145,12 +11266,26 @@ Deno.serve(async(req:Request)=>{
       await db.rpc("refresh_sponsor_offer_eligibility",{p_date:startDate});
       await Promise.all([
         db.from("news_items").insert({body:"Nouvelle carrière lancée avec "+p.name+"."}),
-        db.from("inbox_items").insert({
-          kind:"career",title:"Bienvenue dans ta nouvelle carrière",
-          body:"Tu prends en main "+p.name+" au "+startDate+". Commence par définir ton plan de saison, ton staff et tes objectifs.",
-          action_route:"careerhub",game_date:startDate,priority:"high",action_type:"open_route",action_label:"Ouvrir le Bureau manager",
-          action_payload:{route:"careerhub"},decision_status:"info",is_read:false
-        })
+        db.from("inbox_items").insert([
+          {
+            kind:"career",title:"Bienvenue, "+String(managerProfile?.name||"manager"),
+            body:"Tu prends en main "+p.name+" au "+startDate+" en difficulté "+difficultyKey+". Ton académie compte "+String(1+extraPlayers.length)+" joueur(s).",
+            action_route:"careerhub",game_date:startDate,priority:"high",action_type:"open_route",action_label:"Ouvrir le Bureau manager",
+            action_payload:{route:"careerhub"},decision_status:"info",is_read:false
+          },
+          {
+            kind:"academy",title:"Effectif de départ confirmé",
+            body:academyName+" ouvre la saison avec "+[p,...extraPlayers].map((x:any)=>String(x.name)).join(", ")+".",
+            action_route:"academy",game_date:startDate,priority:"normal",action_type:"open_route",action_label:"Voir l'académie",
+            action_payload:{route:"academy"},decision_status:"info",is_read:false
+          },
+          {
+            kind:"training",title:"Prépare les plans d'entraînement",
+            body:"Chaque joueur de l'académie peut recevoir son propre plan hebdomadaire. La dominante du plan influence son développement.",
+            action_route:"training",game_date:startDate,priority:"high",action_type:"open_route",action_label:"Planifier l'entraînement",
+            action_payload:{route:"training"},decision_status:"info",is_read:false
+          }
+        ])
       ]);
       return h({
         ok:true,

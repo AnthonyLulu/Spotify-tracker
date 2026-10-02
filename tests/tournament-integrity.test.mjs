@@ -102,7 +102,7 @@ function backend(){
 test('Entry API returns authoritative decisions for all supported modes without writes',async()=>{
  const b=backend();const r=await b.handler(new Request('https://example.test/api/tournament-entry-status?id=7'));const result=await r.json();
  assert.equal(r.status,200);
- assert.deepEqual(Object.keys(result.entry_rules),['direct','qualifying','wildcard','alternate','protected','protected_qualifying']);
+ assert.deepEqual(['direct','qualifying','wildcard','alternate','protected','protected_qualifying'].filter(k=>!Object.hasOwn(result.entry_rules,k)),[]);\n assert.equal(result.entry_rules.player_id,1);assert.equal(result.entry_rules.persisted_entry,null);
  assert.equal(result.entry_rules.wildcard.eligible,false);
  assert.equal(result.entry_rules.protected.entry_method,'protected');
  assert.equal(b.writes.length,0);
@@ -169,7 +169,7 @@ test('Backend fills a partial active doubles field instead of capping projection
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.doesNotMatch(code,/wanted=Math\.min\(32,drawSize\)/);
  assert.match(code,/doublesMain\.length<doublesDrawSize/);
- assert.match(code,/pairs\.length<drawSize-1/);
+ assert.match(code,/const pairPoolTarget=Math\.max\(0,drawSize-1\+\(managedDoubleQualifying\?3:0\)\)/);\n assert.match(code,/pairs\.length<pairPoolTarget/);
  assert.match(code,/source:isJuniorDouble\?"junior-ranking-projection":"ranking-projection"/);
 });
 
@@ -219,7 +219,7 @@ test('Normal doubles fields prefer documented race teams before synthetic rank p
  assert.match(code,/projectedDoublesRaceRows/);
  assert.match(code,/doubles_race_2025_full/);
  assert.match(code,/source:"doubles-race-projection"/);
- assert.match(code,/if\(pairs\.length<drawSize-1&&projectedRacePairRows\.length\)/);
+ assert.match(code,/if\(pairs\.length<pairPoolTarget&&projectedRacePairRows\.length\)/);
 });
 
 test('Doubles seeding uses race or pair ranking rather than hidden match strength',()=>{
@@ -263,7 +263,7 @@ test('Tournament engine simulates the full qualifying field and protects qualifi
 
 test('Tournament runs persist the actual entry method for later calendar checks',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.match(code,/tournament_runs"\)\.insert\(\{\s*tournament_id:tid,entry_method:entryMode/);
+ assert.match(code,/tournament_runs"\)\.insert\(\{\s*tournament_id:tid,managed_player_id:managedId,entry_method:entryMode/);
 });
 
 test('Doubles entry status is server authoritative and uses combined best rankings',()=>{
@@ -276,7 +276,7 @@ test('Doubles entry status is server authoritative and uses combined best rankin
 
 test('Doubles draw composition follows ATP Challenger ITF and Grand Slam slots',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.match(code,/model:"atp_250_500_2026"/);
+ assert.match(code,/model:"atp_250_2026"/);\n assert.match(code,/model:"atp_500_2026"/);
  assert.match(code,/model:"masters_1000_2026"/);
  assert.match(code,/const advance=Math\.min\(10,draw\),onsite=/);
  assert.match(code,/return \{draw,direct:advance\+onsite,advance,onsite,wildcards:/);

@@ -32,14 +32,30 @@ async function loadCbSeasonHistory(){
 
 function seasonPageV2(){
   const s=seasonSummary||{stats:{},singles:[],doubles:[],singles_points:[],doubles_points:[]};
-  const st=s.stats||{},cr=career();
+  const st=s.stats||{},cr=activePlayerCareerView?activePlayerCareerView():career();
   const winPct=st.matches?Math.round((st.wins||0)/st.matches*100):0;
+  const ledger=rankingLedger||{total:cr.points,active:[],non_counting:[],defending:[]};
+  const weeks=Array.isArray(ledger.defending)?ledger.defending:[];
+  const defendedWeeks=weeks.filter(w=>Number(w.points_to_defend||0)>0);
+  const nextDefense=ledger.next_defense||defendedWeeks[0]||null;
+  const counting=Array.isArray(ledger.counting)?ledger.counting:(ledger.active||[]);
+  const nonCounting=Array.isArray(ledger.non_counting)?ledger.non_counting:[];
+  const catLabel=x=>({
+    'Grand Slam':'Grand Chelem','M1000':'Masters 1000','Finals':'ATP Finals',
+    'ATP500':'ATP 500','ATP250':'ATP 250','United Cup':'United Cup',
+    'Challenger':'Challenger','ITF':'ITF','Legacy':'Historique',
+    'Reconciliation':'Réconciliation 2025'
+  }[String(x||'')]||String(x||'Autre'));
+  const weekEvents=w=>{
+    const e=Array.isArray(w?.events)?w.events:[];
+    return e.length?e.map(x=>esc(x.label)+' <b>−'+fmt(x.points)+'</b>').join('<br>'):'<span class="muted">Aucun point ne tombe</span>';
+  };
   return `
   <div class="section-head">
     <div>
       <div class="eyebrow">Saison ${String(local.date||RANKING_SNAPSHOT).slice(0,4)}</div>
       <h1>Bilan de saison</h1>
-      <div class="muted">Résultats, prize money et points 52 semaines.</div>
+      <div class="muted">Résultats, prize money, classement ATP glissant et points à défendre.</div>
     </div>
     <div class="row">
       <button class="ghost" onclick="refreshSeasonV2()">Actualiser</button>
@@ -48,10 +64,10 @@ function seasonPageV2(){
   </div>
 
   <div class="kpi-strip">
-    <div class="kpi"><span class="muted mini">Classement</span><b>#${cr.singles_rank}</b></div>
-    <div class="kpi"><span class="muted mini">Tournois</span><b>${st.tournaments||0}</b></div>
-    <div class="kpi"><span class="muted mini">Titres</span><b>${st.titles||0}</b></div>
-    <div class="kpi"><span class="muted mini">Prize money</span><b>${euro(st.prize||0)}</b></div>
+    <div class="kpi"><span class="muted mini">Classement ATP</span><b>#${fmt(ledger.rank||cr.singles_rank||0)}</b></div>
+    <div class="kpi"><span class="muted mini">Points ATP</span><b>${fmt(ledger.total||cr.points||0)}</b></div>
+    <div class="kpi"><span class="muted mini">Résultats comptables</span><b>${fmt(ledger.counting_events??counting.length)}</b></div>
+    <div class="kpi"><span class="muted mini">Prochaine défense</span><b>${nextDefense?fmt(nextDefense.points_to_defend)+' pts':'0 pt'}</b><span class="muted mini">${nextDefense?df(nextDefense.week_start):'Rien sur les prochaines semaines'}</span></div>
   </div>
 
   <div class="grid g2" style="margin-top:12px">
@@ -62,14 +78,63 @@ function seasonPageV2(){
       <div class="bar" style="margin-top:10px"><i style="width:${winPct}%"></i></div>
     </div>
     <div class="card">
-      <h2>Points ATP actifs</h2>
-      <div class="big">${fmt(rankingLedger?.total||cr.points)}</div>
-      <div class="muted mini">Expiration après 52 semaines.</div>
-      ${(rankingLedger?.active||[]).slice(0,5).map(p=>`
-        <div class="list-item row between">
-          <div><b>${esc(p.label)}</b><div class="muted mini">Expire ${df(p.expiry_date)}</div></div>
-          <b>${p.points}</b>
-        </div>`).join('')}
+      <div class="row between">
+        <div><div class="eyebrow">Classement glissant</div><h2>Portefeuille ATP</h2></div>
+        <span class="badge good">52 semaines</span>
+      </div>
+      <div class="big">${fmt(ledger.total||cr.points||0)}</div>
+      <div class="muted mini">${esc(ledger.model||'ATP 2026 · résultats comptables sur 52 semaines')}</div>
+      <div class="divider"></div>
+      <div class="row between"><span class="muted mini">Points GC / M1000 / Finals pour départage</span><b>${fmt(ledger.mandatory_tiebreak_points||0)}</b></div>
+      <div class="row between"><span class="muted mini">Événements joués</span><b>${fmt(ledger.events_played||0)}</b></div>
+    </div>
+  </div>
+
+  <div id="points-a-defendre" class="section-head" style="margin-top:18px">
+    <div>
+      <div class="eyebrow">Classement ATP</div>
+      <h2>Points à défendre · semaine par semaine</h2>
+      <div class="muted">Les points ne fondent plus chaque jour. Ils tombent à leur date de sortie du classement.</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Semaine</th><th>À défendre</th><th>Résultats qui sortent</th></tr></thead>
+        <tbody>
+          ${weeks.map((w,i)=>`<tr class="${Number(w.points_to_defend||0)>0?'defense-hot':''}">
+            <td><b>${i===0?'Cette semaine':df(w.week_start)}</b><div class="muted mini">→ ${df(w.week_end)}</div></td>
+            <td><span class="badge ${Number(w.points_to_defend||0)>=500?'bad':Number(w.points_to_defend||0)>0?'warn':''}">${fmt(w.points_to_defend||0)} pts</span></td>
+            <td>${weekEvents(w)}</td>
+          </tr>`).join('')||'<tr><td colspan="3" class="muted">Aucune échéance calculée.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:12px">
+    <div class="card">
+      <div class="row between"><div><div class="eyebrow">Comptent aujourd’hui</div><h2>Résultats comptables</h2></div><span class="badge good">${counting.length}</span></div>
+      ${counting.filter(x=>String(x.rank_category)!=='Reconciliation').slice(0,20).map(p=>`
+        <div class="list-item">
+          <div class="row between">
+            <div><b>${esc(p.label)}</b><div class="muted mini">${esc(catLabel(p.rank_category))} · sort le ${df(p.drop_date||p.expiry_date)}</div></div>
+            <b>${p.points>=0?'+':''}${fmt(p.points)} pts</b>
+          </div>
+          <div class="muted micro">${esc(p.counting_reason||'Résultat comptable')}</div>
+        </div>`).join('')||'<div class="empty">Aucun résultat comptable.</div>'}
+      ${counting.some(x=>String(x.rank_category)==='Reconciliation')?'<div class="info mini" style="margin-top:10px">Le reliquat 2025 est affiché séparément quand l’historique importé ne permet pas de reconstituer exactement chaque ligne du total ATP publié.</div>':''}
+    </div>
+    <div class="card">
+      <div class="row between"><div><div class="eyebrow">Hors total actuel</div><h2>Résultats non comptables</h2></div><span class="badge">${nonCounting.length}</span></div>
+      ${nonCounting.slice(0,20).map(p=>`
+        <div class="list-item">
+          <div class="row between">
+            <div><b>${esc(p.label)}</b><div class="muted mini">${esc(catLabel(p.rank_category))} · ${df(p.earned_date)}</div></div>
+            <b class="muted">${fmt(p.points)} pts</b>
+          </div>
+          <div class="muted micro">${esc(p.counting_reason||'Non comptabilisé')}</div>
+        </div>`).join('')||'<div class="empty">Tous les résultats disponibles comptent actuellement.</div>'}
     </div>
   </div>
 
@@ -118,7 +183,6 @@ function seasonPageV2(){
       </div>`).join('')||'<div class="card empty">Aucun double joué.</div>'}
   </div>`;
 }
-
 async function refreshSeasonV2(){
   await Promise.all([loadSeasonSummary(),loadRankingLedger(),loadCbSeasonHistory()]);
   shell(seasonPageV2());
@@ -479,7 +543,7 @@ window.nav=async function(r){
   }
   if(r==='season'){
     route='season';window.scrollTo({top:0,behavior:'smooth'});
-    if(!seasonSummary)await loadSeasonSummary();await loadCbSeasonHistory();
+    await Promise.all([seasonSummary?Promise.resolve():loadSeasonSummary(),rankingLedger?Promise.resolve():loadRankingLedger(),loadCbSeasonHistory()]);
     shell(seasonPageV2());
     return;
   }

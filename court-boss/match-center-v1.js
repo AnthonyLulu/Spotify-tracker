@@ -12,7 +12,7 @@
   const wi=c=>{const v=String(c||'').toLowerCase();if(v.includes('vent'))return '≋';if(v.includes('humide'))return '◌';if(v.includes('chaud'))return '☀';if(v.includes('nuage'))return '☁';if(v.includes('indoor'))return '⌂';return '☀'};
   const speed=v=>{const n=Number(v||1);return n<.82?'Lent':n<.96?'Moyen-lent':n<1.08?'Moyen':n<1.2?'Rapide':'Très rapide'};
   const mood=v=>{const n=Number(v||70);return n>=86?'En feu':n>=75?'Confiant':n>=62?'Stable':n>=50?'Tendu':'Fragile'};
-  const tact=()=>({aggression:58,risk:52,net:28,returnPos:'Neutre',serveTarget:'Mixte',focusSide:'Mixte',tempo:'Normal',variety:'Équilibrée',effort:70,...(local.tactics||{})});
+  const tact=()=>({aggression:58,risk:52,net:28,returnPos:'Neutre',servePattern:'Mixte',targetWing:'Mixte',tempo:'Neutre',spin:'Mixte',effort:60,...(local.tactics||{})});
 
   window.cbSetMatchTactic=(k,v)=>{
     local.tactics=local.tactics||{};
@@ -52,12 +52,12 @@
       <div class="cb-coach-slider"><div><span>Agressivité</span><b>${t.aggression}%</b></div><input type="range" min="1" max="100" value="${t.aggression}" oninput="cbSetMatchTactic('aggression',this.value)"></div>
       <div class="cb-coach-slider"><div><span>Risque</span><b>${t.risk}%</b></div><input type="range" min="1" max="100" value="${t.risk}" oninput="cbSetMatchTactic('risk',this.value)"></div>
       <div class="cb-coach-slider"><div><span>Filet</span><b>${t.net}%</b></div><input type="range" min="1" max="100" value="${t.net}" oninput="cbSetMatchTactic('net',this.value)"></div>
-      <div class="cb-coach-slider"><div><span>Effort</span><b>${t.effort}%</b></div><input type="range" min="45" max="100" value="${t.effort}" oninput="cbSetMatchTactic('effort',this.value)"></div>
+      <div class="cb-coach-slider"><div><span>Effort</span><b>${t.effort}%</b></div><input type="range" min="20" max="100" value="${t.effort}" oninput="cbSetMatchTactic('effort',this.value)"></div>
       <label>Retour<select onchange="cbSetMatchTactic('returnPos',this.value)"><option ${t.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${t.returnPos==='Neutre'?'selected':''}>Neutre</option><option ${t.returnPos==='Reculée'?'selected':''}>Reculée</option></select></label>
-      <label>Cible service<select onchange="cbSetMatchTactic('serveTarget',this.value)"><option ${t.serveTarget==='Mixte'?'selected':''}>Mixte</option><option ${t.serveTarget==='T'?'selected':''}>T</option><option ${t.serveTarget==='Large'?'selected':''}>Large</option><option ${t.serveTarget==='Corps'?'selected':''}>Corps</option></select></label>
-      <label>Côté ciblé<select onchange="cbSetMatchTactic('focusSide',this.value)"><option ${t.focusSide==='Mixte'?'selected':''}>Mixte</option><option ${t.focusSide==='Revers'?'selected':''}>Revers</option><option ${t.focusSide==='Coup droit'?'selected':''}>Coup droit</option></select></label>
-      <label>Tempo<select onchange="cbSetMatchTactic('tempo',this.value)"><option ${t.tempo==='Lent'?'selected':''}>Lent</option><option ${t.tempo==='Normal'?'selected':''}>Normal</option><option ${t.tempo==='Rapide'?'selected':''}>Rapide</option></select></label>
-      <label>Variation<select onchange="cbSetMatchTactic('variety',this.value)"><option ${t.variety==='Sécurisée'?'selected':''}>Sécurisée</option><option ${t.variety==='Équilibrée'?'selected':''}>Équilibrée</option><option ${t.variety==='Créative'?'selected':''}>Créative</option></select></label>
+      <label>Cible service<select onchange="cbSetMatchTactic('servePattern',this.value)"><option ${t.servePattern==='Mixte'?'selected':''}>Mixte</option><option ${t.servePattern==='T'?'selected':''}>T</option><option ${t.servePattern==='Large'?'selected':''}>Large</option><option ${t.servePattern==='Corps'?'selected':''}>Corps</option></select></label>
+      <label>Côté ciblé<select onchange="cbSetMatchTactic('targetWing',this.value)"><option ${t.targetWing==='Mixte'?'selected':''}>Mixte</option><option ${t.targetWing==='Revers'?'selected':''}>Revers</option><option ${t.targetWing==='Coup droit'?'selected':''}>Coup droit</option></select></label>
+      <label>Tempo<select onchange="cbSetMatchTactic('tempo',this.value)"><option ${t.tempo==='Patient'?'selected':''}>Patient</option><option ${t.tempo==='Neutre'?'selected':''}>Neutre</option><option ${t.tempo==='Rapide'?'selected':''}>Rapide</option></select></label>
+      <label>Effet / variation<select onchange="cbSetMatchTactic('spin',this.value)"><option ${t.spin==='Mixte'?'selected':''}>Mixte</option><option ${t.spin==='Lift'?'selected':''}>Lift</option><option ${t.spin==='Slice'?'selected':''}>Slice</option><option ${t.spin==='Plat'?'selected':''}>Plat</option></select></label>
     </div>`;
   }
 

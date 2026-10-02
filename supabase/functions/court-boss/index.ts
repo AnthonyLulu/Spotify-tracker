@@ -4482,7 +4482,9 @@ Deno.serve(async(req:Request)=>{
     const doublesDrawSize=doublesDrawConfig.drawSize;
     const doublesSeedCount=doublesDrawConfig.seedCount;
     const [run,doublesRun] = await Promise.all([
-      db.from("tournament_runs").select("*").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle(),
+      db.from("tournament_runs").select("*")
+        .eq("tournament_id",id).eq("managed_player_id",detailPlayerId)
+        .order("played_at",{ascending:false}).limit(1).maybeSingle(),
       db.from("doubles_runs").select("*,partner:players(id,name,country,doubles_ranking)").eq("tournament_id",id).order("played_at",{ascending:false}).limit(1).maybeSingle()
     ]);
     if(run.error||doublesRun.error)return h({error:(run.error||doublesRun.error)?.message},500);

@@ -537,14 +537,18 @@ function managerStrip(){
  const c=career(),fin=boot?.finance||{},ap=activeManagedContext?.player||null;
  const activeId=activeManagedId(),primaryId=primaryManagedPlayerId();
  const view=ap&&Number(ap.id)===activeId?ap:null;
+ const squad=(management?.academyRoster||[])
+  .filter(x=>String(x.status||'active')==='active')
+  .map(x=>({id:Number(x.player_id||x.players?.id||0),name:x.players?.name||'Joueur'}))
+  .filter((x,i,a)=>x.id&&a.findIndex(y=>y.id===x.id)===i);
  const doublesOnly=String((view?.career_focus??c.career_focus)||'mixed')==='doubles_only';
  const rank=doublesOnly?Number((view?.doubles_ranking??c.doubles_rank)??0):Number((view?.ranking??c.singles_rank)??0);
  return `<div class="manager-strip">
   <div class="manager-cell"><span>Semaine</span><b>${local.week||1}</b></div>
   <div class="manager-cell"><span>${doublesOnly?'Double':'ATP'}</span><b>#${fmt(rank)}</b></div>
   <div class="manager-cell"><span>Budget</span><b>${euro(c.budget??fin.balance??0)}</b></div>
-  <div class="manager-cell wide"><span>${activeId!==primaryId?'Joueur actif':'Date carrière'}</span><b>${activeId!==primaryId?esc(view?.name||'Académie'):df(local.date||c.career_date)}</b></div>
-  <button class="manager-world" onclick="${activeId!==primaryId?"nav('academy')":"nav('world')"}">${activeId!==primaryId?'Groupe ▸':'Monde ▸'}</button>
+  ${squad.length>1?`<div class="manager-cell wide"><span>Joueur actif</span><select class="select manager-player-select" onchange="setActiveManagedPlayer(this.value)">${squad.map(p=>`<option value="${p.id}" ${p.id===activeId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>`:`<div class="manager-cell wide"><span>Date carrière</span><b>${df(local.date||c.career_date)}</b></div>`}
+  <button class="manager-world" onclick="${squad.length>1?"nav('academy')":"nav('world')"}">${squad.length>1?'Groupe ▸':'Monde ▸'}</button>
  </div>`
 }
 function shell(body){app.innerHTML=`<div class="app-shell">${header()}${managerStrip()}<main class="page">${body}</main>${navBar()}</div>`}
@@ -4335,7 +4339,7 @@ window.openTournament=async id=>{
 }
 window.requestWildcard=async id=>{
  try{
-   const d=await managerAction('request_wildcard',id);
+   const d=await managerAction('request_wildcard',id,{player_id:activeManagedId()});
    alert(d.status==='accepted'?'Wild card accordée. Tu peux entrer dans le tableau.':'Wild card refusée pour ce tournoi.');
    await openTournament(id);
  }catch(e){alert(e.message)}

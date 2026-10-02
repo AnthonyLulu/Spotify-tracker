@@ -388,6 +388,19 @@
     await loadTrainingPreview(true);render();
   };
 
+  window.trainAcademyPlayer=async function(id){
+    ensureLocalCareerConfig();
+    const target=Number(id||0);
+    if(!target)return;
+    local.trainingPlayerId=target;
+    trainingPreview=null;
+    persist();
+    await nav('training');
+    await loadTrainingPreview(true);
+    render();
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+
   window.refreshTrainingPreview=async function(){trainingPreview=null;await loadTrainingPreview(true);render();};
 
   window.setTraining=async function(i,v){

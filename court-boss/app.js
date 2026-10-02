@@ -2524,7 +2524,9 @@ function liveMatchPanel(){
  </div>`;
 
  const c=activePlayerCareerView(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{},meta=st._meta||{};
- const tour=meta.tournament||null,weather=meta.weather||{},mood=meta.mood||{};
+ const tour=meta.tournament||null,weather=meta.weather||{},mood=meta.mood||{},formMeta=meta.form||{};
+ const userFormBonus=Number(formMeta.user_bonus||0),oppFormBonus=Number(formMeta.opponent_bonus||0);
+ const signedForm=n=>(n>0?'+':'')+String(n);
  const userName=c.player_name||'Joueur',oppName=opp.name||'Adversaire';
  const us=Number(s.user_sets||0),os=Number(s.opponent_sets||0),ug=Number(s.user_games||0),og=Number(s.opponent_games||0);
  const up=Number(s.user_points||0),op=Number(s.opponent_points||0);
@@ -2570,7 +2572,9 @@ function liveMatchPanel(){
    <div><span>Vitesse court</span><b>${speedLabel} · ${speed.toFixed(2)}</b></div>
    <div><span>Altitude</span><b>${Number(meta.altitude_m||0)?fmt(meta.altitude_m)+' m':'—'}</b></div>
    <div><span>Humeur ${esc(userName.split(' ').slice(-1)[0])}</span><b class="${Number(mood.user||70)>=76?'good':Number(mood.user||70)<58?'bad':''}">${fmt(mood.user||70)}/100</b></div>
-   <div><span>Humeur adverse</span><b>${fmt(mood.opponent||70)}/100</b></div>
+   <div><span>Humeur adverse</span><b>\${fmt(mood.opponent||70)}/100</b></div>
+   <div class="match-form-box"><span>Forme \${esc(userName.split(' ').slice(-1)[0])}</span><b class="\${userFormBonus>0?'good':userFormBonus<0?'bad':''}">\${fmt(formMeta.user??c.form??70)}/100 · \${signedForm(userFormBonus)} stats</b></div>
+   <div class="match-form-box"><span>Forme adverse</span><b class="\${oppFormBonus>0?'good':oppFormBonus<0?'bad':''}">\${fmt(formMeta.opponent??opp.form??70)}/100 · \${signedForm(oppFormBonus)} stats</b></div>
   </div>
 
   <div class="fm-scoreboard">
@@ -2607,9 +2611,10 @@ function liveMatchPanel(){
   ${committed?`<div class="notice good match-result-actions"><b>Résultat validé et intégré à la carrière.</b></div><button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Fermer le match</button>`
   :finished?`<div class="notice warn match-result-actions"><b>Score final provisoire.</b><br><span class="muted mini">Tu peux le valider, sauvegarder ce score pour décider plus tard, ou l’annuler et revenir au dernier checkpoint.</span></div>
    <div class="fm-result-controls">
-    <button class="primary" onclick="commitLiveMatch()">Valider & sauvegarder</button>
+    <button class="primary" onclick="commitLiveMatch(false)">Valider sans sauvegarder</button>
+    <button class="soft-btn" onclick="commitLiveMatch(true)">Valider + sauvegarder</button>
     <button class="soft-btn" onclick="saveLiveCheckpoint()">Sauvegarder ce score</button>
-    <button class="danger-btn" onclick="discardLiveMatch()">Annuler le résultat</button>
+    <button class="danger-btn" onclick="discardLiveMatch()">Annuler / rejouer</button>
    </div>`
   :`<div class="fm-live-toolbar">
    <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button>
@@ -2746,6 +2751,10 @@ window.saveLiveCheckpoint=async()=>{
  if(!local.liveMatch)return;
  const d=await saveCareerSlot(9,'quick',true);
  if(d?.ok===false)return alert('Sauvegarde impossible : '+(d.error||d.reason||'erreur'));
+ localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({
+  slot_no:9,saved_live:true,career_date:d.slot?.career_date||local.date||null,
+  week:d.slot?.week??local.week??null,created_at:new Date().toISOString()
+ }));
  alert('Score sauvegardé. Tu reprendras exactement ici.');
 };
 async function reloadAfterRollback(){
@@ -2767,7 +2776,7 @@ window.discardLiveMatch=async()=>{
   await reloadAfterRollback();
  }catch(e){alert('Retour checkpoint impossible : '+e.message)}
 };
-window.commitLiveMatch=async()=>{
+window.commitLiveMatch=async(saveAfter=false)=>{
  if(!local.liveMatch||!['finished','completed'].includes(String(local.liveMatch.status||'')))return;
  try{
   const d=await get('/api/live-match/commit',{
@@ -2777,11 +2786,16 @@ window.commitLiveMatch=async()=>{
   applyLiveMatchResponse(d);
   boot=await get('/api/bootstrap');
   if(boot.career&&activeManagedId()===primaryManagedPlayerId())local.career={...(local.career||{}),...boot.career};
+  else await loadActiveManagedContext(true,activeManagedId()).catch(()=>{});
   await Promise.allSettled([loadManagement(),loadSeasonSummary(),loadRankingLedger(),loadCareerHub(true)]);
-  const save=await saveCareerSlot(9,'quick',true);
-  if(save?.ok===false)throw new Error('Résultat validé, mais sauvegarde rapide impossible : '+(save.error||save.reason||'erreur'));
-  clearPendingLiveRollback();
-  alert('Résultat validé et sauvegardé.');
+  if(saveAfter){
+   const save=await saveCareerSlot(9,'quick',true);
+   if(save?.ok===false)throw new Error('Résultat validé, mais sauvegarde rapide impossible : '+(save.error||save.reason||'erreur'));
+   clearPendingLiveRollback();
+   alert('Résultat validé et sauvegardé.');
+  }else{
+   alert('Résultat validé dans la session, mais pas sauvegardé. Si tu quittes sans sauvegarder, tu reviens au checkpoint précédent.');
+  }
   render();
  }catch(e){alert(e.message)}
 };
@@ -5020,34 +5034,27 @@ window.simulatePracticeMatch=async()=>{
   alert('Orientation Double exclusivement : la simulation simple est désactivée pour ce joueur.');
   return;
  }
- if(local.liveMatch?.status==='active'){
-  alert('Termine le match live en cours avant de lancer une simulation rapide.');
+ if(local.liveMatch&&['active','finished','completed'].includes(String(local.liveMatch.status||''))){
+  alert('Tu as déjà un match en attente. Valide, sauvegarde ou annule-le avant une nouvelle simulation.');
   return;
  }
  try{
+  await ensureLivePreMatchCheckpoint();
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
   const started=await get('/api/live-match/start',{
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{}})
   });
-  let state=started;
-  for(let i=0;i<5&&!state.complete;i++){
-   state=await get('/api/live-match/advance',{
+  applyLiveMatchResponse(started);
+  for(let i=0;i<80&&local.liveMatch?.status==='active';i++){
+   const d=await get('/api/live-match/game',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({session_id:started.session.id,tactics:local.tactics||{}})
    });
-   if(state.session?.status==='completed')break;
+   applyLiveMatchResponse(d);
   }
-  local.liveSessionId=null;
-  delete local.liveMatch;
-  delete local.liveOpponent;
-  boot=await get('/api/bootstrap');
-  if(playerId===primaryManagedPlayerId()&&boot.career){
-   local.career={...(local.career||{}),...boot.career};
-  }else{
-   await loadActiveManagedContext(true,playerId).catch(()=>{});
-  }
-  persist();render();
+  route='match';persist();render();
+  if(local.liveMatch?.status==='active')alert('La simulation a atteint sa limite de sécurité. Termine les derniers jeux depuis le Match Center.');
  }catch(e){alert('Simulation rapide impossible : '+e.message)}
 }
 window.openMatch=idx=>{

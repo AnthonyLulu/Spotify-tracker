@@ -4343,8 +4343,15 @@ Deno.serve(async(req:Request)=>{
     if(!career.data?.managed_player_id)return h({error:"Joueur managé introuvable"},404);
     if(!tr.data)return h({error:"Tournoi introuvable"},404);
 
-    const playerId=n(body?.player_id,Number(career.data.managed_player_id),1,99999999);
+    const primaryId=Number(career.data.managed_player_id||0);
+    const playerId=n(body?.player_id,primaryId,1,99999999);
     const gameDate=String(career.data.career_date||AGE_REFERENCE_DATE);
+    if(playerId!==primaryId){
+      const roster=await db.from("academy_roster").select("id")
+        .eq("player_id",playerId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
 
     if(action==="withdraw"){
       const wd=await db.from("managed_doubles_entries").update({

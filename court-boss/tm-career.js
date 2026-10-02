@@ -179,7 +179,7 @@
 
   window.openNewGameWizard = async function(){
     if(simulating||saveSlotBusy){alert('Une simulation ou une sauvegarde est en cours.');return;}
-    if(local.liveSessionId||window.hasManagedLiveMatches?.()){alert('Termine ou abandonne les matchs en cours avant de démarrer une nouvelle partie.');return;}
+    if(local.liveSessionId||window.hasManagedLiveMatches?.()||window.hasPendingLiveRollback?.()){alert('Termine puis sauvegarde, ou recharge le checkpoint avant-match, avant de démarrer une nouvelle partie.');return;}
     ensureLocalCareerConfig();
     const currentAcademy=(boot&&boot.academy)||{};
     draft={

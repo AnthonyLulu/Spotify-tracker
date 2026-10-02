@@ -4384,16 +4384,26 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/tournament-detail")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
-    const [t,wc,forfeits]=await Promise.all([
+    const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
+    const [t,forfeits,tournamentCareer]=await Promise.all([
       db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
-      db.from("wildcard_requests").select("*").eq("tournament_id",id).maybeSingle(),
-      db.from("tournament_forfeits").select("id,player_id,reason,players(id,name,country,ranking,junior_ranking)").eq("tournament_id",id)
+      db.from("tournament_forfeits").select("id,player_id,reason,players(id,name,country,ranking,junior_ranking)").eq("tournament_id",id),
+      db.from("career_state").select("career_date,managed_player_id").eq("id","demo").maybeSingle()
     ]);
-    if(t.error||wc.error||forfeits.error) return h({error:(t.error||wc.error||forfeits.error)?.message},500);
+    if(t.error||forfeits.error||tournamentCareer.error) return h({error:(t.error||forfeits.error||tournamentCareer.error)?.message},500);
     if(!t.data) return h({error:"Tournament not found"},404);
+    const primaryDetailPlayerId=Number(tournamentCareer.data?.managed_player_id||0);
+    const detailPlayerId=Number(requestedPlayerId||primaryDetailPlayerId||0);
+    if(detailPlayerId!==primaryDetailPlayerId){
+      const roster=await db.from("academy_roster").select("id").eq("player_id",detailPlayerId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
+    const wc=detailPlayerId
+      ?await db.from("wildcard_requests").select("*").eq("tournament_id",id).eq("player_id",detailPlayerId).maybeSingle()
+      :{data:null,error:null} as any;
+    if(wc.error)return h({error:wc.error.message},500);
     t.data=await resolveTournamentImage(t.data);
-    const tournamentCareer=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
-    if(tournamentCareer.error)return h({error:tournamentCareer.error.message},500);
     const referenceDate=String(tournamentCareer.data?.career_date||AGE_REFERENCE_DATE);
     const addIsoDays=(iso:any,days:number)=>{
       if(!iso)return null;
@@ -6413,19 +6423,23 @@ Deno.serve(async(req:Request)=>{
     const tactics=body?.tactics||{};
     const tacticAgg=n(tactics.aggression,58,1,100),tacticRisk=n(tactics.risk,52,1,100),tacticNet=n(tactics.net,28,1,100);
     const returnPos=String(tactics.returnPos||"Neutre");
-    const [tour,career,oldRun,wc,forfeits,managedPlayer,userStaff]=await Promise.all([
+    const [tour,career,oldRun,forfeits,managedPlayer,userStaff]=await Promise.all([
       db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
       db.from("career_state").select("*").eq("id","demo").maybeSingle(),
       db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
-      db.from("wildcard_requests").select("*").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
       getManagedPlayer("id,name,country,ranking,junior_ranking,birth_date,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)"),
       db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy,operational_status,rest_until)")
     ]);
-    if(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||wc.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
+    if(tour.error||career.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
     if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
     if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
     const t:any=tour.data,c:any=career.data;
+    const primaryPlayPlayerId=Number(c.managed_player_id||managedPlayer.data.id||0);
+    const wc=primaryPlayPlayerId
+      ?await db.from("wildcard_requests").select("*").eq("tournament_id",tid).eq("player_id",primaryPlayPlayerId).maybeSingle()
+      :{data:null,error:null} as any;
+    if(wc.error)return h({error:wc.error.message},500);
     const specialTeamEvent=specialTeamEventMeta(t);
     if(specialTeamEvent)return h({
       error:"Cette compétition se joue par équipes et par sélection. Le tableau individuel standard est désactivé.",

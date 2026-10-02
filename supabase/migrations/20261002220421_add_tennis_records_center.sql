@@ -1,0 +1,6 @@
+-- Live migration version: 20261002220421
+-- Superseded experimental Record Center migration.
+-- The live database briefly created tennis_record_catalog/player_record_achievements.
+-- Migration 20261002220840 consolidates everything into canonical record_catalog/record_occurrences
+-- and drops those experimental tables. This repo copy is intentionally a no-op so fresh replays
+-- go straight through the canonical schema without creating redundant tables.

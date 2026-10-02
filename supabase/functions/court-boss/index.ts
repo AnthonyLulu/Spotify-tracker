@@ -2093,19 +2093,35 @@ async function projectedDoublesAcceptanceCut(t:any,refDate:string,slots:number,m
   const idx=Math.min(slots,scores.length)-1;
   return {cut:idx>=0?scores[idx]:null,field:scores.length,slots,mode,band:projected.band};
 }
-async function managedDoublesEntryStatus(t:any){
-  const [career,managed,partnership]=await Promise.all([
-    db.from("career_state").select("career_date,career_focus,managed_player_id").eq("id","demo").maybeSingle(),
-    getManagedPlayer("id,name,country,ranking,doubles_ranking"),
+async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
+  const career=await db.from("career_state").select("career_date,career_focus,managed_player_id").eq("id","demo").maybeSingle();
+  if(career.error)throw career.error;
+  const primaryId=Number(career.data?.managed_player_id||0);
+  const playerId=Number(requestedPlayerId||primaryId||0);
+  if(!playerId)throw new Error("Joueur managé introuvable");
+  if(playerId!==primaryId){
+    const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+    if(roster.error)throw roster.error;
+    if(!roster.data)throw new Error("Ce joueur ne fait pas partie du groupe géré.");
+  }
+  const [managed,partnership]=await Promise.all([
+    db.from("players").select("id,name,country,ranking,doubles_ranking,career_focus").eq("id",playerId).maybeSingle(),
     db.from("doubles_partnerships")
-      .select("id,player_a_id,player_b_id,partner:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)")
+      .select("id,player_a_id,player_b_id,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,ranking,doubles_ranking),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)")
+      .or("player_a_id.eq."+playerId+",player_b_id.eq."+playerId)
       .order("id",{ascending:false}).limit(1).maybeSingle()
   ]);
-  const error=career.error||managed.error||partnership.error;
+  const error=managed.error||partnership.error;
   if(error)throw error;
+  if(!managed.data)throw new Error("Joueur introuvable");
   const now=String(career.data?.career_date||AGE_REFERENCE_DATE);
-  const focus=String(career.data?.career_focus||"mixed");
-  const partner:any=partnership.data?.partner;
+  const focus=String(managed.data?.career_focus||(playerId===primaryId?career.data?.career_focus:"mixed")||"mixed");
+  const pair:any=partnership.data||null;
+  const partner:any=pair
+    ?(Number(pair.player_a_id)===playerId
+      ?(Array.isArray(pair.player_b)?pair.player_b[0]:pair.player_b)
+      :(Array.isArray(pair.player_a)?pair.player_a[0]:pair.player_a))
+    :null;
   const composition=doublesDrawComposition(t);
   const specialTeamEvent=specialTeamEventMeta(t);
   if(specialTeamEvent)return {can_schedule:false,projected_acceptance:false,label:specialTeamEvent.label,phase:"selection",composition,team_event:specialTeamEvent};
@@ -4249,17 +4265,22 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/doubles-entry-status")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
+    const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
+    const career=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+    if(career.error)return h({error:career.error.message},500);
+    const playerId=Number(requestedPlayerId||career.data?.managed_player_id||0);
+    if(!playerId)return h({error:"Joueur managé introuvable"},404);
     const [tr,persisted]=await Promise.all([
       db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
       db.from("managed_doubles_entries")
         .select("id,owner_id,tournament_id,player_id,partner_id,status,entry_method,entry_phase,combined_rank,protected_combined_rank,projected_cut,requested_on,withdrawn_on,metadata,updated_at,partner:players!managed_doubles_entries_partner_id_fkey(id,name,country,ranking,doubles_ranking)")
-        .eq("owner_id","demo").eq("tournament_id",id).maybeSingle()
+        .eq("owner_id","demo").eq("tournament_id",id).eq("player_id",playerId).maybeSingle()
     ]);
     if(tr.error||persisted.error)return h({error:(tr.error||persisted.error)?.message},500);
     if(!tr.data)return h({error:"Tournoi introuvable"},404);
     try{return h({
-      tournament:tr.data,
-      doubles_entry_status:await managedDoublesEntryStatus(tr.data),
+      tournament:tr.data,player_id:playerId,
+      doubles_entry_status:await managedDoublesEntryStatus(tr.data,playerId),
       managed_doubles_entry:persisted.data??null
     })}
     catch(e){return h({error:String((e as any)?.message||e)},500)}
@@ -4272,18 +4293,15 @@ Deno.serve(async(req:Request)=>{
     const legacy=Boolean(body?.legacy);
     if(!["enter","withdraw"].includes(action))return h({error:"Action double invalide"},400);
 
-    const [career,tr,partnership]=await Promise.all([
+    const [career,tr]=await Promise.all([
       db.from("career_state").select("career_date,career_focus,managed_player_id").eq("id","demo").maybeSingle(),
-      db.from("tournaments").select("*").eq("id",tid).eq("is_active",true).maybeSingle(),
-      db.from("doubles_partnerships")
-        .select("id,player_a_id,player_b_id,partner:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)")
-        .order("id",{ascending:false}).limit(1).maybeSingle()
+      db.from("tournaments").select("*").eq("id",tid).eq("is_active",true).maybeSingle()
     ]);
-    if(career.error||tr.error||partnership.error)return h({error:(career.error||tr.error||partnership.error)?.message},500);
+    if(career.error||tr.error)return h({error:(career.error||tr.error)?.message},500);
     if(!career.data?.managed_player_id)return h({error:"Joueur managé introuvable"},404);
     if(!tr.data)return h({error:"Tournoi introuvable"},404);
 
-    const playerId=Number(career.data.managed_player_id);
+    const playerId=n(body?.player_id,Number(career.data.managed_player_id),1,99999999);
     const gameDate=String(career.data.career_date||AGE_REFERENCE_DATE);
 
     if(action==="withdraw"){
@@ -4295,17 +4313,20 @@ Deno.serve(async(req:Request)=>{
       return h({ok:true,action:"withdraw",entry:wd.data??null});
     }
 
-    if(String(career.data.career_focus||"mixed")==="singles_only"){
-      return h({error:"Mode Simple exclusivement : inscription double désactivée"},409);
-    }
     if(!tr.data.doubles)return h({error:"Ce tournoi ne propose pas le double"},409);
-    const partner:any=partnership.data?.partner;
-    if(!partner||!partnership.data?.player_b_id)return h({error:"Choisis d’abord un partenaire de double"},409);
 
     let entryStatus:any;
-    try{entryStatus=await managedDoublesEntryStatus(tr.data)}
+    try{entryStatus=await managedDoublesEntryStatus(tr.data,playerId)}
     catch(e){return h({error:String((e as any)?.message||e)},500)}
     if(entryStatus?.can_schedule===false)return h({error:entryStatus.label||"Inscription double impossible",doubles_entry_status:entryStatus},409);
+    const partner:any=entryStatus?.partner||null;
+    if(!partner?.id)return h({error:"Choisis d’abord un partenaire de double"},409);
+    const partnership=await db.from("doubles_partnerships")
+      .select("id,player_a_id,player_b_id")
+      .or("player_a_id.eq."+playerId+",player_b_id.eq."+playerId)
+      .order("id",{ascending:false}).limit(1).maybeSingle();
+    if(partnership.error)return h({error:partnership.error.message},500);
+    if(!partnership.data)return h({error:"Partenariat double introuvable"},409);
 
     const entryMethod=String(
       entryStatus?.requires_qualifying
@@ -4325,7 +4346,7 @@ Deno.serve(async(req:Request)=>{
 
     const [mineConflict,partnerConflict,otherDoubles]=await Promise.all([
       db.rpc("player_tournament_calendar_conflict",{p_player_id:playerId,p_tournament_id:tid,p_entry_method:calendarMode}),
-      db.rpc("player_tournament_calendar_conflict",{p_player_id:Number(partnership.data.player_b_id),p_tournament_id:tid,p_entry_method:calendarMode}),
+      db.rpc("player_tournament_calendar_conflict",{p_player_id:Number(partner.id),p_tournament_id:tid,p_entry_method:calendarMode}),
       db.from("managed_doubles_entries")
         .select("tournament_id,entry_method,entry_phase,tournaments(id,name,start_date,end_date,qualifying_start_date,main_draw_start_date)")
         .eq("owner_id","demo").eq("player_id",playerId).eq("status","entered").neq("tournament_id",tid)
@@ -4362,7 +4383,7 @@ Deno.serve(async(req:Request)=>{
 
     const up=await db.from("managed_doubles_entries").upsert({
       owner_id:"demo",tournament_id:tid,player_id:playerId,
-      partner_id:Number(partnership.data.player_b_id),status:"entered",
+      partner_id:Number(partner.id),status:"entered",
       entry_method:entryMethod,entry_phase:entryPhase,
       combined_rank:combined,protected_combined_rank:protectedCombined,
       projected_cut:projectedCut,requested_on:requestedOn,withdrawn_on:null,
@@ -4376,7 +4397,7 @@ Deno.serve(async(req:Request)=>{
         partnership_id:partnership.data.id
       },
       updated_at:new Date().toISOString()
-    },{onConflict:"owner_id,tournament_id"}).select("*").single();
+    },{onConflict:"owner_id,tournament_id,player_id"}).select("*").single();
     if(up.error)return h({error:up.error.message},500);
 
     return h({ok:true,action:"enter",entry:up.data,doubles_entry_status:entryStatus,partner});

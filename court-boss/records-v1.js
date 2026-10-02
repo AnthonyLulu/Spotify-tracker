@@ -34,6 +34,11 @@
   function recordStatus(r,p){
     const base=r.baseline_value==null?null:Number(r.baseline_value);
     const val=p&&p.value!=null?Number(p.value):null;
+    if(String(r.code)==='masters_aces_edition_reference'&&p&&p.achieved){
+      if(base!=null&&val>base)return {label:'Benchmark Isner dépassé',cls:'record'};
+      if(base!=null&&val===base)return {label:'Benchmark Isner égalé',cls:'tied'};
+      return {label:'Benchmark Masters atteint',cls:'done'};
+    }
     if(String(r.record_type)==='dynamic'){
       return {label:p&&val>0?'Record de sauvegarde établi':'À établir dans la sauvegarde',cls:'save'};
     }

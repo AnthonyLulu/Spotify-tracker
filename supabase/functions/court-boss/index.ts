@@ -4217,8 +4217,15 @@ Deno.serve(async(req:Request)=>{
         db.rpc("refresh_world_tournament_acceptance_list",{p_tournament_id:tid,p_date:gameDate}),
         db.rpc("refresh_world_qualifying_acceptance_list",{p_tournament_id:tid,p_date:gameDate})
       ]);
+      const withdrawnMethod=String(upd.data?.entry_method||"");
+      const zeroPointer=withdrawnMethod.includes("qualifying")
+        ?{data:{recorded:false,reason:"qualifying_entry"},error:null} as any
+        :await db.rpc("record_atp_zero_pointer",{
+            p_player_id:playerId,p_tournament_id:tid,p_withdrawal_date:gameDate,p_reason:"managed_withdrawal"
+          });
       return h({
         ok:true,action:"withdraw",entry:upd.data??null,
+        zero_pointer:zeroPointer.error?{recorded:false,error:zeroPointer.error.message}:zeroPointer.data,
         acceptance_marked_withdrawn:(mainMark.data??[]).length,
         qualifying_marked_withdrawn:(qMark.data??[]).length,
         acceptance_refresh:mainRefresh.error?{skipped:true,error:mainRefresh.error.message}:mainRefresh.data,
@@ -6684,9 +6691,9 @@ Deno.serve(async(req:Request)=>{
 
 
   if(path.endsWith("/api/ranking-ledger")&&req.method==="GET"){
-    const today=(u.searchParams.get("date")??new Date().toISOString().slice(0,10)).slice(0,10);
     const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
-    const career=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+    const weeks=n(u.searchParams.get("weeks"),18,1,52);
+    const career=await db.from("career_state").select("managed_player_id,career_date").eq("id","demo").maybeSingle();
     if(career.error)return h({error:career.error.message},500);
     const primaryId=Number(career.data?.managed_player_id||0);
     const playerId=Number(requestedPlayerId||primaryId||0);
@@ -6696,21 +6703,33 @@ Deno.serve(async(req:Request)=>{
       if(roster.error)return h({error:roster.error.message},500);
       if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
     }
-    const [rows,player]=await Promise.all([
-      db.from("user_ranking_points").select("*").eq("owner_id","demo").eq("player_id",playerId).order("expiry_date",{ascending:true}),
-      db.from("players").select("id,name,ranking,points").eq("id",playerId).maybeSingle()
+    const today=String(u.searchParams.get("date")||career.data?.career_date||AGE_REFERENCE_DATE).slice(0,10);
+    const [summary,breakdown,defending,player]=await Promise.all([
+      db.rpc("atp_player_ranking_summary",{p_player_id:playerId,p_date:today}),
+      db.rpc("atp_player_breakdown",{p_player_id:playerId,p_date:today}),
+      db.rpc("atp_points_to_defend",{p_player_id:playerId,p_date:today,p_weeks:weeks}),
+      db.from("players").select("id,name,ranking,points,ranking_source,ranking_snapshot_date").eq("id",playerId).maybeSingle()
     ]);
-    if(rows.error||player.error)return h({error:(rows.error||player.error)?.message},500);
+    const err=summary.error||breakdown.error||defending.error||player.error;
+    if(err)return h({error:err.message},500);
     if(!player.data)return h({error:"Joueur introuvable"},404);
-    const active=(rows.data??[]).filter((x:any)=>x.active);
+    const sum=Array.isArray(summary.data)?summary.data[0]:summary.data||{};
+    const all=(breakdown.data??[]).map((x:any)=>({...x,expiry_date:x.drop_date,active:String(x.drop_date)>=today}));
+    const counting=all.filter((x:any)=>x.counting);
+    const nonCounting=all.filter((x:any)=>!x.counting);
+    const weekly=defending.data??[];
+    const nextWeek=weekly.find((x:any)=>Number(x.points_to_defend||0)>0)||null;
     return h({
-      date:today,
-      player_id:playerId,
-      player_name:player.data.name,
-      rank:player.data.ranking,
-      total:Number(player.data.points||0),
-      active,
-      expired:(rows.data??[]).filter((x:any)=>!x.active)
+      date:today,player_id:playerId,player_name:player.data.name,rank:player.data.ranking,
+      total:Number(sum?.total_points??player.data.points??0),
+      ranking_source:player.data.ranking_source,ranking_snapshot_date:player.data.ranking_snapshot_date,
+      mandatory_tiebreak_points:Number(sum?.mandatory_tiebreak_points||0),
+      events_played:Number(sum?.events_played||0),counting_events:Number(sum?.counting_events||0),
+      result_vector:sum?.result_vector??[],
+      active:counting,counting,non_counting:nonCounting,breakdown:all,
+      defending:weekly,next_defense:nextWeek,weeks,
+      model:"ATP 2026 · 52 semaines glissantes · portefeuille événementiel · max 3 remplacements M1000",
+      historical_note:"Le snapshot 01/12/2025 est réconcilié avec le total ATP officiel; les résultats historiques identifiables conservent leur valeur tournoi."
     });
   }
 

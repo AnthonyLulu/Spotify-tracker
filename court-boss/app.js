@@ -3211,6 +3211,10 @@ function inboxPage(){
 }
 window.runInboxDecision=async(id,type,payload={})=>{
  try{
+  const targetPlayerId=Number(payload?.player_id||0);
+  if(targetPlayerId&&targetPlayerId!==activeManagedId()&&managedSquadIds().includes(targetPlayerId)){
+    await window.setActiveManagedPlayer(targetPlayerId);
+  }
   if(type==='open_route'){
     try{await managerAction('mark_inbox_read',id)}catch{}
     if(payload?.player_id&&String(payload.route||'')==='training'){
@@ -3244,7 +3248,7 @@ window.runInboxDecision=async(id,type,payload={})=>{
     render();return;
   }
   if(type==='medical_protocol'){
-    await managerAction('set_medical_protocol',Number(payload.injury_id||0),{protocol:payload.protocol});
+    await managerAction('set_medical_protocol',Number(payload.injury_id||0),{protocol:payload.protocol,player_id:Number(payload.player_id||activeManagedId()||primaryManagedPlayerId()||0)});
     careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();return;
   }
   if(type==='respond_partner_offer'){

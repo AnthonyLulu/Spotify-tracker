@@ -11303,7 +11303,7 @@ Deno.serve(async(req:Request)=>{
       let extraPlayers:any[]=[];
       if(extraIds.length){
         const extraRows=await db.from("players")
-          .select("id,name,country,ranking,doubles_ranking,itf_ranking,current_ability,potential,career_status")
+          .select("id,name,country,ranking,points,doubles_ranking,doubles_points,itf_ranking,current_ability,potential,career_status")
           .in("id",extraIds);
         if(extraRows.error)return h({error:extraRows.error.message},500);
         extraPlayers=extraRows.data??[];
@@ -11399,11 +11399,19 @@ Deno.serve(async(req:Request)=>{
       const resetError=resetResults.find((x:any)=>x?.error)?.error;
       if(resetError)return h({error:"Reset carrière impossible : "+resetError.message},500);
 
+      const baselineExpiry=(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+364);return d.toISOString().slice(0,10)})();
       await db.from("user_ranking_points").insert({
-        owner_id:"demo",label:"Points de départ - "+p.name,earned_date:startDate,
-        expiry_date:(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+364);return d.toISOString().slice(0,10)})(),
-        points:basePoints,active:true
+        owner_id:"demo",player_id:Number(p.id),label:"Points de départ - "+p.name,earned_date:startDate,
+        expiry_date:baselineExpiry,points:basePoints,active:true
       });
+      for(const ep of extraPlayers){
+        const epPoints=Math.max(0,Number(ep.points||0));
+        const epBaseline=await db.from("user_ranking_points").insert({
+          owner_id:"demo",player_id:Number(ep.id),label:"Points de départ - "+String(ep.name),
+          earned_date:startDate,expiry_date:baselineExpiry,points:epPoints,active:true
+        });
+        if(epBaseline.error)return h({error:"Baseline ATP impossible pour "+String(ep.name)+": "+epBaseline.error.message},500);
+      }
       await db.from("user_doubles_points").insert({
         owner_id:"demo",label:"Points double de départ - "+p.name,earned_date:startDate,
         expiry_date:(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+364);return d.toISOString().slice(0,10)})(),

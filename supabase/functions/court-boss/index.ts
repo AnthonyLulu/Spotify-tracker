@@ -6447,26 +6447,51 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/play-tournament")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const tid=n(body?.tournament_id,0,1,99999999);
+    const requestedPlayerId=n(body?.player_id,0,0,99999999);
     const tactics=body?.tactics||{};
     const tacticAgg=n(tactics.aggression,58,1,100),tacticRisk=n(tactics.risk,52,1,100),tacticNet=n(tactics.net,28,1,100);
     const returnPos=String(tactics.returnPos||"Neutre");
-    const [tour,career,oldRun,forfeits,managedPlayer,userStaff]=await Promise.all([
+    const [tour,career,forfeits,userStaff]=await Promise.all([
       db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
       db.from("career_state").select("*").eq("id","demo").maybeSingle(),
-      db.from("tournament_runs").select("id").eq("tournament_id",tid).maybeSingle(),
       db.from("tournament_forfeits").select("player_id,reason").eq("tournament_id",tid),
-      getManagedPlayer("id,name,country,ranking,junior_ranking,birth_date,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)"),
       db.from("staff").select("role,profile:staff_profiles(id,tactical_rating,mental_rating,pressure_handling,scouting_rating,communication_rating,professionalism,workload,burnout,travel_fatigue,energy,operational_status,rest_until)")
     ]);
-    if(tour.error||career.error||forfeits.error||managedPlayer.error||userStaff.error)return h({error:(tour.error||career.error||forfeits.error||managedPlayer.error||userStaff.error)?.message},500);
-    if(!tour.data||!career.data||!managedPlayer.data)return h({error:"Tournament or career missing"},404);
-    if(oldRun.data)return h({error:"Ce tournoi a déjà été joué dans cette sauvegarde.",run_id:oldRun.data.id},409);
-    const t:any=tour.data,c:any=career.data;
-    const primaryPlayPlayerId=Number(c.managed_player_id||managedPlayer.data.id||0);
-    const wc=primaryPlayPlayerId
-      ?await db.from("wildcard_requests").select("*").eq("tournament_id",tid).eq("player_id",primaryPlayPlayerId).maybeSingle()
-      :{data:null,error:null} as any;
-    if(wc.error)return h({error:wc.error.message},500);
+    if(tour.error||career.error||forfeits.error||userStaff.error)return h({error:(tour.error||career.error||forfeits.error||userStaff.error)?.message},500);
+    if(!tour.data||!career.data)return h({error:"Tournament or career missing"},404);
+
+    const primaryPlayPlayerId=Number(career.data.managed_player_id||0);
+    const managedId=Number(requestedPlayerId||primaryPlayPlayerId||0);
+    if(!managedId)return h({error:"Joueur géré introuvable"},404);
+    if(managedId!==primaryPlayPlayerId){
+      const roster=await db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
+    const [managedPlayer,oldRun,wc]=await Promise.all([
+      db.from("players")
+        .select("id,name,country,ranking,junior_ranking,birth_date,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
+        .eq("id",managedId).maybeSingle(),
+      db.from("tournament_runs").select("id").eq("tournament_id",tid).eq("managed_player_id",managedId).maybeSingle(),
+      db.from("wildcard_requests").select("*").eq("tournament_id",tid).eq("player_id",managedId).maybeSingle()
+    ]);
+    if(managedPlayer.error||oldRun.error||wc.error)return h({error:(managedPlayer.error||oldRun.error||wc.error)?.message},500);
+    if(!managedPlayer.data)return h({error:"Joueur géré introuvable"},404);
+    if(oldRun.data)return h({error:"Ce joueur a déjà joué ce tournoi dans cette sauvegarde.",run_id:oldRun.data.id,player_id:managedId},409);
+
+    const t:any=tour.data;
+    const isPrimaryManaged=managedId===primaryPlayPlayerId;
+    const c:any={...career.data};
+    c.player_name=String(managedPlayer.data.name||c.player_name||"Joueur");
+    c.country=String(managedPlayer.data.country||c.country||"FRA");
+    c.singles_rank=Number(managedPlayer.data.ranking??c.singles_rank??2001);
+    c.points=Number(managedPlayer.data.points??c.points??0);
+    c.current_ability=Number(managedPlayer.data.current_ability??c.current_ability??55);
+    c.form=Number(managedPlayer.data.form??c.form??70);
+    c.fitness=Number(managedPlayer.data.fitness??c.fitness??90);
+    c.fatigue=Number(managedPlayer.data.fatigue??c.fatigue??15);
+    c.morale=Number(managedPlayer.data.morale??c.morale??75);
+    c.career_focus=String(managedPlayer.data.career_focus||c.career_focus||"mixed");
     const specialTeamEvent=specialTeamEventMeta(t);
     if(specialTeamEvent)return h({
       error:"Cette compétition se joue par équipes et par sélection. Le tableau individuel standard est désactivé.",
@@ -6488,7 +6513,6 @@ Deno.serve(async(req:Request)=>{
         doubles_only:true
       },409);
     }
-    const managedId=Number(c.managed_player_id||managedPlayer.data.id);
     const managedGameDate=String(c.career_date||AGE_REFERENCE_DATE);
     const frozenCircuit=["ATP","Challenger","ITF"].includes(String(t.circuit||""));
     let frozenEntryMode:string|null=null;
@@ -6510,9 +6534,11 @@ Deno.serve(async(req:Request)=>{
         .maybeSingle();
       if(persisted.error)return h({error:persisted.error.message},500);
 
-      let managedPathways:any={pathway:{eligible:false},special_exempt:{eligible:false},performance_bye:{eligible:false}};
-      try{managedPathways=await managedTournamentPathwayBundle(tid)}
-      catch(e){return h({error:String((e as any)?.message||e)},500)}
+      let managedPathways:any={pathway:{eligible:false,reason:isPrimaryManaged?"no_pathway":"secondary_managed_player"},special_exempt:{eligible:false},performance_bye:{eligible:false}};
+      if(isPrimaryManaged){
+        try{managedPathways=await managedTournamentPathwayBundle(tid)}
+        catch(e){return h({error:String((e as any)?.message||e)},500)}
+      }
       const livePathway:any=managedPathways.pathway||{eligible:false};
 
       if(persisted.data?.status==="withdrawn"){
@@ -7712,7 +7738,7 @@ Deno.serve(async(req:Request)=>{
     const prizeFxRateToEur=prizeFxToEur(t.prize_currency||"USD");
     const userPrizeEur=prizeToBaseEur(userPrize,t.prize_currency||"USD");
     const runIns=await db.from("tournament_runs").insert({
-      tournament_id:tid,entry_method:entryMode,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,
+      tournament_id:tid,managed_player_id:managedId,entry_method:entryMode,champion_player_id:champion?.id??null,user_round:userRound,user_points:userPoints,
       user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
     }).select("id").single();
     if(runIns.error)return h({error:runIns.error.message},500);
@@ -7903,9 +7929,14 @@ Deno.serve(async(req:Request)=>{
       if(userPoints>0){
         const earnedDate=String(t.end_date||t.start_date||new Date().toISOString().slice(0,10));
         const exp=new Date(earnedDate+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
-        await db.from("user_ranking_points").insert({owner_id:"demo",tournament_id:tid,label:t.name,earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true});
+        await db.from("user_ranking_points").insert({
+          owner_id:"demo",player_id:managedId,tournament_id:tid,label:t.name,
+          earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true
+        });
       }
-      const rankCalc=await db.rpc("recalculate_user_ranking",{p_date:String(t.end_date||t.start_date||new Date().toISOString().slice(0,10))});
+      const rankCalc=await db.rpc("recalculate_managed_player_ranking",{
+        p_player_id:managedId,p_date:String(t.end_date||t.start_date||new Date().toISOString().slice(0,10))
+      });
       if(rankCalc.error)return h({error:rankCalc.error.message},500);
       newPoints=Number(rankCalc.data?.points??c.points??0);newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     }
@@ -7944,11 +7975,14 @@ Deno.serve(async(req:Request)=>{
       hiddenTraitEvolution=hidden.error?{error:hidden.error.message}:hidden.data;
     }
     const finState=await db.from("finances").select("prize_money,travel_cost,agent_commission,staff_bonus").eq("id","demo").maybeSingle();
-    await Promise.all([
-      db.from("career_state").update(isJuniorSingles
+    const careerRunUpdate=isPrimaryManaged
+      ?(isJuniorSingles
         ?{budget:newBudget,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}
-        :{budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()}
-      ).eq("id","demo"),
+        :{budget:newBudget,points:newPoints,singles_rank:newRank,fatigue:newFatigue,fitness:newFitness,form:newForm,updated_at:new Date().toISOString()})
+      :{budget:newBudget,updated_at:new Date().toISOString()};
+    await Promise.all([
+      db.from("career_state").update(careerRunUpdate).eq("id","demo"),
+      db.from("players").update({fatigue:newFatigue,fitness:newFitness,form:newForm}).eq("id",managedId),
       db.from("finances").update({
         prize_money:Number(finState.data?.prize_money||0)+userPrizeEur,
         travel_cost:Number(finState.data?.travel_cost||0)+travelCost,
@@ -7989,7 +8023,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,world_result_sync:worldResultSync,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,lucky_loser_qualifying_loss_round:userQualifyingLossRound,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,managed_player_id:managedId,managed_player_name:String(managedPlayer.data.name||c.player_name||"Joueur"),is_primary_managed:isPrimaryManaged,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,world_result_sync:worldResultSync,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,lucky_loser_qualifying_loss_round:userQualifyingLossRound,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 

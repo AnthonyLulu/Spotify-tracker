@@ -1,4 +1,4 @@
-/* Court Boss Match Center V3 */
+/* Court Boss Match Center V4 */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -57,10 +57,10 @@
         <div><span>${safe(oppName)}</span><b>${Math.round(Number(m.opponent||70))}/100 · ${mood(m.opponent)}</b></div>
       </div>
       <div class="cb-form-grid">
-        <div><span>Forme ${safe(userName)}</span><b class="${Number(f.user_bonus||0)>0?'good':Number(f.user_bonus||0)<0?'bad':''}">${Math.round(Number(f.user||70))}/100 · ${fb(f.user_bonus)} stats</b></div>
-        <div><span>Forme ${safe(oppName)}</span><b class="${Number(f.opponent_bonus||0)>0?'good':Number(f.opponent_bonus||0)<0?'bad':''}">${Math.round(Number(f.opponent||70))}/100 · ${fb(f.opponent_bonus)} stats</b></div>
+        <div><span>Forme ${safe(userName)}</span><b class="${Number(f.user_bonus||0)>0?'good':Number(f.user_bonus||0)<0?'bad':''}">${Math.round(Number(f.user||70))}/100 · ${fb(f.user_bonus)} temporaire</b></div>
+        <div><span>Forme ${safe(oppName)}</span><b class="${Number(f.opponent_bonus||0)>0?'good':Number(f.opponent_bonus||0)<0?'bad':''}">${Math.round(Number(f.opponent||70))}/100 · ${fb(f.opponent_bonus)} temporaire</b></div>
       </div>
-      <div class="muted micro cb-env-note">Conditions, vitesse du court, altitude et humeur alimentent réellement le calcul des points.</div>
+      <div class="muted micro cb-env-note">Conditions, vitesse du court, altitude, humeur et fatigue live alimentent le moteur. La forme reste un bonus temporaire : aucun attribut permanent n’est réécrit.</div>
     </div>`;
   }
 
@@ -198,5 +198,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V3 active');
+  console.info('Court Boss Match Center V4 active');
 })();

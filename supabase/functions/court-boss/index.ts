@@ -9414,9 +9414,11 @@ Deno.serve(async(req:Request)=>{
     const userForm=Math.max(0,Math.min(100,Number(managed?.form??70)));
     const oppForm=Math.max(0,Math.min(100,Number(opp?.form??70)));
     const userFormBonus=liveFormModifier(userForm),oppFormBonus=liveFormModifier(oppForm);
+    const grandSlam=Boolean(t&&String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||"")));
+    const setsToWin=grandSlam?3:2;
     return {
-      engine:"CB-MATCH-ENGINE-v2",
-      surface,indoor,
+      engine:"CB-MATCH-ENGINE-v3",
+      surface,indoor,sets_to_win:setsToWin,best_of:setsToWin*2-1,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
@@ -9703,7 +9705,12 @@ Deno.serve(async(req:Request)=>{
     const oa:any=opp.player_attributes||{};
     const tactics=body?.tactics||session.data.tactics||{};
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
+    const effort=n(tactics.effort,60,20,100);
     const ret=String(tactics.returnPos||"Neutre");
+    const tempo=String(tactics.tempo||"Neutre");
+    const targetWing=String(tactics.targetWing||"Mixte");
+    const servePattern=String(tactics.servePattern||"Mixte");
+    const spinPlan=String(tactics.spin||"Mixte");
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
     const meta:any=session.data.stats?._meta||{};
@@ -9747,9 +9754,20 @@ Deno.serve(async(req:Request)=>{
       -avgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"]));
     const surfaceEdge=Number(sAttr?.[surfaceKey]??10)-Number(rAttr?.[surfaceKey]??10);
     const formEdge=serverIsUser?userFormBonus-oppFormBonus:oppFormBonus-userFormBonus;
-    const pointAttrEdge=Math.max(-.05,Math.min(.05,
+    const opponentBh=avgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"]);
+    const opponentFh=avgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"]);
+    const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,opponentFh-opponentBh))*.00115:
+      targetWing==="Coup droit"?Math.max(-4,Math.min(4,opponentBh-opponentFh))*.00115:0;
+    const spinEdge=spinPlan==="Lift"?(clay?.006:grass?-.003:.002):
+      spinPlan==="Slice"?(grass?.006:indoor?.003:0):
+      spinPlan==="Plat"?(indoor?.006:clay?-.004:.003):0;
+    const tempoEdge=tempo==="Rapide"?.0045:tempo==="Patient"?.002:0;
+    const effortEdge=(effort-60)*.00032;
+    const userTacticEdge=targetEdge+spinEdge+tempoEdge+effortEdge;
+    const pointAttrEdge=Math.max(-.06,Math.min(.06,
       groundEdge*.00135+movementEdge*.00085+mentalEdge*(pressure?.00145:.00070)+
-      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+formEdge*.0032
+      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+formEdge*.0032+
+      (serverIsUser?userTacticEdge:-userTacticEdge)
     ));
 
     let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
@@ -9778,7 +9796,10 @@ Deno.serve(async(req:Request)=>{
 
     const dirRoll=Math.random()*100;
     const wide=Number(tm.serve_wide_pct||38),bodyPct=Number(tm.serve_body_pct||14);
-    const serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
+    let serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
+    if(serverIsUser&&servePattern!=="Mixte"&&Math.random()<.68){
+      serveDirection=servePattern==="Large"?"large":servePattern==="Corps"?"corps":"T";
+    }
     const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
     const aceChance=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100*aceSurface
       *(serverIsUser?(1+Math.max(-20,risk-50)*.004):1)
@@ -9791,6 +9812,8 @@ Deno.serve(async(req:Request)=>{
     const rallyMean=Math.max(2.0,Math.min(10.5,
       Number(tm.avg_rally_shots||5)+(clay?.9:grass?-.7:indoor?-.35:0)
       -(courtSpeed-1)*2.1+Math.max(0,humidity-65)*.018
+      +(tempo==="Patient"?.75:tempo==="Rapide"?-.60:0)
+      +(spinPlan==="Lift"&&clay?.40:spinPlan==="Slice"&&grass?-.25:0)
       +(serverIsUser?(55-risk)*.012:0)
       +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"])
         -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"]))*.035
@@ -9916,9 +9939,10 @@ Deno.serve(async(req:Request)=>{
     }
 
     const finishedSetGames=setFinished?{user_games:ug,opponent_games:og}:null;
+    const setsToWin=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
     let status="active",completed=false;
     if(setFinished){
-      if(us>=2||os>=2){status="finished";completed=true}
+      if(us>=setsToWin||os>=setsToWin){status="finished";completed=true}
       else{setNo++;ug=0;og=0}
     }
 
@@ -10004,7 +10028,11 @@ Deno.serve(async(req:Request)=>{
     const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
     const tactics=body?.tactics||session.data.tactics||{};
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
+    const effort=n(tactics.effort,60,20,100);
     const ret=String(tactics.returnPos||"Neutre");
+    const tempo=String(tactics.tempo||"Neutre");
+    const targetWing=String(tactics.targetWing||"Mixte");
+    const spinPlan=String(tactics.spin||"Mixte");
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
     const meta:any=session.data.stats?._meta||{};
@@ -10034,6 +10062,12 @@ Deno.serve(async(req:Request)=>{
         (Number(session.data.momentum||50)-50)*.0008;
     }
     const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
+    const oa:any=opp.player_attributes||{};
+    const avg=(x:any,ks:string[])=>ks.reduce((z,k)=>z+Number(x?.[k]??10),0)/Math.max(1,ks.length);
+    const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,avg(oa,["forehand","forehand_power","forehand_accuracy"])-avg(oa,["backhand","backhand_power","backhand_accuracy"])))*.0011:
+      targetWing==="Coup droit"?Math.max(-4,Math.min(4,avg(oa,["backhand","backhand_power","backhand_accuracy"])-avg(oa,["forehand","forehand_power","forehand_accuracy"])))*.0011:0;
+    const userTacticEdge=(effort-60)*.00030+(tempo==="Rapide"?.004:tempo==="Patient"?.002:0)+
+      (spinPlan==="Lift"&&/Terre|clay/i.test(surface)?.005:spinPlan==="Slice"&&/Gazon|grass/i.test(surface)?.005:spinPlan==="Plat"&&/intérieur|indoor/i.test(surface)?.005:0)+targetEdge;
     const serverFormBonus=serverIsUser?userFormBonus:oppFormBonus,returnerFormBonus=serverIsUser?oppFormBonus:userFormBonus;
     serverPointP+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+(serverFormBonus-returnerFormBonus)*.0032;
     serverPointP=Math.max(.32,Math.min(.86,serverPointP));
@@ -10087,9 +10121,10 @@ Deno.serve(async(req:Request)=>{
     const log:any[]=Array.isArray(session.data.score_log)?session.data.score_log:[];
     log.push({set:setNo,user_games:ug,opponent_games:og,winner_game:userWon?String(managed.data.name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner});
 
+    const setsToWin=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
     let status="active",completed=false;
     if(setFinished){
-      if(us>=2||os>=2){status="finished";completed=true}
+      if(us>=setsToWin||os>=setsToWin){status="finished";completed=true}
       else{setNo++;ug=0;og=0}
     }
 
@@ -10147,7 +10182,8 @@ Deno.serve(async(req:Request)=>{
     const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
     const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;
     const matchLoad=Math.min(8,Math.max(3,Math.ceil((Number(session.data.rally_no||0)+setRows.length*18)/55)));
-    const fatigueAdd=Math.max(5,Math.min(16,Math.round(5+matchLoad+heatLoad+windLoad)));
+    const effortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.065;
+    const fatigueAdd=Math.max(5,Math.min(18,Math.round(5+matchLoad+heatLoad+windLoad+effortLoad)));
     const nextCondition={
       fatigue:Math.min(100,Number(managed.data.fatigue||18)+fatigueAdd),
       fitness:Math.max(35,Number(managed.data.fitness||91)-Math.max(2,Math.ceil(fatigueAdd*.36))),

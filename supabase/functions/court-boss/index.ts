@@ -1877,20 +1877,27 @@ async function managedTournamentPathwayBundle(tournamentId:number){
   return {pathway,special_exempt:special,performance_bye:performance};
 }
 
-async function managedTournamentEntryRules(t:any){
+async function managedTournamentEntryRules(t:any,requestedPlayerId?:number){
   if(specialTeamEventMeta(t)||!["ATP","Challenger","ITF"].includes(String(t.circuit))||/Finals|Next Gen/i.test(String(t.category)))return null;
   const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
   if(managed.error)throw managed.error;
-  if(!managed.data?.managed_player_id)return null;
+  const primaryId=Number(managed.data?.managed_player_id||0);
+  const playerId=Number(requestedPlayerId||primaryId||0);
+  if(!playerId)return null;
+  if(playerId!==primaryId){
+    const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+    if(roster.error)throw roster.error;
+    if(!roster.data)throw new Error("Ce joueur ne fait pas partie du groupe géré.");
+  }
   const methods=["direct","qualifying","wildcard","alternate","protected","protected_qualifying"];
   const [checks,entry]=await Promise.all([
-    Promise.all(methods.map(method=>db.rpc("player_event_eligibility",{p_player_id:managed.data.managed_player_id,p_tournament_id:t.id,p_entry_method:method}))),
+    Promise.all(methods.map(method=>db.rpc("player_event_eligibility",{p_player_id:playerId,p_tournament_id:t.id,p_entry_method:method}))),
     db.from("entries")
       .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at")
-      .eq("tournament_id",t.id).eq("player_id",managed.data.managed_player_id).maybeSingle()
+      .eq("tournament_id",t.id).eq("player_id",playerId).maybeSingle()
   ]);
   const error=checks.find(x=>x.error)?.error||entry.error;if(error)throw error;
-  return {...Object.fromEntries(checks.map((result,index)=>[methods[index],result.data])),persisted_entry:entry.data??null};
+  return {...Object.fromEntries(checks.map((result,index)=>[methods[index],result.data])),persisted_entry:entry.data??null,player_id:playerId};
 }
 
 async function projectedDoublesRaceRows(refDate:string,wanted:number,excludedIds:number[]=[],minRace=1,maxRace=2000){
@@ -4002,19 +4009,31 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/tournament-entry-status")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
-    const [t,wc]=await Promise.all([
+    const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
+    const [t,wc,career]=await Promise.all([
       db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
-      db.from("wildcard_requests").select("status").eq("tournament_id",id).maybeSingle()
+      db.from("wildcard_requests").select("status").eq("tournament_id",id).maybeSingle(),
+      db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle()
     ]);
-    if(t.error||wc.error)return h({error:(t.error||wc.error)?.message},500);
+    if(t.error||wc.error||career.error)return h({error:(t.error||wc.error||career.error)?.message},500);
     if(!t.data)return h({error:"Tournoi introuvable"},404);
+    const primaryId=Number(career.data?.managed_player_id||0);
+    const playerId=Number(requestedPlayerId||primaryId||0);
+    if(!playerId)return h({error:"Joueur managé introuvable"},404);
+    if(playerId!==primaryId){
+      const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
     try{
-      const [entryRules,pathways]=await Promise.all([
-        managedTournamentEntryRules(t.data),
-        managedTournamentPathwayBundle(id)
-      ]);
+      const entryRules=await managedTournamentEntryRules(t.data,playerId);
+      const pathways=playerId===primaryId
+        ?await managedTournamentPathwayBundle(id)
+        :{pathway:{eligible:false,reason:"secondary_managed_player"},special_exempt:{eligible:false,reason:"secondary_managed_player"},performance_bye:{eligible:false,reason:"secondary_managed_player"}};
       return h({
         tournament:t.data,
+        player_id:playerId,
+        primary_player_id:primaryId,
         entry_rules:entryRules,
         entry:entryRules?.persisted_entry??null,
         wildcard_status:wc.data?.status||null,
@@ -4046,8 +4065,20 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(tour.error||career.error)return h({error:(tour.error||career.error)?.message},500);
     if(!tour.data||!career.data?.managed_player_id)return h({error:"Tournoi ou joueur managé introuvable."},404);
-    const playerId=Number(career.data.managed_player_id),gameDate=String(career.data.career_date||AGE_REFERENCE_DATE);
-    if(String(career.data.career_focus||"mixed")==="doubles_only")return h({error:"Orientation Double exclusivement : inscription simple désactivée."},409);
+    const primaryId=Number(career.data.managed_player_id);
+    const playerId=n(body?.player_id,primaryId,1,99999999);
+    const gameDate=String(career.data.career_date||AGE_REFERENCE_DATE);
+    let playerFocus=String(career.data.career_focus||"mixed");
+    if(playerId!==primaryId){
+      const [roster,player]=await Promise.all([
+        db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle(),
+        db.from("players").select("id,career_focus").eq("id",playerId).maybeSingle()
+      ]);
+      if(roster.error||player.error)return h({error:(roster.error||player.error)?.message},500);
+      if(!roster.data||!player.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      playerFocus=String(player.data.career_focus||"mixed");
+    }
+    if(playerFocus==="doubles_only")return h({error:"Orientation Double exclusivement : inscription simple désactivée."},409);
 
     if(action==="withdraw"){
       const upd=await db.from("entries").update({
@@ -4094,6 +4125,7 @@ Deno.serve(async(req:Request)=>{
     ]);
     let elig:any={};
     if(pathwayMethods.has(requestedMethod)){
+      if(playerId!==primaryId&&!legacy)return h({error:"Cette passerelle spéciale est encore réservée au joueur principal. Utilise direct, qualifications ou alternate pour ce joueur.",requested_method:requestedMethod},409);
       let pathways:any;
       try{pathways=await managedTournamentPathwayBundle(tid)}
       catch(e){return h({error:String((e as any)?.message||e)},500)}
@@ -4166,7 +4198,7 @@ Deno.serve(async(req:Request)=>{
       entry_rank:rank,requested_on:requestedOn,withdrawn_on:null,
       metadata:{eligibility:elig,legacy_sync:legacy},
       updated_at:new Date().toISOString()
-    },{onConflict:"tournament_id"}).select("*").single();
+    },{onConflict:"tournament_id,player_id"}).select("*").single();
     if(up.error)return h({error:up.error.message},500);
     return h({ok:true,action:"enter",entry:up.data,eligibility:elig});
   }
@@ -6169,6 +6201,47 @@ Deno.serve(async(req:Request)=>{
       events:timeline.data??[],
       relationships:rels,
       academy:academy.data??null
+    });
+  }
+
+  if(path.endsWith("/api/managed-player-context")&&req.method==="GET"){
+    const career=await db.from("career_state").select("managed_player_id,career_date").eq("id","demo").maybeSingle();
+    if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
+    const primaryId=Number(career.data.managed_player_id||0);
+    const requestedId=n(u.searchParams.get("player_id"),primaryId,1,99999999);
+    if(!requestedId)return h({error:"Joueur géré introuvable"},404);
+    let squadRole="Joueur principal";
+    if(requestedId!==primaryId){
+      const roster=await db.from("academy_roster").select("squad_role,status").eq("player_id",requestedId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      squadRole=String(roster.data.squad_role||"Joueur académie");
+    }
+    const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+    const [player,entries,seasonPlan,injury,loadProfile]=await Promise.all([
+      db.from("players").select("id,name,country,ranking,points,doubles_ranking,doubles_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,injury_status,career_focus,photo_url").eq("id",requestedId).maybeSingle(),
+      db.from("entries")
+        .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at,tournaments(id,name,country,circuit,category,start_date,end_date,qualifying_start_date,qualifying_end_date,main_draw_start_date,qualifying_entry_deadline,main_entry_deadline,singles_entry_deadline,late_entry_deadline)")
+        .eq("player_id",requestedId).eq("status","entered").order("requested_on",{ascending:true}),
+      db.from("player_season_plans").select("*").eq("player_id",requestedId).eq("season",season).maybeSingle(),
+      db.from("injuries").select("*").eq("player_id",requestedId).eq("status","Active").order("started_at",{ascending:false}).limit(1).maybeSingle(),
+      db.from("player_training_load_profiles").select("*").eq("player_id",requestedId).order("as_of_date",{ascending:false}).limit(1).maybeSingle()
+    ]);
+    const err=player.error||entries.error||seasonPlan.error||injury.error||loadProfile.error;
+    if(err)return h({error:err.message},500);
+    if(!player.data)return h({error:"Joueur introuvable"},404);
+    return h({
+      model:"CB-MANAGED-PLAYER-CONTEXT-v1",
+      primary_player_id:primaryId,
+      player_id:requestedId,
+      is_primary:requestedId===primaryId,
+      squad_role:squadRole,
+      career_date:String(career.data.career_date||AGE_REFERENCE_DATE),
+      player:player.data,
+      entries:entries.data??[],
+      season_plan:seasonPlan.data??null,
+      injury:injury.data??null,
+      training_load:loadProfile.data??null
     });
   }
 

@@ -6146,6 +6146,20 @@ Deno.serve(async(req:Request)=>{
       db.rpc("recalculate_user_doubles_ranking",{p_date:date})
     ]);
     if(userRank.error||userDoubleRank.error)return h({error:(userRank.error||userDoubleRank.error)?.message},500);
+
+    const managedRankingRows:any[]=[];
+    const managedRoster=await db.from("academy_roster").select("player_id").eq("status","active").not("player_id","is",null);
+    if(managedRoster.error)return h({error:managedRoster.error.message},500);
+    const primaryRankState=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+    if(primaryRankState.error)return h({error:primaryRankState.error.message},500);
+    const primaryRankingId=Number(primaryRankState.data?.managed_player_id||0);
+    for(const row of managedRoster.data??[]){
+      const pid=Number((row as any).player_id||0);
+      if(!pid||pid===primaryRankingId)continue;
+      const rr=await db.rpc("recalculate_managed_player_ranking",{p_player_id:pid,p_date:date,p_sync_career:false});
+      if(rr.error)return h({error:"Recalcul classement joueur "+String(pid)+" : "+rr.error.message},500);
+      managedRankingRows.push(rr.data);
+    }
     const sponsorEligibility=await db.rpc("refresh_sponsor_offer_eligibility",{p_date:date});
     if(sponsorEligibility.error)return h({error:sponsorEligibility.error.message},500);
     const board=await db.rpc("update_board_state");
@@ -6163,7 +6177,7 @@ Deno.serve(async(req:Request)=>{
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});
     if(careerHealth.error)return h({error:careerHealth.error.message},500);
-    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,managedPlayerRankings:managedRankingRows,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medical.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:Number(medical.data?.weekly_cost||0),net:weeklyNet-Number(medical.data?.weekly_cost||0),expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -6519,16 +6533,23 @@ Deno.serve(async(req:Request)=>{
       if(roster.error)return h({error:roster.error.message},500);
       if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
     }
-    const [managedPlayer,oldRun,wc]=await Promise.all([
+    const [managedPlayer,oldRun,wc,activeInjury]=await Promise.all([
       db.from("players")
-        .select("id,name,country,ranking,junior_ranking,birth_date,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,player_attributes(*)")
+        .select("id,name,country,ranking,junior_ranking,birth_date,points,current_ability,form,fitness,fatigue,morale,handedness,career_focus,injury_status,player_attributes(*)")
         .eq("id",managedId).maybeSingle(),
-      db.from("tournament_runs").select("id").eq("tournament_id",tid).eq("managed_player_id",managedId).maybeSingle(),
-      db.from("wildcard_requests").select("*").eq("tournament_id",tid).eq("player_id",managedId).maybeSingle()
+      db.from("tournament_runs").select("id,managed_player_id").eq("tournament_id",tid).eq("managed_player_id",managedId).order("played_at",{ascending:false}).limit(1).maybeSingle(),
+      db.from("wildcard_requests").select("*").eq("tournament_id",tid).eq("player_id",managedId).maybeSingle(),
+      db.from("injuries").select("id,injury_type,severity,started_at,expected_return,status").eq("player_id",managedId).in("status",["active","Active"]).order("started_at",{ascending:false}).limit(1).maybeSingle()
     ]);
-    if(managedPlayer.error||oldRun.error||wc.error)return h({error:(managedPlayer.error||oldRun.error||wc.error)?.message},500);
+    if(managedPlayer.error||oldRun.error||wc.error||activeInjury.error)return h({error:(managedPlayer.error||oldRun.error||wc.error||activeInjury.error)?.message},500);
     if(!managedPlayer.data)return h({error:"Joueur géré introuvable"},404);
-    if(oldRun.data)return h({error:"Ce joueur a déjà joué ce tournoi dans cette sauvegarde.",run_id:oldRun.data.id,player_id:managedId},409);
+    let existingRun:any=oldRun.data??null;
+    if(!existingRun&&managedId===primaryPlayPlayerId){
+      const legacyRun=await db.from("tournament_runs").select("id,managed_player_id").eq("tournament_id",tid).is("managed_player_id",null).order("played_at",{ascending:false}).limit(1).maybeSingle();
+      if(legacyRun.error)return h({error:legacyRun.error.message},500);
+      existingRun=legacyRun.data??null;
+    }
+    if(existingRun)return h({error:"Ce joueur a déjà joué ce tournoi dans cette sauvegarde.",run_id:existingRun.id,player_id:managedId},409);
 
     const t:any=tour.data;
     const isPrimaryManaged=managedId===primaryPlayPlayerId;
@@ -6565,6 +6586,14 @@ Deno.serve(async(req:Request)=>{
       },409);
     }
     const managedGameDate=String(c.career_date||AGE_REFERENCE_DATE);
+    if(activeInjury.data&&(activeInjury.data.expected_return==null||String(activeInjury.data.expected_return)>=managedGameDate)){
+      return h({
+        error:"Ce joueur est indisponible pour blessure.",
+        player_id:managedId,
+        injury:activeInjury.data,
+        injury_status:String(managedPlayer.data.injury_status||"Blessé")
+      },409);
+    }
     const frozenCircuit=["ATP","Challenger","ITF"].includes(String(t.circuit||""));
     let frozenEntryMode:string|null=null;
     let frozenEntryPhase:string|null=null;
@@ -6969,7 +6998,7 @@ Deno.serve(async(req:Request)=>{
           ?"direct"
           :entryMode;
       const schedule=await db.rpc("managed_tournament_schedule_status",{
-        p_target_tournament_id:tid,p_entry_mode:scheduleMode
+        p_target_tournament_id:tid,p_entry_mode:scheduleMode,p_player_id:managedId
       });
       if(schedule.error)return h({error:schedule.error.message},500);
       if(schedule.data?.available===false){
@@ -6981,7 +7010,7 @@ Deno.serve(async(req:Request)=>{
       }
     }else if(!isSinglesFinals&&isJuniorSingles){
       const schedule=await db.rpc("managed_tournament_schedule_status",{
-        p_target_tournament_id:tid,p_entry_mode:entryMode
+        p_target_tournament_id:tid,p_entry_mode:entryMode,p_player_id:managedId
       });
       if(schedule.error)return h({error:schedule.error.message},500);
       if(schedule.data?.available===false){
@@ -7933,7 +7962,7 @@ Deno.serve(async(req:Request)=>{
     });
     for(const m of userMatches){
       await db.from("match_history").insert({
-        tournament_name:t.name,match_date:t.start_date,surface:t.surface,round:m.round_name,
+        managed_player_id:managedId,tournament_name:t.name,match_date:t.start_date,surface:t.surface,round:m.round_name,
         player_a:m.player_a_name,player_b:m.player_b_name,winner:m.winner_name,score:m.score,
         user_involved:true,match_data:{category:t.category,circuit:t.circuit,...m.stats}
       });
@@ -9047,7 +9076,20 @@ Deno.serve(async(req:Request)=>{
       db.rpc("recalculate_user_doubles_ranking",{p_date:String(newYear)+"-01-05"})
     ]);
     if(rank.error||doubleRank.error)return h({error:(rank.error||doubleRank.error)?.message},500);
-    return h({ok:true,rollover:roll.data,userRanking:rank.data,userDoublesRanking:doubleRank.data});
+
+    const rolloverManagedRankings:any[]=[];
+    const rollCareer=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+    const rollRoster=await db.from("academy_roster").select("player_id").eq("status","active").not("player_id","is",null);
+    if(rollCareer.error||rollRoster.error)return h({error:(rollCareer.error||rollRoster.error)?.message},500);
+    const rollPrimaryId=Number(rollCareer.data?.managed_player_id||0);
+    for(const row of rollRoster.data??[]){
+      const pid=Number((row as any).player_id||0);
+      if(!pid||pid===rollPrimaryId)continue;
+      const rr=await db.rpc("recalculate_managed_player_ranking",{p_player_id:pid,p_date:String(newYear)+"-01-05",p_sync_career:false});
+      if(rr.error)return h({error:"Recalcul annuel joueur "+String(pid)+" : "+rr.error.message},500);
+      rolloverManagedRankings.push(rr.data);
+    }
+    return h({ok:true,rollover:roll.data,userRanking:rank.data,managedPlayerRankings:rolloverManagedRankings,userDoublesRanking:doubleRank.data});
   }
 
 
@@ -9055,15 +9097,54 @@ Deno.serve(async(req:Request)=>{
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const surface=String(body?.surface||"Dur").slice(0,30);
     const tactics=body?.tactics||{};
-    const career=await db.from("career_state").select("managed_player_id,singles_rank,player_name,career_focus").eq("id","demo").maybeSingle();
+    const requestedPlayerId=n(body?.player_id,0,0,99999999);
+
+    const career=await db.from("career_state")
+      .select("managed_player_id,singles_rank,player_name,career_focus")
+      .eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
-    if(String(career.data.career_focus||"mixed")==="doubles_only"){
-      return h({error:"Carrière Double exclusivement : le Match Center simple est désactivé. Joue depuis le hub Double ou une fiche tournoi.",doubles_only:true},409);
+
+    const primaryId=Number(career.data.managed_player_id||0);
+    const playerId=Number(requestedPlayerId||primaryId||0);
+    if(!playerId)return h({error:"Joueur géré introuvable"},404);
+
+    if(playerId!==primaryId){
+      const roster=await db.from("academy_roster")
+        .select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
+
+    const [managed,activeInjury]=await Promise.all([
+      db.from("players")
+        .select("id,name,country,ranking,career_focus,current_ability,form,fitness,fatigue,morale")
+        .eq("id",playerId).maybeSingle(),
+      db.from("injuries")
+        .select("id,injury_type,severity,expected_return,aggravation_risk,status")
+        .eq("player_id",playerId).eq("status","Active")
+        .order("started_at",{ascending:false}).limit(1).maybeSingle()
+    ]);
+    if(managed.error||activeInjury.error)return h({error:(managed.error||activeInjury.error)?.message},500);
+    if(!managed.data)return h({error:"Joueur géré introuvable"},404);
+
+    if(activeInjury.data){
+      return h({
+        error:String(managed.data.name||"Ce joueur")+" est indisponible : "+String(activeInjury.data.injury_type||"blessure active")+".",
+        injured:true,player_id:playerId,injury:activeInjury.data
+      },409);
+    }
+
+    const playerFocus=String(managed.data.career_focus||(playerId===primaryId?career.data.career_focus:"mixed")||"mixed");
+    if(playerFocus==="doubles_only"){
+      return h({
+        error:"Orientation Double exclusivement : le Match Center simple est désactivé pour ce joueur.",
+        doubles_only:true,player_id:playerId
+      },409);
     }
 
     let opponentId=Number(body?.opponent_id||0);
+    const rank=Math.max(1,Number(managed.data.ranking??(playerId===primaryId?career.data.singles_rank:500)??500));
     if(!opponentId){
-      const rank=Math.max(1,Number(career.data.singles_rank||500));
       const lo=Math.max(1,rank-14),hi=rank+14;
       const candidates=await db.from("players")
         .select("id,name,country,ranking")
@@ -9071,22 +9152,34 @@ Deno.serve(async(req:Request)=>{
         .gte("ranking",lo).lte("ranking",hi)
         .order("ranking",{ascending:true}).limit(40);
       if(candidates.error)return h({error:candidates.error.message},500);
-      const pool=(candidates.data??[]).filter((x:any)=>Number(x.id)!==Number(career.data.managed_player_id));
-      const pick=pool.length?pool[(Number(new Date().getUTCDate())+rank)%pool.length]:null;
+      const pool=(candidates.data??[]).filter((x:any)=>Number(x.id)!==playerId);
+      const pick=pool.length?pool[(Number(new Date().getUTCDate())+rank+playerId)%pool.length]:null;
       opponentId=Number(pick?.id||0);
     }
-    if(!opponentId)return h({error:"Aucun adversaire disponible autour de ton classement."},404);
+    if(!opponentId)return h({error:"Aucun adversaire disponible autour du classement de ce joueur."},404);
+    if(opponentId===playerId)return h({error:"Le joueur ne peut pas s’affronter lui-même."},409);
 
-    const opp=await db.from("players").select("id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*)").eq("id",opponentId).maybeSingle();
+    const opp=await db.from("players")
+      .select("id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*)")
+      .eq("id",opponentId).maybeSingle();
     if(opp.error||!opp.data)return h({error:opp.error?.message||"Adversaire introuvable"},404);
+
     const ins=await db.from("live_match_sessions").insert({
+      managed_player_id:playerId,
       opponent_id:opponentId,surface,status:"active",user_sets:0,opponent_sets:0,set_no:1,
       user_games:0,opponent_games:0,user_points:0,opponent_points:0,serving_user:true,rally_no:0,
       momentum:50,tactics,stats:{user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0},
       score_log:[],last_point:{}
     }).select("*").single();
     if(ins.error)return h({error:ins.error.message},500);
-    return h({ok:true,session:ins.data,opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking}});
+
+    return h({
+      ok:true,
+      managed_player_id:playerId,
+      managed_player:{id:managed.data.id,name:managed.data.name,country:managed.data.country,ranking:managed.data.ranking},
+      session:ins.data,
+      opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking}
+    });
   }
 
   if(path.endsWith("/api/live-match/state")&&req.method==="GET"){
@@ -10853,35 +10946,25 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="choose_partner"){
-      const primaryId=Number(career.data.managed_player_id||0);
-      const playerId=n(body?.player_id,primaryId,1,99999999);
-      const isPrimary=playerId===primaryId;
-
-      if(!isPrimary){
-        const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
-        if(roster.error)return h({error:roster.error.message},500);
-        if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
-      }
-
-      const [anth,partner]=await Promise.all([
-        db.from("players").select("id,name,country,career_focus").eq("id",playerId).maybeSingle(),
-        db.from("players").select("id,name,current_ability,doubles_ranking,career_focus").eq("id",id).maybeSingle()
-      ]);
-      if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
-
-      const anthFocus=String(anth.data.career_focus||(isPrimary?career.data.career_focus:"mixed")||"mixed");
-      if(anthFocus==="singles_only"){
+      if(String(career.data.career_focus||"mixed")==="singles_only"){
         return h({error:"Orientation Simple exclusivement : choisis d'abord une autre orientation pour former une paire."},409);
       }
+      const anth=await getManagedPlayer("id");
+      const partner=await db.from("players").select("id,name,current_ability,doubles_ranking,career_focus").eq("id",id).maybeSingle();
+      if(anth.error||partner.error||!anth.data||!partner.data)return h({error:"Joueur introuvable"},404);
       if(Number(anth.data.id)===Number(id))return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
       if(String(partner.data.career_focus||"mixed")==="singles_only")return h({error:"Ce joueur a choisi une carrière Simple exclusivement."},409);
 
       const today=String(career.data?.career_date||AGE_REFERENCE_DATE);
       const season=Number(today.slice(0,4));
       const oldCommit=await db.from("player_doubles_commitments")
-        .select("*").eq("player_id",playerId).maybeSingle();
+        .select("*").eq("player_id",Number(anth.data.id)).maybeSingle();
 
-      const metric=await db.rpc("doubles_pair_metrics",{p_a:playerId,p_b:Number(id),p_date:today});
+      const metric=await db.rpc("doubles_pair_metrics",{
+        p_a:Number(anth.data.id),
+        p_b:Number(id),
+        p_date:today
+      });
       if(metric.error)return h({error:metric.error.message},500);
       const m:any=(metric.data??[])[0]||{};
       const chemistry=Number(m.chemistry||60);
@@ -10889,18 +10972,17 @@ Deno.serve(async(req:Request)=>{
       const pair_strength=Number(m.pair_strength||60);
       const affinityScore=Number(m.affinity_score||0);
 
-      const oldPairs=await db.from("doubles_partnerships")
-        .delete().or("player_a_id.eq."+playerId+",player_b_id.eq."+playerId);
-      if(oldPairs.error)return h({error:oldPairs.error.message},500);
-
+      await db.from("doubles_partnerships").delete().eq("player_a_id",anth.data.id);
       const ins=await db.from("doubles_partnerships").insert({
-        player_a_id:playerId,player_b_id:id,chemistry,compatibility,pair_strength
+        player_a_id:anth.data.id,
+        player_b_id:id,
+        chemistry,compatibility,pair_strength
       });
       if(ins.error)return h({error:ins.error.message},500);
 
       if(!oldCommit.error&&oldCommit.data&&oldCommit.data.active&&Number(oldCommit.data.primary_partner_id)!==Number(id)){
         await db.from("player_doubles_partner_history").insert({
-          player_id:playerId,
+          player_id:Number(anth.data.id),
           partner_id:Number(oldCommit.data.primary_partner_id),
           start_date:String(oldCommit.data.started_at||today),
           end_date:today,
@@ -10912,9 +10994,10 @@ Deno.serve(async(req:Request)=>{
         });
       }
 
-      const commitment=Math.max(60,Math.min(100,Math.round(affinityScore)+(anthFocus==="doubles_only"?6:2)));
+      const commitment=Math.max(60,Math.min(100,Math.round(affinityScore)+
+        (String(career.data?.career_focus||"mixed")==="doubles_only"?6:2)));
       const commitmentUp=await db.from("player_doubles_commitments").upsert({
-        player_id:playerId,
+        player_id:Number(anth.data.id),
         season,
         primary_partner_id:Number(id),
         started_at:(!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)===Number(id))
@@ -10926,17 +11009,17 @@ Deno.serve(async(req:Request)=>{
           ((!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)!==Number(id))?1:0),
         previous_partner_id:(!oldCommit.error&&oldCommit.data&&Number(oldCommit.data.primary_partner_id)!==Number(id))
           ?Number(oldCommit.data.primary_partner_id):oldCommit.data?.previous_partner_id||null,
-        reason:anthFocus==="doubles_only"
+        reason:String(career.data?.career_focus||"mixed")==="doubles_only"
           ?"Partenaire principal choisi pour une carrière exclusivement en double."
           :"Partenaire principal choisi par le joueur.",
-        source_label:"Utilisateur · partenaire double · groupe géré",
+        source_label:"Utilisateur · partenaire double",
         active:true,
         updated_at:new Date().toISOString()
       },{onConflict:"player_id"});
       if(commitmentUp.error)return h({error:commitmentUp.error.message},500);
 
-      const pa=Math.min(playerId,Number(id)),pb=Math.max(playerId,Number(id));
-      const rel=await db.from("player_relationships").upsert({
+      const pa=Math.min(Number(anth.data.id),Number(id)),pb=Math.max(Number(anth.data.id),Number(id));
+      await db.from("player_relationships").upsert({
         player_a_id:pa,player_b_id:pb,
         relation_type:chemistry>=91&&compatibility>=86?"Ami / partenaire":"Partenaire de double",
         affinity:chemistry,
@@ -10945,24 +11028,18 @@ Deno.serve(async(req:Request)=>{
         closeness:Math.round(chemistry*.70+compatibility*.30),
         is_simulated:true,
         source_label:"Court Boss · relation issue du choix de partenaire",
-        formed_date:today,last_update:today,active:true
+        formed_date:today,
+        last_update:today,
+        active:true
       },{onConflict:"player_a_id,player_b_id"});
-      if(rel.error)return h({error:rel.error.message},500);
-
-      await db.from("inbox_items").insert({
-        kind:"double",title:"Nouveau partenaire · "+String(anth.data.name||"Joueur"),
-        body:String(partner.data.name||"Le joueur")+" devient son partenaire principal.",
-        action_route:"doubles",is_read:false,related_entity_type:"player",related_entity_id:playerId
-      });
 
       return h({
-        ok:true,player_id:playerId,player_name:String(anth.data.name||""),
-        partner_id:Number(id),partner_name:String(partner.data.name||""),
-        chemistry,compatibility,pair_strength,affinity_score:affinityScore,
-        commitment,primary_partner:true
+        ok:true,chemistry,compatibility,pair_strength,
+        affinity_score:affinityScore,
+        commitment,
+        primary_partner:true
       });
     }
-
 
     if(action==="davis_role"){
       const role=String(body?.role||"Réserve").slice(0,40);
@@ -11426,20 +11503,12 @@ Deno.serve(async(req:Request)=>{
       const field=String(body?.field||"");
       const allowed=["player_name","country","style","age","height_cm","weight_kg"];
       if(!allowed.includes(field))return h({error:"Champ non modifiable"},400);
-
-      const primaryId=Number(career.data.managed_player_id||0);
-      const playerId=n(body?.player_id,primaryId,1,99999999);
-      const isPrimary=playerId===primaryId;
-      if(!isPrimary){
-        const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
-        if(roster.error)return h({error:roster.error.message},500);
-        if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
-      }
-
       let value:any=body?.value;
       if(["age","height_cm","weight_kg"].includes(field))value=n(value,0,1,250);
       else value=String(value??"").trim().slice(0,80);
-
+      const up:any={updated_at:new Date().toISOString()};up[field]=value;
+      const cu=await db.from("career_state").update(up).eq("id","demo");
+      if(cu.error)return h({error:cu.error.message},500);
       const pu:any={};
       if(field==="player_name")pu.name=value;
       if(field==="country")pu.country=value;
@@ -11447,20 +11516,13 @@ Deno.serve(async(req:Request)=>{
       if(field==="age")pu.age=value;
       if(field==="height_cm")pu.height_cm=value;
       if(field==="weight_kg")pu.weight_kg=value;
-
       if(Object.keys(pu).length){
-        const p=await db.from("players").update(pu).eq("id",playerId).select("id,name,country,style,age,height_cm,weight_kg").maybeSingle();
+        const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+        if(managed.error||!managed.data?.managed_player_id)return h({error:managed.error?.message||"Managed player missing"},500);
+        const p=await db.from("players").update(pu).eq("id",managed.data.managed_player_id);
         if(p.error)return h({error:p.error.message},500);
       }
-
-      if(isPrimary){
-        const up:any={updated_at:new Date().toISOString()};
-        up[field]=value;
-        const cu=await db.from("career_state").update(up).eq("id","demo");
-        if(cu.error)return h({error:cu.error.message},500);
-      }
-
-      return h({ok:true,field,value,player_id:playerId,is_primary:isPrimary});
+      return h({ok:true,field,value});
     }
 
 

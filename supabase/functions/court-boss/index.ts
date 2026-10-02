@@ -6015,66 +6015,170 @@ Deno.serve(async(req:Request)=>{
       .select("id,player_id,development_focus,squad_role,source_youth_id")
       .eq("status","active").neq("squad_role","Joueur principal").is("source_youth_id",null);
     if(secondaryRoster.error)return h({error:secondaryRoster.error.message},500);
+
     const focusMap:any={
       "Service":"Service","Retour":"Retour","Coup droit":"Fond de court","Revers":"Fond de court",
       "Déplacements":"Déplacements","Endurance":"Physique","Match play":"Mental","Double":"Double"
     };
-    const focusAttr:any={
-      "Service":"serve_precision","Retour":"return_game","Fond de court":"forehand",
-      "Déplacements":"movement","Physique":"stamina","Mental":"tactics","Double":"doubles"
+    const sessionTargets:any={
+      "Service":["serve_power","serve_precision","first_serve_quality","second_serve_quality","serve_variety","serve_spin","serve_consistency","serve_plus_one","timing"],
+      "Retour":["return_game","anticipation","return_aggression","return_consistency","counter_skill","reaction","passing_shot","timing","shot_control"],
+      "Coup droit":["forehand","forehand_power","forehand_accuracy","forehand_consistency","topspin","shot_control","timing","shot_selection","serve_plus_one"],
+      "Revers":["backhand","backhand_power","backhand_accuracy","backhand_consistency","slice","shot_control","timing","passing_shot"],
+      "Déplacements":["movement","speed","acceleration","agility","balance","footwork","athleticism","court_positioning","defensive_skill","defense_to_attack"],
+      "Endurance":["stamina","strength","athleticism","natural_fitness","recovery","flexibility","work_rate","rally_tolerance","tenacity"],
+      "Match play":["tactics","concentration","composure","fighting_spirit","tenacity","decision_making","shot_selection","shot_control","timing","counter_skill","big_points","consistency","killer_instinct","confidence","determination","court_positioning","transition_game","rally_tolerance","defense_to_attack"],
+      "Double":["volley","touch","doubles","half_volley","smash","net_positioning","doubles_communication","poaching","anticipation","transition_game","reaction","timing","footwork","serve_consistency"]
     };
+    const secondaryStaffProfiles=(staffRows.data??[])
+      .map((x:any)=>Array.isArray(x.profile)?x.profile[0]:x.profile)
+      .filter(Boolean);
+    const secondaryStaffEfficiency=(p:any)=>{
+      if(String(p?.operational_status||"active")==="rest"&&String(p?.rest_until||"9999-12-31")>=date)return .42;
+      return Math.max(.68,Math.min(1.06,
+        1-Number(p?.burnout||0)*.0032-Number(p?.travel_fatigue||0)*.0018
+        -Math.max(0,Number(p?.workload||20)-75)*.0015
+        +Math.max(0,Number(p?.professionalism||10)-14)*.006
+      ));
+    };
+    const secondaryStaffQuality=secondaryStaffProfiles.length
+      ?secondaryStaffProfiles.reduce((sum:number,p:any)=>{
+          const raw=Math.max(
+            Number(p?.coach_rating||0),Number(p?.technical_rating||0),Number(p?.fitness_rating||0),
+            Number(p?.tactical_rating||0),Number(p?.mental_rating||0),Number(p?.doubles_coaching_rating||0)
+          );
+          return sum+Math.max(8,raw)*secondaryStaffEfficiency(p);
+        },0)/secondaryStaffProfiles.length
+      :10;
+    const secondaryFacilityQuality=(facilityRows.data??[]).length
+      ?(facilityRows.data??[]).reduce((sum:number,x:any)=>sum+Number(x.level||1),0)/(facilityRows.data??[]).length
+      :1;
+
     for(const rr of secondaryRoster.data??[]){
       const pid=Number((rr as any).player_id||0);
       const planRaw=(academyPlans as any)[String(pid)];
       const plan=Array.isArray(planRaw)?planRaw.slice(0,7).map(String):[];
       if(!pid||!plan.length)continue;
+
       const count:any={};
       for(const ss of plan){
-        const f=focusMap[ss];if(f)count[f]=(count[f]||0)+1;
+        const focus=focusMap[ss];if(focus)count[focus]=(count[focus]||0)+1;
       }
-      const focus=(Object.entries(count).sort((a:any,b:any)=>Number(b[1])-Number(a[1]))[0]?.[0] as string)||String((rr as any).development_focus||"Équilibré");
+      const focus=(Object.entries(count).sort((a:any,b:any)=>Number(b[1])-Number(a[1]))[0]?.[0] as string)
+        ||String((rr as any).development_focus||"Équilibré");
       const rosterFocus=await db.from("academy_roster").update({development_focus:focus}).eq("id",(rr as any).id);
       if(rosterFocus.error)return h({error:rosterFocus.error.message},500);
       await db.from("academy_members").update({development_focus:focus}).eq("player_id",pid).eq("status","active");
 
-      const playerRow=await db.from("players").select("id,name,current_ability,potential,form,fitness,morale,fatigue").eq("id",pid).maybeSingle();
-      if(playerRow.error||!playerRow.data)continue;
-      const load=plan.reduce((sum:number,ss:string)=>sum+(["Endurance","Match play","Déplacements"].includes(ss)?3:["Service","Retour","Coup droit","Revers","Double"].includes(ss)?2:ss==="Récupération"?0:-1),0);
+      const [playerRow,attrsRow,devRow,ceilRow,progressRowsManaged]=await Promise.all([
+        db.from("players").select("id,name,age,birth_date,current_ability,potential,form,fitness,morale,fatigue").eq("id",pid).maybeSingle(),
+        db.from("player_attributes").select("*").eq("player_id",pid).maybeSingle(),
+        db.from("player_development_profiles")
+          .select("development_type,peak_age,decline_start_age,development_rate,professionalism,coachability,staff_stability,development_context,development_phase")
+          .eq("player_id",pid).maybeSingle(),
+        db.from("player_attribute_ceilings").select("ceilings").eq("player_id",pid).maybeSingle(),
+        db.from("managed_player_training_progress").select("attribute,xp").eq("player_id",pid)
+      ]);
+      const trainingErr=playerRow.error||attrsRow.error||devRow.error||ceilRow.error||progressRowsManaged.error;
+      if(trainingErr)return h({error:trainingErr.message},500);
+      if(!playerRow.data)continue;
+
       const p0:any=playerRow.data;
+      const attrs:any=attrsRow.data||{};
+      const dev:any=devRow.data||{};
+      const ceilings:any=ceilRow.data?.ceilings||{};
+      const progressMap=new Map((progressRowsManaged.data??[]).map((x:any)=>[String(x.attribute),Number(x.xp||0)]));
+
+      const load=plan.reduce((sum:number,ss:string)=>
+        sum+(["Endurance","Match play","Déplacements"].includes(ss)?3:["Service","Retour","Coup droit","Revers","Double"].includes(ss)?2:ss==="Récupération"?0:-1),0);
       const fatigueDelta=Math.max(-3,Math.min(8,Math.round((load-8)/2)));
+      const postFatigue=Math.max(0,Math.min(100,Number(p0.fatigue||15)+fatigueDelta));
+      const postFitness=Math.max(45,Math.min(100,Number(p0.fitness||90)+(load<=10?1:-2)));
+      const postForm=Math.max(35,Math.min(100,Number(p0.form||70)+(load>=7&&load<=12?1:0)));
+      const postMorale=Math.max(35,Math.min(100,Number(p0.morale||75)+(load>=6&&load<=12?1:0)));
       const conditionUp=await db.from("players").update({
-        fatigue:Math.max(0,Math.min(100,Number(p0.fatigue||15)+fatigueDelta)),
-        fitness:Math.max(45,Math.min(100,Number(p0.fitness||90)+(load<=10?1:-2))),
-        form:Math.max(35,Math.min(100,Number(p0.form||70)+(load>=7&&load<=12?1:0))),
-        morale:Math.max(35,Math.min(100,Number(p0.morale||75)+(load>=6&&load<=12?1:0)))
+        fatigue:postFatigue,fitness:postFitness,form:postForm,morale:postMorale
       }).eq("id",pid);
       if(conditionUp.error)return h({error:conditionUp.error.message},500);
 
-      let improvement:any=null;
-      const cycle=({discovery:4,normal:5,manager:6,hardcore:7} as any)[difficultyKey]||5;
-      const attr=focusAttr[focus];
-      if(attr&&Number(p0.current_ability||0)<Number(p0.potential||0)&&((pid+week)%cycle===0)){
-        const ar=await db.from("player_attributes").select(attr).eq("player_id",pid).maybeSingle();
-        if(!ar.error&&ar.data){
-          const before=Number((ar.data as any)[attr]||10);
-          if(before<20){
-            const au=await db.from("player_attributes").update({[attr]:before+1}).eq("player_id",pid);
-            if(!au.error){improvement={attribute:attr,from:before,to:before+1};academyPlayerTraining.attribute_improvements++;}
-          }
+      const playerAge=Number(p0.age||ageAt(p0.birth_date,date,20,date)||20);
+      const peakAge=Number(dev.peak_age||25),declineAge=Number(dev.decline_start_age||30);
+      const personalBase=Math.max(.74,Math.min(1.28,
+        .72+Number(dev.development_rate||10)*.012
+        +Number(dev.professionalism||10)*.010
+        +Number(dev.coachability||10)*.011
+        +Number(dev.staff_stability||8)*.004
+      ));
+      const ageMult=playerAge<peakAge?1.05:playerAge<=declineAge?1:Math.max(.68,1-(playerAge-declineAge)*.055);
+      const conditionMult=Math.max(.70,Math.min(1.08,
+        .88+postFitness/500+postMorale/700-postFatigue/550
+      ));
+      const phase=String(dev.development_phase||dev.development_context||"").toLowerCase();
+      const phaseMult=phase.includes("prospect")?1.08:phase.includes("develop")?1.05:phase.includes("prime")?1:phase.includes("plateau")?.95:phase.includes("decline")?.82:1;
+      const environmentMult=Math.max(.75,Math.min(1.25,
+        .67+secondaryStaffQuality/36+secondaryFacilityQuality/12
+      ));
+      const personalDevMult=personalBase*ageMult*conditionMult*phaseMult*environmentMult*difficultyTrainingMult;
+
+      const xpGain:any={};
+      for(const session of plan){
+        const targets=sessionTargets[String(session)]||[];
+        if(!targets.length)continue;
+        const spread=Math.max(.42,Math.min(1,2.4/Math.max(1,targets.length)));
+        for(const attr of targets){
+          xpGain[attr]=(xpGain[attr]||0)+.52*personalDevMult*spread;
         }
       }
+
+      const attrUpdate:any={};
+      const improvements:any[]=[];
+      const capped:any[]=[];
+      for(const [attr,gainRaw] of Object.entries(xpGain)){
+        const gain=Number(gainRaw||0);
+        const current=Number(attrs[attr]||10);
+        const cap=Math.max(current,Math.min(20,Number(ceilings[attr]??20)));
+        const threshold=(3.35+current*.24)
+          *(playerAge>declineAge?1.12:1)
+          *(Number(dev.coachability||10)<=8?1.08:1);
+        let total=Number(progressMap.get(attr)||0)+gain;
+        if(total>=threshold&&current<cap&&Number(p0.current_ability||0)<Number(p0.potential||0)){
+          const next=Math.min(cap,current+1);
+          attrUpdate[attr]=next;
+          total=Math.max(0,total-threshold);
+          improvements.push({attribute:attr,from:current,to:next,ceiling:cap});
+        }else if(current>=cap&&gain>0){
+          capped.push({attribute:attr,value:current,ceiling:cap});
+        }
+        const xpUp=await db.from("managed_player_training_progress").upsert({
+          player_id:pid,attribute:attr,xp:total,updated_at:new Date().toISOString()
+        },{onConflict:"player_id,attribute"});
+        if(xpUp.error)return h({error:xpUp.error.message},500);
+      }
+
+      if(Object.keys(attrUpdate).length){
+        const au=await db.from("player_attributes").update(attrUpdate).eq("player_id",pid);
+        if(au.error)return h({error:au.error.message},500);
+      }
+
+      academyPlayerTraining.attribute_improvements+=improvements.length;
       academyPlayerTraining.processed++;
-      const postFatigue=Math.max(0,Math.min(100,Number(p0.fatigue||15)+fatigueDelta));
-      const reportRow={player_id:pid,name:String(p0.name||"Joueur"),focus,load,improvement,fatigue:postFatigue};
+      const reportRow={
+        player_id:pid,name:String(p0.name||"Joueur"),focus,load,
+        improvement:improvements[0]||null,improvements,capped,
+        fatigue:postFatigue,development_multiplier:Number(personalDevMult.toFixed(3))
+      };
       academyPlayerTraining.players.push(reportRow);
 
       const highLoad=load>=13||postFatigue>=65;
-      if(improvement||highLoad){
-        const title=improvement
+      if(improvements.length||highLoad){
+        const title=improvements.length
           ?"Progression · "+String(p0.name||"Joueur")
           :"Charge à surveiller · "+String(p0.name||"Joueur");
-        const bodyText=improvement
-          ?String(p0.name||"Le joueur")+" progresse en "+String(improvement.attribute)+" ("+String(improvement.from)+" → "+String(improvement.to)+"). Focus de la semaine : "+focus+"."
+        const progressText=improvements.length
+          ?improvements.slice(0,3).map((x:any)=>String(x.attribute)+" "+String(x.from)+" → "+String(x.to)).join(", ")
+          :"";
+        const bodyText=improvements.length
+          ?String(p0.name||"Le joueur")+" progresse : "+progressText+". Focus de la semaine : "+focus+"."
           :String(p0.name||"Le joueur")+" termine la semaine avec une charge "+String(load)+" et une fatigue estimée à "+String(postFatigue)+". Ajuste son plan si nécessaire.";
         await db.from("inbox_items").insert({
           kind:"training",title,body:bodyText,action_route:"training",game_date:date,

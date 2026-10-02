@@ -365,6 +365,44 @@ test('Junior 64-draw and J30/J60 round-robin composition are distinct',()=>{
  assert.deepEqual(rr.rounds,['RR','QF','SF','F']);
 });
 
+
+
+test('Live and quick simulations share the canonical runtime point kernel',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/const livePointKernel=\(ctx:any\)=>/);
+ assert.ok((code.match(/livePointKernel\(\{/g)||[]).length>=2);
+ assert.match(code,/simulation_granularity:"game"/);
+ assert.match(code,/rally_no:Number\(session\.data\.rally_no\|\|0\)\+gamePoints/);
+});
+
+test('Match form is a temporary runtime modifier and never a base attribute write',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ assert.match(code,/mode:"temporary_runtime_only"/);
+ assert.match(code,/persists_to_player_attributes:false/);
+ const liveStart=code.indexOf('if\(path.endsWith("/api/live-match/point")');
+ const commitStart=code.indexOf('if\(path.endsWith("/api/live-match/commit")');
+ const liveBlock=code.slice(liveStart,commitStart);
+ assert.doesNotMatch(liveBlock,/player_attributes.*update/s);
+});
+
+test('Legacy live advance cannot mutate career before explicit validation',()=>{
+ const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ const start=code.indexOf('if(path.endsWith("/api/live-match/advance")');
+ const end=code.indexOf('if(path.endsWith("/api/live-match/point")');
+ const block=code.slice(start,end);
+ assert.match(block,/Endpoint obsolète/);
+ assert.match(block,/410/);
+ assert.doesNotMatch(block,/players"\)\.update/);
+ assert.doesNotMatch(block,/match_history"\)\.insert/);
+});
+
+test('Match Center tells the player that form does not rewrite permanent attributes',()=>{
+ const ui=fs.readFileSync(new URL('../court-boss/match-center-v1.js',import.meta.url),'utf8');
+ assert.match(ui,/bonus temporaire/);
+ assert.match(ui,/aucun attribut permanent n’est réécrit/);
+ assert.match(ui,/Même moteur que le live/);
+});
+
 test('Backend uses the ITF junior fallback when no explicit format row exists',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/juniorFormatRes\.data\|\|juniorTournamentFormatRule\(t\.data\)/);

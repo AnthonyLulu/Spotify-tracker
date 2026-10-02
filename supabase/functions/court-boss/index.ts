@@ -8925,7 +8925,11 @@ Deno.serve(async(req:Request)=>{
     if(err)return h({error:err.message},500);
     const s=singles.data??[],d=doubles.data??[];
     const playerName=String(player.data.name||"Joueur");
-    const mh=(matches.data??[]).filter((x:any)=>String(x.player_a||"")===playerName||String(x.player_b||"")===playerName);
+    const mh=(matches.data??[]).filter((x:any)=>{
+      const mid=Number(x.managed_player_id||0);
+      if(mid)return mid===playerId;
+      return String(x.player_a||"")===playerName||String(x.player_b||"")===playerName;
+    });
     const careerView={
       ...career.data,
       managed_player_id:playerId,

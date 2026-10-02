@@ -2775,7 +2775,7 @@ window.discardLiveMatch=async()=>{
   await reloadAfterRollback();
  }catch(e){alert('Retour checkpoint impossible : '+e.message)}
 };
-window.commitLiveMatch=async()=>{
+window.commitLiveMatch=async(saveAfter=true)=>{
  if(!local.liveMatch||!['finished','completed'].includes(String(local.liveMatch.status||'')))return;
  try{
   const d=await get('/api/live-match/commit',{
@@ -2788,10 +2788,16 @@ window.commitLiveMatch=async()=>{
   if(boot.career&&activeManagedId()===primaryManagedPlayerId())local.career={...(local.career||{}),...boot.career};
   else await loadActiveManagedContext(true,activeManagedId()).catch(()=>{});
   await Promise.allSettled([loadManagement(),loadSeasonSummary(),loadRankingLedger(),loadCareerHub(true)]);
-  const save=await saveCareerSlot(9,'quick',true);
-  if(save?.ok===false)throw new Error('Résultat validé, mais sauvegarde rapide impossible : '+(save.error||save.reason||'erreur'));
-  clearPendingLiveRollback();
-  alert('Résultat validé et sauvegardé.');
+  if(saveAfter){
+   const save=await saveCareerSlot(9,'quick',true);
+   if(save?.ok===false)throw new Error('Résultat validé, mais sauvegarde rapide impossible : '+(save.error||save.reason||'erreur'));
+   clearPendingLiveRollback();
+   alert('Résultat validé et sauvegardé.');
+  }else{
+   // Keep the rollback marker armed: the committed result belongs to the current
+   // unsaved session and a quit/reload before the next real save restores pre-match.
+   alert('Résultat validé dans la session, mais pas sauvegardé. Quitter ou recharger avant une sauvegarde reviendra au checkpoint.');
+  }
   render();
  }catch(e){alert(e.message)}
 };

@@ -6610,6 +6610,29 @@ Deno.serve(async(req:Request)=>{
       );
       if(!inRoster)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
     }
+
+    let managedCollegeState:any=null;
+    let managedCollegeOffers:any[]=[];
+    let managedCollegeDuals:any[]=[];
+    if(managedId){
+      const ensured=await db.rpc("ensure_player_college_state",{p_player_id:managedId});
+      if(ensured.error)return h({error:ensured.error.message},500);
+      const stateId=String((ensured.data as any)?.state_id||(managedId===primaryManagedId?"demo":"player:"+managedId));
+      const [stateRes,offersRes]=await Promise.all([
+        db.from("college_career_state")
+          .select("*,team:college_teams(*)").eq("id",stateId).eq("player_id",managedId).maybeSingle(),
+        db.from("college_offers")
+          .select("*,team:college_teams(*)").eq("player_id",managedId).order("scholarship_pct",{ascending:false})
+      ]);
+      if(stateRes.error||offersRes.error)return h({error:(stateRes.error||offersRes.error)?.message},500);
+      managedCollegeState=stateRes.data??null;
+      managedCollegeOffers=offersRes.data??[];
+      const teamId=Number(managedCollegeState?.chosen_team_id||0);
+      managedCollegeDuals=teamId
+        ?(collegeDuals.data??[]).filter((x:any)=>Number(x.home_team_id||0)===teamId||Number(x.away_team_id||0)===teamId)
+        :[];
+    }
+
     const managedDoublesCommitment=managedId
       ?await db.from("player_doubles_commitments")
         .select("season,primary_partner_id,started_at,last_review_date,commitment,affinity,switches,reason,source_label,active,partner:players!player_doubles_commitments_primary_partner_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability)")
@@ -6665,8 +6688,8 @@ Deno.serve(async(req:Request)=>{
 
     return h({
       contracts:contracts.data??[],college:college.data??[],shortlist:shortlist.data??[],sponsors:sponsors.data??[],
-      candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:collegeOffers.data??[],
-      collegeState:collegeState.data??null,collegeDuals:collegeDuals.data??[],davisTies:davisTies.data??[],
+      candidates:candidates.data??[],partnerships:partnerships.data??[],collegeOffers:managedCollegeOffers,
+      collegeState:managedCollegeState,collegeDuals:managedCollegeDuals,davisTies:davisTies.data??[],
       academyMembers:academyMembers.data??[],academyRoster:academyRoster.data??[],
       collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
       staffTrainingCenters:staffTrainingCenters.error?[]:(staffTrainingCenters.data??[]),

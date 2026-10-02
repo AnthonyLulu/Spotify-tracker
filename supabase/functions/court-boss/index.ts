@@ -11317,6 +11317,12 @@ Deno.serve(async(req:Request)=>{
           contract_end:academyContractEnd,status:"active",joined_at:startDate
         });
         if(mm.error)return h({error:"Ajout membre impossible pour "+String(ep.name)+": "+mm.error.message},500);
+        const ec=await db.from("contracts").insert({
+          subject_type:"player",subject_name:String(ep.name),role:"Joueur académie",
+          weekly_salary:0,start_date:startDate,end_date:academyContractEnd,
+          bonuses:{source:"new_career_managed_squad",player_id:Number(ep.id)},status:"active"
+        });
+        if(ec.error)return h({error:"Contrat académie impossible pour "+String(ep.name)+": "+ec.error.message},500);
       }
 
       const principalContract=previousPrincipalName
@@ -11325,10 +11331,17 @@ Deno.serve(async(req:Request)=>{
       if(principalContract.error)return h({error:principalContract.error.message},500);
       if(principalContract.data?.id){
         const pc=await db.from("contracts").update({
-          subject_name:p.name,role:"Joueur",start_date:startDate,end_date:academyContractEnd,
-          status:"active",weekly_salary:0
+          subject_name:p.name,role:"Joueur principal",start_date:startDate,end_date:academyContractEnd,
+          status:"active",weekly_salary:0,bonuses:{source:"new_career_managed_squad",player_id:Number(p.id)}
         }).eq("id",principalContract.data.id);
         if(pc.error)return h({error:pc.error.message},500);
+      }else{
+        const pc=await db.from("contracts").insert({
+          subject_type:"player",subject_name:String(p.name),role:"Joueur principal",
+          weekly_salary:0,start_date:startDate,end_date:academyContractEnd,
+          bonuses:{source:"new_career_managed_squad",player_id:Number(p.id)},status:"active"
+        });
+        if(pc.error)return h({error:"Contrat du joueur principal impossible : "+pc.error.message},500);
       }
 
       if(previousId && previousId!==Number(p.id)){

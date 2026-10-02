@@ -11294,54 +11294,107 @@ Deno.serve(async(req:Request)=>{
 
 
     if(action==="commit_college"){
-      const offer=await db.from("college_offers").select("*,team:college_teams(*)").eq("id",id).maybeSingle();
-      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offer not found"},404);
-      const managedId=Number(career.data.managed_player_id||0);
-      if(!managedId)return h({error:"Joueur géré introuvable"},409);
-      await db.from("college_offers").update({status:"declined"}).neq("id",id).eq("status","available");
+      const target=await resolveActionManagedPlayer(body?.player_id);
+      if(target.error)return h({error:target.error},target.status);
+      const managedId=target.playerId;
+      const ensure=await db.rpc("ensure_player_college_state",{p_player_id:managedId});
+      if(ensure.error)return h({error:ensure.error.message},500);
+      const stateId=String((ensure.data as any)?.state_id||(target.isPrimary?"demo":"player:"+managedId));
+
+      const offer=await db.from("college_offers")
+        .select("*,team:college_teams(*)").eq("id",id).eq("player_id",managedId).maybeSingle();
+      if(offer.error||!offer.data)return h({error:offer.error?.message||"Offre introuvable pour ce joueur"},404);
+
+      const playerAge=Number(target.player?.age||0);
+      if(playerAge&&playerAge<18)return h({error:"Entrée NCAA impossible avant 18 ans."},409);
+      if(playerAge>22)return h({error:"Ce joueur est trop âgé pour débuter une carrière NCAA."},409);
+
+      const currentState=await db.from("college_career_state").select("*").eq("id",stateId).maybeSingle();
+      if(currentState.error)return h({error:currentState.error.message},500);
+      if(["committed","active"].includes(String(currentState.data?.status||""))){
+        return h({error:"Ce joueur est déjà engagé dans une université."},409);
+      }
+
       const today=String(career.data.career_date||new Date().toISOString().slice(0,10));
       const season=String(new Date(today+"T12:00:00Z").getUTCFullYear());
-      const [o,stateUp,playerUp,ncaaUp]=await Promise.all([
-        db.from("college_offers").update({status:"accepted"}).eq("id",id),
-        db.from("college_career_state").update({chosen_team_id:offer.data.team_id,scholarship_pct:offer.data.scholarship_pct,status:"committed",lineup_position:6,coach_trust:62}).eq("id","demo"),
+      const school=String(offer.data.team?.name||"Université");
+      const playerName=String(target.player?.name||"Le joueur");
+
+      const [decline,o,stateUp,playerUp,ncaaUp]=await Promise.all([
+        db.from("college_offers").update({status:"declined"}).eq("player_id",managedId).neq("id",id).eq("status","available"),
+        db.from("college_offers").update({status:"accepted"}).eq("id",id).eq("player_id",managedId),
+        db.from("college_career_state").update({
+          chosen_team_id:offer.data.team_id,scholarship_pct:offer.data.scholarship_pct,
+          status:"committed",lineup_position:6,coach_trust:62,player_id:managedId
+        }).eq("id",stateId),
         db.from("players").update({
-          ncaa_current:true,ncaa_status:"Active",ncaa_last_school:String(offer.data.team.name||"Université"),
-          ncaa_verified:true,ncaa_school:String(offer.data.team.name||"Université"),ncaa_division:"NCAA Division I"
+          ncaa_current:true,ncaa_status:"Active",ncaa_last_school:school,
+          ncaa_verified:true,ncaa_school:school,ncaa_division:"NCAA Division I"
         }).eq("id",managedId),
         db.from("ncaa_career").upsert({
-          player_id:managedId,school:String(offer.data.team.name||"Université"),division:"NCAA Division I",
-          start_season:season,status:"Active",verified:true,source_label:"Court Boss save · engagement NCAA enregistré",
+          player_id:managedId,school,division:"NCAA Division I",
+          start_season:season,status:"Active",verified:false,
+          source_label:"Court Boss save · engagement NCAA simulé",
           last_verified_at:new Date().toISOString()
         },{onConflict:"player_id"})
       ]);
-      const err=o.error||stateUp.error||playerUp.error||ncaaUp.error;if(err)return h({error:err.message},500);
-      await db.from("inbox_items").insert({kind:"college",title:"Engagement NCAA",body:String(career.data.player_name||"Le joueur")+" s’engage avec "+offer.data.team.name+" ("+offer.data.scholarship_pct+"% de bourse).",action_route:"university",is_read:false});
-      return h({ok:true,team:offer.data.team,status:"committed",ncaa_status:"Active"});
+      const err=decline.error||o.error||stateUp.error||playerUp.error||ncaaUp.error;
+      if(err)return h({error:err.message},500);
+
+      await db.from("inbox_items").insert({
+        kind:"college",title:"Engagement NCAA · "+playerName,
+        body:playerName+" s’engage avec "+school+" ("+offer.data.scholarship_pct+"% de bourse).",
+        action_route:"university",is_read:false,
+        related_entity_type:"player",related_entity_id:managedId,
+        action_payload:{route:"university",player_id:managedId}
+      });
+      return h({ok:true,player_id:managedId,team:offer.data.team,status:"committed",ncaa_status:"Active",state_id:stateId});
     }
 
     if(action==="turn_pro_college"){
-      const managedId=Number(career.data.managed_player_id||0);
-      if(!managedId)return h({error:"Joueur géré introuvable"},409);
-      const cs=await db.from("college_career_state").select("*,team:college_teams(*)").eq("id","demo").maybeSingle();
+      const target=await resolveActionManagedPlayer(body?.player_id);
+      if(target.error)return h({error:target.error},target.status);
+      const managedId=target.playerId;
+      const ensure=await db.rpc("ensure_player_college_state",{p_player_id:managedId});
+      if(ensure.error)return h({error:ensure.error.message},500);
+      const stateId=String((ensure.data as any)?.state_id||(target.isPrimary?"demo":"player:"+managedId));
+
+      const cs=await db.from("college_career_state")
+        .select("*,team:college_teams(*)").eq("id",stateId).eq("player_id",managedId).maybeSingle();
       if(cs.error||!cs.data)return h({error:cs.error?.message||"Carrière NCAA introuvable"},404);
-      if(!["committed","active"].includes(String(cs.data.status||"")))return h({error:"Le joueur n’est pas actuellement engagé en NCAA."},409);
+      if(!["committed","active"].includes(String(cs.data.status||""))){
+        return h({error:"Ce joueur n’est pas actuellement engagé en NCAA."},409);
+      }
+
       const today=String(career.data.career_date||new Date().toISOString().slice(0,10));
       const endSeason=String(new Date(today+"T12:00:00Z").getUTCFullYear());
-      const school=String(cs.data.team?.name||"Université");
+      const school=String(cs.data.team?.name||target.player?.ncaa_school||"Université");
+      const playerName=String(target.player?.name||"Le joueur");
+
       const [stateUp,playerUp,ncaaUp]=await Promise.all([
-        db.from("college_career_state").update({status:"pro"}).eq("id","demo"),
+        db.from("college_career_state").update({status:"pro"}).eq("id",stateId).eq("player_id",managedId),
         db.from("players").update({
-          ncaa_current:false,ncaa_status:"Alumni",ncaa_last_school:school,ncaa_verified:true,ncaa_school:null,ncaa_rank:null
+          ncaa_current:false,ncaa_status:"Alumni",ncaa_last_school:school,
+          ncaa_verified:true,ncaa_school:null,ncaa_rank:null,
+          turned_pro_year:Number(endSeason)
         }).eq("id",managedId),
         db.from("ncaa_career").upsert({
           player_id:managedId,school,division:"NCAA Division I",end_season:endSeason,status:"Alumni",
-          departure_date:today,verified:true,source_label:"Court Boss save · passage pro enregistré",
+          departure_date:today,verified:false,source_label:"Court Boss save · passage pro simulé",
           last_verified_at:new Date().toISOString()
         },{onConflict:"player_id"})
       ]);
-      const err=stateUp.error||playerUp.error||ncaaUp.error;if(err)return h({error:err.message},500);
-      await db.from("inbox_items").insert({kind:"college",title:"Passage professionnel",body:String(career.data.player_name||"Le joueur")+" quitte "+school+" pour passer professionnel. Son historique NCAA reste archivé.",action_route:"university",is_read:false});
-      return h({ok:true,status:"pro",ncaa_status:"Alumni",school,departure_date:today});
+      const err=stateUp.error||playerUp.error||ncaaUp.error;
+      if(err)return h({error:err.message},500);
+
+      await db.from("inbox_items").insert({
+        kind:"college",title:"Passage professionnel · "+playerName,
+        body:playerName+" quitte "+school+" pour passer professionnel. Son historique NCAA reste archivé.",
+        action_route:"university",is_read:false,
+        related_entity_type:"player",related_entity_id:managedId,
+        action_payload:{route:"university",player_id:managedId}
+      });
+      return h({ok:true,player_id:managedId,status:"pro",ncaa_status:"Alumni",school,departure_date:today,state_id:stateId});
     }
 
     if(action==="play_college_dual"){

@@ -65,3 +65,15 @@
 .tm-inbox-tabs button.active{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.4);color:var(--text)}
 .tm-inbox-tabs button span{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:4px;padding:0 5px;border-radius:999px;background:rgba(255,255,255,.06);font-size:11px;font-weight:800}
 @media(max-width:760px){.tm-pro-capacity{align-items:flex-start;flex-direction:column}.tm-pro-capacity .soft-btn{width:100%}}
+
+
+/* Career OS managed squad */
+.tm-managed-roster-card{margin-bottom:12px}
+.tm-managed-roster-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.tm-managed-player-card{display:block;width:100%;text-align:left;padding:11px 12px;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.025);color:inherit;cursor:pointer}
+.tm-managed-player-card:hover{border-color:rgba(94,234,151,.30);background:rgba(94,234,151,.045)}
+.tm-managed-player-card.warn{border-color:rgba(255,177,75,.30);background:rgba(255,177,75,.045)}
+.tm-managed-player-card .row{gap:8px}
+.tm-managed-player-meta{display:flex;gap:9px;flex-wrap:wrap;margin:7px 0 5px;font-size:10px;color:#a6bab0}
+.tm-managed-player-card>small{display:block;margin-top:7px;color:#7fdca9;font-weight:800}
+@media(max-width:700px){.tm-managed-roster-grid{grid-template-columns:1fr}}

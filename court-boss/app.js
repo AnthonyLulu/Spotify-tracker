@@ -593,6 +593,7 @@ window.nav=async r=>{
  await render();
 }
 async function syncLegacySinglesEntries(serverRows=[]){
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  const serverIds=new Set((serverRows||[]).map(x=>Number(x.tournament_id||0)).filter(Boolean));
  const ids=[...(local.entries||[])].map(Number).filter(Boolean);
  for(const id of ids){
@@ -602,12 +603,13 @@ async function syncLegacySinglesEntries(serverRows=[]){
   try{
    await get('/api/tournament-entry',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({tournament_id:id,action:'enter',entry_method:String(meta.entry_method||'alternate'),legacy:true})
+    body:JSON.stringify({tournament_id:id,player_id:playerId,action:'enter',entry_method:String(meta.entry_method||'alternate'),legacy:true})
    });
   }catch(e){console.warn('Legacy singles entry sync failed',id,e)}
  }
 }
 async function syncLegacyDoublesEntries(serverRows=[]){
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  const serverIds=new Set((serverRows||[]).map(x=>Number(x.tournament_id||0)).filter(Boolean));
  local.doublesEntries=local.doublesEntries||[];local.doublesEntryMeta=local.doublesEntryMeta||{};
  const ids=[...local.doublesEntries].map(Number).filter(Boolean);

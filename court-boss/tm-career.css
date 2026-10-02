@@ -1,0 +1,56 @@
+
+.tm-newgame-modal{align-items:flex-start;padding:18px 10px;overflow:auto}
+.tm-newgame-sheet{width:min(1040px,96vw);max-height:none;margin:0 auto 40px}
+.tm-wizard-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:16px 0 18px}
+.tm-wizard-steps button{display:flex;align-items:center;gap:7px;border:1px solid var(--border);background:rgba(255,255,255,.025);color:var(--muted);border-radius:12px;padding:9px 10px;text-align:left}
+.tm-wizard-steps button span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.06);font-weight:800}
+.tm-wizard-steps button.active{border-color:rgba(74,222,128,.48);background:rgba(74,222,128,.08);color:var(--text)}
+.tm-wizard-steps button.active span,.tm-wizard-steps button.done span{background:var(--accent);color:#06120c}
+.tm-wizard-steps button.done{color:var(--text)}
+.tm-wizard-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.tm-wizard-title h2{margin:3px 0 5px}
+.tm-wizard-body{min-height:430px}
+.tm-diff-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tm-diff-card,.tm-level-card,.tm-choice-row>button{position:relative;border:1px solid var(--border);background:rgba(255,255,255,.025);color:var(--text);border-radius:14px;padding:16px;text-align:left;display:flex;flex-direction:column;gap:7px}
+.tm-diff-card:hover,.tm-level-card:hover,.tm-choice-row>button:hover{border-color:rgba(255,255,255,.25)}
+.tm-diff-card.active,.tm-level-card.active,.tm-choice-row>button.active{border-color:rgba(74,222,128,.55);box-shadow:0 0 0 1px rgba(74,222,128,.14) inset;background:rgba(74,222,128,.075)}
+.tm-diff-card small,.tm-level-card small,.tm-choice-row small{color:var(--muted);line-height:1.4}
+.tm-diff-check{position:absolute;right:12px;top:10px;font-size:18px;color:var(--accent)}
+.tm-choice-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tm-level-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0}
+.tm-level-card span{font-size:12px;color:var(--accent);font-weight:700}
+.tm-wizard-actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.tm-start-career{min-width:220px}
+.tm-capacity{display:inline-flex;align-items:center;justify-content:center;min-width:72px;height:44px;padding:0 14px;border-radius:14px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);font-size:18px;font-weight:900}
+.tm-capacity.full{background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.35)}
+.tm-selected-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:14px}
+.tm-selected-player{display:grid;grid-template-columns:34px 1fr auto auto;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.025)}
+.tm-selected-player.primary-player{border-color:rgba(74,222,128,.38);background:rgba(74,222,128,.055)}
+.tm-selected-player small{display:block;color:var(--muted);margin-top:2px}
+.tm-slot{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,.06);font-weight:900}
+.mini-close{width:28px;height:28px;padding:0}
+.tm-player-search{border-top:1px solid var(--border);padding-top:14px}
+.tm-player-search .filters{display:grid;grid-template-columns:1fr 160px;gap:8px;margin-top:8px}
+.tm-search-results{display:grid;gap:6px;margin-top:10px;max-height:300px;overflow:auto;padding-right:2px}
+.tm-player-pick{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:11px;padding:10px;background:rgba(255,255,255,.018)}
+.tm-player-pick.selected{border-color:rgba(74,222,128,.3)}
+.tm-player-pick-main{min-width:0}
+.tm-player-pick-main b,.tm-player-pick-main small{display:block}
+.tm-player-pick-main small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.tm-training-roster{margin-bottom:12px}
+.tm-training-player-tabs{display:flex;gap:7px;overflow-x:auto;padding:10px 0 4px}
+.tm-training-player-tabs button{min-width:170px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;border:1px solid var(--border);background:rgba(255,255,255,.025);color:var(--text);border-radius:11px;padding:10px;text-align:left}
+.tm-training-player-tabs button.active{border-color:rgba(74,222,128,.48);background:rgba(74,222,128,.08)}
+.tm-training-player-tabs small{color:var(--muted)}
+@media(max-width:760px){
+ .tm-wizard-steps{grid-template-columns:repeat(5,46px);overflow-x:auto}
+ .tm-wizard-steps button{justify-content:center;padding:8px}
+ .tm-wizard-steps button b{display:none}
+ .tm-diff-grid,.tm-choice-row,.tm-selected-grid{grid-template-columns:1fr}
+ .tm-level-grid{grid-template-columns:1fr 1fr}
+ .tm-selected-player{grid-template-columns:32px 1fr auto}
+ .tm-selected-player .ghost{grid-column:2}
+ .tm-player-search .filters{grid-template-columns:1fr}
+ .tm-wizard-title{flex-direction:column}
+ .tm-wizard-actions{position:sticky;bottom:0;background:var(--bg);padding-bottom:8px}
+}

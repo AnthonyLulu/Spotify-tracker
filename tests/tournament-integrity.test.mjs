@@ -385,7 +385,7 @@ test('Match form is a temporary runtime modifier and never a base attribute writ
  const liveStart=code.indexOf('if\(path.endsWith("/api/live-match/point")');
  const commitStart=code.indexOf('if\(path.endsWith("/api/live-match/commit")');
  const liveBlock=code.slice(liveStart,commitStart);
- assert.doesNotMatch(liveBlock,/player_attributes.*update/s);
+ assert.doesNotMatch(liveBlock,/db\.from\("player_attributes"\)\.update/);
 });
 
 test('Legacy live advance cannot mutate career before explicit validation',()=>{

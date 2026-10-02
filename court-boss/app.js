@@ -757,11 +757,18 @@ async function init(){
  }
 }
 async function loadManagement(){
+ const target=Number(local.activeManagedPlayerId||primaryManagedPlayerId()||0);
  try{
-  management=await get('/api/management');
-  const target=Number(local.activeManagedPlayerId||primaryManagedPlayerId()||0);
+  management=await get('/api/management'+(target?'?player_id='+encodeURIComponent(target):''));
   if(target)await loadActiveManagedContext(true,target).catch(()=>{});
- }catch{management={contracts:[],college:[],shortlist:[]}}
+ }catch(e){
+  const primary=primaryManagedPlayerId();
+  if(target&&primary&&target!==primary){
+   local.activeManagedPlayerId=primary;persist();
+   try{management=await get('/api/management?player_id='+encodeURIComponent(primary))}
+   catch{management={contracts:[],college:[],shortlist:[]}}
+  }else management={contracts:[],college:[],shortlist:[]};
+ }
 }
 async function loadStaffWorld(){
  if(staffWorldLoading)return;
@@ -2578,16 +2585,18 @@ window.toggleLiveAuto=()=>{
 }
 window.clearLiveMatch=()=>{if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}delete local.liveMatch;delete local.liveOpponent;local.liveSessionId=null;persist();render()}
 function doublesPage(){
- const c=career(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
+ const c=activePlayerCareerView(),activeId=activeManagedId(),primaryId=primaryManagedPlayerId(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);
  const pool=doublesHubRows;
  const juniorPool=juniorDoublesHubRows;
- const partner=singlesOnly?null:(pool.find(p=>p.id===local.partnerId)||juniorPool.find(p=>p.id===local.partnerId)
-   ||(management?.partnerships||[]).map(x=>x.partner||x.player_b).find(Boolean)
-   ||null);
+ const serverPartner=activeDoublesPartner();
+ const partner=singlesOnly?null:(serverPartner||(activeId===primaryId?(pool.find(p=>p.id===local.partnerId)||juniorPool.find(p=>p.id===local.partnerId)):null)||null);
  const offers=management?.doublesPartnerOffers||[];
  const managedCommitment=management?.managedDoublesCommitment||null;
- const ownPartnership=(management?.partnerships||[]).find(x=>Number(x.player_b_id)===Number(partner?.id||0))||null;
+ const ownPartnership=(management?.partnerships||[]).find(x=>{
+   const a=Number(x.player_a_id||0),b=Number(x.player_b_id||0);
+   return a===activeId||b===activeId;
+ })||null;
  const incomingOffers=offers.filter(x=>x.direction==='incoming'&&x.status==='pending');
  const recentOutgoing=offers.filter(x=>x.direction==='outgoing').slice(0,6);
  const candidates=pool.filter(p=>p.name!==c.player_name).slice(0,30);
@@ -3229,7 +3238,7 @@ window.runInboxDecision=async(id,type,payload={})=>{
     careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();return;
   }
   if(type==='respond_partner_offer'){
-    await managerAction('respond_partner_offer',Number(payload.offer_id||0),{decision:payload.decision||'decline'});
+    await managerAction('respond_partner_offer',Number(payload.offer_id||0),{decision:payload.decision||'decline',player_id:Number(payload.player_id||activeManagedId()||primaryManagedPlayerId()||0)});
     careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
   if(type==='match_staff_offer'||type==='release_staff_offer'){
@@ -4730,17 +4739,17 @@ ${matchupRows.length?`<div class="grid g2" style="margin-top:8px">${matchupRows.
   </div></div>`;
 }
 window.pairScore=(p,k)=>{
- const rows=management?.partnerships||[];
- const rel=rows.find(x=>
-   Number(x.player_b_id)===Number(p?.id)||
-   Number(x.player_a_id)===Number(p?.id)
- );
+ const rows=management?.partnerships||[],activeId=activeManagedId();
+ const rel=rows.find(x=>{
+   const a=Number(x.player_a_id||0),b=Number(x.player_b_id||0),pid=Number(p?.id||0);
+   return (a===activeId&&b===pid)||(b===activeId&&a===pid);
+ });
  if(rel){
    if(k==='chem')return Number(rel.chemistry||60);
    if(k==='comp')return Number(rel.compatibility||60);
    return Number(rel.pair_strength||60);
  }
- const cr=career();
+ const cr=activePlayerCareerView();
  const rankFit=Math.max(0,18-Math.min(18,Math.abs(Number(p?.doubles_ranking||1500)-Number(cr.doubles_rank||1500))/100));
  const nation=String(p?.country||'')===String(cr.country||'')?6:0;
  const level=Math.max(0,Math.min(18,(Number(p?.current_ability||55)-45)*.9));
@@ -4753,8 +4762,8 @@ window.approachPartner=async id=>{
  try{
   const d=await managerAction('approach_partner',id,{player_id:playerId});
   if(d.accepted){
-   local.partnerId=id;persist();
-   alert('Proposition acceptée. Cette paire devient ton partenariat principal.');
+   if(playerId===primaryManagedPlayerId()){local.partnerId=id;persist()}
+   alert('Proposition acceptée. Cette paire devient le partenariat principal de ce joueur.');
   }else{
    alert('Proposition refusée : '+(d.reason||'le joueur ne souhaite pas changer de projet actuellement.'));
   }
@@ -4766,7 +4775,7 @@ window.respondPartnerOffer=async(id,decision)=>{
  if(String(activePlayerCareerView().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les propositions de double sont désactivées.');return}
  try{
   const d=await managerAction('respond_partner_offer',id,{decision,player_id:playerId});
-  if(decision==='accept'&&d.partnership?.partner_id){
+  if(decision==='accept'&&d.partnership?.partner_id&&playerId===primaryManagedPlayerId()){
    local.partnerId=Number(d.partnership.partner_id);persist();
   }
   await Promise.all([loadManagement(),loadActiveManagedContext(true,playerId)]);render();

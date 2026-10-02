@@ -1,4 +1,4 @@
-/* Court Boss Match Center V1 */
+/* Court Boss Match Center V2 */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -12,6 +12,17 @@
   const wi=c=>{const v=String(c||'').toLowerCase();if(v.includes('vent'))return '≋';if(v.includes('humide'))return '◌';if(v.includes('chaud'))return '☀';if(v.includes('nuage'))return '☁';if(v.includes('indoor'))return '⌂';return '☀'};
   const speed=v=>{const n=Number(v||1);return n<.82?'Lent':n<.96?'Moyen-lent':n<1.08?'Moyen':n<1.2?'Rapide':'Très rapide'};
   const mood=v=>{const n=Number(v||70);return n>=86?'En feu':n>=75?'Confiant':n>=62?'Stable':n>=50?'Tendu':'Fragile'};
+  const courtStyle=(meta,surface)=>{
+    const name=String(meta?.tournament?.name||'').toLowerCase(),clay=/terre|clay/i.test(surface),grass=/gazon|grass/i.test(surface);
+    let a=clay?'#c06f47':grass?'#5f8d4e':'#3477ad',b=clay?'#a85634':grass?'#3e7037':'#255681';
+    if(/australian open/.test(name)){a='#2c96ca';b='#17628d'}
+    else if(/roland|french open/.test(name)){a='#ca7046';b='#a95734'}
+    else if(/wimbledon/.test(name)){a='#66925b';b='#426f3e'}
+    else if(/us open/.test(name)){a='#367caf';b='#245d8b'}
+    else if(/indian wells/.test(name)){a='#4c78a8';b='#355d83'}
+    else if(/miami open/.test(name)){a='#4c98b5';b='#2b718e'}
+    return 'background:linear-gradient(180deg,'+a+','+b+');';
+  };
   const tact=()=>({aggression:58,risk:52,net:28,returnPos:'Neutre',servePattern:'Mixte',targetWing:'Mixte',tempo:'Neutre',spin:'Mixte',effort:60,...(local.tactics||{})});
 
   window.cbSetMatchTactic=(k,v)=>{
@@ -23,10 +34,11 @@
   function env(meta,userName,oppName){
     const w=meta?.weather||{},m=meta?.mood||{},f=meta?.form||{},t=meta?.tournament||null;
     const fb=n=>{n=Number(n||0);return (n>0?'+':'')+String(n)};
+    const logo=t&&typeof tournamentLogoHtml==='function'?tournamentLogoHtml(t,'cb-event-logo-official'):(t?.logo_url?`<img class="cb-event-logo" src="${safe(t.logo_url)}" alt="" onerror="this.style.display='none'">`:'<div class="cb-event-logo-fallback">CB</div>');
     return `<div class="cb-env-card">
       <div class="cb-env-top">
         <div class="cb-event-brand">
-          ${t?.logo_url?`<img class="cb-event-logo" src="${safe(t.logo_url)}" alt="" onerror="this.style.display='none'">`:'<div class="cb-event-logo-fallback">CB</div>'}
+          ${logo}
           <div><div class="eyebrow">${t?safe(t.name):'Match Center'}</div><b>${t?[safe(t.city),safe(t.venue)].filter(Boolean).join(' · '):'Session manager'}</b></div>
         </div>
         <span class="badge">${safe(meta?.surface||'Dur')}</span>
@@ -38,6 +50,7 @@
         <div><small>Humidité</small><b>${Math.round(Number(w.humidity_pct||50))}%</b></div>
         <div><small>Court</small><b>${speed(meta?.court_speed)} · ${Number(meta?.court_speed||1).toFixed(2)}</b></div>
         <div><small>Altitude</small><b>${Math.round(Number(meta?.altitude_m||0))} m</b></div>
+        <div><small>Format</small><b>Best of ${Number(meta?.best_of||3)}</b></div>
       </div>
       <div class="cb-mood-grid">
         <div><span>${safe(userName)}</span><b>${Math.round(Number(m.user||70))}/100 · ${mood(m.user)}</b></div>
@@ -98,7 +111,7 @@
           <div class="fm-score-name">${s.serving_user?'● ':''}${safe(userName)} <small>${flags?.[c.country]||''}</small></div><b>${us}</b><b>${ug}</b><strong>${pA}</strong>
           <div class="fm-score-name">${!s.serving_user?'● ':''}${safe(oppName)} <small>${flags?.[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pB}</strong>
         </div>
-        <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court">
+        <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court" style="${courtStyle(meta,surface)}">
           <i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-court-line service vertical"></i><i class="fm-net"></i>
           <div class="fm-player-dot opponent cb-dot" style="left:${ox}%;top:${oy}%"><span>${oInit}</span><small>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</small></div>
           <div class="fm-player-dot user cb-dot" style="left:${ux}%;top:${uy}%"><span>${uInit}</span><small>${safe(userName.split(' ').slice(-1)[0]||'MOI')}</small></div><i class="fm-ball cb-ball" style="left:${bx}%;top:${by}%"></i>
@@ -186,5 +199,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V1 active');
+  console.info('Court Boss Match Center V2 active');
 })();

@@ -386,7 +386,7 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}
    const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:localPayload})});
    local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||localPayload.date||local.date,week:d.slot?.week||localPayload.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
    localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
-   if(!preMatchCheckpoint&&slotType!=='autosave'&&!silent)clearPendingLiveRollback();
+   if(!preMatchCheckpoint)clearPendingLiveRollback();
    await loadSaveSlots();
    if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
    if(route==='saves')render();

@@ -2572,9 +2572,9 @@ function liveMatchPanel(){
    <div><span>Vitesse court</span><b>${speedLabel} · ${speed.toFixed(2)}</b></div>
    <div><span>Altitude</span><b>${Number(meta.altitude_m||0)?fmt(meta.altitude_m)+' m':'—'}</b></div>
    <div><span>Humeur ${esc(userName.split(' ').slice(-1)[0])}</span><b class="${Number(mood.user||70)>=76?'good':Number(mood.user||70)<58?'bad':''}">${fmt(mood.user||70)}/100</b></div>
-   <div><span>Humeur adverse</span><b>\${fmt(mood.opponent||70)}/100</b></div>
-   <div class="match-form-box"><span>Forme \${esc(userName.split(' ').slice(-1)[0])}</span><b class="\${userFormBonus>0?'good':userFormBonus<0?'bad':''}">\${fmt(formMeta.user??c.form??70)}/100 · \${signedForm(userFormBonus)} stats</b></div>
-   <div class="match-form-box"><span>Forme adverse</span><b class="\${oppFormBonus>0?'good':oppFormBonus<0?'bad':''}">\${fmt(formMeta.opponent??opp.form??70)}/100 · \${signedForm(oppFormBonus)} stats</b></div>
+   <div><span>Humeur adverse</span><b>${fmt(mood.opponent||70)}/100</b></div>
+   <div class="match-form-box"><span>Forme ${esc(userName.split(' ').slice(-1)[0])}</span><b class="${userFormBonus>0?'good':userFormBonus<0?'bad':''}">${fmt(formMeta.user??c.form??70)}/100 · ${signedForm(userFormBonus)} stats</b></div>
+   <div class="match-form-box"><span>Forme adverse</span><b class="${oppFormBonus>0?'good':oppFormBonus<0?'bad':''}">${fmt(formMeta.opponent??opp.form??70)}/100 · ${signedForm(oppFormBonus)} stats</b></div>
   </div>
 
   <div class="fm-scoreboard">

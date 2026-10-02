@@ -1404,3 +1404,12 @@ body{background:
  .match-conditions-grid b{font-size:10px}
  .court-event-watermark{font-size:10px;max-width:210px}
 }
+
+
+/* CB MATCH FORM MODIFIER */
+.match-form-box{background:linear-gradient(135deg,rgba(73,213,150,.08),rgba(255,255,255,.025))!important;border-color:rgba(73,213,150,.18)!important}
+.match-form-box b.good{color:var(--good)}
+.match-form-box b.bad{color:var(--bad)}
+.fm-result-controls{grid-template-columns:1.25fr 1.1fr 1fr 1fr}
+@media(max-width:720px){.fm-result-controls{grid-template-columns:1fr 1fr}}
+@media(max-width:430px){.fm-result-controls{grid-template-columns:1fr}}

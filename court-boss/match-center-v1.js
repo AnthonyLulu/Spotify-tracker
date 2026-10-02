@@ -21,7 +21,8 @@
   };
 
   function env(meta,userName,oppName){
-    const w=meta?.weather||{},m=meta?.mood||{},t=meta?.tournament||null;
+    const w=meta?.weather||{},m=meta?.mood||{},f=meta?.form||{},t=meta?.tournament||null;
+    const fb=n=>{n=Number(n||0);return (n>0?'+':'')+String(n)};
     return `<div class="cb-env-card">
       <div class="cb-env-top">
         <div class="cb-event-brand">
@@ -41,6 +42,10 @@
       <div class="cb-mood-grid">
         <div><span>${safe(userName)}</span><b>${Math.round(Number(m.user||70))}/100 · ${mood(m.user)}</b></div>
         <div><span>${safe(oppName)}</span><b>${Math.round(Number(m.opponent||70))}/100 · ${mood(m.opponent)}</b></div>
+      </div>
+      <div class="cb-form-grid">
+        <div><span>Forme ${safe(userName)}</span><b class="${Number(f.user_bonus||0)>0?'good':Number(f.user_bonus||0)<0?'bad':''}">${Math.round(Number(f.user||70))}/100 · ${fb(f.user_bonus)} stats</b></div>
+        <div><span>Forme ${safe(oppName)}</span><b class="${Number(f.opponent_bonus||0)>0?'good':Number(f.opponent_bonus||0)<0?'bad':''}">${Math.round(Number(f.opponent||70))}/100 · ${fb(f.opponent_bonus)} stats</b></div>
       </div>
       <div class="muted micro cb-env-note">Conditions, vitesse du court, altitude et humeur alimentent réellement le calcul des points.</div>
     </div>`;
@@ -109,12 +114,32 @@
           <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
         </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching()}</details>`
-        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé dans la carrière.</p></div><button class="primary" onclick="clearLiveMatch()">Nouveau match</button></div>`
+        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé dans la session. Si tu n’as pas sauvegardé, un ragequit revient au checkpoint.</p></div><div class="cb-result-actions"><button class="soft-btn" onclick="saveCommittedLiveV1()">💾 Sauvegarder maintenant</button><button class="primary" onclick="clearLiveMatch()">Nouveau match</button></div></div>`
         :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Tu peux le garder, le sauvegarder, ou l'annuler.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1(false)">Valider sans sauvegarder</button><button class="soft-btn" onclick="commitLiveMatchV1(true)">Valider + quicksave</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
       </div></div>`;
   };
 
-  window.quickSaveLiveV1=async()=>{try{await saveCareerSlot(9,'quick',true);render()}catch(e){alert(e.message)}};
+  window.quickSaveLiveV1=async()=>{
+    try{
+      const d=await saveCareerSlot(9,'quick',true);
+      if(d?.ok===false)throw new Error(d.error||d.reason||'Sauvegarde impossible');
+      localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({
+        slot_no:9,saved_live:true,career_date:d.slot?.career_date||local.date||null,
+        week:d.slot?.week??local.week??null,created_at:new Date().toISOString()
+      }));
+      render();
+    }catch(e){alert(e.message)}
+  };
+
+  window.saveCommittedLiveV1=async()=>{
+    try{
+      const d=await saveCareerSlot(9,'quick',true);
+      if(d?.ok===false)throw new Error(d.error||d.reason||'Sauvegarde impossible');
+      clearPendingLiveRollback();
+      alert('Carrière sauvegardée avec ce résultat.');
+      render();
+    }catch(e){alert(e.message)}
+  };
 
   window.commitLiveMatchV1=async saveAfter=>{
     const s=local.liveMatch;if(!s||!finished(s))return;

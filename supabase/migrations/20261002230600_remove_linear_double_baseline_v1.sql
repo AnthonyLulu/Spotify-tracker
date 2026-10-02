@@ -288,3 +288,19 @@ $function$;
 
 COMMENT ON TABLE public.world_ranking_baseline_decay IS
 'DEPRECATED 2026-10-03: legacy linear-decay singles baseline. Canonical singles ranking uses atp_defending_points_ledger + atp_player_breakdown.';
+
+
+-- Security hardening for the ATP ledger tables/RPCs created by the rolling-ranking work.
+ALTER TABLE public.atp_defending_points_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.atp_ranking_zero_pointers ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.atp_defending_points_ledger FROM anon, authenticated;
+REVOKE ALL ON TABLE public.atp_ranking_zero_pointers FROM anon, authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.record_atp_zero_pointer(bigint,bigint,date,text) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.sync_atp_zero_pointers(date) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.ensure_calendar_season(integer) FROM public, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.record_atp_zero_pointer(bigint,bigint,date,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.sync_atp_zero_pointers(date) TO service_role;
+GRANT EXECUTE ON FUNCTION public.ensure_calendar_season(integer) TO service_role;

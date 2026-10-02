@@ -9741,22 +9741,24 @@ Deno.serve(async(req:Request)=>{
     const userMomentum=(Number(session.data.momentum||50)-50)*.0009;
     const sAttr:any=serverIsUser?ua:oa;
     const rAttr:any=serverIsUser?oa:ua;
-    const avgAttr=(x:any,keys:string[])=>keys.reduce((sum,k)=>sum+Number(x?.[k]??10),0)/Math.max(1,keys.length);
+    const sFormBonus=serverIsUser?userFormBonus:oppFormBonus;
+    const rFormBonus=serverIsUser?oppFormBonus:userFormBonus;
+    const avgAttr=(x:any,keys:string[],bonus=0)=>keys.reduce((sum,k)=>sum+Math.max(1,Math.min(20,Number(x?.[k]??10)+bonus)),0)/Math.max(1,keys.length);
     const surfaceKey=clay?"clay_affinity":grass?"grass_affinity":"hard_affinity";
-    const groundEdge=(avgAttr(sAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"])
-      -avgAttr(rAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"]));
-    const movementEdge=(avgAttr(sAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"])
-      -avgAttr(rAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"]));
-    const mentalEdge=(avgAttr(sAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"])
-      -avgAttr(rAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"]));
-    const netEdge=(avgAttr(sAttr,["volley","touch","half_volley","smash","net_positioning","transition_game","reaction"])
-      -avgAttr(rAttr,["passing_shot","lob","reaction","movement","defensive_skill","court_positioning","speed"]));
-    const touchEdge=(avgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"])
-      -avgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"]));
-    const surfaceEdge=Number(sAttr?.[surfaceKey]??10)-Number(rAttr?.[surfaceKey]??10);
+    const groundEdge=(avgAttr(sAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"],sFormBonus)
+      -avgAttr(rAttr,["forehand_power","forehand_accuracy","forehand_consistency","backhand_power","backhand_accuracy","backhand_consistency","topspin","slice","shot_control","timing"],rFormBonus));
+    const movementEdge=(avgAttr(sAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],sFormBonus)
+      -avgAttr(rAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],rFormBonus));
+    const mentalEdge=(avgAttr(sAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],sFormBonus)
+      -avgAttr(rAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],rFormBonus));
+    const netEdge=(avgAttr(sAttr,["volley","touch","half_volley","smash","net_positioning","transition_game","reaction"],sFormBonus)
+      -avgAttr(rAttr,["passing_shot","lob","reaction","movement","defensive_skill","court_positioning","speed"],rFormBonus));
+    const touchEdge=(avgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"],sFormBonus)
+      -avgAttr(rAttr,["reaction","movement","speed","anticipation","court_positioning","agility"],rFormBonus));
+    const surfaceEdge=Math.max(1,Math.min(20,Number(sAttr?.[surfaceKey]??10)+sFormBonus))-Math.max(1,Math.min(20,Number(rAttr?.[surfaceKey]??10)+rFormBonus));
     const formEdge=serverIsUser?userFormBonus-oppFormBonus:oppFormBonus-userFormBonus;
-    const opponentBh=avgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"]);
-    const opponentFh=avgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"]);
+    const opponentBh=avgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],oppFormBonus);
+    const opponentFh=avgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormBonus);
     const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,opponentFh-opponentBh))*.00115:
       targetWing==="Coup droit"?Math.max(-4,Math.min(4,opponentBh-opponentFh))*.00115:0;
     const spinEdge=spinPlan==="Lift"?(clay?.006:grass?-.003:.002):
@@ -9767,13 +9769,13 @@ Deno.serve(async(req:Request)=>{
     const userTacticEdge=targetEdge+spinEdge+tempoEdge+effortEdge;
     const pointAttrEdge=Math.max(-.06,Math.min(.06,
       groundEdge*.00135+movementEdge*.00085+mentalEdge*(pressure?.00145:.00070)+
-      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+formEdge*.0032+
+      netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+
       (serverIsUser?userTacticEdge:-userTacticEdge)
     ));
 
     let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
       -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)
-      -wind*.00075-Math.max(0,temperature-30)*.0012+formEdge*.0016));
+      -wind*.00075-Math.max(0,temperature-30)*.0012+formEdge*.0010));
     const firstServeIn=Math.random()<firstIn;
     const dfBase=Number(tm.double_fault_pct||4)/100;
     const doubleFault=!firstServeIn&&Math.random()<Math.max(.006,Math.min(.12,
@@ -9789,7 +9791,7 @@ Deno.serve(async(req:Request)=>{
       serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     }
     const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
-    serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0032;
+    serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0018;
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
 
     const serverWon=!doubleFault&&Math.random()<serverWinProb;
@@ -9816,8 +9818,8 @@ Deno.serve(async(req:Request)=>{
       +(tempo==="Patient"?.75:tempo==="Rapide"?-.60:0)
       +(spinPlan==="Lift"&&clay?.40:spinPlan==="Slice"&&grass?-.25:0)
       +(serverIsUser?(55-risk)*.012:0)
-      +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"])
-        -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"]))*.035
+      +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],sFormBonus)
+        -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],rFormBonus))*.035
     ));
     const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(18,
       2+Math.floor(-Math.log(Math.max(.001,1-Math.random()))*Math.max(1,rallyMean-2))
@@ -9845,7 +9847,7 @@ Deno.serve(async(req:Request)=>{
       :returnDepthRoll<Math.max(45,returnDepthScore*.62+28)?"moyen":"court";
     const serverNetChance=Math.max(0,Math.min(.55,
       Number(tm.server_net_approach_pct||10)/100+(serverIsUser?net*.0015:0)
-      +(avgAttr(sAttr,["volley","touch","half_volley","net_positioning","transition_game"])-10)*.0014
+      +(avgAttr(sAttr,["volley","touch","half_volley","net_positioning","transition_game"],sFormBonus)-10)*.0014
     ));
     const returnerNetChance=Math.max(0,Math.min(.40,Number(tm.returner_net_approach_pct||8)/100));
     const netRoll=Math.random();

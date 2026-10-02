@@ -22,6 +22,7 @@
   let baseStartNewCareer = window.startNewCareer;
   let baseTrainingPage = typeof training === 'function' ? training : null;
   let baseLoadTrainingPreview = typeof loadTrainingPreview === 'function' ? loadTrainingPreview : null;
+  let tmInboxFilter = 'all';
 
   function ensureLocalCareerConfig(){
     if(!local.difficulty)local.difficulty='normal';
@@ -414,13 +415,67 @@
       if(secondary){local.training=planFor(selected);local.lastTrainingReport=null;}
       let core=baseTrainingPage();
       if(secondary){local.training=originalPlan;local.lastTrainingReport=originalReport;}
+      const lastAcademy=(local.lastAcademyTrainingReport&&Array.isArray(local.lastAcademyTrainingReport.players))
+        ?local.lastAcademyTrainingReport.players.find(x=>Number(x.player_id)===selected):null;
       const strip='<div class="card tm-training-roster"><div class="row between"><div><div class="eyebrow">Académie · entraînement individuel</div><h2>Choisir le joueur à préparer</h2></div><span class="badge">'+esc((DIFFICULTIES[local.difficulty]||DIFFICULTIES.normal).label)+'</span></div>'
         +'<div class="tm-training-player-tabs">'+roster.map(x=>'<button class="'+(Number(x.id)===selected?'active':'')+'" onclick="tmSelectTrainingPlayer('+x.id+')"><b>'+(flags[x.country]||'🏳️')+' '+esc(x.name)+'</b><small>'+esc(x.role)+(Number(x.id)!==primary?' · '+esc(x.focus):' · principal')+'</small></button>').join('')+'</div>'
         +(secondary?'<div class="notice mini"><b>Plan individuel de '+esc((roster.find(x=>x.id===selected)||{}).name||'ce joueur')+'.</b> La dominante de la semaine alimente son focus académie et le moteur de progression de l’effectif.</div>':'')
+        +(secondary&&lastAcademy?'<div class="tm-training-week-report"><span class="badge good">Dernière semaine</span><b>Charge '+Number(lastAcademy.load||0)+' · focus '+esc(lastAcademy.focus||'Équilibré')+'</b>'+(lastAcademy.improvement?'<small>Progression : '+esc(lastAcademy.improvement.attribute)+' '+lastAcademy.improvement.from+'→'+lastAcademy.improvement.to+'</small>':'<small>XP / adaptation accumulée, pas de palier visible cette semaine.</small>')+'</div>':'')
         +'</div>';
       return strip+core;
     };
   }
+
+  const oldAcademy=typeof academy==='function'?academy:null;
+  if(oldAcademy){
+    academy=function(){
+      ensureLocalCareerConfig();
+      const level=Number((boot&&boot.academy&&boot.academy.academy_level)||local.academySetup?.level||2);
+      const proCap=({1:2,2:4,3:6,4:8})[level]||8;
+      const proUsed=((management&&management.academyRoster)||[]).filter(x=>x.status==='active'||!x.status).length;
+      let html=oldAcademy();
+      const anchor='<div class="kpi-strip">';
+      const pro='<div class="notice tm-pro-capacity"><div><b>Effectif joueurs gérés : '+proUsed+'/'+proCap+'</b><span>'+esc((local.managerProfile&&local.managerProfile.name)||'Manager')+' · niveau '+level+'</span></div><button class="soft-btn" onclick="nav(\'training\')">Plans individuels</button></div>';
+      if(html.includes(anchor))html=html.replace(anchor,pro+anchor);
+      return html;
+    };
+  }
+
+  const senderByKind={
+    career:'Direction',academy:'Directeur académie',training:'Coach principal',staff:'Direction sportive',
+    contract:'Juridique',medical:'Médecin',scouting:'Scouting',sponsor:'Commercial',
+    finance:'Finance',media:'Presse',davis:'Fédération',tournament:'Organisation tournoi',
+    doubles:'Coach double',college:'NCAA'
+  };
+  const oldInbox=typeof inboxPage==='function'?inboxPage:null;
+  if(oldInbox){
+    inboxPage=function(){
+      const all=[...(boot.inbox||[])].sort((a,b)=>Number(a.is_read)-Number(b.is_read)||({urgent:0,high:1,normal:2}[a.priority]??2)-({urgent:0,high:1,normal:2}[b.priority]??2)||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+      const groups=[
+        ['all','Tous',()=>true],
+        ['decisions','Décisions',x=>x.decision_status==='pending'&&x.action_type&&x.action_type!=='open_route'],
+        ['sport','Sport',x=>['tournament','training','doubles','career'].includes(String(x.kind||''))],
+        ['academy','Académie',x=>['academy','scouting','college'].includes(String(x.kind||''))],
+        ['staff','Staff',x=>['staff','contract'].includes(String(x.kind||''))],
+        ['medical','Médical',x=>String(x.kind||'')==='medical'],
+        ['business','Business',x=>['sponsor','finance','media'].includes(String(x.kind||''))]
+      ];
+      const finder=groups.find(g=>g[0]===tmInboxFilter)||groups[0];
+      const rows=all.filter(finder[2]);
+      const unread=all.filter(x=>!x.is_read).length;
+      const decisions=all.filter(x=>x.decision_status==='pending'&&x.action_type&&!['open_route'].includes(x.action_type)).length;
+      return '<div class="section-head"><div><div class="eyebrow">Communication · Manager Inbox</div><h1>Boîte de réception</h1><div class="muted">'+unread+' non lu(s) · '+decisions+' décision(s) en attente</div></div><button class="soft-btn" onclick="markAllInboxRead()">Tout marquer lu</button></div>'
+        +'<div class="tm-inbox-tabs">'+groups.map(g=>'<button class="'+(tmInboxFilter===g[0]?'active':'')+'" onclick="tmSetInboxFilter(\''+g[0]+'\')">'+esc(g[1])+' <span>'+all.filter(g[2]).length+'</span></button>').join('')+'</div>'
+        +'<div class="stack">'+rows.map(x=>'<div class="card inbox-card '+(x.is_read?'':'is-unread')+' '+(x.priority==='high'||x.priority==='urgent'?'is-priority':'')+'" onclick="openInboxItem('+x.id+',\''+esc(x.action_route||'home')+'\')">'
+          +'<div class="row between"><div><div class="eyebrow">'+esc(senderByKind[String(x.kind||'')]||'Court Boss')+' · '+(x.game_date?df(x.game_date):new Date(x.created_at).toLocaleDateString('fr-FR'))+'</div><span class="muted micro">'+esc(x.kind||'info')+'</span></div><div class="row"><span class="badge '+(x.priority==='high'||x.priority==='urgent'?'warn':'')+'">'+esc(x.priority||'normal')+'</span><span class="badge '+(x.is_read?'':'good')+'">'+(x.is_read?'Lu':'Nouveau')+'</span></div></div>'
+          +'<h2>'+esc(x.title)+'</h2><p class="muted">'+esc(x.body)+'</p>'
+          +(x.decision_status==='resolved'?'<span class="badge good">Décision prise</span>':x.decision_status==='expired'?'<span class="badge warn">Expiré</span>':'')
+          +(x.action_type&&!['resolved','expired'].includes(String(x.decision_status||''))?'<div class="row" style="margin-top:10px;flex-wrap:wrap">'+inboxActionButton(x,x.action_type,x.action_label||'Ouvrir',x.action_payload,'primary')+inboxActionButton(x,x.secondary_action_type,x.secondary_action_label,x.secondary_action_payload,'soft-btn')+'</div>':'')
+          +'</div>').join('')
+        +(rows.length?'':'<div class="card empty">Aucun message dans cette catégorie.</div>')+'</div>';
+    };
+  }
+  window.tmSetInboxFilter=function(value){tmInboxFilter=value||'all';render();};
 
   const oldLauncher=typeof launcherPage==='function'?launcherPage:null;
   if(oldLauncher){

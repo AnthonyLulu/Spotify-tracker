@@ -4053,12 +4053,11 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/tournament-entry-status")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);
     const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
-    const [t,wc,career]=await Promise.all([
+    const [t,career]=await Promise.all([
       db.from("tournaments").select("*").eq("id",id).eq("is_active",true).maybeSingle(),
-      db.from("wildcard_requests").select("status").eq("tournament_id",id).maybeSingle(),
       db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle()
     ]);
-    if(t.error||wc.error||career.error)return h({error:(t.error||wc.error||career.error)?.message},500);
+    if(t.error||career.error)return h({error:(t.error||career.error)?.message},500);
     if(!t.data)return h({error:"Tournoi introuvable"},404);
     const primaryId=Number(career.data?.managed_player_id||0);
     const playerId=Number(requestedPlayerId||primaryId||0);
@@ -4068,6 +4067,8 @@ Deno.serve(async(req:Request)=>{
       if(roster.error)return h({error:roster.error.message},500);
       if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
     }
+    const wc=await db.from("wildcard_requests").select("status").eq("tournament_id",id).eq("player_id",playerId).maybeSingle();
+    if(wc.error)return h({error:wc.error.message},500);
     try{
       const entryRules=await managedTournamentEntryRules(t.data,playerId);
       const pathways=playerId===primaryId
@@ -4192,7 +4193,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(requestedMethod==="wildcard"){
-      const wc=await db.from("wildcard_requests").select("status").eq("tournament_id",tid).maybeSingle();
+      const wc=await db.from("wildcard_requests").select("status").eq("tournament_id",tid).eq("player_id",playerId).maybeSingle();
       if(wc.error)return h({error:wc.error.message},500);
       if(wc.data?.status!=="accepted"&&!legacy)return h({error:"La wild card n’est pas accordée."},409);
     }
@@ -10979,7 +10980,23 @@ Deno.serve(async(req:Request)=>{
 
 
     if(action==="request_wildcard"){
-      if(String(career.data.career_focus||"mixed")==="doubles_only"){
+      const primaryId=Number(career.data.managed_player_id||0);
+      const playerId=n(body?.player_id,primaryId,1,99999999);
+      let focus=String(career.data.career_focus||"mixed");
+      let rank=Number(career.data.singles_rank||9999);
+      let playerName=String(career.data.player_name||"Joueur");
+      if(playerId!==primaryId){
+        const [roster,player]=await Promise.all([
+          db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle(),
+          db.from("players").select("id,name,ranking,career_focus").eq("id",playerId).maybeSingle()
+        ]);
+        if(roster.error||player.error)return h({error:(roster.error||player.error)?.message},500);
+        if(!roster.data||!player.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+        focus=String(player.data.career_focus||"mixed");
+        rank=Number(player.data.ranking||9999);
+        playerName=String(player.data.name||"Joueur");
+      }
+      if(focus==="doubles_only"){
         return h({error:"Carrière en mode Double exclusivement : les wild cards simple sont désactivées."},409);
       }
       const [t,a]=await Promise.all([
@@ -10988,19 +11005,25 @@ Deno.serve(async(req:Request)=>{
       ]);
       if(t.error||a.error||!t.data)return h({error:(t.error||a.error)?.message||"Tournoi introuvable"},404);
       if(["ATP","Challenger","ITF"].includes(String(t.data.circuit))){
-        const eligibility=await db.rpc("player_event_eligibility",{p_player_id:career.data.managed_player_id,p_tournament_id:id,p_entry_method:"wildcard"});
+        const eligibility=await db.rpc("player_event_eligibility",{p_player_id:playerId,p_tournament_id:id,p_entry_method:"wildcard"});
         if(eligibility.error)return h({error:eligibility.error.message},500);
         if(eligibility.data?.eligible===false)return h({error:"Wild card impossible : le règlement de ce circuit interdit l'entrée de ce joueur.",entry_rule:eligibility.data},409);
       }
-      const rank=Number(career.data.singles_rank||9999),qual=Number(t.data.qual_cut??t.data.projected_qual_cut??t.data.direct_cut??t.data.projected_direct_cut??rank);
+      const qual=Number(t.data.qual_cut??t.data.projected_qual_cut??t.data.direct_cut??t.data.projected_direct_cut??rank);
       const rep=Number(a.data?.reputation||48);
       const proximity=Math.max(0,35-Math.max(0,rank-qual)/12);
       const score=Math.round(rep*.65+proximity+Math.random()*22);
       const status=score>=58?"accepted":"declined";
-      const up=await db.from("wildcard_requests").upsert({tournament_id:id,status,decision_score:score,created_at:new Date().toISOString()},{onConflict:"tournament_id"}).select("*").single();
+      const up=await db.from("wildcard_requests").upsert({
+        tournament_id:id,player_id:playerId,status,decision_score:score,created_at:new Date().toISOString()
+      },{onConflict:"tournament_id,player_id"}).select("*").single();
       if(up.error)return h({error:up.error.message},500);
-      await db.from("inbox_items").insert({kind:"tournament",title:"Décision wild card",body:(status==="accepted"?"Wild card accordée pour ":"Wild card refusée pour ")+t.data.name+".",action_route:"calendar",is_read:false});
-      return h({ok:true,status,score});
+      await db.from("inbox_items").insert({
+        kind:"tournament",title:"Décision wild card · "+playerName,
+        body:(status==="accepted"?"Wild card accordée pour ":"Wild card refusée pour ")+t.data.name+".",
+        action_route:"calendar",is_read:false,related_entity_type:"player",related_entity_id:playerId
+      });
+      return h({ok:true,status,score,player_id:playerId});
     }
 
 

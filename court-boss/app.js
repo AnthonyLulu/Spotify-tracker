@@ -2376,8 +2376,17 @@ function injuryRisk(){
  return Math.round(clamp(r,2,95));
 }
 function medicalPage(){
- const c=career(),inj=boot.injuries||[],managed=boot.managedInjury||null,plan=boot.medicalPlan||{protocol:'Récupération active',physio_hours:2,weekly_cost:250};
- const risk=managed?Number(managed.aggravation_risk||0):clamp(Math.round((c.fatigue||18)*.75+(trainingLoad()*3)),0,100);
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const c=activePlayerCareerView(),inj=boot.injuries||[];
+ const managed=(activeManagedContext&&Number(activeManagedContext.player_id)===playerId)?(activeManagedContext.injury||null):(playerId===primaryManagedPlayerId()?boot.managedInjury||null:null);
+ const plan=(activeManagedContext&&Number(activeManagedContext.player_id)===playerId&&activeManagedContext.medical_plan)
+  ?activeManagedContext.medical_plan
+  :(playerId===primaryManagedPlayerId()?boot.medicalPlan:null)||{protocol:'Récupération active',physio_hours:2,weekly_cost:250};
+ const activeTraining=playerId===primaryManagedPlayerId()
+  ?(local.training||[])
+  :((local.playerTraining||{})[String(playerId)]||[]);
+ const activeLoad=(activeTraining||[]).reduce((a,s)=>a+(['Endurance','Match play','Déplacements'].includes(s)?3:['Service','Retour','Coup droit','Revers','Double'].includes(s)?2:s==='Récupération'?0:-1),0);
+ const risk=managed?Number(managed.aggravation_risk||0):clamp(Math.round((c.fatigue||18)*.75+(activeLoad*3)),0,100);
  const protocols=[
   ['Repos complet','Fatigue ↓↓↓ · retour accéléré · forme légèrement en baisse','0 € / semaine'],
   ['Physio intensive','Risque ↓↓↓ · retour le plus rapide · coût élevé','900 € / semaine'],
@@ -4675,11 +4684,25 @@ window.openInjury=id=>{
   overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Dossier médical</div><h1>${esc(i.injury_type)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Sévérité</span><b>${esc(i.severity)}</b></div><div class="list-item row between"><span>Retour estimé</span><b>${df(i.expected_return)}</b></div><div class="list-item row between"><span>Risque aggravation</span><b>${i.aggravation_risk}%</b></div><div class="list-item"><span class="muted mini">Traitement</span><p>${esc(i.treatment||'Repos et suivi médical')}</p></div></div></div></div>`;
 }
 window.setMedicalProtocol=async protocol=>{
+  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+  const injuryId=(activeManagedContext&&Number(activeManagedContext.player_id)===playerId)?Number(activeManagedContext.injury?.id||0):0;
   try{
-    const d=await managerAction('set_medical_protocol',0,{protocol});
+    const d=await managerAction('set_medical_protocol',injuryId,{protocol,player_id:playerId});
+    const restPlan=protocol==='Repos complet'
+      ?['Repos','Repos','Récupération','Repos','Récupération','Repos','Repos']
+      :protocol==='Récupération active'
+        ?['Récupération','Repos','Récupération','Repos','Récupération','Repos','Repos']
+        :null;
+    if(restPlan){
+      if(playerId===primaryManagedPlayerId())local.training=[...restPlan];
+      else{
+        local.playerTraining=local.playerTraining||{};
+        local.playerTraining[String(playerId)]=[...restPlan];
+      }
+      if(Number(local.trainingPlayerId||0)===playerId)trainingPreview=null;
+    }
     boot=await get('/api/bootstrap');
-    if(protocol==='Repos complet')local.training=['Repos','Repos','Récupération','Repos','Récupération','Repos','Repos'];
-    else if(protocol==='Récupération active')local.training=['Récupération','Repos','Récupération','Repos','Récupération','Repos','Repos'];
+    await loadActiveManagedContext(true,playerId).catch(()=>{});
     persist();render();
   }catch(e){alert(e.message)}
 }

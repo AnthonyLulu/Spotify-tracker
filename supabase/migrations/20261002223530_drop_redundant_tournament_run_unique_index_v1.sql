@@ -1,0 +1,1 @@
+drop index if exists public.tournament_runs_tournament_managed_player_uidx;

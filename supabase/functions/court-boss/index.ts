@@ -1549,6 +1549,20 @@ async function captureManagedSaveSnapshot(){
     managedSponsorsAll.error||managedStaffAssignmentsAll.error||managedNcaaRegistryAll.error||managedRankingPointsAll.error||managedDoublesRankingPointsAll.error;
   if(multiPlayerErr)throw new Error(multiPlayerErr.message||"Multi-player snapshot failed");
 
+  const managedActiveTournamentIds=[...new Set((managedEntriesAll.data??[])
+    .filter((x:any)=>String(x.status||"")==="entered")
+    .map((x:any)=>Number(x.tournament_id||0)).filter(Boolean))];
+  const [managedEloRatings,managedWorldTournamentMatches]=await Promise.all([
+    academyManagedPlayerIds.length
+      ?db.from("player_elo_ratings").select("*").in("player_id",academyManagedPlayerIds).order("player_id")
+      :Promise.resolve({data:[],error:null} as any),
+    managedActiveTournamentIds.length
+      ?db.from("world_tournament_matches").select("*").in("tournament_id",managedActiveTournamentIds).order("id")
+      :Promise.resolve({data:[],error:null} as any)
+  ]);
+  const matchStateErr=managedEloRatings.error||managedWorldTournamentMatches.error;
+  if(matchStateErr)throw new Error(matchStateErr.message||"Managed match-state snapshot failed");
+
   return {
     model:"CB-MANAGED-SAVE-v6",
     captured_at:new Date().toISOString(),
@@ -1607,6 +1621,8 @@ async function captureManagedSaveSnapshot(){
     managed_ncaa_registry_all:managedNcaaRegistryAll.data??[],
     managed_ranking_points_all:managedRankingPointsAll.data??[],
     managed_doubles_ranking_points_all:managedDoublesRankingPointsAll.data??[],
+    managed_elo_ratings_all:managedEloRatings.data??[],
+    managed_world_tournament_matches:managedWorldTournamentMatches.data??[],
     season_plans:seasonPlans.data??[],
     relationships:relationships.data??[],
     player_sponsors:playerSponsors.data??[],
@@ -1695,6 +1711,23 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     ?[...new Set([managedId,...snapshotManagedPlayerIds].filter(Boolean))]
     :[];
   const nationCleanup=[...new Set([currentNation,nation].filter(Boolean))];
+
+  // Managed Elo and the brackets of tournaments currently represented in the save
+  // are part of the save timeline. This prevents ghost Elo / future-round winners
+  // when an older slot is loaded.
+  if(Array.isArray(snapshot.managed_elo_ratings_all)){
+    for(const cleanupPlayerId of managedCleanupIds){
+      const eloCleanup=await db.from("player_elo_ratings").delete().eq("player_id",cleanupPlayerId);
+      if(eloCleanup.error)throw new Error("managed Elo cleanup: "+eloCleanup.error.message);
+    }
+  }
+  const snapshotWorldTournamentIds=Array.isArray(snapshot.managed_world_tournament_matches)
+    ?[...new Set(snapshot.managed_world_tournament_matches.map((x:any)=>Number(x.tournament_id||0)).filter(Boolean))]
+    :[];
+  if(snapshotWorldTournamentIds.length){
+    const worldMatchCleanup=await db.from("world_tournament_matches").delete().in("tournament_id",snapshotWorldTournamentIds);
+    if(worldMatchCleanup.error)throw new Error("managed tournament bracket cleanup: "+worldMatchCleanup.error.message);
+  }
 
   // A load is an exact rollback boundary for live coaching too. Any unsaved active
   // session is discarded; a V7 manual/quick checkpoint is reinserted below.
@@ -1888,6 +1921,8 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model))await upsertMany("tournament_draw_matches",snapshot.tournament_draw_matches,"id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model))await upsertMany("doubles_runs",snapshot.doubles_runs,"id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model))await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
+  if(Array.isArray(snapshot.managed_elo_ratings_all))await upsertMany("player_elo_ratings",snapshot.managed_elo_ratings_all,"player_id");
+  if(Array.isArray(snapshot.managed_world_tournament_matches))await upsertMany("world_tournament_matches",snapshot.managed_world_tournament_matches,"id");
 
   if(liveCheckpoint){
     await upsertMany("live_match_sessions",snapshot.live_match_sessions??[],"id");

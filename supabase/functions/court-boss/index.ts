@@ -8012,9 +8012,12 @@ Deno.serve(async(req:Request)=>{
           earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true
         });
       }
-      const rankCalc=await db.rpc("recalculate_managed_player_ranking",{
-        p_player_id:managedId,p_date:String(t.end_date||t.start_date||new Date().toISOString().slice(0,10))
-      });
+      const rankingDate=String(t.end_date||t.start_date||new Date().toISOString().slice(0,10));
+      const rankCalc=isPrimaryManaged
+        ?await db.rpc("recalculate_user_ranking",{p_date:rankingDate})
+        :await db.rpc("recalculate_managed_player_ranking",{
+            p_player_id:managedId,p_date:rankingDate,p_sync_career:false
+          });
       if(rankCalc.error)return h({error:rankCalc.error.message},500);
       newPoints=Number(rankCalc.data?.points??c.points??0);newRank=Number(rankCalc.data?.rank??c.singles_rank??2001);
     }

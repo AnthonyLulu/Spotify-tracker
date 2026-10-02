@@ -10332,15 +10332,23 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="update_season_plan"){
-      const managedId=Number(career.data.managed_player_id||0);
+      const primaryId=Number(career.data.managed_player_id||0);
+      const managedId=n(body?.player_id,primaryId,1,99999999);
       if(!managedId)return h({error:"Joueur géré introuvable"},409);
+      let focus=String(career.data.career_focus||"mixed");
+      if(managedId!==primaryId){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle();
+        const player=await db.from("players").select("career_focus").eq("id",managedId).maybeSingle();
+        if(roster.error||player.error)return h({error:(roster.error||player.error)?.message},500);
+        if(!roster.data||!player.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+        focus=String(player.data.career_focus||"mixed");
+      }
       const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
       const incoming=body?.plan&&typeof body.plan==="object"?body.plan:{};
       const allowedSurfaces=new Set(["Dur","Terre","Gazon","Mixte","Indoor"]);
       const allowedPlans=new Set(["balanced","elite_selective","tour_regular","challenger_push","itf_build","doubles_specialist","singles_specialist","junior_transition","ncaa_pathway"]);
       const current=await db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",season).maybeSingle();
       if(current.error)return h({error:current.error.message},500);
-      const focus=String(career.data.career_focus||"mixed");
       const base=current.data||{
         player_id:managedId,season,
         plan_type:focus==="doubles_only"?"doubles_specialist":focus==="singles_only"?"singles_specialist":"balanced",

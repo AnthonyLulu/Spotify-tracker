@@ -11511,12 +11511,23 @@ Deno.serve(async(req:Request)=>{
       const field=String(body?.field||"");
       const allowed=["player_name","country","style","age","height_cm","weight_kg"];
       if(!allowed.includes(field))return h({error:"Champ non modifiable"},400);
+
+      const primaryId=Number(career.data.managed_player_id||0);
+      const playerId=n(body?.player_id,primaryId,1,99999999);
+      if(!playerId)return h({error:"Joueur géré introuvable"},409);
+      const isPrimary=playerId===primaryId;
+
+      if(!isPrimary){
+        const roster=await db.from("academy_roster")
+          .select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      }
+
       let value:any=body?.value;
       if(["age","height_cm","weight_kg"].includes(field))value=n(value,0,1,250);
       else value=String(value??"").trim().slice(0,80);
-      const up:any={updated_at:new Date().toISOString()};up[field]=value;
-      const cu=await db.from("career_state").update(up).eq("id","demo");
-      if(cu.error)return h({error:cu.error.message},500);
+
       const pu:any={};
       if(field==="player_name")pu.name=value;
       if(field==="country")pu.country=value;
@@ -11524,13 +11535,19 @@ Deno.serve(async(req:Request)=>{
       if(field==="age")pu.age=value;
       if(field==="height_cm")pu.height_cm=value;
       if(field==="weight_kg")pu.weight_kg=value;
+
       if(Object.keys(pu).length){
-        const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
-        if(managed.error||!managed.data?.managed_player_id)return h({error:managed.error?.message||"Managed player missing"},500);
-        const p=await db.from("players").update(pu).eq("id",managed.data.managed_player_id);
+        const p=await db.from("players").update(pu).eq("id",playerId).select("id,name,country,style,age,height_cm,weight_kg").maybeSingle();
         if(p.error)return h({error:p.error.message},500);
       }
-      return h({ok:true,field,value});
+
+      if(isPrimary){
+        const up:any={updated_at:new Date().toISOString()};up[field]=value;
+        const cu=await db.from("career_state").update(up).eq("id","demo");
+        if(cu.error)return h({error:cu.error.message},500);
+      }
+
+      return h({ok:true,field,value,player_id:playerId,is_primary_managed:isPrimary});
     }
 
 

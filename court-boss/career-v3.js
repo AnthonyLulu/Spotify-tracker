@@ -272,6 +272,15 @@
     trainingPreview=null;persist();render();await loadTrainingPreview(true);render();
   };
 
+  window.trainAcademyPlayer=async id=>{
+    const pid=Number(id||0);if(!pid)return;
+    local.trainingPlayerId=pid;
+    playerPlan(pid);
+    trainingPreview=null;
+    localStorage.setItem('cbLocal',JSON.stringify(local));
+    await nav('training');
+  };
+
   const legacyLauncher=launcherPage;
   launcherPage=function(){
     let html=legacyLauncher();

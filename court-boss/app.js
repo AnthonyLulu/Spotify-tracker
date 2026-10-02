@@ -589,6 +589,7 @@ window.nav=async r=>{
   if(r==='training'&&!trainingPreview)await loadTrainingPreview();
   if(r==='saves'||r==='launcher')await loadSaveSlots();
   if(['careerhub','season','media','relationships','diagnostics'].includes(r))await loadCareerHub();
+  if(r==='medical')await loadActiveManagedContext(true,activeManagedId()||primaryManagedPlayerId()||0);
  }catch(e){
   console.warn('Court Boss route load failed',r,e);
   shell(`<div class="card"><h2>Chargement impossible</h2><p class="muted">${esc(e.message)}</p><div class="row"><button class="primary" onclick="nav('${esc(r)}')">Réessayer</button><button class="ghost" onclick="nav('home')">Accueil</button></div></div>`);
@@ -2370,7 +2371,10 @@ function financePage(){
  </div>`
 }
 function injuryRisk(){
- const c=career(),load=trainingLoad();
+ const c=activePlayerCareerView();
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const activeTraining=playerId===primaryManagedPlayerId()?(local.training||[]):((local.playerTraining||{})[String(playerId)]||[]);
+ const load=(activeTraining||[]).reduce((a,s)=>a+(['Endurance','Match play','Déplacements'].includes(s)?3:['Service','Retour','Coup droit','Revers','Double'].includes(s)?2:s==='Récupération'?0:-1),0);
  let r=12+(c.fatigue||18)*.45+(100-(c.fitness||91))*.35+Math.max(0,65-(c.form||72))*.2+Math.max(0,load-9)*4;
  if(local.injuryTreatment==='Prudent')r-=10;if(local.injuryTreatment==='Agressif')r+=8;
  return Math.round(clamp(r,2,95));

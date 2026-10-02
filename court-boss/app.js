@@ -2680,8 +2680,23 @@ window.openCollegeTeam=id=>{
  <div class="card"><div class="row between"><h2>Staff du programme</h2><span class="badge">${staff.length}</span></div>${staff.length?staff.map(x=>{const sp=x.staff||{};return `<div class="list-item click" onclick="openStaffProfile(${sp.id})"><div class="row between"><div><b>${esc(sp.name||x.role)}</b><div class="muted mini">${esc(x.role)} · ${esc(sp.coaching_style||sp.primary_role||'')}</div></div><div style="text-align:right"><b>${sp.reputation??'—'}/20</b><div class="muted micro">réputation</div></div></div><div class="row between muted micro"><span>Coach ${sp.coach_rating??'—'}</span><span>Tact ${sp.tactical_rating??'—'}</span><span>Jeunes ${sp.youth_rating??'—'}</span><span>Physique ${sp.fitness_rating??'—'}</span></div></div>`}).join(''):'<div class="empty">Staff en cours de génération.</div>'}</div>
  <div class="card" style="margin-top:10px"><h2>Recrutement</h2>${offers.length?offers.map(o=>`<div class="list-item"><div class="row between"><span>Bourse</span><b>${o.scholarship_pct}%</b></div><div class="muted mini">${esc(o.role)} · fit sportif ${o.development_fit}/100</div></div>`).join(''):'<div class="empty">Pas d’offre active.</div>'}</div></div></div>`;
 }
-window.commitCollege=async id=>{try{await managerAction('commit_college',id);await refreshManagerState();render()}catch(e){alert(e.message)}}
-window.turnProCollege=async()=>{try{if(!confirm('Passer professionnel et quitter la NCAA ? Le dossier universitaire restera archivé.'))return;await managerAction('turn_pro_college',1);await refreshManagerState();render()}catch(e){alert(e.message)}}
+window.commitCollege=async id=>{
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ try{
+  await managerAction('commit_college',id,{player_id:playerId});
+  await Promise.all([loadManagement(),loadActiveManagedContext(true,playerId)]);
+  render()
+ }catch(e){alert(e.message)}
+}
+window.turnProCollege=async()=>{
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ try{
+  if(!confirm('Passer professionnel et quitter la NCAA ? Le dossier universitaire restera archivé.'))return;
+  await managerAction('turn_pro_college',1,{player_id:playerId});
+  await Promise.all([loadManagement(),loadActiveManagedContext(true,playerId)]);
+  render()
+ }catch(e){alert(e.message)}
+}
 window.playCollegeDual=async id=>{try{await managerAction('play_college_dual',id);await loadManagement();render()}catch(e){alert(e.message)}}
 function davisPage(){
  const f=boot.federation||{},sq=boot.davisSquad||[],ties=management?.davisTies||[],history=management?.davisHistory||[],allDavisStaff=management?.davisTeamStaff||[];
@@ -3230,10 +3245,19 @@ window.runInboxDecision=async(id,type,payload={})=>{
   }
   if(type==='open_route'){
     try{await managerAction('mark_inbox_read',id)}catch{}
-    if(payload?.player_id&&String(payload.route||'')==='training'){
-      local.trainingPlayerId=Number(payload.player_id);
-      persist();
-      trainingPreview=null;
+    if(payload?.player_id){
+      const target=Number(payload.player_id||0);
+      if(target&&managedSquadIds().includes(target)){
+        local.activeManagedPlayerId=target;
+        activeManagedContext=null;
+        if(String(payload.route||'')==='training'){
+          local.trainingPlayerId=target;
+          trainingPreview=null;
+        }
+        persist();
+        await loadActiveManagedContext(true,target).catch(()=>{});
+        await loadManagement().catch(()=>{});
+      }
     }
     boot=await get('/api/bootstrap');
     await nav(payload.route||'home');

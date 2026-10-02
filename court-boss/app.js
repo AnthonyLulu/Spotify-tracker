@@ -2783,6 +2783,7 @@ window.commitLiveMatch=async()=>{
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({session_id:Number(local.liveMatch.id)})
   });
+  local.lastCommittedMatchResult=d;
   applyLiveMatchResponse(d);
   boot=await get('/api/bootstrap');
   if(boot.career&&activeManagedId()===primaryManagedPlayerId())local.career={...(local.career||{}),...boot.career};

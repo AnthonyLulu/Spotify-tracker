@@ -1346,3 +1346,61 @@ body{background:
 .defense-hot td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .defense-hot .badge.warn,.defense-hot .badge.bad{font-weight:900}
 #points-a-defendre{scroll-margin-top:92px}
+
+
+/* CB MATCH ENGINE V2 */
+.match-engine-v2{background:
+ radial-gradient(circle at 88% 0,rgba(79,219,148,.12),transparent 28%),
+ linear-gradient(180deg,#07130e,#081810 72%,#07120d)}
+.match-event-banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px;margin:-2px -2px 12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:linear-gradient(120deg,rgba(255,255,255,.06),rgba(73,213,150,.055))}
+.match-event-banner h2{margin:2px 0 3px;font-size:18px}
+.match-event-logo{width:54px;height:54px;object-fit:contain;padding:5px;border-radius:10px;background:#fff;box-shadow:0 5px 18px rgba(0,0,0,.25)}
+.match-conditions-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0 10px}
+.match-conditions-grid>div{min-width:0;padding:7px 8px;border:1px solid rgba(255,255,255,.08);border-radius:9px;background:#09170f}
+.match-conditions-grid span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.match-conditions-grid b{display:block;margin-top:2px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-court.hard{background:
+ linear-gradient(rgba(29,93,142,.14),rgba(29,93,142,.14)),
+ repeating-linear-gradient(90deg,#2877aa 0 49.8%,#266f9f 49.8% 100%)}
+.fm-court.clay{background:
+ radial-gradient(circle at 25% 20%,rgba(255,255,255,.045),transparent 32%),
+ repeating-linear-gradient(90deg,#aa6041 0 49.8%,#a05a3c 49.8% 100%)}
+.fm-court.grass{background:
+ repeating-linear-gradient(90deg,#4e8657 0 12.5%,#477c50 12.5% 25%)}
+.fm-court.indoor{background:
+ radial-gradient(circle at 50% 24%,rgba(255,255,255,.10),transparent 34%),
+ linear-gradient(180deg,#1f547f,#2a70a2)!important}
+.court-event-watermark{position:absolute;left:50%;top:50%;z-index:1;transform:translate(-50%,-50%) rotate(-90deg);max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:950;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.14);pointer-events:none}
+.match-model-line{margin-top:8px;padding:7px 8px;border-left:2px solid rgba(73,213,150,.45);background:rgba(73,213,150,.04)}
+.fm-live-toolbar{display:grid;grid-template-columns:1.4fr repeat(3,.65fr) 1.3fr;gap:6px;margin-top:10px}
+.fm-live-toolbar button{min-height:42px}
+.fm-result-controls{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:7px;margin-top:10px}
+.fm-result-controls button{min-height:46px}
+.match-result-actions{margin-top:11px}
+.tournament-play-mode{max-width:760px}
+.match-mode-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:14px}
+.match-mode-card{display:flex;min-height:180px;flex-direction:column;align-items:flex-start;justify-content:flex-end;text-align:left;border:1px solid var(--line);border-radius:14px;padding:14px;background:#09150f;color:var(--text);transition:transform .16s ease,border-color .16s ease,background .16s ease}
+.match-mode-card:hover{transform:translateY(-2px);border-color:#4bd996}
+.match-mode-card span{font-size:9px;font-weight:950;letter-spacing:.16em;color:var(--accent)}
+.match-mode-card b{font-size:17px;margin:5px 0}
+.match-mode-card small{color:var(--muted);line-height:1.45}
+.match-mode-card.live{background:linear-gradient(145deg,rgba(73,213,150,.15),transparent 60%),#09150f}
+.match-mode-card.quick{background:linear-gradient(145deg,rgba(90,153,255,.15),transparent 60%),#09150f}
+.match-mode-card.tournament{background:linear-gradient(145deg,rgba(244,184,83,.13),transparent 60%),#09150f}
+@media(max-width:720px){
+ .match-conditions-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .match-mode-grid{grid-template-columns:1fr}
+ .match-mode-card{min-height:120px}
+ .fm-live-toolbar{grid-template-columns:repeat(4,1fr)}
+ .fm-live-toolbar button:first-child{grid-column:span 2}
+ .fm-live-toolbar button:last-child{grid-column:span 2}
+ .fm-result-controls{grid-template-columns:1fr}
+}
+@media(max-width:430px){
+ .match-event-banner{grid-template-columns:44px minmax(0,1fr)}
+ .match-event-logo{width:44px;height:44px}
+ .match-event-banner>.badge{grid-column:1/-1;justify-self:start}
+ .match-conditions-grid>div{padding:6px}
+ .match-conditions-grid b{font-size:10px}
+ .court-event-watermark{font-size:10px;max-width:210px}
+}

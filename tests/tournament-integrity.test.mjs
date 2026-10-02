@@ -380,7 +380,7 @@ test('Live and quick simulations share the canonical runtime point kernel',()=>{
 
 test('Match form is a temporary runtime modifier and never a base attribute write',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.match(code,/mode:"temporary_runtime_only"/);
+ assert.match(code,/mode:"temporary_integer_bonus_runtime_only"/);
  assert.match(code,/persists_to_player_attributes:false/);
  const liveStart=code.indexOf('if\(path.endsWith("/api/live-match/point")');
  const commitStart=code.indexOf('if\(path.endsWith("/api/live-match/commit")');
@@ -401,8 +401,8 @@ test('Legacy live advance cannot mutate career before explicit validation',()=>{
 
 test('Match Center tells the player that form does not rewrite permanent attributes',()=>{
  const ui=fs.readFileSync(new URL('../court-boss/match-center-v1.js',import.meta.url),'utf8');
- assert.match(ui,/bonus temporaire/);
- assert.match(ui,/aucun attribut permanent n’est réécrit/);
+ assert.match(ui,/La forme ajoute temporairement de -3 à \+3/);
+ assert.match(ui,/aucune note de base n’est réécrite/);
  assert.match(ui,/Même moteur que le live/);
 });
 

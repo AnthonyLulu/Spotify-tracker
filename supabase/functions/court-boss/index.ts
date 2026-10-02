@@ -6437,11 +6437,22 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/ranking-ledger")&&req.method==="GET"){
     const today=(u.searchParams.get("date")??new Date().toISOString().slice(0,10)).slice(0,10);
-    const rows=await db.from("user_ranking_points").select("*").eq("owner_id","demo").order("expiry_date",{ascending:true});
+    const career=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
+    if(career.error)return h({error:career.error.message},500);
+    const primaryId=Number(career.data?.managed_player_id||0);
+    const playerId=n(u.searchParams.get("player_id"),primaryId,1,99999999);
+    if(!playerId)return h({error:"Joueur géré introuvable"},404);
+    if(playerId!==primaryId){
+      const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
+    const rows=await db.from("user_ranking_points").select("*")
+      .eq("owner_id","demo").eq("player_id",playerId).order("expiry_date",{ascending:true});
     if(rows.error)return h({error:rows.error.message},500);
     const active=(rows.data??[]).filter((x:any)=>x.active);
     const total=active.reduce((s:number,x:any)=>s+Number(x.points||0),0);
-    return h({date:today,total,active,expired:(rows.data??[]).filter((x:any)=>!x.active)});
+    return h({date:today,player_id:playerId,total,active,expired:(rows.data??[]).filter((x:any)=>!x.active)});
   }
 
   if(path.endsWith("/api/play-tournament")&&req.method==="POST"){

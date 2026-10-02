@@ -1709,6 +1709,11 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     const liveCleanup=await db.from("live_match_sessions")
       .delete().eq("managed_player_id",cleanupPlayerId).eq("status","active");
     if(liveCleanup.error)throw new Error("live session cleanup: "+liveCleanup.error.message);
+    if(snapshot.captured_at){
+      const unsavedCompletedCleanup=await db.from("live_match_sessions")
+        .delete().eq("managed_player_id",cleanupPlayerId).gt("started_at",String(snapshot.captured_at));
+      if(unsavedCompletedCleanup.error)throw new Error("unsaved live session cleanup: "+unsavedCompletedCleanup.error.message);
+    }
   }
 
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model)){

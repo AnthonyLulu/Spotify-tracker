@@ -626,7 +626,7 @@ async function syncLegacyDoublesEntries(serverRows=[]){
   try{
    await get('/api/doubles-entry',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({tournament_id:id,action:'enter',legacy:true,requested_on:meta.requested_on||local.date})
+    body:JSON.stringify({tournament_id:id,player_id:playerId,action:'enter',legacy:true,requested_on:meta.requested_on||local.date})
    });
   }catch(e){console.warn('Legacy doubles entry sync failed',id,e)}
  }
@@ -1778,7 +1778,7 @@ function calendar(){
  <div class="pagination"><button ${tourOffset===0?'disabled':''} onclick="tourPage(-1)">←</button><span class="muted mini">${tourCount?fmt(tourOffset+1):0}–${fmt(Math.min(tourOffset+tourRows.length,tourCount))} / ${fmt(tourCount)}</span><button ${tourOffset+150>=tourCount?'disabled':''} onclick="tourPage(1)">→</button></div>`
 }
 function tournamentCard(t){
- const c=career(),isJunior=String(t.circuit)==='Junior',isFederation=String(t.circuit)==='Federation',isNcaa=String(t.circuit)==='NCAA';
+ const c=activePlayerCareerView(),isJunior=String(t.circuit)==='Junior',isFederation=String(t.circuit)==='Federation',isNcaa=String(t.circuit)==='NCAA';
  const singlesElig=isFederation?'Par sélection nationale':isNcaa?'Championnat universitaire':isJunior?'Circuit Junior ITF':t.direct_cut==null?'Règles spéciales':c.singles_rank<=t.direct_cut?'Tableau direct':c.singles_rank<=t.qual_cut?'Qualifications':'Alternate / hors cut';
  const joined=(local.entries||[]).includes(t.id);
  const target=isFederation?"nav('davis')":isNcaa?"nav('university')":'openTournament('+t.id+')';

@@ -907,6 +907,32 @@ function activeManagedId(){
  const ids=managedSquadIds();
  return ids.includes(wanted)?wanted:(primary||ids[0]||0);
 }
+function activePlayerCareerView(){
+ const base=career();
+ const player=activeManagedContext?.player||null;
+ const activeId=activeManagedId();
+ if(!player||Number(player.id)!==activeId)return base;
+ return {
+  ...base,
+  managed_player_id:activeId,
+  player_name:player.name||base.player_name,
+  country:player.country||base.country,
+  singles_rank:player.ranking??base.singles_rank,
+  doubles_rank:player.doubles_ranking??base.doubles_rank,
+  points:player.points??base.points,
+  doubles_points:player.doubles_points??base.doubles_points,
+  age:player.age??base.age,
+  current_ability:player.current_ability??base.current_ability,
+  potential:player.potential??base.potential,
+  form:player.form??base.form,
+  fitness:player.fitness??base.fitness,
+  morale:player.morale??base.morale,
+  fatigue:player.fatigue??base.fatigue,
+  style:player.style??base.style,
+  injury_status:player.injury_status??base.injury_status,
+  career_focus:player.career_focus??base.career_focus
+ };
+}
 async function loadActiveManagedContext(force=false,requestedId=null){
  const playerId=Number(requestedId||activeManagedId()||primaryManagedPlayerId()||0);
  if(!playerId)return null;
@@ -1212,7 +1238,7 @@ function tournamentStatus(t){
  return {label:"À venir",cls:"warn"};
 }
 function tmCuts(t){return {direct:Number(t.direct_cut??t.projected_direct_cut??0)||null,qual:Number(t.qual_cut??t.projected_qual_cut??0)||null,projected:t.direct_cut==null&&t.projected_direct_cut!=null}}
-function tournamentEntryContext(c=career()){return [c.managed_player_id,local.date,c.singles_rank,c.career_focus,c.injury_status].join('|')}
+function tournamentEntryContext(c=activePlayerCareerView()){return [c.managed_player_id,local.date,c.singles_rank,c.career_focus,c.injury_status].join('|')}
 function tournamentEntryRestriction(t,c,method){
  const official=t.entry_rule_context===tournamentEntryContext(c)?t.managed_entry_rules?.[method]:null;
  if(official)return official.eligible?null:official.reason;
@@ -1267,7 +1293,7 @@ function specialTeamEventMeta(t){
  return null;
 }
 function singlesEligibility(t){
- const c=career(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
+ const c=activePlayerCareerView(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
  const now=String(local.date||c.career_date||'2025-12-01');
  const mainDeadline=String(t.main_entry_deadline||t.singles_entry_deadline||'');
  const qualDeadline=String(t.qualifying_entry_deadline||'');
@@ -1746,14 +1772,15 @@ function datesOverlap(aStart,aEnd,bStart,bEnd){
 const tournamentDetailRows=new Map();
 function findTournamentById(id){return tournamentDetailRows.get(Number(id))||[...(tourRows||[]),...(boot?.upcoming||[]),...(scheduleAdvice?.recommended||[])].find(x=>Number(x.id)===Number(id))}
 window.toggleSinglesEntry=async id=>{
- if(String(career().career_focus||'mixed')==='doubles_only'){alert('Mode Double exclusivement : les inscriptions simple sont désactivées.');return}
+ const playerId=activeManagedId(),activeView=activePlayerCareerView();
+ if(String(activeView.career_focus||'mixed')==='doubles_only'){alert('Mode Double exclusivement : les inscriptions simple sont désactivées.');return}
  local.entries=local.entries||[];local.entryMeta=local.entryMeta||{};
  const exists=local.entries.includes(id);
  if(exists){
   try{
    await get('/api/tournament-entry',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({tournament_id:id,action:'withdraw',entry_method:String(local.entryMeta?.[id]?.entry_method||'alternate')})
+    body:JSON.stringify({tournament_id:id,player_id:playerId,action:'withdraw',entry_method:String(local.entryMeta?.[id]?.entry_method||'alternate')})
    });
   }catch(e){alert('Retrait impossible : '+e.message);return}
   local.entries=local.entries.filter(x=>x!==id);delete local.entryMeta[id];persist();render();return
@@ -1761,7 +1788,7 @@ window.toggleSinglesEntry=async id=>{
  let t=findTournamentById(id);if(!t)return;
  if(['ATP','Challenger','ITF'].includes(String(t.circuit))){
   try{
-   const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id));
+   const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id)+'&player_id='+encodeURIComponent(playerId));
    t={...t,...access.tournament,managed_entry_rules:access.entry_rules,managed_pathway_status:access.pathway_status,managed_wildcard_status:access.wildcard_status,entry_rule_context:tournamentEntryContext()};
    tournamentDetailRows.set(Number(id),t)
   }catch(e){alert('Impossible de vérifier l’inscription : '+e.message);return}
@@ -1773,7 +1800,7 @@ window.toggleSinglesEntry=async id=>{
  if(deadline&&String(local.date||"2025-12-01")>String(deadline)){alert("Deadline simple dépassée : "+df(deadline));return}
  const conflict=Object.entries(local.entryMeta).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(window.start_date,window.end_date,existingEntryWindow(eid,e).start_date,e.end_date));
  if(conflict){alert("Conflit calendrier avec "+conflict[1].name+" ("+df(conflict[1].start_date)+").");return}
- const dConflict=Object.entries(local.doublesEntryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(window.start_date,window.end_date,existingEntryWindow(eid,e,'doubles').start_date,e.end_date));
+ const dConflict=playerId===primaryManagedPlayerId()?Object.entries(local.doublesEntryMeta||{}).find(([eid,e])=>Number(eid)!==Number(id)&&datesOverlap(window.start_date,window.end_date,existingEntryWindow(eid,e,'doubles').start_date,e.end_date)):null;
  if(dConflict){alert("Tu es déjà engagé en double à "+dConflict[1].name+" cette semaine.");return}
 
  let serverEntry=null;
@@ -1781,7 +1808,7 @@ window.toggleSinglesEntry=async id=>{
   try{
    const saved=await get('/api/tournament-entry',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({tournament_id:id,action:'enter',entry_method:String(elig.method||'alternate')})
+    body:JSON.stringify({tournament_id:id,player_id:playerId,action:'enter',entry_method:String(elig.method||'alternate')})
    });
    serverEntry=saved.entry||null;
   }catch(e){alert('Inscription refusée par le serveur : '+e.message);return}
@@ -1790,7 +1817,7 @@ window.toggleSinglesEntry=async id=>{
    entry_start_date:window.start_date,entry_method:elig.method,
    qualifying_start_date:t.qualifying_start_date,main_draw_start_date:t.main_draw_start_date,
    name:t.name,start_date:t.start_date,end_date:t.end_date,country:t.country,circuit:t.circuit,category:t.category,
-   status:elig.label,server_entry_id:serverEntry?.id||null,requested_on:serverEntry?.requested_on||local.date||null
+   status:elig.label,player_id:playerId,server_entry_id:serverEntry?.id||null,requested_on:serverEntry?.requested_on||local.date||null
  };
  local.entries.push(id);persist();render();
 }
@@ -4048,7 +4075,7 @@ window.openTournament=async id=>{
   let d=await get('/api/tournament-detail?id='+id),t=d.tournament||fallback;if(!t)throw new Error('Tournoi introuvable');
   if(['ATP','Challenger','ITF'].includes(String(t.circuit||''))){
    try{
-    const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id));
+    const access=await get('/api/tournament-entry-status?id='+encodeURIComponent(id)+'&player_id='+encodeURIComponent(activeManagedId()));
     d={...d,entry_rules:access.entry_rules??d.entry_rules,pathway_status:access.pathway_status??d.pathway_status,special_exempt_status:access.special_exempt_status??d.special_exempt_status,performance_bye_status:access.performance_bye_status??d.performance_bye_status};
     t={...t,...(access.tournament||{})};
    }catch{}
@@ -4061,7 +4088,7 @@ window.openTournament=async id=>{
   t.managed_wildcard_status=d.wildcard?.status||null;
   t.managed_doubles_entry_status=d.doubles_entry_status||null;
   tournamentDetailRows.set(Number(id),t);
-  const cr=career(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior',isNcaa=String(t.circuit)==='NCAA',isFed=String(t.circuit)==='Federation';
+  const cr=activePlayerCareerView(),wc=d.wildcard||null,isJunior=String(t.circuit)==='Junior',isNcaa=String(t.circuit)==='NCAA',isFed=String(t.circuit)==='Federation';
   const teamEvent=d.special_team_event||specialTeamEventMeta(t);
   const joined=(local.entries||[]).includes(t.id),dJoined=(local.doublesEntries||[]).includes(t.id);
   let singleRule=applyManagedPathwayEligibility(t,singlesEligibility(t)),doubleRule=doublesEligibility(t);

@@ -284,7 +284,11 @@ async function loadCareerHub(force=false){
  if(careerHubLoading)return careerHub;
  if(careerHub&&!force)return careerHub;
  careerHubLoading=true;
- try{careerHub=await get('/api/career-hub');return careerHub}
+ try{
+  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+  careerHub=await get('/api/career-hub'+(playerId?'?player_id='+playerId:''));
+  return careerHub
+ }
  catch(e){careerHub={error:e.message};throw e}
  finally{careerHubLoading=false}
 }

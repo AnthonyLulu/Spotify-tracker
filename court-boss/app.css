@@ -1320,3 +1320,22 @@ body{background:
   .career-picker-player{align-items:flex-start}
   .career-picker-player .primary{align-self:center}
 }
+
+
+/* Career OS managed squad selector */
+.manager-player-select{
+  max-width:170px;
+  min-width:115px;
+  padding:5px 8px;
+  min-height:30px;
+  font-size:11px;
+  line-height:1.2;
+}
+@media(max-width:700px){
+  .manager-player-select{
+    max-width:128px;
+    min-width:96px;
+    padding:5px 6px;
+    font-size:10px;
+  }
+}

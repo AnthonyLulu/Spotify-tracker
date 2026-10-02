@@ -3,6 +3,7 @@
 
   let cbRecordCategory='Tous';
   const cbBaseHistoryPage=typeof historyPage==='function'?historyPage:null;
+  const cbBaseWorldPage=typeof worldPage==='function'?worldPage:null;
 
   const recordRarityLabel=r=>({
     mythic:'Mythique',legendary:'Légendaire',elite:'Élite',rare:'Rare'
@@ -163,6 +164,18 @@
       +(r.source_url?'<button class="soft-btn" style="margin-top:12px" onclick="openRecordSource(event,\''+esc(String(r.source_url))+'\')">Ouvrir la source · '+esc(r.source_label||'Source')+'</button>':'')
       +'</div></div>';
   };
+
+
+  if(cbBaseWorldPage){
+    worldPage=function(){
+      let html=cbBaseWorldPage();
+      html=html.replace(
+        '<strong>Histoire & nations</strong><span class="muted">Meilleurs historiques par pays et continent</span>',
+        '<strong>Records & Histoire</strong><span class="muted">Record Center · exploits, légendes, pays et continents</span>'
+      );
+      return html;
+    };
+  }
 
   if(cbBaseHistoryPage){
     historyPage=function(){

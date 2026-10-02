@@ -127,8 +127,15 @@
           <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
         </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching()}</details>`
-        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé et sauvegardé dans la carrière.</p></div><div class="cb-result-actions"><button class="primary" onclick="clearLiveMatch()">Fermer</button></div></div>`
-        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne valides pas. Sauvegarde ce score si tu veux le reprendre plus tard, ou valide-le pour l’inscrire dans la carrière.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1()">Valider & sauvegarder</button><button class="soft-btn" onclick="quickSaveLiveV1()">Sauvegarder ce score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
+        :isCommitted?(()=>{
+          const r=local.lastCommittedMatchResult||{},out=r.tournament_outcome||{},tid=Number(s.tournament_id||0);
+          const next=r.next_match_available&&tid?'<button class="primary" onclick="nextTournamentLiveMatchV1()">Match suivant</button>':'';
+          const detail=out.terminal
+            ?'<p>Parcours terminé · '+safe(out.user_round||'')+' · '+Number(out.user_points||0)+' pts · '+Number(out.user_prize_eur||0).toLocaleString('fr-FR')+' €</p>'
+            :'<p>Résultat validé. '+(r.tournament_live?'Le parcours tournoi continue.':'Tu peux maintenant poursuivre ta carrière.')+'</p>';
+          return `<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3>${detail}</div><div class="cb-result-actions">${next}<button class="soft-btn" onclick="saveCommittedLiveV1()">Sauvegarder maintenant</button><button class="soft-btn" onclick="clearLiveMatch()">Fermer</button></div></div>`;
+        })()
+        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne valides pas. Tu peux valider sans sauvegarder, valider puis sauvegarder, ou annuler.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1(false)">Valider le résultat</button><button class="soft-btn" onclick="commitLiveMatchV1(true)">Valider + sauvegarder</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
       </div></div>`;
   };
 
@@ -151,10 +158,17 @@
     }catch(e){alert('Sauvegarde impossible : '+e.message)}
   };
 
-  window.commitLiveMatchV1=async()=>{
+  window.commitLiveMatchV1=async(saveAfter=false)=>{
     const current=local.liveMatch;if(!current||!finished(current)||committed(current))return;
-    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch();
+    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch(Boolean(saveAfter));
     alert('Validation sécurisée indisponible.');
+  };
+
+  window.nextTournamentLiveMatchV1=async()=>{
+    const s=local.liveMatch,tid=Number(s?.tournament_id||0);
+    if(!tid)return clearLiveMatch();
+    clearLiveMatch();
+    await window.startTournamentLiveMatch(tid,false);
   };
 
   window.discardLiveMatchV1=async()=>{
@@ -179,7 +193,7 @@
       }
       persist();render();
       const ss=local.liveMatch,sc=score(ss);
-      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1()">Valider & sauvegarder</button><button class="soft-btn" onclick="closeOverlay();quickSaveLiveV1()">Sauvegarder ce score</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Rejouer / annuler</button></div></div></div>`;
+      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1(false)">Valider le résultat</button><button class="soft-btn" onclick="closeOverlay();commitLiveMatchV1(true)">Valider + sauvegarder</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Rejouer / annuler</button></div></div></div>`;
     }catch(e){alert('Simulation rapide impossible : '+e.message)}
   };
 

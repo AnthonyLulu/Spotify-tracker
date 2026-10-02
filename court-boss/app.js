@@ -315,6 +315,45 @@ function invalidateCareerCaches(){
 function snapshotLocalForSave(){
  try{return cleanCareerLocalState(JSON.parse(JSON.stringify(local)))}catch{return cleanCareerLocalState(local)}
 }
+const LIVE_ROLLBACK_KEY='cbLiveRollbackCheckpointV1';
+function pendingLiveRollback(){
+ try{return JSON.parse(localStorage.getItem(LIVE_ROLLBACK_KEY)||'null')}catch{return null}
+}
+function clearPendingLiveRollback(){localStorage.removeItem(LIVE_ROLLBACK_KEY)}
+window.hasPendingLiveRollback=()=>!!pendingLiveRollback();
+async function ensureLivePreMatchCheckpoint(){
+ const existing=pendingLiveRollback();
+ if(existing)return existing;
+ const checkpoint=await saveCareerSlot(0,'autosave',true,{preMatchCheckpoint:true});
+ if(!checkpoint||checkpoint.ok===false)throw new Error('Checkpoint avant-match impossible');
+ const marker={
+  slot_no:0,
+  career_date:checkpoint.slot?.career_date||local.date||null,
+  week:checkpoint.slot?.week??local.week??null,
+  created_at:new Date().toISOString()
+ };
+ localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify(marker));
+ return marker;
+}
+async function rollbackUnsavedLiveBatchOnStartup(){
+ const marker=pendingLiveRollback();
+ if(!marker)return false;
+ try{
+  const d=await get('/api/load-slot',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({slot_no:Number(marker.slot_no??0)})
+  });
+  local=cleanCareerLocalState(d.local_payload||{});
+  liveMatchSessionsByPlayer.clear();
+  liveMatchOpponentsByPlayer.clear();
+  clearPendingLiveRollback();
+  localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
+  return true;
+ }catch(e){
+  console.warn('Rollback avant-match impossible',e);
+  throw e;
+ }
+}
 function enqueueSaveSlotWrite(task,markBusy=true){
  if(markBusy){
   saveSlotQueueDepth++;
@@ -332,11 +371,12 @@ function enqueueSaveSlotWrite(task,markBusy=true){
  saveSlotQueue=run.catch(()=>{});
  return run;
 }
-async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
+async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}){
  const criticalAutosave=slotType==='autosave'&&silent;
+ const preMatchCheckpoint=options?.preMatchCheckpoint===true;
  if(simulating&&!criticalAutosave){if(!silent)alert('La semaine est en cours de simulation. L’autosave sera écrit dès validation.');return {ok:false,reason:'simulation_in_progress'};}
  if(saveSlotBusy&&!criticalAutosave)return {ok:false,reason:'save_busy'};
- if(local.liveSessionId){if(!silent)alert('Termine le match en cours avant de sauvegarder.');return {ok:false,reason:'live_match'};}
+ if((local.liveSessionId||window.hasManagedLiveMatches?.())&&!preMatchCheckpoint){if(!silent)alert('Termine les matchs en cours avant de sauvegarder. Le score live reste figé tant que tu switches de joueur.');return {ok:false,reason:'live_match'};}
  const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
  const slotName=silent?defaultName:(prompt('Nom de la sauvegarde',defaultName)||defaultName);
@@ -345,14 +385,15 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
   try{
    const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:localPayload})});
    local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||localPayload.date||local.date,week:d.slot?.week||localPayload.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
-   localStorage.setItem('cbLocal',JSON.stringify(local));
+   localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
+   if(!preMatchCheckpoint&&slotType!=='autosave'&&!silent)clearPendingLiveRollback();
    await loadSaveSlots();
    if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
    if(route==='saves')render();
    return d;
   }catch(e){
    local.lastSaveState={status:'error',slot_no:Number(slotNo),slot_type:slotType,career_date:localPayload.date||local.date,week:localPayload.week||local.week,updated_at:new Date().toISOString(),error:String(e?.message||e)};
-   localStorage.setItem('cbLocal',JSON.stringify(local));
+   localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
    if(!silent)alert(e.message);else console.warn('Autosave',e);
    return {ok:false,error:String(e?.message||e)};
   }
@@ -361,7 +402,7 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false){
 async function loadCareerSlot(slotNo){
  if(simulating){alert('La semaine est en cours de simulation. Le chargement est verrouillé jusqu’à la fin de l’autosave.');return;}
  if(saveSlotBusy){alert('Une opération de sauvegarde ou de chargement est déjà en cours.');return;}
- if(local.liveSessionId){alert('Termine le match en cours avant de charger une sauvegarde.');return;}
+ if(local.liveSessionId||window.hasManagedLiveMatches?.()){alert('Termine les matchs en cours avant de charger une sauvegarde.');return;}
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  if(!slot)return;
  if(!confirm('Charger « '+slot.slot_name+' » du '+df(slot.career_date)+' ? Les changements non sauvegardés seront perdus.'))return;
@@ -369,6 +410,9 @@ async function loadCareerSlot(slotNo){
  try{
   const d=await get('/api/load-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
   local=cleanCareerLocalState(d.local_payload||{});
+  clearPendingLiveRollback();
+  liveMatchSessionsByPlayer.clear();
+  liveMatchOpponentsByPlayer.clear();
   local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:'load',career_date:d.slot?.career_date||local.date,week:d.slot?.week||local.week,updated_at:new Date().toISOString()};
   localStorage.setItem('cbLocal',JSON.stringify(local));
   invalidateCareerCaches();
@@ -715,6 +759,7 @@ function mergeServerSinglesEntries(rows=[]){
 async function init(){
  loading();
  try{
+   await rollbackUnsavedLiveBatchOnStartup();
    boot=await get('/api/bootstrap');
    if(boot.save&&typeof boot.save==='object'&&!localStorage.getItem('cbLocal')) local=cleanCareerLocalState(boot.save);
    local.career={...(local.career||{}),...(boot.career||{})};
@@ -2614,6 +2659,7 @@ window.startLiveMatch=async()=>{
   return;
  }
  try{
+  await ensureLivePreMatchCheckpoint();
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
   const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{}})});
   applyLiveMatchResponse(d);persist();render();

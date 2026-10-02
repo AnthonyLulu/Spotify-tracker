@@ -4738,26 +4738,28 @@ window.pairScore=(p,k)=>{
  return clamp(Math.round(k==='power'?base+3:k==='comp'?base:base-2),40,94)
 }
 window.approachPartner=async id=>{
- if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les partenariats double sont désactivés.');return}
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ if(String(activePlayerCareerView().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les partenariats double sont désactivés.');return}
  try{
-  const d=await managerAction('approach_partner',id);
+  const d=await managerAction('approach_partner',id,{player_id:playerId});
   if(d.accepted){
    local.partnerId=id;persist();
    alert('Proposition acceptée. Cette paire devient ton partenariat principal.');
   }else{
    alert('Proposition refusée : '+(d.reason||'le joueur ne souhaite pas changer de projet actuellement.'));
   }
-  await loadManagement();render();
+  await Promise.all([loadManagement(),loadActiveManagedContext(true,playerId)]);render();
  }catch(e){alert(e.message)}
 }
 window.respondPartnerOffer=async(id,decision)=>{
- if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les propositions de double sont désactivées.');return}
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ if(String(activePlayerCareerView().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : les propositions de double sont désactivées.');return}
  try{
-  const d=await managerAction('respond_partner_offer',id,{decision});
+  const d=await managerAction('respond_partner_offer',id,{decision,player_id:playerId});
   if(decision==='accept'&&d.partnership?.partner_id){
    local.partnerId=Number(d.partnership.partner_id);persist();
   }
-  await loadManagement();render();
+  await Promise.all([loadManagement(),loadActiveManagedContext(true,playerId)]);render();
  }catch(e){alert(e.message)}
 }
 window.choosePartner=async id=>{

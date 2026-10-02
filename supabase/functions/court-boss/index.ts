@@ -11818,7 +11818,9 @@ Deno.serve(async(req:Request)=>{
       const managerProfile=body?.manager_profile&&typeof body.manager_profile==="object"?body.manager_profile:{};
       const attrs:any=Array.isArray(p.player_attributes)?p.player_attributes[0]:p.player_attributes||{};
       const previousId=Number(previousCareer.data?.managed_player_id||0);
-      const managedIds=[...new Set([previousId,Number(p.id)].filter(Boolean))];
+      const managedIds=[...new Set([
+        previousId,Number(p.id),...(extraPlayers||[]).map((x:any)=>Number(x.id||0))
+      ].filter(Boolean))];
       const scoutingEtaDate=(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+28);return d.toISOString().slice(0,10)})();
       const academyContractEnd=(()=>{const d=new Date(startDate+"T12:00:00Z");d.setUTCFullYear(d.getUTCFullYear()+3);return d.toISOString().slice(0,10)})();
       const startingRank=Math.max(1,Number(baseline.data?.rank||rankAtDate.data||p.ranking||2000));
@@ -11892,6 +11894,7 @@ Deno.serve(async(req:Request)=>{
           db.from("doubles_partner_offers").delete().in("from_player_id",managedIds),
           db.from("doubles_partner_offers").delete().in("to_player_id",managedIds),
           db.from("player_doubles_commitments").delete().in("player_id",managedIds),
+          db.from("managed_player_training_progress").delete().in("player_id",managedIds),
           db.from("injuries").delete().in("player_id",managedIds).gte("started_at",startDate)
         );
       }

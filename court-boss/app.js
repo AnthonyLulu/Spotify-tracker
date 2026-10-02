@@ -2412,7 +2412,7 @@ function liveMatchPanel(){
   <button class="primary fm-start-match" onclick="startLiveMatch()">Lancer un match autour de mon classement</button>
  </div>`;
 
- const c=career(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{};
+ const c=activePlayerCareerView(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{};
  const userName=c.player_name||'Joueur',oppName=opp.name||'Adversaire';
  const us=Number(s.user_sets||0),os=Number(s.opponent_sets||0),ug=Number(s.user_games||0),og=Number(s.opponent_games||0);
  const up=Number(s.user_points||0),op=Number(s.opponent_points||0);
@@ -2488,14 +2488,15 @@ function matchPage(){
  <div class="list-item row between"><span>Position retour</span><select class="select" style="width:auto" onchange="setTactic('returnPos',this.value)"><option ${t.returnPos==='Avancée'?'selected':''}>Avancée</option><option ${t.returnPos==='Neutre'?'selected':''}>Neutre</option><option ${t.returnPos==='Reculée'?'selected':''}>Reculée</option></select></div></div>
  <div class="card"><h2>Lecture tactique</h2><div class="kpi-strip"><div class="kpi"><span class="muted mini">Intensité</span><b>${Math.round((t.aggression+t.risk)/2)}</b></div><div class="kpi"><span class="muted mini">Jeu avant</span><b>${t.net}</b></div><div class="kpi"><span class="muted mini">Retour</span><b style="font-size:15px">${esc(t.returnPos)}</b></div></div><p class="muted mini" style="margin-top:10px">Les changements de tactique influencent les points suivants du match live et les simulations de tournoi.</p></div></div>
  <div class="section-head" style="margin-top:16px"><div><div class="eyebrow">Historique</div><h2>Matchs analysés</h2></div></div>
- <div class="stack">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(career().player_name||'Joueur')?'good':'bad'}">${m.winner===(career().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
+ <div class="stack">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(activePlayerCareerView().player_name||'Joueur')?'good':'bad'}">${m.winner===(activePlayerCareerView().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
 }
 window.setMatchSurface=(surface,indoor=false)=>{local.matchSurface=surface;local.matchIndoor=!!indoor;persist();render()}
 window.startLiveMatch=async()=>{
- if(String(career().career_focus||'mixed')==='doubles_only'){alert('Carrière Double exclusivement : le Match Center simple est désactivé.');return}
+ const livePlayer=activePlayerCareerView();
+ if(String(livePlayer.career_focus||'mixed')==='doubles_only'){alert('Orientation Double exclusivement : le Match Center simple est désactivé pour ce joueur.');return}
  try{
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
-  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,tactics:local.tactics||{}})});
+  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:activeManagedId()||primaryManagedPlayerId()||0,tactics:local.tactics||{}})});
   local.liveMatch=d.session;local.liveOpponent=d.opponent||null;persist();render();
  }catch(e){alert(e.message)}
 }
@@ -4679,7 +4680,7 @@ window.openMatch=idx=>{
     ['Contexte',mc.context_skill],['Grands matchs',mc.big_match],['Best of 5',mc.best_of_five],
     ['Confiance',mc.confidence],['H2H',mc.h2h],['Forme',mc.form_delta],['Tes consignes',mc.user_tactics]
   ].filter(x=>Number.isFinite(Number(x[1]))&&Math.abs(Number(x[1]))>.0005);
-  const result=m.winner===(career().player_name||'Anthony')||m.winner===(career().player_name||'Joueur');
+  const result=m.winner===(career().player_name||'Anthony')||m.winner===(activePlayerCareerView().player_name||'Joueur');
   const efficiency=(()=>{
     const w=Number(winners)||0,e=Number(errors)||0,n=Number(net)||50,r=Number(rally)||5;
     return clamp(Math.round(50+(w-e)*1.2+(n-50)*.25-(r>8?3:0)),20,95);

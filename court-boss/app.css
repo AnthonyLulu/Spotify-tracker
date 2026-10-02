@@ -1339,3 +1339,10 @@ body{background:
     font-size:10px;
   }
 }
+
+
+/* ATP rolling ledger */
+.defense-hot{background:rgba(183,255,67,.045)}
+.defense-hot td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.defense-hot .badge.warn,.defense-hot .badge.bad{font-weight:900}
+#points-a-defendre{scroll-margin-top:92px}

@@ -10533,7 +10533,8 @@ Deno.serve(async(req:Request)=>{
         travel_tolerance:Number(pref.data?.travel_tolerance||10),
         performance_bonus:Number(p.reputation||10)>=15,
         release_clause:Number(p.ambition||10)>=16,
-        minimum_fit:Math.max(55,fit-5)
+        minimum_fit:Math.max(55,fit-5),
+        target_player_id:managedId
       };
       const status=interest>=42?"completed":"rejected";
       const start=String(career.data.career_date||AGE_REFERENCE_DATE);
@@ -10622,6 +10623,10 @@ Deno.serve(async(req:Request)=>{
       if(cand.data.status!=="available")return h({error:"Ce membre du staff n'est pas disponible actuellement."},409);
       if(cand.data.profile_id&&cand.data.interview_status==="not_started")return h({error:"Un entretien est obligatoire avant de faire signer ce candidat."},409);
       if(cand.data.interview_status==="rejected")return h({error:"Le candidat a refusé les conditions après l'entretien."},409);
+      const interviewTarget=Number((cand.data.demands as any)?.target_player_id||0);
+      if(interviewTarget&&interviewTarget!==target.playerId){
+        return h({error:"Cet entretien concernait un autre joueur géré. Relance un entretien pour le joueur actif."},409);
+      }
       const cost=Number(cand.data.requested_signing||cand.data.signing_cost||0);
       if(budget<cost)return h({error:"Budget insuffisant"},409);
       budget-=cost;

@@ -4762,7 +4762,8 @@ window.choosePartner=async id=>{if(String(career().career_focus||'mixed')==='sin
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
 window.setCareerFocus=async focus=>{
  const labels={singles_only:'Simple exclusivement',singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
- const cr=career();
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const cr=activePlayerCareerView();
  if(String(cr.career_focus||'mixed')===focus)return;
  const warning=focus==='doubles_only'
   ?'Passer en Double exclusivement ? Tes inscriptions simple futures seront retirées et tu ne pourras plus jouer de tableau simple tant que ce mode reste actif.'
@@ -4771,7 +4772,7 @@ window.setCareerFocus=async focus=>{
     :'Passer en '+labels[focus]+' ?';
  if(!confirm(warning))return;
  try{
-  const d=await managerAction('set_career_focus',0,{focus});
+  const d=await managerAction('set_career_focus',0,{focus,player_id:playerId});
   if(focus==='doubles_only'){
     local.entries=[];
     local.entryMeta={};
@@ -4790,7 +4791,9 @@ window.setCareerFocus=async focus=>{
   }
   boot=await get('/api/bootstrap');
   if(boot.career)local.career={...(local.career||{}),...boot.career};
-  await Promise.all([loadScheduleAdvice(),loadTournaments(),loadManagement()]);
+  await loadActiveManagedContext(true,playerId).catch(()=>{});
+  tournamentDetailRows.clear();
+  await Promise.all([loadScheduleAdvice(),loadTournaments(),loadManagement(),loadSeasonSummary(),loadRankingLedger()]);
   persist();render();
   if(focus==='doubles_only'&&d.needs_partner){
     alert('Orientation active : '+(d.label||labels[focus])+'. Il te faut maintenant un partenaire.');

@@ -981,9 +981,10 @@ window.setActiveManagedPlayer=async id=>{
 };
 function home(){
  const c=activePlayerCareerView(),doublesOnly=String(c.career_focus||'mixed')==='doubles_only';
+ const activeRecommendations=scheduleAdvice?.recommended||[];
  const next=doublesOnly
-  ?((scheduleAdvice?.recommended||[]).find(t=>t.doubles)||boot.upcoming?.find(t=>t.doubles)||boot.upcoming?.[0])
-  :boot.upcoming?.[0];
+  ?(activeRecommendations.find(t=>t.doubles)||tourRows.find(t=>t.doubles)||boot.upcoming?.find(t=>t.doubles)||boot.upcoming?.[0])
+  :(activeRecommendations.find(t=>t.singles!==false)||tourRows.find(t=>t.singles!==false)||boot.upcoming?.[0]);
  const academy=boot.academy||{},fin=boot.finance||{};
  const managedSquad=(management?.academyRoster||[])
   .filter(x=>String(x.status||'active')==='active'&&Number(x.player_id||x.players?.id||0)>0)

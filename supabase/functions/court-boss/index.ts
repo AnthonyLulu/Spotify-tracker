@@ -4003,6 +4003,7 @@ Deno.serve(async(req:Request)=>{
     const source=(u.searchParams.get("source")??"").trim();
     const surface=(u.searchParams.get("surface")??"").trim().slice(0,40);
     const from=(u.searchParams.get("from")??"").trim();
+    const requestedManagedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
     let query=db.from("tournaments").select("*",{count:"exact"}).eq("is_active",true);
     if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
     if(category&&category!=="Toutes") query=query.eq("category",category);
@@ -4031,7 +4032,13 @@ Deno.serve(async(req:Request)=>{
     if(tournamentIds.length){
       const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
       if(managed.error)return h({error:managed.error.message},500);
-      const managedId=Number(managed.data?.managed_player_id||0);
+      const primaryManagedId=Number(managed.data?.managed_player_id||0);
+      const managedId=Number(requestedManagedPlayerId||primaryManagedId||0);
+      if(managedId&&managedId!==primaryManagedId){
+        const rosterCheck=await db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle();
+        if(rosterCheck.error)return h({error:rosterCheck.error.message},500);
+        if(!rosterCheck.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      }
       if(managedId){
         const [mainAcceptance,qAcceptance]=await Promise.all([
           db.from("world_tournament_acceptance_entries")
@@ -4046,6 +4053,7 @@ Deno.serve(async(req:Request)=>{
         const qMap=new Map((qAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
         rows=rows.map((t:any)=>({
           ...t,
+          managed_acceptance_player_id:managedId,
           managed_acceptance_main:mainMap.get(Number(t.id))??null,
           managed_acceptance_qualifying:qMap.get(Number(t.id))??null
         }));
@@ -8191,7 +8199,7 @@ Deno.serve(async(req:Request)=>{
       &&Boolean(doublesEntryStatus?.requires_qualifying)
       &&String(t.circuit)==="ATP"
       &&/ATP 500/i.test(String(t.category||""));
-    const pairPoolTarget=Math.max(0,pairPoolTarget+(managedDoubleQualifying?3:0));
+    const pairPoolTarget=Math.max(0,drawSize-1+(managedDoubleQualifying?3:0));
     let poolRes:any;
     let worldPairRows:any[]=[];
     let projectedRacePairRows:any[]=[];

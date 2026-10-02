@@ -9416,17 +9416,24 @@ Deno.serve(async(req:Request)=>{
     for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619)}
     return Math.abs(h>>>0);
   };
-  const liveFormMultiplier=(value:any)=>{
+  const liveFormBonus=(value:any)=>{
     const form=Math.max(0,Math.min(100,Number(value??70)));
-    if(form>=92)return 1.06;
-    if(form>=82)return 1.04;
-    if(form>=72)return 1.02;
-    if(form>=55)return 1.00;
-    if(form>=45)return 0.98;
-    if(form>=35)return 0.96;
-    return 0.94;
+    if(form>=92)return 3;
+    if(form>=82)return 2;
+    if(form>=72)return 1;
+    if(form>=55)return 0;
+    if(form>=45)return -1;
+    if(form>=35)return -2;
+    return -3;
   };
-  const liveRuntimeAvgAttr=(attrs:any,keys:string[],formMultiplier=1)=>keys.reduce((sum,k)=>sum+Math.max(1,Math.min(20,Number(attrs?.[k]??10)*formMultiplier)),0)/Math.max(1,keys.length);
+  // Keep a compact multiplier in the runtime payload for backward compatibility,
+  // but effective tennis attributes use the TM-style integer bonus below.
+  const liveFormMultiplier=(value:any)=>1+liveFormBonus(value)*.02;
+  const liveRuntimeBonusFromMultiplier=(formMultiplier=1)=>Math.max(-3,Math.min(3,Math.round((Number(formMultiplier||1)-1)/.02)));
+  const liveRuntimeAvgAttr=(attrs:any,keys:string[],formMultiplier=1)=>{
+    const bonus=liveRuntimeBonusFromMultiplier(formMultiplier);
+    return keys.reduce((sum,k)=>sum+Math.max(1,Math.min(20,Number(attrs?.[k]??10)+bonus)),0)/Math.max(1,keys.length);
+  };
   const liveRuntimeConditionScore=(player:any,attrs:any,formMultiplier:number,meta:any,pointsPlayed:number,effort=60)=>{
     const weather:any=meta?.weather||{};
     const stamina=liveRuntimeAvgAttr(attrs,["stamina","natural_fitness","recovery","rally_tolerance","work_rate"],formMultiplier);
@@ -9539,7 +9546,7 @@ Deno.serve(async(req:Request)=>{
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
-      form:{user:userForm,opponent:oppForm,user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_multiplier_runtime_only",persists_to_player_attributes:false,min_multiplier:.94,max_multiplier:1.06},
+      form:{user:userForm,opponent:oppForm,user_bonus:liveFormBonus(userForm),opponent_bonus:liveFormBonus(oppForm),user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_integer_bonus_runtime_only",persists_to_player_attributes:false,min_bonus:-3,max_bonus:3},
       tournament:t?{
         id:Number(t.id),name:String(t.name||"Tournoi"),city:t.city||null,country:t.country||null,
         venue:t.venue||null,circuit:t.circuit||null,category:t.category||null,

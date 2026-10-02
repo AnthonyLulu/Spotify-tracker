@@ -347,7 +347,7 @@ async function rollbackUnsavedLiveBatchOnStartup(){
   liveMatchSessionsByPlayer.clear();
   liveMatchOpponentsByPlayer.clear();
   clearLiveMatchView();
-  const restoredLive=(d.live_match_sessions||[]).filter(x=>String(x?.status||'')==='active'&&Number(x?.managed_player_id||0)>0&&Number(x?.id||0)>0);
+  const restoredLive=(d.live_match_sessions||[]).filter(x=>['active','finished'].includes(String(x?.status||''))&&Number(x?.managed_player_id||0)>0&&Number(x?.id||0)>0);
   for(const x of restoredLive)liveMatchSessionsByPlayer.set(Number(x.managed_player_id),Number(x.id));
   if(marker.saved_live&&restoredLive.length){
    localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({...marker,restored_at:new Date().toISOString()}));
@@ -431,7 +431,7 @@ async function loadCareerSlot(slotNo){
   liveMatchSessionsByPlayer.clear();
   liveMatchOpponentsByPlayer.clear();
   clearLiveMatchView();
-  const restoredLive=(d.live_match_sessions||[]).filter(x=>String(x?.status||'')==='active'&&Number(x?.managed_player_id||0)>0&&Number(x?.id||0)>0);
+  const restoredLive=(d.live_match_sessions||[]).filter(x=>['active','finished'].includes(String(x?.status||''))&&Number(x?.managed_player_id||0)>0&&Number(x?.id||0)>0);
   for(const x of restoredLive)liveMatchSessionsByPlayer.set(Number(x.managed_player_id),Number(x.id));
   if(restoredLive.length){
    localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({slot_no:Number(slotNo),saved_live:true,career_date:d.slot?.career_date||local.date||null,week:d.slot?.week??local.week??null,created_at:new Date().toISOString()}));
@@ -2513,28 +2513,30 @@ function liveMatchPanel(){
  const s=local.liveMatch;
  const selectedSurface=local.matchSurface||'Dur';
  const selectedIndoor=!!local.matchIndoor;
- if(!s)return `<div class="card fm-match-launch"><div class="row between"><div><div class="eyebrow">Match engine</div><h2>Vue tactique mobile</h2><div class="muted">Vue tactique type manager : pions ronds mobiles, trajectoire de balle, momentum, score et coaching en direct.</div></div><span class="badge">Point par point</span></div>
+ if(!s)return `<div class="card fm-match-launch"><div class="row between"><div><div class="eyebrow">CB Match Engine v2</div><h2>Match Center manager</h2><div class="muted">Joue point par point ou simule. Le score reste provisoire tant que tu ne l’as pas validé.</div></div><span class="badge">FM dots · TM tactics</span></div>
   <div class="match-surface-pills">
    <button class="${selectedSurface==='Dur'&&!selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',false)">Dur ext.</button>
    <button class="${selectedSurface==='Dur'&&selectedIndoor?'active':''}" onclick="setMatchSurface('Dur',true)">Dur int.</button>
    <button class="${selectedSurface==='Terre'?'active':''}" onclick="setMatchSurface('Terre',false)">Terre</button>
    <button class="${selectedSurface==='Gazon'?'active':''}" onclick="setMatchSurface('Gazon',false)">Gazon</button>
   </div>
-  <button class="primary fm-start-match" onclick="startLiveMatch()">Lancer un match autour de mon classement</button>
+  <button class="primary fm-start-match" onclick="startLiveMatch()">Lancer un match libre</button>
  </div>`;
 
- const c=activePlayerCareerView(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{};
+ const c=activePlayerCareerView(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{},meta=st._meta||{};
+ const tour=meta.tournament||null,weather=meta.weather||{},mood=meta.mood||{};
  const userName=c.player_name||'Joueur',oppName=opp.name||'Adversaire';
  const us=Number(s.user_sets||0),os=Number(s.opponent_sets||0),ug=Number(s.user_games||0),og=Number(s.opponent_games||0);
  const up=Number(s.user_points||0),op=Number(s.opponent_points||0);
- const done=s.status==='completed';
+ const finished=['finished','completed'].includes(String(s.status||'')),committed=String(s.status||'')==='committed';
+ const done=finished||committed;
  const ux=clamp(Number(lp.user_x??(48+(Number(s.rally_no||0)%3)*6)),12,88);
  const uy=clamp(Number(lp.user_y??78),55,90);
  const ox=clamp(Number(lp.opp_x??(52-(Number(s.rally_no||0)%3)*6)),12,88);
  const oy=clamp(Number(lp.opp_y??22),10,45);
  const bx=clamp(Number(lp.ball_x??50),10,90),by=clamp(Number(lp.ball_y??50),8,92);
  const surface=String(s.surface||'Dur'),courtClass=surface==='Terre'?'clay':surface==='Gazon'?'grass':'hard';
- const indoor=/intérieur/i.test(surface);
+ const indoor=/intérieur|indoor/i.test(surface)||meta.indoor===true;
  const uInit=esc(userName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
  const oInit=esc(oppName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
  const momentum=clamp(Number(s.momentum||50),10,90);
@@ -2545,10 +2547,30 @@ function liveMatchPanel(){
  const pointEnding=String(lp.ending||lp.shot||'').replaceAll('_',' ');
  const pointServe=lp.serve_number?`${lp.serve_number}e balle · ${esc(lp.serve_direction||'')}`:'';
  const pointReturn=lp.return_depth?`retour ${esc(lp.return_depth)}`:'';
- return `<div class="card fm-live-match">
+ const speed=Number(meta.court_speed||1);
+ const speedLabel=speed>=1.16?'Très rapide':speed>=1.05?'Rapide':speed<=.78?'Lent':speed<=.92?'Plutôt lent':'Moyen';
+ const wind=Number(weather.wind_kph||0),temp=Number(weather.temperature_c||0),humid=Number(weather.humidity_pct||0);
+ const logo=tour?.logo_url?`<img class="match-event-logo" src="${esc(tour.logo_url)}" alt="${esc(tour.name||'Tournoi')}" onerror="this.style.display='none'">`:'';
+ const statusLabel=committed?'Validé':finished?'À valider':'Set '+(s.set_no||1);
+ const statusClass=committed?'good':finished?'warn':'';
+
+ return `<div class="card fm-live-match match-engine-v2">
+  ${tour?`<div class="match-event-banner">${logo}<div><div class="eyebrow">${esc(tour.circuit||'Tournoi')} · ${esc(tour.category||'')} · ${esc(meta.round||'Match')}</div><h2>${esc(tour.name||'Tournoi')}</h2><div class="muted mini">${esc([tour.venue,tour.city,tour.country].filter(Boolean).join(' · '))}</div></div><span class="badge">${esc(surface)}</span></div>`:''}
+
   <div class="fm-match-top">
-   <div><div class="eyebrow">Live · ${esc(surface)}${indoor?' · indoor':''}</div><h2>${esc(userName)} vs ${esc(oppName)}</h2></div>
-   <span class="badge ${done?'good':'warn'}">${done?'Terminé':'Set '+(s.set_no||1)}</span>
+   <div><div class="eyebrow">${tour?'Match officiel':'Match libre'} · ${esc(surface)}${indoor?' · indoor':''}</div><h2>${esc(userName)} vs ${esc(oppName)}</h2></div>
+   <span class="badge ${statusClass}">${statusLabel}</span>
+  </div>
+
+  <div class="match-conditions-grid">
+   <div><span>Conditions</span><b>${esc(weather.condition|| (indoor?'Indoor':'Standard'))}</b></div>
+   <div><span>Temp.</span><b>${temp?temp+'°C':'—'}</b></div>
+   <div><span>Vent</span><b>${wind?wind+' km/h':indoor?'0 km/h':'—'}</b></div>
+   <div><span>Humidité</span><b>${humid?humid+'%':'—'}</b></div>
+   <div><span>Vitesse court</span><b>${speedLabel} · ${speed.toFixed(2)}</b></div>
+   <div><span>Altitude</span><b>${Number(meta.altitude_m||0)?fmt(meta.altitude_m)+' m':'—'}</b></div>
+   <div><span>Humeur ${esc(userName.split(' ').slice(-1)[0])}</span><b class="${Number(mood.user||70)>=76?'good':Number(mood.user||70)<58?'bad':''}">${fmt(mood.user||70)}/100</b></div>
+   <div><span>Humeur adverse</span><b>${fmt(mood.opponent||70)}/100</b></div>
   </div>
 
   <div class="fm-scoreboard">
@@ -2556,7 +2578,8 @@ function liveMatchPanel(){
    <div class="fm-score-name">${!s.serving_user?'● ':''}${esc(oppName)} <small>${flags[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pointText(up,op,'B')}</strong>
   </div>
 
-  <div class="fm-court ${courtClass} ${indoor?'indoor':''}">
+  <div class="fm-court ${courtClass} ${indoor?'indoor':''}" data-surface="${esc(surface)}">
+    ${tour?.name?`<div class="court-event-watermark">${esc(tour.name)}</div>`:''}
     <i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i>
     <i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i>
     <i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i>
@@ -2578,14 +2601,25 @@ function liveMatchPanel(){
    <div><span>Filet</span><b>${st.user_net_points_won||0}/${st.user_net_points||0}</b></div>
    <div><span>Points</span><b>${s.rally_no||0}</b></div>
   </div>
-  ${lp.model?`<div class="muted micro" style="margin-top:8px">Moteur : ${esc(lp.model)} · P(point) serveur ${lp.server_win_probability??'—'}% · Elo surface ${Math.round(Number(lp.server_surface_elo||0))} vs ${Math.round(Number(lp.returner_surface_elo||0))}</div>`:''}
-  ${done?`<button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Nouveau match</button>`:`<div class="fm-live-toolbar">
+
+  ${lp.model?`<div class="muted micro match-model-line">Moteur : ${esc(lp.model)} · P(point) serveur ${lp.server_win_probability??'—'}% · Elo surface ${Math.round(Number(lp.server_surface_elo||0))} vs ${Math.round(Number(lp.returner_surface_elo||0))}</div>`:''}
+
+  ${committed?`<div class="notice good match-result-actions"><b>Résultat validé et intégré à la carrière.</b></div><button class="ghost" style="width:100%;margin-top:10px" onclick="clearLiveMatch()">Fermer le match</button>`
+  :finished?`<div class="notice warn match-result-actions"><b>Score final provisoire.</b><br><span class="muted mini">Tu peux le valider, sauvegarder ce score pour décider plus tard, ou l’annuler et revenir au dernier checkpoint.</span></div>
+   <div class="fm-result-controls">
+    <button class="primary" onclick="commitLiveMatch()">Valider & sauvegarder</button>
+    <button class="soft-btn" onclick="saveLiveCheckpoint()">Sauvegarder ce score</button>
+    <button class="danger-btn" onclick="discardLiveMatch()">Annuler le résultat</button>
+   </div>`
+  :`<div class="fm-live-toolbar">
    <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button>
    <button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button>
    <button class="soft-btn ${liveAutoSpeed===2?'active':''}" onclick="setLiveSpeed(2)">2x</button>
    <button class="soft-btn ${liveAutoSpeed===4?'active':''}" onclick="setLiveSpeed(4)">4x</button>
-  </div><div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>`}
- </div>`
+   <button class="soft-btn" onclick="saveLiveCheckpoint()">Sauvegarde rapide</button>
+  </div>
+  <div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>`}
+ </div>`;
 }
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
@@ -2616,7 +2650,7 @@ function rememberCurrentLiveMatch(){
  const s=local.liveMatch;
  if(!s)return;
  const playerId=liveMatchOwnerId(s),sessionId=Number(s.id||0);
- if(playerId&&sessionId&&s.status==='active'){
+ if(playerId&&sessionId&&['active','finished'].includes(String(s.status||''))){
   liveMatchSessionsByPlayer.set(playerId,sessionId);
   if(local.liveOpponent)liveMatchOpponentsByPlayer.set(playerId,local.liveOpponent);
  }else if(playerId){
@@ -2640,7 +2674,7 @@ async function restoreLiveMatchForPlayer(playerId){
  try{
   const d=await get('/api/live-match/state?id='+encodeURIComponent(sessionId));
   const session=d?.session||null;
-  if(!session||Number(session.managed_player_id||0)!==target||session.status!=='active'){
+  if(!session||Number(session.managed_player_id||0)!==target||!['active','finished'].includes(String(session.status||''))){
    liveMatchSessionsByPlayer.delete(target);
    liveMatchOpponentsByPlayer.delete(target);
    return null;
@@ -2661,7 +2695,7 @@ function applyLiveMatchResponse(d){
  local.liveMatch=d.session;
  if(d.opponent)local.liveOpponent=d.opponent;
  const playerId=liveMatchOwnerId(d.session),sessionId=Number(d.session.id||0);
- if(d.session.status==='active'&&playerId&&sessionId){
+ if(['active','finished'].includes(String(d.session.status||''))&&playerId&&sessionId){
   local.liveSessionId=sessionId;
   liveMatchSessionsByPlayer.set(playerId,sessionId);
   if(local.liveOpponent)liveMatchOpponentsByPlayer.set(playerId,local.liveOpponent);
@@ -2692,39 +2726,99 @@ window.startLiveMatch=async()=>{
   applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
+window.startTournamentLiveMatch=async(id,quick=false)=>{
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ if(!playerId)return alert('Joueur géré introuvable.');
+ if(liveMatchSessionsByPlayer.has(playerId))return alert('Ce joueur a déjà un match en attente. Termine, valide ou annule-le d’abord.');
+ try{
+  await ensureLivePreMatchCheckpoint();
+  const d=await get('/api/live-match/start',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{}})
+  });
+  applyLiveMatchResponse(d);
+  closeOverlay();
+  route='match';persist();render();
+  if(quick)await simulateLiveMatch();
+ }catch(e){alert(e.message)}
+};
+window.saveLiveCheckpoint=async()=>{
+ if(!local.liveMatch)return;
+ const d=await saveCareerSlot(9,'quick',true);
+ if(d?.ok===false)return alert('Sauvegarde impossible : '+(d.error||d.reason||'erreur'));
+ alert('Score sauvegardé. Tu reprendras exactement ici.');
+};
+async function reloadAfterRollback(){
+ invalidateCareerCaches();
+ boot=await get('/api/bootstrap');
+ if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
+ await Promise.allSettled([loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadTournaments(),loadCareerHub(true)]);
+ route='home';closeOverlay();render();
+}
+window.discardLiveMatch=async()=>{
+ if(!local.liveMatch)return;
+ if(!confirm('Annuler ce match et revenir au dernier checkpoint sauvegardé ?'))return;
+ try{
+  const id=Number(local.liveMatch.id||0);
+  if(id)await get('/api/live-match/discard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:id})});
+  rememberCurrentLiveMatch();
+  clearLiveMatchView();
+  await rollbackUnsavedLiveBatchOnStartup();
+  await reloadAfterRollback();
+ }catch(e){alert('Retour checkpoint impossible : '+e.message)}
+};
+window.commitLiveMatch=async()=>{
+ if(!local.liveMatch||!['finished','completed'].includes(String(local.liveMatch.status||'')))return;
+ try{
+  const d=await get('/api/live-match/commit',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({session_id:Number(local.liveMatch.id)})
+  });
+  applyLiveMatchResponse(d);
+  boot=await get('/api/bootstrap');
+  if(boot.career&&activeManagedId()===primaryManagedPlayerId())local.career={...(local.career||{}),...boot.career};
+  await Promise.allSettled([loadManagement(),loadSeasonSummary(),loadRankingLedger(),loadCareerHub(true)]);
+  const save=await saveCareerSlot(9,'quick',true);
+  if(save?.ok===false)throw new Error('Résultat validé, mais sauvegarde rapide impossible : '+(save.error||save.reason||'erreur'));
+  clearPendingLiveRollback();
+  alert('Résultat validé et sauvegardé.');
+  render();
+ }catch(e){alert(e.message)}
+};
+
 window.playLivePoint=async()=>{
  if(!local.liveMatch)return;
  try{
   const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  applyLiveMatchResponse(d);if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}persist();render();
+  applyLiveMatchResponse(d);if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveGame=async()=>{
- if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active')return;
  try{
   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
   applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveSet=async()=>{
- if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active')return;
  const startSets=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
  try{
   for(let i=0;i<20;i++){
    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
    applyLiveMatchResponse(d);
-   if(local.liveMatch.status==='completed'||Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0)!==startSets)break;
+   if(local.liveMatch.status!=='active'||Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0)!==startSets)break;
   }
   persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveMatch=async()=>{
- if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active')return;
  try{
   for(let i=0;i<60;i++){
    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
    applyLiveMatchResponse(d);
-   if(local.liveMatch.status==='completed')break;
+   if(local.liveMatch.status!=='active')break;
   }
   persist();render();
  }catch(e){alert(e.message)}
@@ -2735,15 +2829,15 @@ window.setLiveSpeed=speed=>{
  render();
 }
 async function liveAutoTick(){
- if(liveAutoBusy||!local.liveMatch||local.liveMatch.status==='completed'){
-   if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
+ if(liveAutoBusy||!local.liveMatch||local.liveMatch.status!=='active'){
+   if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
    return;
  }
  liveAutoBusy=true;
  try{
    const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
    applyLiveMatchResponse(d);persist();render();
-   if(local.liveMatch?.status==='completed'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
+   if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
  }catch(e){
    if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}
    alert(e.message);
@@ -2751,7 +2845,7 @@ async function liveAutoTick(){
 }
 window.toggleLiveAuto=()=>{
  if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render();return}
- if(!local.liveMatch||local.liveMatch.status==='completed')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active')return;
  liveAutoTimer=setInterval(liveAutoTick,Math.max(180,900/liveAutoSpeed));
  liveAutoTick();render();
 }
@@ -4521,7 +4615,7 @@ window.openTournament=async id=>{
         ${Number(t.late_entry_slots||0)>0?`<div class="list-item row between"><span>Late Entry</span><b>${t.late_entry_deadline?df(t.late_entry_deadline):'—'} · ${fmt(t.late_entry_slots)} slot</b></div>`:''}
         ${wc&&!isNcaa&&!isFed?`<div class="list-item row between"><span>Wild card</span><span class="badge ${wc.status==='accepted'?'good':wc.status==='declined'?'bad':''}">${esc(wc.status)}</span></div>`:''}
         ${t.entry_rule_note?`<div class="notice mini" style="margin-top:9px"><b>Règle :</b> ${esc(t.entry_rule_note)}</div>`:''}
-        <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:isSinglesFinals?(singleRule.can?`${!played?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler les Finals</button>`:''}<span class="badge good">Qualification automatique par la Race</span>`:`<span class="badge bad">${esc(singleRule.label)}</span>`):(singleRule.can||joined)?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id}).then(()=>closeOverlay())">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="playTournament(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>${singleRule.canWildcard?`<button class="soft-btn" onclick="requestWildcard(${t.id})">Demander une wild card</button>`:''}`}</div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">${sourceLink}${isNcaa?`<button class="soft-btn" onclick="closeOverlay();nav('university')">Voir mon université</button>`:isFed?`<button class="soft-btn" onclick="closeOverlay();nav('davis')">Voir la sélection</button>`:isSinglesFinals?(singleRule.can?`${!played?`<button class="primary" onclick="openTournamentPlayMode(${t.id})">Jouer / simuler les Finals</button>`:''}<span class="badge good">Qualification automatique par la Race</span>`:`<span class="badge bad">${esc(singleRule.label)}</span>`):(singleRule.can||joined)?`<button class="${joined?'danger-btn':'primary'}" onclick="toggleSinglesEntry(${t.id}).then(()=>closeOverlay())">${joined?'Retirer le simple':'Inscription simple'}</button>${joined&&!played&&canAttempt?`<button class="primary" onclick="openTournamentPlayMode(${t.id})">Jouer / simuler</button>`:''}`:`<span class="badge bad">${esc(singleRule.label)}</span>${singleRule.canWildcard?`<button class="soft-btn" onclick="requestWildcard(${t.id})">Demander une wild card</button>`:''}`}</div>
         ${played?`<div class="notice" style="margin-top:10px"><b>Résultat :</b> ${esc(played.user_round)} · +${played.user_points} pts · +${money(played.user_prize,t.prize_currency||'USD')}</div>`:''}
       </div>
       <div class="card"><h2>Format & calendrier</h2><div class="list-item row between"><span>Surface</span><b class="${surfaceClass(surfaceLabel(t))}">${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau simple</span><b>${t.singles_draw_size||t.draw_size||'—'}</b></div><div class="list-item row between"><span>Qualifs</span><b>${isSinglesFinals?'Top 8 Race · qualification automatique':t.qualifying_draw_size||'—'}</b></div>${t.qualifying_start_date?`<div class="list-item row between"><span>Dates qualifs</span><b>${df(t.qualifying_start_date)} → ${df(t.qualifying_end_date||t.qualifying_start_date)}</b></div>`:''}<div class="list-item row between"><span>Début tableau principal</span><b>${df(t.main_draw_start_date||t.start_date)}</b></div><div class="list-item row between"><span>Tableau double</span><b>${t.doubles?t.doubles_draw_size||t.draw_size||'—':'Non'}</b></div>${(isSinglesFinals||isDoublesFinals)?'<div class="list-item row between"><span>Format Finals</span><b>2 groupes de 4 · demi-finales · finale</b></div>':''}<div class="list-item row between"><span>Points vainqueur</span><b>${isJuniorFinals?'1 000':t.winner_points!=null?fmt(t.winner_points):'—'}</b></div><div class="list-item row between"><span>Prize money</span><b>${t.prize_money!=null?tournamentPrizeLabel(t):'—'}</b></div><div class="list-item row between"><span>Donnée</span><b>${t.is_verified?'Officielle':'Fictive Court Boss'}</b></div></div>
@@ -4604,9 +4698,31 @@ window.requestWildcard=async id=>{
    await openTournament(id);
  }catch(e){alert(e.message)}
 }
+window.openTournamentPlayMode=id=>{
+ const t=(tourRows||[]).find(x=>Number(x.id)===Number(id))||{};
+ overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet tournament-play-mode">
+  <div class="sheet-head"><div><div class="eyebrow">Mode de match</div><h1>${esc(t.name||'Tournoi')}</h1><div class="muted">Choisis ton niveau d’implication. Le Match Center garde le résultat provisoire jusqu’à validation.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
+  <div class="match-mode-grid">
+   <button class="match-mode-card live" onclick="startTournamentLiveMatch(${Number(id)},false)"><span>JOUER</span><b>Match Center live</b><small>Point par point, coaching, météo, surface, humeur et terrain du tournoi.</small></button>
+   <button class="match-mode-card quick" onclick="startTournamentLiveMatch(${Number(id)},true)"><span>SIMULER</span><b>Prochain match</b><small>Résultat rapide avec le même moteur. Tu valides ou annules ensuite.</small></button>
+   <button class="match-mode-card tournament" onclick="playTournament(${Number(id)})"><span>TOURNOI</span><b>Simulation complète</b><small>Simule tout le tableau comme avant, avec checkpoint avant simulation.</small></button>
+  </div>
+ </div></div>`;
+};
+window.rollbackTournamentSimulation=async()=>{
+ if(!confirm('Annuler cette simulation et revenir exactement avant le tournoi ?'))return;
+ try{await rollbackUnsavedLiveBatchOnStartup();await reloadAfterRollback()}catch(e){alert(e.message)}
+};
+window.saveTournamentSimulation=async()=>{
+ const d=await saveCareerSlot(9,'quick',true);
+ if(d?.ok===false)return alert('Sauvegarde impossible : '+(d.error||d.reason||'erreur'));
+ clearPendingLiveRollback();closeOverlay();alert('Simulation validée et sauvegardée.');
+};
+
 window.playTournament=async id=>{
-  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Simulation du tournoi en cours…</div></div></div>';
+  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création du checkpoint puis simulation du tournoi…</div></div></div>';
   try{
+    await ensureLivePreMatchCheckpoint();
     const playPlayerId=activeManagedId()||primaryManagedPlayerId()||0;
     const d=await get('/api/play-tournament',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,tactics:local.tactics||{}})});
     local.playedTournaments=local.playedTournaments||{};local.playedTournaments[String(playPlayerId)+':'+String(id)]=d;
@@ -4626,6 +4742,8 @@ window.playTournament=async id=>{
     const playedName=String(d.managed_player_name||activePlayerCareerView().player_name||'Joueur');
     overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">${esc(d.tournament?.name||'Tournoi')}</div><h1>${d.user_round==='Champion'?'🏆 Champion':esc(d.user_round)}</h1><div class="muted">${esc(playedName)} · Champion du tournoi : ${esc(d.champion?.name||'—')}</div><div class="row" style="margin-top:6px">${d.wildcard?'<span class="badge good">Wild Card</span>':''}${d.alternate?'<span class="badge warn">Alternate entré</span>':''}${d.lucky_loser?'<span class="badge warn">Lucky Loser</span>':''}</div></div><button class="close" onclick="closeOverlay()">✕</button></div>
       <div class="kpi-strip" style="margin-top:12px"><div class="kpi"><span class="muted mini">Tour atteint</span><b style="font-size:16px">${esc(d.user_round)}</b></div><div class="kpi"><span class="muted mini">Points</span><b>+${d.user_points}</b></div><div class="kpi"><span class="muted mini">Prize money</span><b>${money(d.user_prize,d.tournament?.prize_currency||'USD')}</b><small class="muted">${d.user_prize_eur!=null?'Crédit budget '+euro(d.user_prize_eur):''}</small></div><div class="kpi"><span class="muted mini">Voyage</span><b>-${euro(d.travel_cost||0)}</b></div></div><div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted mini">Fatigue ajoutée</span><b>+${d.fatigue_added||0}</b></div><div class="kpi"><span class="muted mini">Fitness après</span><b>${d.fitness||activePlayerCareerView().fitness}%</b></div><div class="kpi"><span class="muted mini">Matchs tableau</span><b>${d.draw_matches}</b></div><div class="kpi"><span class="muted mini">Décision</span><b style="font-size:13px">${(d.fatigue_added||0)>20?'Récupération conseillée':'Charge gérable'}</b></div></div>
+      <div class="notice warn" style="margin-top:12px"><b>Simulation non sauvegardée.</b> Valide-la pour la garder, ou annule pour revenir exactement avant le tournoi.</div>
+      <div class="fm-result-controls"><button class="primary" onclick="saveTournamentSimulation()">Valider & sauvegarder</button><button class="danger-btn" onclick="rollbackTournamentSimulation()">Annuler la simulation</button></div>
       <div class="card" style="margin-top:12px"><h2>Parcours de ${esc(playedName)}</h2>${(d.matches||[]).map(m=>`<div class="list-item"><div class="row between"><b>${esc(m.round_name)}</b><span class="badge ${m.winner_name===playedName?'good':'bad'}">${m.winner_name===playedName?'Victoire':'Défaite'}</span></div><div>${esc(m.player_a_name)} vs ${esc(m.player_b_name)}</div><div class="muted mini">${esc(m.score)}</div>${m.stats?`<div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted mini">1res balles</span><b>${m.stats.first_serve_pct}%</b></div><div class="kpi"><span class="muted mini">Winners</span><b>${m.stats.winners}</b></div><div class="kpi"><span class="muted mini">Fautes</span><b>${m.stats.unforced_errors}</b></div><div class="kpi"><span class="muted mini">Filet</span><b>${m.stats.net_points_won_pct}%</b></div></div>`:''}</div>`).join('')||'<div class="empty">Aucun match utilisateur.</div>'}</div>
     </div></div>`;
   }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Tournoi impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`}

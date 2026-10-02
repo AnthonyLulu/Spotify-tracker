@@ -1876,7 +1876,7 @@ function academy(){
  <div class="section-head" style="margin-top:18px"><div><div class="eyebrow">Effectif professionnel</div><h2>Joueurs sous contrat</h2></div><button class="ghost" onclick="nav('contracts')">Contrats</button></div>
  <div class="stack">${roster.map(r=>{const p=r.players||{};return `<div class="card"><div class="row between"><div class="click" onclick="openPlayer(${p.id})"><div class="eyebrow">${esc(r.squad_role||'Académie')}</div><h2>${flags[p.country]||'🏳️'} ${esc(p.name||'Joueur')}</h2><div class="muted mini">ATP #${fmt(p.ranking||2001)} · ${starRatingHtml(abilityStarValue(p.current_ability||0),'Niveau')} / ${starRatingHtml(abilityStarValue(p.potential||0),'Potentiel')} · ${p.age||'—'} ans</div></div><span class="badge ${p.injury_status==='Fit'?'good':'bad'}">${esc(p.injury_status||'Fit')}</span></div>
  <div class="grid g3" style="margin-top:10px"><div class="kpi"><span class="muted mini">Contrat</span><b style="font-size:13px">${df(r.contract_end)}</b></div><div class="kpi"><span class="muted mini">Coût / sem.</span><b>${euro(r.weekly_cost)}</b></div><div class="kpi"><span class="muted mini">Forme</span><b>${p.form||'—'}</b></div></div>
- <div class="row" style="margin-top:10px;flex-wrap:wrap"><select class="select" style="width:auto" onchange="setAcademyFocus(${r.id},this.value)">${focuses.map(x=>`<option ${x===r.development_focus?'selected':''}>${x}</option>`).join('')}</select><button class="soft-btn" onclick="renewAcademyPlayer(${r.id})">Renouveler +1 an</button>${r.squad_role!=='Joueur principal'?`<button class="danger-btn" onclick="releaseAcademyPlayer(${r.id},'${esc(p.name||'Joueur')}')">Libérer</button>`:''}</div></div>`}).join('')||'<div class="card empty">Aucun joueur sous contrat.</div>'}</div>
+ <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="primary" onclick="event.stopPropagation();trainAcademyPlayer(${p.id})">Entraîner</button><select class="select" style="width:auto" onchange="setAcademyFocus(${r.id},this.value)">${focuses.map(x=>`<option ${x===r.development_focus?'selected':''}>${x}</option>`).join('')}</select><button class="soft-btn" onclick="renewAcademyPlayer(${r.id})">Renouveler +1 an</button>${r.squad_role!=='Joueur principal'?`<button class="danger-btn" onclick="releaseAcademyPlayer(${r.id},'${esc(p.name||'Joueur')}')">Libérer</button>`:''}</div></div>`}).join('')||'<div class="card empty">Aucun joueur sous contrat.</div>'}</div>
 
  <div class="grid g2" style="margin-top:12px">
   <div class="card"><h2>Installations</h2>${(boot.facilities||[]).map(f=>`<div class="list-item row between"><span>${esc(f.name)}</span><div class="row"><b>Niveau ${facilityLevel(f)}/5</b><button class="soft-btn" onclick="upgradeFacility(${f.id},'${esc(f.name)}',${f.level})">Améliorer</button></div></div>`).join('')}</div>
@@ -2947,7 +2947,7 @@ function saveCenterPage(){
    </div>`;
  }).join('');
  return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot conserve ton manager, ton joueur, l’académie, le staff, les contrats, l’entraînement, le médical, le scouting, les sponsors et tes inscriptions.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
- <div class="notice mini"><b>Snapshot managé v2 exact :</b> la carrière, l’académie, le staff, les contrats, les relations, les blessures, le scouting, le NCAA géré, les inscriptions et les résultats du joueur sont restaurés exactement. L’autosave est écrit juste après la validation serveur d’une semaine, avant les rafraîchissements d’écran.</div>
+ <div class="notice mini"><b>Snapshot multi-joueurs v3 exact :</b> la carrière, l’académie et les 1 à 8 joueurs gérés sont figés ensemble : attributs, développement, forme, fatigue, blessures, plans saisonniers, staff, contrats et décisions. Charger un slot remet tout ce bloc au même instant.</div>
  ${local.lastSaveState?`<div class="card" style="margin-top:10px"><div class="row between"><div><div class="eyebrow">Dernière opération de sauvegarde</div><b>${local.lastSaveState.slot_type==='autosave'?'Autosave':local.lastSaveState.slot_type==='quick'?'Quicksave':'Sauvegarde manuelle'} · semaine ${fmt(local.lastSaveState.week||1)}</b></div><span class="badge ${local.lastSaveState.status==='ok'?'good':'bad'}">${local.lastSaveState.status==='ok'?'Sécurisée':'Échec'}</span></div><div class="muted mini" style="margin-top:6px">${df(local.lastSaveState.career_date)} · ${new Date(local.lastSaveState.updated_at).toLocaleString('fr-FR')}${local.lastSaveState.error?' · '+esc(local.lastSaveState.error):''}</div></div>`:''}
  <div class="row" style="margin-top:10px"><button class="ghost" onclick="nav('launcher')">Menu carrière</button></div>
  <div class="grid g2" style="margin-top:12px">${cards}</div>`;
@@ -3068,6 +3068,11 @@ window.runInboxDecision=async(id,type,payload={})=>{
  try{
   if(type==='open_route'){
     try{await managerAction('mark_inbox_read',id)}catch{}
+    if(payload?.player_id&&String(payload.route||'')==='training'){
+      local.trainingPlayerId=Number(payload.player_id);
+      persist();
+      trainingPreview=null;
+    }
     boot=await get('/api/bootstrap');
     await nav(payload.route||'home');
     return;

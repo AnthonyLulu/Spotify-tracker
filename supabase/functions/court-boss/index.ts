@@ -10057,6 +10057,21 @@ Deno.serve(async(req:Request)=>{
     if(career.error||!career.data) return h({error:career.error?.message||"Career not found"},500);
     let budget=Number(career.data.budget||0);
 
+    const resolveActionManagedPlayer=async(requested:any)=>{
+      const primaryId=Number(career.data.managed_player_id||0);
+      const playerId=n(requested,primaryId,1,99999999);
+      if(!playerId)return {error:"Joueur géré introuvable",status:409,primaryId,playerId:0,isPrimary:false,player:null};
+      if(playerId!==primaryId){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",playerId).eq("status","active").maybeSingle();
+        if(roster.error)return {error:roster.error.message,status:500,primaryId,playerId,isPrimary:false,player:null};
+        if(!roster.data)return {error:"Ce joueur ne fait pas partie du groupe géré.",status:403,primaryId,playerId,isPrimary:false,player:null};
+      }
+      const player=await db.from("players").select("id,name,country,style,career_focus").eq("id",playerId).maybeSingle();
+      if(player.error)return {error:player.error.message,status:500,primaryId,playerId,isPrimary:playerId===primaryId,player:null};
+      if(!player.data)return {error:"Joueur géré introuvable",status:404,primaryId,playerId,isPrimary:playerId===primaryId,player:null};
+      return {error:null,status:200,primaryId,playerId,isPrimary:playerId===primaryId,player:player.data};
+    };
+
     if(action==="academy_setting"){
       const field=String(body?.field||"");
       const allowed=new Set(["academy_style","ncaa_pathway","pro_pathway","development_intensity","scholarship_budget","youth_capacity","recruitment_reach"]);
@@ -10404,21 +10419,26 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="approach_staff"){
+      const target=await resolveActionManagedPlayer(body?.player_id);
+      if(target.error)return h({error:target.error},target.status);
       const profile=await db.from("staff_profiles").select("*").eq("id",id).maybeSingle();
       if(profile.error||!profile.data)return h({error:profile.error?.message||"Profil staff introuvable"},404);
       const p:any=profile.data;
       if(!p.active)return h({error:"Ce membre du staff n'est plus actif."},409);
       if(String(p.market_status||"")!=="available")return h({error:"Ce membre du staff est actuellement sous contrat ou indisponible."},409);
-      const already=await db.from("staff_candidates").select("id,status").eq("profile_id",id).maybeSingle();
-      if(already.error)return h({error:already.error.message},500);
-      if(already.data){
-        if(already.data.status!=="available")await db.from("staff_candidates").update({status:"available",interview_status:"not_started"}).eq("id",already.data.id);
-        return h({ok:true,candidate_id:already.data.id,existing:true});
-      }
-      const managedId=Number(career.data.managed_player_id||0);
+      const managedId=target.playerId;
       const fit=managedId?await db.rpc("staff_fit_score",{p_player_id:managedId,p_staff_id:id,p_role:p.primary_role}):{data:60,error:null};
       if(fit.error)return h({error:fit.error.message},500);
       const fitValue=Array.isArray(fit.data)?Number(fit.data[0]||60):Number(fit.data||60);
+      const already=await db.from("staff_candidates").select("id,status").eq("profile_id",id).maybeSingle();
+      if(already.error)return h({error:already.error.message},500);
+      if(already.data){
+        const existingUp=await db.from("staff_candidates").update({
+          status:"available",interview_status:"not_started",managed_fit:fitValue
+        }).eq("id",already.data.id);
+        if(existingUp.error)return h({error:existingUp.error.message},500);
+        return h({ok:true,candidate_id:already.data.id,existing:true,managed_fit:fitValue,player_id:managedId});
+      }
       const role=String(p.primary_role||"Staff"),low=role.toLowerCase();
       const skill=low.includes("double")?Number(p.doubles_coaching_rating||p.coach_rating||10):low.includes("kin")||low.includes("ost")||low.includes("méd")||low.includes("med")?Number(p.medical_rating||10):low.includes("phys")?Number(p.fitness_rating||10):low.includes("recrut")||low.includes("scout")?Number(p.scouting_rating||10):low.includes("anal")?Math.max(Number(p.tactical_rating||10),Number(p.scouting_rating||10)):low.includes("mental")?Number(p.mental_rating||10):low.includes("agent")?Number(p.negotiation_rating||10):Number(p.coach_rating||10);
       const weekly=Math.max(100,Math.round(Number(p.asking_weekly_cost||500)));
@@ -10430,19 +10450,23 @@ Deno.serve(async(req:Request)=>{
         managed_fit:fitValue,interview_status:"not_started",competing_offers:Number(offers.count||0)
       }).select("id").single();
       if(ins.error)return h({error:ins.error.message},500);
-      return h({ok:true,candidate_id:ins.data.id,existing:false,managed_fit:fitValue});
+      return h({ok:true,candidate_id:ins.data.id,existing:false,managed_fit:fitValue,player_id:managedId});
     }
 
     if(action==="interview_staff"){
+      const target=await resolveActionManagedPlayer(body?.player_id);
+      if(target.error)return h({error:target.error},target.status);
       const cand=await db.from("staff_candidates").select("*,profile:staff_profiles(*)").eq("id",id).maybeSingle();
       if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
       if(cand.data.status!=="available")return h({error:"Ce candidat n'est plus disponible."},409);
 
       const p:any=Array.isArray(cand.data.profile)?cand.data.profile[0]:cand.data.profile||{};
-      const fit=Number(cand.data.managed_fit||60);
+      const managedId=target.playerId;
+      const fitRpc=managedId&&p.id?await db.rpc("staff_fit_score",{p_player_id:managedId,p_staff_id:p.id,p_role:p.primary_role}):{data:60,error:null};
+      if(fitRpc.error)return h({error:fitRpc.error.message},500);
+      const fit=Array.isArray(fitRpc.data)?Number(fitRpc.data[0]||60):Number(fitRpc.data||60);
       const competing=Number(cand.data.competing_offers||0);
-      const managedId=Number(career.data.managed_player_id||0);
-      const managed=managedId?await db.from("players").select("id,country,style").eq("id",managedId).maybeSingle():{data:null,error:null};
+      const managed={data:target.player,error:null};
       const priorBond=managedId&&p.id
         ?await db.from("staff_player_bonds").select("bond_type,affinity,trust,respect").eq("staff_profile_id",p.id).eq("player_id",managedId).eq("active",true).maybeSingle()
         :{data:null,error:null};
@@ -10503,14 +10527,14 @@ Deno.serve(async(req:Request)=>{
       },{onConflict:"staff_profile_id,interview_date"});
 
       const up=await db.from("staff_candidates").update({
-        interview_status:status,interest,
+        managed_fit:fit,interview_status:status,interest,
         requested_weekly:requestedWeekly,requested_signing:requestedSigning,
         desired_years:years,demands,
         weekly_cost:requestedWeekly,signing_cost:requestedSigning
       }).eq("id",id);
       if(up.error)return h({error:up.error.message},500);
 
-      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing,recommendation_boost:recommendationBoost,bond_boost:bondBoost,agency_commission:agencyCommission});
+      return h({ok:true,status,interest,requested_weekly:requestedWeekly,requested_signing:requestedSigning,desired_years:years,demands,competing_offers:competing,recommendation_boost:recommendationBoost,bond_boost:bondBoost,agency_commission:agencyCommission,player_id:managedId,managed_fit:fit});
     }
 
     if(action==="counter_staff_offer"){
@@ -10571,6 +10595,8 @@ Deno.serve(async(req:Request)=>{
     }
 
     if(action==="hire_staff"){
+      const target=await resolveActionManagedPlayer(body?.player_id);
+      if(target.error)return h({error:target.error},target.status);
       const cand=await db.from("staff_candidates").select("*").eq("id",id).maybeSingle();
       if(cand.error||!cand.data)return h({error:cand.error?.message||"Candidate not found"},404);
       if(cand.data.status==="hired")return h({ok:true,already:true,budget});
@@ -10583,7 +10609,7 @@ Deno.serve(async(req:Request)=>{
       const start=String(career.data.career_date||AGE_REFERENCE_DATE);
       const endDate=new Date(start+"T12:00:00Z");
       endDate.setUTCFullYear(endDate.getUTCFullYear()+Math.max(1,Number(cand.data.desired_years||2)));
-      const managedId=Number(career.data.managed_player_id||0);
+      const managedId=target.playerId;
       const weekly=Number(cand.data.requested_weekly||cand.data.weekly_cost||0);
       const demands:any=cand.data.demands||{};
       const wantsLead=Boolean(demands.lead_role)&&/coach/i.test(String(cand.data.role||""));
@@ -10637,7 +10663,7 @@ Deno.serve(async(req:Request)=>{
       if(/agent/i.test(effectiveRole)&&!agentSync.error){
         await db.from("inbox_items").insert({kind:"commercial",title:"Nouvelle représentation",body:cand.data.name+" devient ton agent principal. Ton agence et sa commission sont désormais liées à ce profil.",action_route:"staff",is_read:false});
       }
-      return h({ok:true,budget,status:"hired",contract_end:endDate.toISOString().slice(0,10),agent_representation:agentSync.error?{error:agentSync.error.message}:agentSync.data});
+      return h({ok:true,budget,status:"hired",player_id:managedId,contract_end:endDate.toISOString().slice(0,10),agent_representation:agentSync.error?{error:agentSync.error.message}:agentSync.data});
     }
 
     if(action==="fire_staff"){
@@ -10659,8 +10685,8 @@ Deno.serve(async(req:Request)=>{
         member.data.profile_id
           ?db.from("staff_candidates").update({status:"available",interview_status:"not_started"}).eq("profile_id",member.data.profile_id)
           :Promise.resolve({error:null}),
-        member.data.profile_id&&managedId
-          ?db.from("player_staff_assignments").update({active:false,end_date:fireDate,ended_reason:"Licencié par le joueur géré"}).eq("player_id",managedId).eq("staff_profile_id",member.data.profile_id).eq("active",true)
+        member.data.profile_id
+          ?db.from("player_staff_assignments").update({active:false,end_date:fireDate,ended_reason:"Licencié de l’académie"}).eq("staff_profile_id",member.data.profile_id).eq("active",true)
           :Promise.resolve({error:null})
       ]);
       const err=del.error||car.error||contracts.error||profileUp.error||candUp.error||assignmentUp.error;

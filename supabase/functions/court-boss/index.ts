@@ -6443,7 +6443,16 @@ Deno.serve(async(req:Request)=>{
       .limit(30);
 
     const careerNow=await db.from("career_state").select("managed_player_id,career_date,career_focus,doubles_rank").eq("id","demo").maybeSingle();
-    const managedId=Number(careerNow.data?.managed_player_id||0);
+    if(careerNow.error)return h({error:careerNow.error.message},500);
+    const primaryManagedId=Number(careerNow.data?.managed_player_id||0);
+    const requestedManagedId=n(u.searchParams.get("player_id"),0,0,99999999);
+    const managedId=Number(requestedManagedId||primaryManagedId||0);
+    if(managedId&&managedId!==primaryManagedId){
+      const inRoster=(academyRoster.data??[]).some((x:any)=>
+        Number(x.player_id||x.players?.id||0)===managedId&&String(x.status||"active")==="active"
+      );
+      if(!inRoster)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+    }
     const managedDoublesCommitment=managedId
       ?await db.from("player_doubles_commitments")
         .select("season,primary_partner_id,started_at,last_review_date,commitment,affinity,switches,reason,source_label,active,partner:players!player_doubles_commitments_primary_partner_id_fkey(id,name,country,ranking,doubles_ranking,career_focus,current_ability)")
@@ -6505,6 +6514,8 @@ Deno.serve(async(req:Request)=>{
       collegeTeamStaff:collegeTeamStaff.data??[],davisTeamStaff:davisTeamStaff.data??[],
       staffTrainingCenters:staffTrainingCenters.error?[]:(staffTrainingCenters.data??[]),
       userStaffTraining:userStaffTraining.error?[]:(userStaffTraining.data??[]),
+      managedPlayerId:managedId,
+      primaryManagedPlayerId:primaryManagedId,
       managedAgency:managedAgency.error?null:managedAgency.data,
       agencyNetwork:agencyNetwork.error?[]:(agencyNetwork.data??[]),
       staffLeaders:staffLeaders.error?[]:(staffLeaders.data??[]),

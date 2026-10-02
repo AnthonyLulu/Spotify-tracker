@@ -4677,7 +4677,8 @@ window.simulateWeek=async()=>{
   cr.fitness=clamp((cr.fitness||91)+(load<=10?1:-3),40,100);
   cr.form=clamp((cr.form||72)+Math.floor(Math.random()*7)-2,35,100);
   cr.morale=clamp((cr.morale||78)+Math.floor(Math.random()*5)-1,35,100);
-  if(load>13&&Math.random()>.72){cr.injury_status='Gêne musculaire';cr.fitness=clamp(cr.fitness-9,0,100);local.feed=local.feed||[];local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}
+  const diffRisk=({discovery:.86,normal:.72,manager:.65,hardcore:.58})[local.difficulty||'normal']??.72;
+  if(load>13&&Math.random()>diffRisk){cr.injury_status='Gêne musculaire';cr.fitness=clamp(cr.fitness-9,0,100);local.feed=local.feed||[];local.feed.unshift('Alerte médicale : la charge élevée a provoqué une gêne musculaire.')}
   else if(cr.injury_status&&cr.injury_status!=='Fit'&&Math.random()>.45)cr.injury_status='Fit';
   const d=new Date((local.date||RANKING_SNAPSHOT)+'T12:00:00');d.setDate(d.getDate()+7);
   const nextDate=d.toISOString().slice(0,10),nextWeek=(local.week||1)+1;
@@ -4701,7 +4702,7 @@ window.simulateWeek=async()=>{
     if(route==='history')await loadHistory().catch(()=>{});
     return;
   }
-  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training})});
+  const sim=await get('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({week:nextWeek,date:nextDate,career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},training:local.training,difficulty:local.difficulty||'normal',player_training:local.playerTraining||{}})});
   local.lastTrainingReport=sim.training||null;
   local.date=sim.date||nextDate;local.week=sim.week||nextWeek;local.career=cr;local.scoutingBoost=Math.min(50,(local.scoutingBoost||0)+4);
   if(sim.userRanking){cr.singles_rank=sim.userRanking.rank;cr.points=sim.userRanking.points}

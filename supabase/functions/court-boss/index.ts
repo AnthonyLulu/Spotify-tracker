@@ -11201,7 +11201,6 @@ Deno.serve(async(req:Request)=>{
       const academyUpdate=await db.from("academies").update({
         name:academyName,country:academyCountry,academy_level:academyLevel,
         reputation:academyReputation,budget:academyBudget,
-        youth_capacity:Math.max(academyCapacity,n(academyInput?.capacity,academyCapacity,academyCapacity,30)),
         recruitment_reach:academyReach,development_intensity:academyIntensity
       }).eq("id","demo");
       if(academyUpdate.error)return h({error:academyUpdate.error.message},500);

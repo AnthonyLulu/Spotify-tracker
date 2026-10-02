@@ -230,6 +230,9 @@ let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoadi
 let tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={},ncaaUniversities=[],ncaaUniversitiesMeta={},ncaaUniversityDetail=null,ncaaUniversityQuery='',ncaaUniversityConference='',ncaaUniversityFilter='all',ncaaUniversitySort='ita',ncaaUniversityLoading=false;
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
+// Matchs live = état temporaire de la session courante. Ils permettent de switcher
+// entre plusieurs joueurs sans devenir une sauvegarde implicite après un ragequit.
+let liveMatchSessionsByPlayer=new Map(),liveMatchOpponentsByPlayer=new Map();
 let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
 let trainingPreview=null,trainingPreviewLoading=false;
@@ -266,7 +269,14 @@ function cleanCareerLocalState(payload={}){
 let local=baseLocalState();
 try{local=cleanCareerLocalState(JSON.parse(localStorage.getItem('cbLocal')||'{}'))}catch{local=baseLocalState()}
 function persist(){
- localStorage.setItem('cbLocal',JSON.stringify(local));
+ // Ne jamais rendre un score live durable par accident. Un refresh/fermeture sans
+ // sauvegarde ramène donc la carrière au checkpoint d'avant-match.
+ const durableLocal={...local};
+ delete durableLocal.liveSessionId;
+ delete durableLocal.liveMatch;
+ delete durableLocal.liveOpponent;
+ delete durableLocal.liveAuto;
+ localStorage.setItem('cbLocal',JSON.stringify(durableLocal));
  const key=courtBossAccessKey(),payload=snapshotLocalForSave();
  enqueueSaveSlotWrite(async()=>{
   const r=await fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey,'X-Court-Boss-Key':key},body:JSON.stringify(payload)});
@@ -590,6 +600,7 @@ window.nav=async r=>{
   if(r==='saves'||r==='launcher')await loadSaveSlots();
   if(['careerhub','season','media','relationships','diagnostics'].includes(r))await loadCareerHub();
   if(r==='medical')await loadActiveManagedContext(true,activeManagedId()||primaryManagedPlayerId()||0);
+  if(r==='match')await restoreLiveMatchForPlayer(activeManagedId()||primaryManagedPlayerId()||0);
  }catch(e){
   console.warn('Court Boss route load failed',r,e);
   shell(`<div class="card"><h2>Chargement impossible</h2><p class="muted">${esc(e.message)}</p><div class="row"><button class="primary" onclick="nav('${esc(r)}')">Réessayer</button><button class="ghost" onclick="nav('home')">Accueil</button></div></div>`);
@@ -974,10 +985,8 @@ async function loadActiveManagedContext(force=false,requestedId=null){
 window.setActiveManagedPlayer=async id=>{
  const target=Number(id||0);
  if(!target||!managedSquadIds().includes(target))return alert('Ce joueur ne fait pas partie du groupe géré.');
- const liveOwner=Number(local.liveMatch?.managed_player_id||0);
- if(local.liveMatch?.status==='active'&&liveOwner&&target!==liveOwner){
-  return alert('Termine le match live en cours avant de changer de joueur géré.');
- }
+ rememberCurrentLiveMatch();
+ clearLiveMatchView();
  local.activeManagedPlayerId=target;
  local.trainingPlayerId=target;
  trainingPreview=null;
@@ -994,6 +1003,7 @@ window.setActiveManagedPlayer=async id=>{
    loadManagement().catch(()=>{})
   ]);
   if(route==='training')await loadTrainingPreview(true).catch(()=>{});
+  await restoreLiveMatchForPlayer(target).catch(()=>{});
   render();
  }catch(e){alert(e.message)}
 };
@@ -2517,6 +2527,7 @@ function matchPage(){
  });
  const all=[...localMatches,...serverMatches],doublesOnly=String(activePlayerCareerView().career_focus||'mixed')==='doubles_only';
  return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" ${doublesOnly?'disabled':''} onclick="simulatePracticeMatch()">Simulation rapide</button></div>
+ <div class="notice"><b>Mode manager</b> · changer de joueur fige son score. Fermer ou recharger le jeu sans sauvegarder abandonne les matchs en cours et reprend au checkpoint d'avant-match.</div>
  ${doublesOnly?'<div class="notice good"><b>Carrière Double exclusivement</b> · les matchs simples sont coupés. Utilise le hub Double et les fiches tournoi pour jouer.</div>':liveMatchPanel()}
  <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Plan de jeu</h2>
  <div class="list-item"><div class="row between"><span>Agressivité</span><b>${t.aggression}%</b></div><input class="range" type="range" min="1" max="100" value="${t.aggression}" oninput="setTactic('aggression',this.value)"></div>
@@ -2528,18 +2539,83 @@ function matchPage(){
  <div class="stack">${all.map((m,idx)=>`<div class="card click" onclick="openMatch(${idx})"><div class="row between"><div><div class="eyebrow">${esc(m.tournament_name||'Match entraînement')} · ${esc(m.round||'Exhibition')}</div><h2>${esc(m.player_a)} vs ${esc(m.player_b)}</h2><div class="muted">${df(m.match_date||local.date)} · <span class="${surfaceClass(m.surface||'Dur')}">${esc(m.surface||'Dur')}</span></div></div><div><div class="big">${esc(m.score||'—')}</div><span class="badge ${m.winner===(activePlayerCareerView().player_name||'Joueur')?'good':'bad'}">${m.winner===(activePlayerCareerView().player_name||'Joueur')?'Victoire':'Défaite'}</span></div></div><div class="kpi-strip" style="margin-top:12px">${Object.entries(m.match_data||{}).filter(([k,v])=>k!=='tactical_plan'&&typeof v!=='object').slice(0,4).map(([k,v])=>`<div class="kpi"><span class="muted mini">${esc(k.replaceAll('_',' '))}</span><b>${v}</b></div>`).join('')}</div></div>`).join('')||'<div class="card empty">Aucun match enregistré.</div>'}</div>`
 }
 window.setMatchSurface=(surface,indoor=false)=>{local.matchSurface=surface;local.matchIndoor=!!indoor;persist();render()}
+function liveMatchOwnerId(session=local.liveMatch){
+ return Number(session?.managed_player_id||activeManagedId()||primaryManagedPlayerId()||0);
+}
+function rememberCurrentLiveMatch(){
+ const s=local.liveMatch;
+ if(!s)return;
+ const playerId=liveMatchOwnerId(s),sessionId=Number(s.id||0);
+ if(playerId&&sessionId&&s.status==='active'){
+  liveMatchSessionsByPlayer.set(playerId,sessionId);
+  if(local.liveOpponent)liveMatchOpponentsByPlayer.set(playerId,local.liveOpponent);
+ }else if(playerId){
+  liveMatchSessionsByPlayer.delete(playerId);
+  liveMatchOpponentsByPlayer.delete(playerId);
+ }
+}
+function clearLiveMatchView(){
+ if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}
+ delete local.liveMatch;
+ delete local.liveOpponent;
+ local.liveSessionId=null;
+}
+async function restoreLiveMatchForPlayer(playerId){
+ const target=Number(playerId||0);
+ if(!target)return null;
+ if(local.liveMatch&&Number(local.liveMatch.managed_player_id||0)===target)return local.liveMatch;
+ clearLiveMatchView();
+ const sessionId=Number(liveMatchSessionsByPlayer.get(target)||0);
+ if(!sessionId)return null;
+ try{
+  const d=await get('/api/live-match/state?id='+encodeURIComponent(sessionId));
+  const session=d?.session||null;
+  if(!session||Number(session.managed_player_id||0)!==target||session.status!=='active'){
+   liveMatchSessionsByPlayer.delete(target);
+   liveMatchOpponentsByPlayer.delete(target);
+   return null;
+  }
+  local.liveMatch=session;
+  local.liveSessionId=sessionId;
+  local.liveOpponent=session.opponent||liveMatchOpponentsByPlayer.get(target)||null;
+  if(local.liveOpponent)liveMatchOpponentsByPlayer.set(target,local.liveOpponent);
+  return session;
+ }catch(e){
+  liveMatchSessionsByPlayer.delete(target);
+  liveMatchOpponentsByPlayer.delete(target);
+  return null;
+ }
+}
 function applyLiveMatchResponse(d){
  if(!d?.session)return;
  local.liveMatch=d.session;
  if(d.opponent)local.liveOpponent=d.opponent;
- local.liveSessionId=local.liveMatch?.status==='active'?Number(local.liveMatch.id||0)||null:null;
+ const playerId=liveMatchOwnerId(d.session),sessionId=Number(d.session.id||0);
+ if(d.session.status==='active'&&playerId&&sessionId){
+  local.liveSessionId=sessionId;
+  liveMatchSessionsByPlayer.set(playerId,sessionId);
+  if(local.liveOpponent)liveMatchOpponentsByPlayer.set(playerId,local.liveOpponent);
+ }else{
+  local.liveSessionId=null;
+  if(playerId){
+   liveMatchSessionsByPlayer.delete(playerId);
+   liveMatchOpponentsByPlayer.delete(playerId);
+  }
+ }
 }
+window.hasManagedLiveMatches=()=>liveMatchSessionsByPlayer.size>0;
 window.startLiveMatch=async()=>{
  const livePlayer=activePlayerCareerView();
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  if(String(livePlayer.career_focus||'mixed')==='doubles_only'){alert('Orientation Double exclusivement : le Match Center simple est désactivé pour ce joueur.');return}
+ if(liveMatchSessionsByPlayer.has(playerId)){
+  await restoreLiveMatchForPlayer(playerId);
+  render();
+  return;
+ }
  try{
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
-  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:activeManagedId()||primaryManagedPlayerId()||0,tactics:local.tactics||{}})});
+  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{}})});
   applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
@@ -2606,7 +2682,13 @@ window.toggleLiveAuto=()=>{
  liveAutoTimer=setInterval(liveAutoTick,Math.max(180,900/liveAutoSpeed));
  liveAutoTick();render();
 }
-window.clearLiveMatch=()=>{if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}delete local.liveMatch;delete local.liveOpponent;local.liveSessionId=null;persist();render()}
+window.clearLiveMatch=()=>{
+ const playerId=liveMatchOwnerId();
+ if(playerId){liveMatchSessionsByPlayer.delete(playerId);liveMatchOpponentsByPlayer.delete(playerId)}
+ clearLiveMatchView();
+ persist();
+ render();
+}
 function doublesPage(){
  const c=activePlayerCareerView(),activeId=activeManagedId(),primaryId=primaryManagedPlayerId(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
  if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);

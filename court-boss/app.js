@@ -346,7 +346,14 @@ async function rollbackUnsavedLiveBatchOnStartup(){
   local=cleanCareerLocalState(d.local_payload||{});
   liveMatchSessionsByPlayer.clear();
   liveMatchOpponentsByPlayer.clear();
-  clearPendingLiveRollback();
+  clearLiveMatchView();
+  const restoredLive=(d.live_match_sessions||[]).filter(x=>String(x?.status||'')==='active'&&Number(x?.managed_player_id||0)>0&&Number(x?.id||0)>0);
+  for(const x of restoredLive)liveMatchSessionsByPlayer.set(Number(x.managed_player_id),Number(x.id));
+  if(marker.saved_live&&restoredLive.length){
+   localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({...marker,restored_at:new Date().toISOString()}));
+  }else{
+   clearPendingLiveRollback();
+  }
   localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
   return true;
  }catch(e){
@@ -374,9 +381,10 @@ function enqueueSaveSlotWrite(task,markBusy=true){
 async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}){
  const criticalAutosave=slotType==='autosave'&&silent;
  const preMatchCheckpoint=options?.preMatchCheckpoint===true;
+ const hasLive=Boolean(local.liveSessionId||window.hasManagedLiveMatches?.());
  if(simulating&&!criticalAutosave){if(!silent)alert('La semaine est en cours de simulation. L’autosave sera écrit dès validation.');return {ok:false,reason:'simulation_in_progress'};}
  if(saveSlotBusy&&!criticalAutosave)return {ok:false,reason:'save_busy'};
- if((local.liveSessionId||window.hasManagedLiveMatches?.())&&!preMatchCheckpoint){if(!silent)alert('Termine les matchs en cours avant de sauvegarder. Le score live reste figé tant que tu switches de joueur.');return {ok:false,reason:'live_match'};}
+ if(hasLive&&slotType==='autosave'&&!preMatchCheckpoint){if(!silent)alert('Un match est en cours. Utilise une sauvegarde manuelle ou la sauvegarde rapide pour figer exactement le score.');return {ok:false,reason:'live_match_autosave'};}
  const current=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  const defaultName=slotType==='autosave'?'Autosave':slotType==='quick'?'Sauvegarde rapide':current?.slot_name||('Carrière '+slotNo);
  const slotName=silent?defaultName:(prompt('Nom de la sauvegarde',defaultName)||defaultName);
@@ -386,9 +394,19 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}
    const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:localPayload})});
    local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||localPayload.date||local.date,week:d.slot?.week||localPayload.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
    localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
-   if(!preMatchCheckpoint)clearPendingLiveRollback();
+   if(!preMatchCheckpoint){
+    if(hasLive){
+     localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({
+      slot_no:Number(slotNo),
+      saved_live:true,
+      career_date:d.slot?.career_date||localPayload.date||local.date||null,
+      week:d.slot?.week??localPayload.week??local.week??null,
+      created_at:new Date().toISOString()
+     }));
+    }else clearPendingLiveRollback();
+   }
    await loadSaveSlots();
-   if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName));
+   if(!silent)alert('Sauvegarde créée : '+(d.slot?.slot_name||slotName)+(hasLive&&slotType!=='autosave'?' · score(s) live figé(s)':'') );
    if(route==='saves')render();
    return d;
   }catch(e){
@@ -402,24 +420,31 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}
 async function loadCareerSlot(slotNo){
  if(simulating){alert('La semaine est en cours de simulation. Le chargement est verrouillé jusqu’à la fin de l’autosave.');return;}
  if(saveSlotBusy){alert('Une opération de sauvegarde ou de chargement est déjà en cours.');return;}
- if(local.liveSessionId||window.hasManagedLiveMatches?.()){alert('Termine les matchs en cours avant de charger une sauvegarde.');return;}
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));
  if(!slot)return;
- if(!confirm('Charger « '+slot.slot_name+' » du '+df(slot.career_date)+' ? Les changements non sauvegardés seront perdus.'))return;
+ const hasLiveNow=Boolean(local.liveSessionId||window.hasManagedLiveMatches?.());
+ if(!confirm('Charger « '+slot.slot_name+' » du '+df(slot.career_date)+' ? '+(hasLiveNow?'Les matchs en cours et ':'Les ')+'changements non sauvegardés seront perdus.'))return;
  return enqueueSaveSlotWrite(async()=>{
  try{
   const d=await get('/api/load-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
   local=cleanCareerLocalState(d.local_payload||{});
-  clearPendingLiveRollback();
   liveMatchSessionsByPlayer.clear();
   liveMatchOpponentsByPlayer.clear();
+  clearLiveMatchView();
+  const restoredLive=(d.live_match_sessions||[]).filter(x=>String(x?.status||'')==='active'&&Number(x?.managed_player_id||0)>0&&Number(x?.id||0)>0);
+  for(const x of restoredLive)liveMatchSessionsByPlayer.set(Number(x.managed_player_id),Number(x.id));
+  if(restoredLive.length){
+   localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({slot_no:Number(slotNo),saved_live:true,career_date:d.slot?.career_date||local.date||null,week:d.slot?.week??local.week??null,created_at:new Date().toISOString()}));
+  }else clearPendingLiveRollback();
   local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:'load',career_date:d.slot?.career_date||local.date,week:d.slot?.week||local.week,updated_at:new Date().toISOString()};
   localStorage.setItem('cbLocal',JSON.stringify(local));
   invalidateCareerCaches();
   boot=await get('/api/bootstrap');
   if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
   await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
-  route='home';render();
+  const activeLiveId=activeManagedId()||primaryManagedPlayerId()||0;
+  if(restoredLive.some(x=>Number(x.managed_player_id)===Number(activeLiveId)))await restoreLiveMatchForPlayer(activeLiveId).catch(()=>{});
+  route=local.liveMatch?'match':'home';render();
  }catch(e){alert('Chargement impossible : '+e.message);return {ok:false,error:String(e?.message||e)}}
  return {ok:true,slot_no:Number(slotNo)};
  });
@@ -2572,7 +2597,7 @@ function matchPage(){
  });
  const all=[...localMatches,...serverMatches],doublesOnly=String(activePlayerCareerView().career_focus||'mixed')==='doubles_only';
  return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" ${doublesOnly?'disabled':''} onclick="simulatePracticeMatch()">Simulation rapide</button></div>
- <div class="notice"><b>Mode manager</b> · changer de joueur fige son score. Fermer ou recharger le jeu sans sauvegarder abandonne les matchs en cours et reprend au checkpoint d'avant-match.</div>
+ <div class="notice"><b>Mode manager</b> · changer de joueur fige son score. Une sauvegarde manuelle/quicksave fige aussi les matchs live. Fermer ou recharger sans sauvegarder revient au dernier checkpoint : avant-match, ou au score exact de ta dernière sauvegarde.</div>
  ${doublesOnly?'<div class="notice good"><b>Carrière Double exclusivement</b> · les matchs simples sont coupés. Utilise le hub Double et les fiches tournoi pour jouer.</div>':liveMatchPanel()}
  <div class="grid g2" style="margin-top:12px"><div class="card"><h2>Plan de jeu</h2>
  <div class="list-item"><div class="row between"><span>Agressivité</span><b>${t.aggression}%</b></div><input class="range" type="range" min="1" max="100" value="${t.aggression}" oninput="setTactic('aggression',this.value)"></div>
@@ -2646,6 +2671,7 @@ function applyLiveMatchResponse(d){
    liveMatchSessionsByPlayer.delete(playerId);
    liveMatchOpponentsByPlayer.delete(playerId);
   }
+  if(liveMatchSessionsByPlayer.size===0)clearPendingLiveRollback();
  }
 }
 window.hasManagedLiveMatches=()=>liveMatchSessionsByPlayer.size>0;

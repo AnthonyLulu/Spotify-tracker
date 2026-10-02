@@ -891,6 +891,11 @@ function home(){
   ?((scheduleAdvice?.recommended||[]).find(t=>t.doubles)||boot.upcoming?.find(t=>t.doubles)||boot.upcoming?.[0])
   :boot.upcoming?.[0];
  const academy=boot.academy||{},fin=boot.finance||{};
+ const managedSquad=(management?.academyRoster||[])
+  .filter(x=>String(x.status||'active')==='active'&&Number(x.player_id||x.players?.id||0)>0)
+  .map(x=>({id:Number(x.player_id||x.players?.id||0),name:x.players?.name||'Joueur',country:x.players?.country||'',ranking:x.players?.ranking||null,role:x.squad_role||'Académie'}))
+  .filter((x,i,a)=>a.findIndex(y=>y.id===x.id)===i)
+  .slice(0,8);
  const urgentDecisions=[...(boot.inbox||[])]
   .filter(x=>x.decision_status==='pending')
   .sort((a,b)=>({urgent:0,high:1,normal:2}[a.priority]??2)-({urgent:0,high:1,normal:2}[b.priority]??2)||String(a.expires_at||'9999-12-31').localeCompare(String(b.expires_at||'9999-12-31')))
@@ -910,6 +915,7 @@ function home(){
   </div>
   <div class="card click" onclick="nav('finance')"><div class="eyebrow">Académie</div><h2>${esc(academy.name||'Court Boss Academy')}</h2><div class="statline"><div class="statbox"><span class="muted mini">Budget</span><b>${euro(c.budget??academy.budget??14800)}</b></div><div class="statbox"><span class="muted mini">Board</span><b>${academy.board_confidence||76}%</b></div></div><p class="muted mini" style="margin-top:10px">${esc(academy.philosophy||'Développement complet du joueur')}</p></div>
  </section>
+ \${managedSquad.length>1?\`<section class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Groupe géré</div><h2>\${managedSquad.length} joueurs sous ta responsabilité</h2><div class="muted mini">Profil, progression et plan hebdomadaire accessibles en un clic.</div></div><button class="ghost" onclick="nav('academy')">Académie</button></div><div class="stack" style="margin-top:8px">\${managedSquad.map(p=>\`<div class="list-item row between"><span class="click" onclick="openPlayer(\${p.id})"><b>\${flags[p.country]||'🏳️'} \${esc(p.name)}</b><div class="muted micro">\${esc(p.role)}\${p.ranking?' · ATP #'+fmt(p.ranking):''}</div></span><div class="row"><button class="soft-btn" onclick="openPlayer(\${p.id})">Profil</button><button class="primary" onclick="trainAcademyPlayer(\${p.id})">Entraîner</button></div></div>\`).join('')}</div></section>\`:''}
  <div class="quick-grid" style="margin-top:12px">
   ${quickActions.map(x=>`<div class="quick" onclick="nav('${x[0]}')"><span class="muted mini">${x[1]}</span><strong>${x[2]}</strong></div>`).join('')}
  </div>
@@ -4670,7 +4676,17 @@ window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
 window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
 window.facilityLevel=f=>local.facilityLevels?.[f.id]??f.level
 window.upgradeFacility=async(id,name,base)=>{try{const d=await managerAction('upgrade_facility',id);boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};local.facilityLevels=local.facilityLevels||{};local.facilityLevels[id]=d.level;persist();render()}catch(e){alert(e.message)}}
-window.openInboxItem=async(id,r)=>{try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}await nav(r)}
+window.openInboxItem=async(id,r)=>{
+ const item=(boot?.inbox||[]).find(x=>Number(x.id)===Number(id));
+ const targetRoute=String(r||item?.action_route||'home');
+ if(targetRoute==='training'&&item?.action_payload?.player_id){
+  local.trainingPlayerId=Number(item.action_payload.player_id);
+  trainingPreview=null;
+  persist();
+ }
+ try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}
+ await nav(targetRoute)
+}
 window.simulateWeek=async()=>{
  if(simulating)return;
  if(saveSlotBusy){alert('Une opération de sauvegarde ou de chargement est en cours. Termine-la avant de simuler la semaine.');return;}

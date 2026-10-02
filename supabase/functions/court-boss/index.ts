@@ -10275,6 +10275,11 @@ Deno.serve(async(req:Request)=>{
     const matchDate=String(meta.career_date||career.data.career_date||AGE_REFERENCE_DATE).slice(0,10);
     const tournamentName=String(meta.tournament?.name||"Live Match Center");
     const round=String(meta.round||"Match live");
+    const tournamentId=Number(session.data.tournament_id||0);
+    const tournamentLive=tournamentId>0&&Boolean(meta.tournament_live);
+    const tournamentTerminal=tournamentLive&&(!won||round==="F");
+    const nextTournamentMatch=tournamentLive&&won&&round!=="F";
+    let tournamentOutcome:any=null;
     const history=await db.from("match_history").insert({
       managed_player_id:playerId,tournament_name:tournamentName,match_date:matchDate,
       surface:String(session.data.surface||"Dur"),round,
@@ -10302,6 +10307,115 @@ Deno.serve(async(req:Request)=>{
       p_match_date:matchDate,p_doubles:false,p_weight:1
     });
     const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});
+
+    if(tournamentLive&&Number(meta.world_match_id||0)>0){
+      const worldUpdate=await db.from("world_tournament_matches").update({
+        winner_id:won?playerId:Number(opp?.id||0),
+        loser_id:won?Number(opp?.id||0):playerId,
+        score,
+        simulated_on:matchDate
+      }).eq("id",Number(meta.world_match_id));
+      if(worldUpdate.error)return h({error:worldUpdate.error.message},500);
+    }
+
+    if(tournamentTerminal){
+      const [tour,entry,oldRun]=await Promise.all([
+        db.from("tournaments").select("id,name,circuit,category,level,start_date,end_date,prize_currency,prize_breakdown,prize_breakdown_is_estimate").eq("id",tournamentId).maybeSingle(),
+        db.from("entries").select("id,entry_method,metadata").eq("tournament_id",tournamentId).eq("player_id",playerId).order("id",{ascending:false}).limit(1).maybeSingle(),
+        db.from("tournament_runs").select("id").eq("tournament_id",tournamentId).eq("managed_player_id",playerId).limit(1).maybeSingle()
+      ]);
+      const terminalErr=tour.error||entry.error||oldRun.error;
+      if(terminalErr)return h({error:terminalErr.message},500);
+      if(!tour.data)return h({error:"Tournoi introuvable au moment de clôturer le parcours."},404);
+
+      const t:any=tour.data;
+      const entryMode=String(entry.data?.entry_method||meta.entry_method||"direct");
+      const userRound=won&&round==="F"?"Champion":round;
+      let userPoints=0;
+      if(String(t.circuit||"")==="Junior"){
+        const pointCode=userRound==="Champion"?"W":userRound;
+        const jp=await db.rpc("junior_points_for",{p_event_type:"singles",p_category:String(t.category||t.level||"J30"),p_round:pointCode});
+        if(jp.error)return h({error:jp.error.message},500);
+        userPoints=Math.max(0,Number(jp.data||0));
+      }else{
+        const pointCode=userRound==="Champion"?"W":userRound;
+        const wasQualifier=(entryMode==="qualifying"||entryMode==="protected_qualifying"||entryMode.endsWith("_qualifying"))&&!/^Q\d+$/.test(userRound);
+        const pts=await db.rpc("tournament_points_for_result",{p_tournament_id:tournamentId,p_result_code:pointCode,p_was_qualifier:wasQualifier});
+        if(pts.error)return h({error:pts.error.message},500);
+        userPoints=Math.max(0,Number(pts.data||0));
+        if(entryMode==="wildcard"&&Number(meta.tournament_wins||0)===0&&/Grand Chelem|Masters 1000/i.test(String(t.category||"")))userPoints=0;
+      }
+
+      const payout=tournamentRoundPrize(t,userRound,/^Q\d+$/.test(userRound)?"qualifying":"singles");
+      const userPrize=Math.max(0,Number(payout.amount||0));
+      const prizeFxRateToEur=prizeFxToEur(t.prize_currency||"USD");
+      const userPrizeEur=prizeToBaseEur(userPrize,t.prize_currency||"USD");
+
+      let runId=Number(oldRun.data?.id||0);
+      if(!runId){
+        const run=await db.from("tournament_runs").insert({
+          tournament_id:tournamentId,managed_player_id:playerId,entry_method:entryMode,
+          champion_player_id:won&&round==="F"?playerId:(round==="F"?Number(opp?.id||0):null),
+          user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,
+          prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
+        }).select("id").single();
+        if(run.error)return h({error:run.error.message},500);
+        runId=Number(run.data.id||0);
+      }
+
+      let ranking:any=null;
+      if(String(t.circuit||"")==="Junior"){
+        if(userPoints>0){
+          const cur=await db.from("players").select("junior_game_points").eq("id",playerId).maybeSingle();
+          if(cur.error)return h({error:cur.error.message},500);
+          const pu=await db.from("players").update({junior_game_points:Number(cur.data?.junior_game_points||0)+userPoints}).eq("id",playerId);
+          if(pu.error)return h({error:pu.error.message},500);
+        }
+        const jr=await db.rpc("refresh_junior_display_pool_v3",{p_target:2000});
+        if(jr.error)return h({error:jr.error.message},500);
+      }else{
+        if(userPoints>0){
+          const earnedDate=String(t.end_date||t.start_date||matchDate).slice(0,10);
+          const exp=new Date(earnedDate+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
+          const ledger=await db.from("user_ranking_points").insert({
+            owner_id:"demo",player_id:playerId,tournament_id:tournamentId,label:String(t.name||tournamentName),
+            earned_date:earnedDate,expiry_date:exp.toISOString().slice(0,10),points:userPoints,active:true
+          });
+          if(ledger.error)return h({error:ledger.error.message},500);
+        }
+        const rankDate=String(t.end_date||t.start_date||matchDate).slice(0,10);
+        const rankCalc=playerId===Number(career.data.managed_player_id||0)
+          ?await db.rpc("recalculate_user_ranking",{p_date:rankDate})
+          :await db.rpc("recalculate_managed_player_ranking",{p_player_id:playerId,p_date:rankDate,p_sync_career:false});
+        if(rankCalc.error)return h({error:rankCalc.error.message},500);
+        ranking=rankCalc.data||null;
+      }
+
+      if(userPrizeEur){
+        const budgetUpdate=await db.from("career_state").update({
+          budget:Number(career.data.budget||0)+userPrizeEur,updated_at:new Date().toISOString()
+        }).eq("id","demo");
+        if(budgetUpdate.error)return h({error:budgetUpdate.error.message},500);
+      }
+
+      if(entry.data?.id){
+        const entryDone=await db.from("entries").update({
+          status:"played",withdrawn_on:null,
+          metadata:{...(entry.data.metadata||{}),played_run_id:runId,played_on:String(t.end_date||matchDate),result:userRound,entry_method:entryMode},
+          updated_at:new Date().toISOString()
+        }).eq("id",Number(entry.data.id));
+        if(entryDone.error)return h({error:entryDone.error.message},500);
+      }
+
+      if(entryMode==="protected"||entryMode==="protected_qualifying"){
+        const used=await db.rpc("consume_player_entry_protection",{p_player_id:playerId,p_event_type:"singles",p_tournament_id:tournamentId});
+        if(used.error||used.data?.ok===false)return h({error:used.error?.message||"Impossible de consommer le classement protégé.",protected_ranking:used.data||null},500);
+      }
+
+      tournamentOutcome={terminal:true,run_id:runId,user_round:userRound,user_points:userPoints,user_prize:userPrize,
+        user_prize_eur:userPrizeEur,new_rank:ranking?.rank??null,total_points:ranking?.points??null,champion:won&&round==="F"};
+    }
+
     const committed=await db.from("live_match_sessions")
       .update({status:"committed",updated_at:new Date().toISOString()})
       .eq("id",id).select("*").single();
@@ -10311,6 +10425,8 @@ Deno.serve(async(req:Request)=>{
       ok:true,committed:true,session:committed.data,history_id:history.data.id,
       result:{won,score,tournament_name:tournamentName,round},
       condition:nextCondition,fatigue_added:fatigueAdd,
+      tournament_live:tournamentLive,tournament_terminal:tournamentTerminal,next_match_available:nextTournamentMatch,
+      tournament_outcome:tournamentOutcome,
       elo:elo.error?{error:elo.error.message}:elo.data,
       analytics:learned.error?{error:learned.error.message}:learned.data
     });

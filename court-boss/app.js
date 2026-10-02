@@ -3232,7 +3232,7 @@ function careerHubPage(){
  '</div><div>'+(events.map(e=>'<div class="list-item"><div class="row between"><b>'+esc(e.summary||e.event_type||'Événement')+'</b><span class="muted micro">'+df(e.event_date)+'</span></div><div class="muted micro">'+esc(e.system||'career')+'</div></div>').join('')||'<div class="empty">Le journal se remplira au fil des semaines.</div>')+'</div></div></div>';
 }
 function seasonPage(){
- const h=careerHub||{},cr=h.career||career(),p=h.seasonPlan||{},up=(scheduleAdvice?.recommended||boot.upcoming||[]).slice(0,10);
+ const h=careerHub||{},cr=activePlayerCareerView(),p=(activeManagedContext&&Number(activeManagedContext.player_id)===activeManagedId()?activeManagedContext.season_plan:null)||h.seasonPlan||{},up=(scheduleAdvice?.recommended||boot.upcoming||[]).slice(0,10);
  const plans=[['balanced','Équilibré'],['elite_selective','Élite sélective'],['tour_regular','Circuit principal'],['challenger_push','Objectif Challenger'],['itf_build','Construction ITF'],['singles_specialist','Spécialiste simple'],['doubles_specialist','Spécialiste double'],['junior_transition','Transition junior'],['ncaa_pathway','Voie NCAA']];
  const surfaces=['Mixte','Dur','Terre','Gazon','Indoor'];
  const option=(v,l,cur)=>'<option value="'+esc(v)+'" '+(String(cur)===String(v)?'selected':'')+'>'+esc(l)+'</option>';
@@ -3268,8 +3268,8 @@ window.saveManagedSeasonPlan=async()=>{
    schedule_risk_tolerance:Number(document.getElementById('seasonRisk')?.value||10),
    mental_load_target:Number(document.getElementById('seasonMental')?.value||10)
   };
-  await managerAction('update_season_plan',0,{plan:payload});
-  careerHub=null;await Promise.all([loadCareerHub(true),loadScheduleAdvice()]);
+  await managerAction('update_season_plan',0,{plan:payload,player_id:activeManagedId()});
+  careerHub=null;activeManagedContext=null;await Promise.all([loadCareerHub(true),loadScheduleAdvice(),loadActiveManagedContext(true)]);
   alert('Plan de saison enregistré.');render();
  }catch(e){alert(e.message)}
 }

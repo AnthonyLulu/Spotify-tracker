@@ -127,56 +127,31 @@
           <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
         </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching()}</details>`
-        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé dans la session. Si tu n’as pas sauvegardé, un ragequit revient au checkpoint.</p></div><div class="cb-result-actions"><button class="soft-btn" onclick="saveCommittedLiveV1()">💾 Sauvegarder maintenant</button><button class="primary" onclick="clearLiveMatch()">Nouveau match</button></div></div>`
-        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Tu peux le garder, le sauvegarder, ou l'annuler.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1(false)">Valider sans sauvegarder</button><button class="soft-btn" onclick="commitLiveMatchV1(true)">Valider + quicksave</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
+        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé et sauvegardé dans la carrière.</p></div><div class="cb-result-actions"><button class="primary" onclick="clearLiveMatch()">Fermer</button></div></div>`
+        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne valides pas. Tu peux aussi sauvegarder ce score et décider plus tard.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1()">Valider & sauvegarder</button><button class="soft-btn" onclick="quickSaveLiveV1()">Sauvegarder ce score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
       </div></div>`;
   };
 
   window.quickSaveLiveV1=async()=>{
+    if(typeof window.saveLiveCheckpoint==='function')return await window.saveLiveCheckpoint();
     try{
       const d=await saveCareerSlot(9,'quick',true);
       if(d?.ok===false)throw new Error(d.error||d.reason||'Sauvegarde impossible');
-      localStorage.setItem(LIVE_ROLLBACK_KEY,JSON.stringify({
-        slot_no:9,saved_live:true,career_date:d.slot?.career_date||local.date||null,
-        week:d.slot?.week??local.week??null,created_at:new Date().toISOString()
-      }));
       render();
-    }catch(e){alert(e.message)}
+    }catch(e){alert('Sauvegarde impossible : '+e.message)}
   };
 
-  window.saveCommittedLiveV1=async()=>{
-    try{
-      const d=await saveCareerSlot(9,'quick',true);
-      if(d?.ok===false)throw new Error(d.error||d.reason||'Sauvegarde impossible');
-      clearPendingLiveRollback();
-      alert('Carrière sauvegardée avec ce résultat.');
-      render();
-    }catch(e){alert(e.message)}
-  };
-
-  window.commitLiveMatchV1=async saveAfter=>{
-    const s=local.liveMatch;if(!s||!finished(s))return;
-    try{
-      const d=await get('/api/live-match/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s.id})});
-      applyLiveMatchResponse(d);
-      boot=await get('/api/bootstrap');
-      if(boot.career&&Number(s.managed_player_id||0)===Number(primaryManagedPlayerId()||0))local.career={...(local.career||{}),...boot.career};
-      else await loadActiveManagedContext(true,Number(s.managed_player_id||0)).catch(()=>{});
-      if(typeof loadSeasonSummary==='function')await loadSeasonSummary().catch(()=>{});
-      if(saveAfter){await saveCareerSlot(9,'quick',true);clearPendingLiveRollback()}
-      persist();render();
-    }catch(e){alert('Validation impossible : '+e.message)}
+  window.commitLiveMatchV1=async()=>{
+    const current=local.liveMatch;if(!current||!finished(current)||committed(current))return;
+    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch();
+    alert('Validation sécurisée indisponible.');
   };
 
   window.discardLiveMatchV1=async()=>{
-    const s=local.liveMatch;if(!s)return;
-    if(committed(s)){alert('Ce résultat est déjà validé. Recharge une sauvegarde antérieure pour revenir en arrière.');return}
-    if(!confirm('Annuler ce match et revenir à l’état d’avant-match ?'))return;
-    try{
-      await get('/api/live-match/discard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s.id})});
-      const pid=Number(s.managed_player_id||0);if(pid){liveMatchSessionsByPlayer.delete(pid);liveMatchOpponentsByPlayer.delete(pid)}
-      clearLiveMatchView();if(!window.hasManagedLiveMatches?.())clearPendingLiveRollback();persist();render();
-    }catch(e){alert('Annulation impossible : '+e.message)}
+    const current=local.liveMatch;if(!current)return;
+    if(committed(current)){alert('Ce résultat est déjà validé. Recharge une sauvegarde antérieure pour revenir en arrière.');return}
+    if(typeof window.discardLiveMatch==='function')return await window.discardLiveMatch();
+    alert('Retour au checkpoint indisponible.');
   };
 
   window.simulatePracticeMatch=async()=>{
@@ -194,7 +169,7 @@
       }
       persist();render();
       const ss=local.liveMatch,sc=score(ss);
-      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1(false)">Garder sans sauvegarder</button><button class="soft-btn" onclick="closeOverlay();commitLiveMatchV1(true)">Garder + quicksave</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Rejouer / annuler</button></div></div></div>`;
+      overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1()">Valider & sauvegarder</button><button class="soft-btn" onclick="closeOverlay();quickSaveLiveV1()">Sauvegarder ce score</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Rejouer / annuler</button></div></div></div>`;
     }catch(e){alert('Simulation rapide impossible : '+e.message)}
   };
 

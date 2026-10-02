@@ -6276,43 +6276,87 @@ Deno.serve(async(req:Request)=>{
   }
 
   if(path.endsWith("/api/career-hub")&&req.method==="GET"){
+    const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Career missing"},500);
-    const managedId=Number(career.data.managed_player_id||0);
-    const year=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
-    if(managedId){
-      const ensuredPlan=await db.rpc("ensure_managed_season_plan",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)});
-      if(ensuredPlan.error)return h({error:ensuredPlan.error.message},500);
+
+    const primaryId=Number(career.data.managed_player_id||0);
+    const managedId=Number(requestedPlayerId||primaryId||0);
+    if(!managedId)return h({error:"Joueur géré introuvable"},404);
+    if(managedId!==primaryId){
+      const roster=await db.from("academy_roster").select("id,squad_role").eq("player_id",managedId).eq("status","active").maybeSingle();
+      if(roster.error)return h({error:roster.error.message},500);
+      if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
     }
-    const [health,integrity,seasonPlan,media,sponsors,board,timeline,relationships,academy]=await Promise.all([
+
+    const managedPlayer=await db.from("players")
+      .select("id,name,country,ranking,points,doubles_ranking,doubles_points,form,fitness,morale,fatigue,career_focus,age,birth_date,style")
+      .eq("id",managedId).maybeSingle();
+    if(managedPlayer.error||!managedPlayer.data)return h({error:managedPlayer.error?.message||"Joueur introuvable"},404);
+
+    const year=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
+    const ensuredPlan=await db.rpc("ensure_player_season_plan",{
+      p_player_id:managedId,p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
+    });
+    if(ensuredPlan.error)return h({error:ensuredPlan.error.message},500);
+
+    const [health,integrity,seasonPlan,media,sponsors,board,timeline,relationships,academy,medicalPlan]=await Promise.all([
       db.rpc("career_system_health",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
       db.rpc("career_os_integrity_audit",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
-      managedId?db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",year).maybeSingle():Promise.resolve({data:null,error:null} as any),
+      db.from("player_season_plans").select("*").eq("player_id",managedId).eq("season",year).maybeSingle(),
       db.from("media_events").select("*").lte("event_date",career.data.career_date).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(60),
       db.from("sponsor_offers").select("*").order("status",{ascending:true}).order("created_at",{ascending:false}).limit(30),
       db.from("board_objectives").select("*").order("priority",{ascending:true}),
       db.from("career_event_log").select("*").lte("event_date",career.data.career_date).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(100),
-      managedId?db.from("player_relationships")
+      db.from("player_relationships")
         .select("id,player_a_id,player_b_id,relation_type,affinity,trust,respect,closeness,is_simulated,source_label,formed_date,last_update,active,player_a:players!player_relationships_player_a_id_fkey(id,name,country,ranking,doubles_ranking,photo_url),player_b:players!player_relationships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,photo_url)")
         .eq("active",true)
         .or("player_a_id.eq."+managedId+",player_b_id.eq."+managedId)
-        .order("affinity",{ascending:false}).limit(40)
-        :Promise.resolve({data:[],error:null} as any),
-      db.from("academies").select("*").eq("id","demo").maybeSingle()
+        .order("affinity",{ascending:false}).limit(40),
+      db.from("academies").select("*").eq("id","demo").maybeSingle(),
+      db.from("player_medical_plans").select("*").eq("player_id",managedId).maybeSingle()
     ]);
-    const err=health.error||integrity.error||seasonPlan.error||media.error||sponsors.error||board.error||timeline.error||relationships.error||academy.error;
+    const err=health.error||integrity.error||seasonPlan.error||media.error||sponsors.error||board.error||timeline.error||relationships.error||academy.error||medicalPlan.error;
     if(err)return h({error:err.message},500);
+
+    const p:any=managedPlayer.data;
+    const careerView:any={
+      ...career.data,
+      managed_player_id:managedId,
+      player_name:String(p.name||career.data.player_name||"Joueur"),
+      country:String(p.country||career.data.country||"FRA"),
+      singles_rank:Number(p.ranking??career.data.singles_rank??9999),
+      points:Number(p.points??(managedId===primaryId?career.data.points:0)??0),
+      doubles_rank:Number(p.doubles_ranking??career.data.doubles_rank??9999),
+      doubles_points:Number(p.doubles_points??(managedId===primaryId?career.data.doubles_points:0)??0),
+      form:Number(p.form??career.data.form??70),
+      fitness:Number(p.fitness??career.data.fitness??90),
+      morale:Number(p.morale??career.data.morale??70),
+      fatigue:Number(p.fatigue??career.data.fatigue??15),
+      career_focus:String(p.career_focus||(managedId===primaryId?career.data.career_focus:"mixed")||"mixed"),
+      age:p.age??career.data.age??null,
+      style:p.style??career.data.style??null,
+      primary_managed_player_id:primaryId,
+      is_primary_managed:managedId===primaryId
+    };
     const rels=(relationships.data??[]).map((x:any)=>{
-      const other=Number(x.player_a_id)===managedId?(Array.isArray(x.player_b)?x.player_b[0]:x.player_b):(Array.isArray(x.player_a)?x.player_a[0]:x.player_a);
+      const other=Number(x.player_a_id)===managedId
+        ?(Array.isArray(x.player_b)?x.player_b[0]:x.player_b)
+        :(Array.isArray(x.player_a)?x.player_a[0]:x.player_a);
       return {...x,other};
     });
+
     return h({
-      model:"CB-CAREER-HUB-v2",
+      model:"CB-CAREER-HUB-v3",
+      player_id:managedId,
+      primary_player_id:primaryId,
       health:health.data??null,
       integrity:integrity.data??null,
-      career:career.data,
+      career:careerView,
       season_plan:seasonPlan.data??null,
       seasonPlan:seasonPlan.data??null,
+      medical_plan:medicalPlan.data??null,
+      medicalPlan:medicalPlan.data??null,
       media:media.data??[],
       sponsors:sponsors.data??[],
       board:board.data??[],
@@ -10829,16 +10873,14 @@ Deno.serve(async(req:Request)=>{
       const primaryId=Number(career.data.managed_player_id||0);
       const managedId=n(body?.player_id,primaryId,1,99999999);
       if(!managedId)return h({error:"Joueur géré introuvable"},409);
-
-      const [managed,roster]=await Promise.all([
-        db.from("players").select("id,name,career_focus").eq("id",managedId).maybeSingle(),
-        managedId===primaryId
-          ?Promise.resolve({data:{id:0},error:null} as any)
-          :db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle()
-      ]);
-      if(managed.error||roster.error)return h({error:(managed.error||roster.error)?.message},500);
-      if(!managed.data||!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
-      if(String(managed.data.career_focus||"mixed")==="singles_only"){
+      if(managedId!==primaryId){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
+      }
+      const source=await db.from("players").select("id,name,career_focus").eq("id",managedId).maybeSingle();
+      if(source.error||!source.data)return h({error:source.error?.message||"Joueur géré introuvable"},404);
+      if(String(source.data.career_focus||(managedId===primaryId?career.data.career_focus:"mixed")||"mixed")==="singles_only"){
         return h({error:"Orientation Simple exclusivement : les projets de double sont désactivés."},409);
       }
       if(Number(id)===managedId)return h({error:"Impossible de se choisir soi-même comme partenaire."},409);
@@ -10863,7 +10905,8 @@ Deno.serve(async(req:Request)=>{
       const offer=await db.from("doubles_partner_offers").insert({
         from_player_id:managedId,to_player_id:Number(id),
         season:Number(today.slice(0,4)),offer_date:today,expires_at:today,
-        response_date:today,direction:"outgoing",status:accepted?"accepted":"declined",
+        response_date:today,direction:"outgoing",
+        status:accepted?"accepted":"declined",
         interest_score:Number(x.interest_score||0),
         acceptance_threshold:Number(x.acceptance_threshold||60),
         chemistry:Number(x.chemistry||0),compatibility:Number(x.compatibility||0),
@@ -10877,61 +10920,53 @@ Deno.serve(async(req:Request)=>{
 
       let partnership:any=null;
       if(accepted){
-        const active=await db.rpc("activate_managed_doubles_partner",{
-          p_player_id:managedId,p_partner_id:Number(id),p_date:today,
-          p_source:"Utilisateur · approche acceptée"
+        const active=await db.rpc("activate_player_doubles_partner",{
+          p_player_id:managedId,p_partner_id:Number(id),p_date:today,p_source:"Utilisateur · approche acceptée"
         });
         if(active.error)return h({error:active.error.message},500);
         partnership=active.data;
-        const withdraw=await db.from("managed_doubles_entries").update({
-          status:"withdrawn",withdrawn_on:today,updated_at:new Date().toISOString()
-        }).eq("owner_id","demo").eq("player_id",managedId).eq("status","entered").neq("partner_id",Number(id));
-        if(withdraw.error)return h({error:withdraw.error.message},500);
       }
 
       await db.from("inbox_items").insert({
         kind:"double",
         title:accepted?"Proposition de double acceptée":"Proposition de double refusée",
         body:String(target.data.name)+(accepted
-          ?" accepte de devenir le partenaire principal de "+String(managed.data.name||"ton joueur")+"."
+          ?" accepte de devenir le partenaire principal de "+String(source.data.name||"ce joueur")+"."
           :" refuse pour le moment. "+String(x.reason||"")),
         action_route:"doubles",is_read:false,
-        action_type:"open_route",action_label:"Voir le double",
-        action_payload:{route:"doubles",player_id:managedId},
-        decision_status:"info",related_entity_type:"player",related_entity_id:managedId
+        related_entity_type:"player",related_entity_id:managedId,
+        action_payload:{route:"doubles",player_id:managedId}
       });
 
       return h({
-        ok:true,accepted,player_id:managedId,offer_id:offer.data.id,
-        interest_score:Number(x.interest_score||0),
-        threshold:Number(x.acceptance_threshold||60),
-        reason:String(x.reason||""),partnership
+        ok:true,accepted,player_id:managedId,
+        offer_id:offer.data.id,interest_score:Number(x.interest_score||0),
+        threshold:Number(x.acceptance_threshold||60),reason:String(x.reason||""),partnership
       });
     }
 
     if(action==="respond_partner_offer"){
-      const primaryId=Number(career.data.managed_player_id||0);
-      const managedId=n(body?.player_id,primaryId,1,99999999);
       const decision=String(body?.decision||"decline").toLowerCase();
       if(!["accept","decline"].includes(decision))return h({error:"Décision invalide"},400);
 
-      const [managed,roster]=await Promise.all([
-        db.from("players").select("id,name,career_focus").eq("id",managedId).maybeSingle(),
-        managedId===primaryId
-          ?Promise.resolve({data:{id:0},error:null} as any)
-          :db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle()
-      ]);
-      if(managed.error||roster.error)return h({error:(managed.error||roster.error)?.message},500);
-      if(!managed.data||!roster.data)return h({error:"Ce joueur ne fait pas partie du groupe géré."},403);
-      if(String(managed.data.career_focus||"mixed")==="singles_only"){
-        return h({error:"Orientation Simple exclusivement : les propositions de double sont désactivées."},409);
-      }
-
       const offer=await db.from("doubles_partner_offers")
-        .select("*,from_player:players!doubles_partner_offers_from_player_id_fkey(id,name,country,doubles_ranking,career_focus)")
-        .eq("id",id).eq("to_player_id",managedId).eq("direction","incoming").maybeSingle();
+        .select("*,from_player:players!doubles_partner_offers_from_player_id_fkey(id,name,country,doubles_ranking,career_focus),to_player:players!doubles_partner_offers_to_player_id_fkey(id,name,country,doubles_ranking,career_focus)")
+        .eq("id",id).eq("direction","incoming").maybeSingle();
       if(offer.error||!offer.data)return h({error:offer.error?.message||"Proposition introuvable"},404);
       if(offer.data.status!=="pending")return h({error:"Cette proposition n'est plus disponible."},409);
+
+      const primaryId=Number(career.data.managed_player_id||0);
+      const managedId=Number(offer.data.to_player_id||0);
+      if(!managedId)return h({error:"Destinataire managé introuvable"},409);
+      if(managedId!==primaryId){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(!roster.data)return h({error:"Cette proposition ne concerne plus un joueur du groupe géré."},403);
+      }
+      const managedFocus=String(offer.data.to_player?.career_focus||(managedId===primaryId?career.data.career_focus:"mixed")||"mixed");
+      if(managedFocus==="singles_only"){
+        return h({error:"Orientation Simple exclusivement : les propositions de double sont désactivées pour ce joueur."},409);
+      }
 
       const today=String(career.data.career_date||AGE_REFERENCE_DATE);
       if(String(offer.data.expires_at)<today){
@@ -10941,17 +10976,14 @@ Deno.serve(async(req:Request)=>{
 
       let partnership:any=null;
       if(decision==="accept"){
-        const active=await db.rpc("activate_managed_doubles_partner",{
-          p_player_id:managedId,p_partner_id:Number(offer.data.from_player_id),
-          p_date:today,p_source:"Utilisateur · proposition entrante acceptée"
+        const active=await db.rpc("activate_player_doubles_partner",{
+          p_player_id:managedId,
+          p_partner_id:Number(offer.data.from_player_id),
+          p_date:today,
+          p_source:"Utilisateur · proposition entrante acceptée"
         });
         if(active.error)return h({error:active.error.message},500);
         partnership=active.data;
-        const withdraw=await db.from("managed_doubles_entries").update({
-          status:"withdrawn",withdrawn_on:today,updated_at:new Date().toISOString()
-        }).eq("owner_id","demo").eq("player_id",managedId).eq("status","entered")
-          .neq("partner_id",Number(offer.data.from_player_id));
-        if(withdraw.error)return h({error:withdraw.error.message},500);
       }
 
       const up=await db.from("doubles_partner_offers").update({
@@ -10967,17 +10999,15 @@ Deno.serve(async(req:Request)=>{
 
       await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
         .eq("related_entity_type","doubles_partner_offer").eq("related_entity_id",id);
-
       await db.from("inbox_items").insert({
         kind:"double",
         title:decision==="accept"?"Nouveau partenaire principal":"Proposition refusée",
         body:decision==="accept"
-          ?String(offer.data.from_player?.name||"Le joueur")+" devient le partenaire principal de "+String(managed.data.name||"ton joueur")+"."
-          :String(managed.data.name||"Ton joueur")+" a refusé la proposition de "+String(offer.data.from_player?.name||"ce joueur")+".",
+          ?String(offer.data.from_player?.name||"Le joueur")+" devient le partenaire principal de "+String(offer.data.to_player?.name||"ce joueur")+"."
+          :"Proposition de "+String(offer.data.from_player?.name||"ce joueur")+" refusée.",
         action_route:"doubles",is_read:false,
-        action_type:"open_route",action_label:"Voir le double",
-        action_payload:{route:"doubles",player_id:managedId},
-        decision_status:"info",related_entity_type:"player",related_entity_id:managedId
+        related_entity_type:"player",related_entity_id:managedId,
+        action_payload:{route:"doubles",player_id:managedId}
       });
 
       return h({ok:true,player_id:managedId,status:decision==="accept"?"accepted":"declined",partnership});
@@ -11934,18 +11964,55 @@ Deno.serve(async(req:Request)=>{
         "Maintien de forme":{physio_hours:1,weekly_cost:120,notes:"Maintien de charge, risque de rechute plus élevé"}
       };
       if(!plans[protocol])return h({error:"Protocole médical inconnu"},400);
-      const cfg=plans[protocol];
-      const up=await db.from("medical_plan").upsert({id:"demo",protocol,...cfg,updated_at:new Date().toISOString()},{onConflict:"id"}).select("*").single();
-      if(up.error)return h({error:up.error.message},500);
-      if(career.data.managed_player_id){
-        await db.from("injuries").update({treatment:protocol}).eq("player_id",career.data.managed_player_id).eq("status","Active");
+
+      const primaryId=Number(career.data.managed_player_id||0);
+      let injury:any=null;
+      if(id>0){
+        const injuryRes=await db.from("injuries").select("id,player_id,injury_type,status").eq("id",id).maybeSingle();
+        if(injuryRes.error)return h({error:injuryRes.error.message},500);
+        injury=injuryRes.data;
+        if(!injury)return h({error:"Blessure introuvable"},404);
       }
+      const managedId=Number(injury?.player_id||body?.player_id||primaryId||0);
+      if(!managedId)return h({error:"Joueur géré introuvable"},409);
+      if(managedId!==primaryId){
+        const roster=await db.from("academy_roster").select("id").eq("player_id",managedId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(!roster.data)return h({error:"Cette blessure ne concerne pas un joueur du groupe géré."},403);
+      }
+
+      const cfg=plans[protocol];
+      const playerPlan=await db.from("player_medical_plans").upsert({
+        player_id:managedId,protocol,...cfg,updated_at:new Date().toISOString()
+      },{onConflict:"player_id"}).select("*").single();
+      if(playerPlan.error)return h({error:playerPlan.error.message},500);
+
+      if(managedId===primaryId){
+        const legacy=await db.from("medical_plan").upsert({
+          id:"demo",protocol,...cfg,updated_at:new Date().toISOString()
+        },{onConflict:"id"});
+        if(legacy.error)return h({error:legacy.error.message},500);
+      }
+
+      const injuryUpdate=id>0
+        ?db.from("injuries").update({treatment:protocol}).eq("id",id).eq("player_id",managedId)
+        :db.from("injuries").update({treatment:protocol}).eq("player_id",managedId).eq("status","Active");
+      const iu=await injuryUpdate;
+      if(iu.error)return h({error:iu.error.message},500);
+
       if(id>0){
         await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
           .eq("related_entity_type","injury").eq("related_entity_id",id);
       }
-      await db.from("inbox_items").insert({kind:"medical",title:"Plan médical mis à jour",body:"Protocole : "+protocol+".",action_route:"medical",is_read:false});
-      return h({ok:true,plan:up.data});
+      const player=await db.from("players").select("name").eq("id",managedId).maybeSingle();
+      await db.from("inbox_items").insert({
+        kind:"medical",title:"Plan médical mis à jour",
+        body:"Protocole de "+String(player.data?.name||"ce joueur")+" : "+protocol+".",
+        action_route:"medical",is_read:false,
+        related_entity_type:"player",related_entity_id:managedId,
+        action_payload:{route:"medical",player_id:managedId}
+      });
+      return h({ok:true,player_id:managedId,plan:playerPlan.data});
     }
 
     if(action==="respond_media"){

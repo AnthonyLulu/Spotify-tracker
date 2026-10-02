@@ -3020,7 +3020,7 @@ function careerDoublesRankText(c=career()){
  return strict&&pts<=0?'NR':(c?.doubles_rank?'#'+fmt(c.doubles_rank):'NR');
 }
 function myPlayerPage(){
- const c=career(),focus=String(c.career_focus||'mixed');
+ const c=activePlayerCareerView(),focus=String(c.career_focus||'mixed');
  const modes=[
   ['singles_only','Simple exclusivement','Aucun double : calendrier, objectifs et sélection centrés à 100 % sur le simple.'],
   ['singles_priority','Simple prioritaire','ATP simple au centre du projet, double occasionnel.'],
@@ -4760,11 +4760,26 @@ window.respondPartnerOffer=async(id,decision)=>{
   await loadManagement();render();
  }catch(e){alert(e.message)}
 }
-window.choosePartner=async id=>{if(String(career().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : change d’orientation avant de former une paire.');return}try{await managerAction('choose_partner',id);local.partnerId=id;local.doublesEntries=[];local.doublesEntryMeta={};persist();boot=await get('/api/bootstrap');mergeServerDoublesEntries(boot.doublesEntries||[]);await loadManagement();render()}catch(e){alert(e.message)}}
+window.choosePartner=async id=>{
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const isPrimary=playerId===primaryManagedPlayerId();
+ if(String(activePlayerCareerView().career_focus||'mixed')==='singles_only'){alert('Mode Simple exclusivement : change d’orientation avant de former une paire.');return}
+ try{
+  await managerAction('choose_partner',id,{player_id:playerId});
+  if(isPrimary){
+   local.partnerId=id;local.doublesEntries=[];local.doublesEntryMeta={};persist();
+   boot=await get('/api/bootstrap');mergeServerDoublesEntries(boot.doublesEntries||[]);
+  }
+  await loadManagement();
+  await loadActiveManagedContext(true,playerId).catch(()=>{});
+  render()
+ }catch(e){alert(e.message)}
+}
 window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
 window.setCareerFocus=async focus=>{
  const labels={singles_only:'Simple exclusivement',singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const isPrimary=playerId===primaryManagedPlayerId();
  const cr=activePlayerCareerView();
  if(String(cr.career_focus||'mixed')===focus)return;
  const warning=focus==='doubles_only'
@@ -4776,23 +4791,22 @@ window.setCareerFocus=async focus=>{
  try{
   const d=await managerAction('set_career_focus',0,{focus,player_id:playerId});
   if(focus==='doubles_only'){
-    local.entries=[];
-    local.entryMeta={};
-    local.training=['Double','Service','Retour','Double','Match play','Récupération','Repos'];
-    tmCalFilters.entry='Double';
-    rankKind='doubles';
+    if(isPrimary){
+      local.entries=[];local.entryMeta={};
+      local.training=['Double','Service','Retour','Double','Match play','Récupération','Repos'];
+    }
+    tmCalFilters.entry='Double';rankKind='doubles';
   }else if(focus==='singles_only'){
-    local.partnerId=null;
-    local.doublesEntries=[];
-    local.doublesEntryMeta={};
-    local.training=['Service','Retour','Coup droit','Revers','Match play','Déplacements','Récupération'];
-    tmCalFilters.entry='Simple';
-    rankKind='singles';
+    if(isPrimary){
+      local.partnerId=null;local.doublesEntries=[];local.doublesEntryMeta={};
+      local.training=['Service','Retour','Coup droit','Revers','Match play','Déplacements','Récupération'];
+    }
+    tmCalFilters.entry='Simple';rankKind='singles';
   }else if(['doubles_only','singles_only'].includes(String(cr.career_focus||'mixed'))){
     tmCalFilters.entry='Tous';
   }
   boot=await get('/api/bootstrap');
-  if(boot.career)local.career={...(local.career||{}),...boot.career};
+  if(isPrimary&&boot.career)local.career={...(local.career||{}),...boot.career};
   await loadActiveManagedContext(true,playerId).catch(()=>{});
   tournamentDetailRows.clear();
   await Promise.all([loadScheduleAdvice(),loadTournaments(),loadManagement(),loadSeasonSummary(),loadRankingLedger()]);
@@ -4805,7 +4819,30 @@ window.setCareerFocus=async focus=>{
   alert('Orientation active : '+(d.label||labels[focus])+'.');
  }catch(e){alert(e.message)}
 }
-window.editCareer=async(k,v)=>{const cr=career();cr[k]=v;local.career=cr;persist();render();try{await managerAction('edit_career',0,{field:k,value:v});boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};persist();render()}catch(e){alert(e.message)}}
+window.editCareer=async(k,v)=>{
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ const isPrimary=playerId===primaryManagedPlayerId();
+ const map={player_name:'name',country:'country',style:'style',age:'age',height_cm:'height_cm',weight_kg:'weight_kg'};
+ if(isPrimary){
+  const cr=career();cr[k]=v;local.career=cr;persist();
+ }else if(activeManagedContext?.player&&Number(activeManagedContext.player.id)===playerId){
+  activeManagedContext.player={...activeManagedContext.player,[map[k]||k]:v};
+ }
+ render();
+ try{
+  await managerAction('edit_career',0,{field:k,value:v,player_id:playerId});
+  if(isPrimary){
+   boot=await get('/api/bootstrap');
+   if(boot.career)local.career={...local.career,...boot.career};
+  }else{
+   await loadActiveManagedContext(true,playerId);
+  }
+  persist();render()
+ }catch(e){
+  if(!isPrimary)await loadActiveManagedContext(true,playerId).catch(()=>{});
+  alert(e.message);render()
+ }
+}
 window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invitational');if(!name)return;const surface=prompt('Surface ? Dur / Terre / Gazon','Dur')||'Dur';const draw=Number(prompt('Taille du tableau ?','32'))||32;local.fantasy=local.fantasy||[];local.fantasy.push({name,surface,draw,category:'Fantasy'});persist();render()}
 window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
 window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}

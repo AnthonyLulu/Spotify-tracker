@@ -3431,6 +3431,7 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/player")&&req.method==="GET"){
     let id=n(u.searchParams.get("id"),0,1,99999999);
+    const requestedManagedContextId=n(u.searchParams.get("managed_context_player_id"),0,0,99999999);
     const identity=await db.from("players").select("data_source").eq("id",id).maybeSingle();
     const canonical=identity.data?.data_source?.match(/hidden duplicate merged into (\d+)/);
     if(canonical)id=Number(canonical[1]);
@@ -3622,18 +3623,31 @@ Deno.serve(async(req:Request)=>{
       .sort((a:any,b:any)=>Number(b.affinity||0)-Number(a.affinity||0))
       .slice(0,12);
 
-    const managedIdForMatchup=Number(careerDate.data?.managed_player_id||0);
+    const primaryManagedProfileId=Number(careerDate.data?.managed_player_id||0);
+    const managedRosterCheck=id===primaryManagedProfileId
+      ?{data:{id:0},error:null} as any
+      :await db.from("academy_roster").select("id").eq("player_id",id).eq("status","active").maybeSingle();
+    if(managedRosterCheck.error)return h({error:managedRosterCheck.error.message},500);
+    const managedProfile=id===primaryManagedProfileId||Boolean(managedRosterCheck.data);
+
+    let managedIdForMatchup=Number(requestedManagedContextId||primaryManagedProfileId||0);
+    if(managedIdForMatchup&&managedIdForMatchup!==primaryManagedProfileId){
+      const contextRoster=await db.from("academy_roster").select("id").eq("player_id",managedIdForMatchup).eq("status","active").maybeSingle();
+      if(contextRoster.error)return h({error:contextRoster.error.message},500);
+      if(!contextRoster.data)managedIdForMatchup=primaryManagedProfileId;
+    }
+
     const [developmentProfile,developmentHistory,developmentTraitHistory,scoutingReport,roleSuitability,attributeCeilings,attributeTrend,hiddenTraitHistory,advancedMetrics,eloRating,dynamicRatings,styleHistory,tacticalProfile,tacticalTraits,seasonPlan,trainingLoad,surfacePreference,contextProfile,psychologyState,h2hWithManaged,hardPreview,clayPreview,grassPreview]=await Promise.all([
       db.from("player_development_profiles").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_development_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30),
-      managedIdForMatchup===id
+      managedProfile
         ?db.from("player_development_trait_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).order("id",{ascending:false}).limit(60)
         :Promise.resolve({data:[],error:null}),
       db.from("scouting_reports").select("*").eq("player_id",id).lte("report_date",referenceDate).order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_role_suitability").select("*").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_ceilings").select("ceilings,ability_snapshot,potential_snapshot,development_type,last_review_date").eq("player_id",id).maybeSingle(),
       db.from("player_attribute_trends").select("*").eq("player_id",id).maybeSingle(),
-      managedIdForMatchup===id
+      managedProfile
         ?db.from("player_hidden_trait_history").select("*").eq("player_id",id).lte("event_date",referenceDate).order("event_date",{ascending:false}).limit(30)
         :Promise.resolve({data:[],error:null}),
       db.from("player_advanced_metrics").select("*").eq("player_id",id).maybeSingle(),
@@ -3661,7 +3675,6 @@ Deno.serve(async(req:Request)=>{
         :Promise.resolve({data:null,error:null})
     ]);
 
-    const managedProfile=Number(careerDate.data?.managed_player_id||0)===Number(id);
     const bySeason=new Map<number,{season:number,singles_eur:number,doubles_eur:number,total_eur:number,events:number}>();
     const addFinancial=(dateValue:any,singles:number,doubles:number)=>{
       const season=Number(String(dateValue||referenceDate).slice(0,4))||referenceYear;
@@ -3678,10 +3691,10 @@ Deno.serve(async(req:Request)=>{
       const [managedSingles,managedDoubles]=await Promise.all([
         db.from("tournament_runs")
           .select("user_prize_eur,user_prize,played_at,tournaments(start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
-          .eq("status","completed").order("played_at",{ascending:true}).limit(1000),
+          .eq("managed_player_id",id).eq("status","completed").order("played_at",{ascending:true}).limit(1000),
         db.from("doubles_runs")
           .select("user_prize_eur,user_prize,played_at,tournaments(start_date,end_date,prize_currency,prize_breakdown_is_estimate)")
-          .eq("status","completed").order("played_at",{ascending:true}).limit(1000)
+          .eq("managed_player_id",id).eq("status","completed").order("played_at",{ascending:true}).limit(1000)
       ]);
       if(!managedSingles.error){
         for(const row of managedSingles.data??[]){
@@ -3790,10 +3803,10 @@ Deno.serve(async(req:Request)=>{
       developmentHistory:developmentHistory.error?[]:(developmentHistory.data??[]),
       developmentTraitHistory:developmentTraitHistory.error?[]:(developmentTraitHistory.data??[]),
       scoutingReport:scoutingReport.error?null:scoutingReport.data,
-      roleSuitability:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=80)&&!roleSuitability.error?roleSuitability.data:null,
-      attributeCeilings:managedIdForMatchup===id&&!attributeCeilings.error?attributeCeilings.data:null,
-      attributeTrend:(managedIdForMatchup===id||Number(scoutingReport.data?.confidence||0)>=85)&&!attributeTrend.error?attributeTrend.data:null,
-      hiddenTraitHistory:managedIdForMatchup===id&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
+      roleSuitability:(managedProfile||Number(scoutingReport.data?.confidence||0)>=80)&&!roleSuitability.error?roleSuitability.data:null,
+      attributeCeilings:managedProfile&&!attributeCeilings.error?attributeCeilings.data:null,
+      attributeTrend:(managedProfile||Number(scoutingReport.data?.confidence||0)>=85)&&!attributeTrend.error?attributeTrend.data:null,
+      hiddenTraitHistory:managedProfile&&!hiddenTraitHistory.error?(hiddenTraitHistory.data??[]):[],
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       careerFinancials,
       statisticsDashboard:statisticsDashboard.error?null:statisticsDashboard.data,

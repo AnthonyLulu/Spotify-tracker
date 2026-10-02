@@ -11828,7 +11828,7 @@ Deno.serve(async(req:Request)=>{
     const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
     const continent=(u.searchParams.get("continent")??"").trim().slice(0,40);
     const limit=n(u.searchParams.get("limit"),300,1,500);
-    const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+    const career=await db.from("career_state").select("career_date,managed_player_id").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||AGE_REFERENCE_DATE);
 
     const [historyRows,youthRows,ncaaRows,rankRecordRows,historyTotal] = await Promise.all([
@@ -11913,7 +11913,9 @@ Deno.serve(async(req:Request)=>{
 
     const ncaaProfiles=new Set((ncaaRows.data??[]).map((x:any)=>Number(x.player_id)));
     const ncaaActive=new Set((ncaaRows.data??[]).filter((x:any)=>x.status==="Active").map((x:any)=>Number(x.player_id)));
-    const recordHub=await db.rpc("court_boss_record_hub",{p_player_id:Number(career.data?.managed_player_id||0)||null,p_date:gameDate});
+    const requestedRecordPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
+    const recordPlayerId=requestedRecordPlayerId||Number(career.data?.managed_player_id||0)||null;
+    const recordHub=await db.rpc("court_boss_record_hub",{p_player_id:recordPlayerId,p_date:gameDate});
 
     return h({
       methodology:"Indice Court Boss: 10 000/Grand Chelem + 2 200/ATP Finals + 1 200/Masters + 180/autre titre + 2/victoire enregistrée. Ce n'est pas un classement officiel du GOAT.",

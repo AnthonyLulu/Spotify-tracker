@@ -307,6 +307,7 @@
       local.academySetup={...draft.academy,capacity:level.capacity};
       local.managedPlayerIds=draft.players.map(x=>Number(x.id));
       local.primaryPlayerId=Number(primary.id);
+      local.activeManagedPlayerId=Number(primary.id);
       local.trainingPlayerId=Number(primary.id);
       local.playerTraining={};
       for(const p of draft.players)local.playerTraining[String(p.id)]=[...DEFAULT_PLAN];
@@ -384,8 +385,12 @@
 
   window.tmSelectTrainingPlayer=async function(id){
     local.trainingPlayerId=Number(id);
+    local.activeManagedPlayerId=Number(id);
+    activeManagedContext=null;
     trainingPreview=null;
-    persist();render();
+    persist();
+    if(typeof loadActiveManagedContext==='function')await loadActiveManagedContext(true,Number(id)).catch(()=>{});
+    render();
     await loadTrainingPreview(true);render();
   };
 
@@ -394,8 +399,11 @@
     const target=Number(id||0);
     if(!target)return;
     local.trainingPlayerId=target;
+    local.activeManagedPlayerId=target;
+    activeManagedContext=null;
     trainingPreview=null;
     persist();
+    if(typeof loadActiveManagedContext==='function')await loadActiveManagedContext(true,target).catch(()=>{});
     await nav('training');
     await loadTrainingPreview(true);
     render();

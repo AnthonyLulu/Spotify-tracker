@@ -9761,9 +9761,9 @@ Deno.serve(async(req:Request)=>{
     const opponentFh=avgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormBonus);
     const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,opponentFh-opponentBh))*.00115:
       targetWing==="Coup droit"?Math.max(-4,Math.min(4,opponentBh-opponentFh))*.00115:0;
-    const spinEdge=spinPlan==="Lift"?(clay?.006:grass?-.003:.002):
-      spinPlan==="Slice"?(grass?.006:indoor?.003:0):
-      spinPlan==="Plat"?(indoor?.006:clay?-.004:.003):0;
+    const spinEdge=spinPlan==="Lift"?(clay ? .006 : grass ? -.003 : .002):
+      spinPlan==="Slice"?(grass ? .006 : indoor ? .003 : 0):
+      spinPlan==="Plat"?(indoor ? .006 : clay ? -.004 : .003):0;
     const tempoEdge=tempo==="Rapide"?.0045:tempo==="Patient"?.002:0;
     const effortEdge=(effort-60)*.00032;
     const userTacticEdge=targetEdge+spinEdge+tempoEdge+effortEdge;
@@ -9816,7 +9816,7 @@ Deno.serve(async(req:Request)=>{
       Number(tm.avg_rally_shots||5)+(clay?.9:grass?-.7:indoor?-.35:0)
       -(courtSpeed-1)*2.1+Math.max(0,humidity-65)*.018
       +(tempo==="Patient"?.75:tempo==="Rapide"?-.60:0)
-      +(spinPlan==="Lift"&&clay?.40:spinPlan==="Slice"&&grass?-.25:0)
+      +(spinPlan==="Lift"&&clay ? .40 : spinPlan==="Slice"&&grass ? -.25 : 0)
       +(serverIsUser?(55-risk)*.012:0)
       +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],sFormBonus)
         -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],rFormBonus))*.035
@@ -10070,7 +10070,7 @@ Deno.serve(async(req:Request)=>{
     const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,avg(oa,["forehand","forehand_power","forehand_accuracy"])-avg(oa,["backhand","backhand_power","backhand_accuracy"])))*.0011:
       targetWing==="Coup droit"?Math.max(-4,Math.min(4,avg(oa,["backhand","backhand_power","backhand_accuracy"])-avg(oa,["forehand","forehand_power","forehand_accuracy"])))*.0011:0;
     const userTacticEdge=(effort-60)*.00030+(tempo==="Rapide"?.004:tempo==="Patient"?.002:0)+
-      (spinPlan==="Lift"&&/Terre|clay/i.test(surface)?.005:spinPlan==="Slice"&&/Gazon|grass/i.test(surface)?.005:spinPlan==="Plat"&&/intérieur|indoor/i.test(surface)?.005:0)+targetEdge;
+      (spinPlan==="Lift"&&/Terre|clay/i.test(surface) ? .005 : spinPlan==="Slice"&&/Gazon|grass/i.test(surface) ? .005 : spinPlan==="Plat"&&/intérieur|indoor/i.test(surface) ? .005 : 0)+targetEdge;
     const serverFormBonus=serverIsUser?userFormBonus:oppFormBonus,returnerFormBonus=serverIsUser?oppFormBonus:userFormBonus;
     serverPointP+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+(serverFormBonus-returnerFormBonus)*.0032;
     serverPointP=Math.max(.32,Math.min(.86,serverPointP));

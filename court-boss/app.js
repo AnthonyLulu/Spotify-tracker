@@ -4379,7 +4379,12 @@ window.playTournament=async id=>{
     const d=await get('/api/play-tournament',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,tactics:local.tactics||{}})});
     local.playedTournaments=local.playedTournaments||{};local.playedTournaments[String(playPlayerId)+':'+String(id)]=d;
     boot=await get('/api/bootstrap');
-    if(boot.career)local.career={...(local.career||{}),budget:boot.career.budget,points:boot.career.points,singles_rank:boot.career.singles_rank,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
+    if(boot.career){
+      local.career={...(local.career||{}),budget:boot.career.budget};
+      if(playPlayerId===primaryManagedPlayerId()){
+        local.career={...local.career,points:boot.career.points,singles_rank:boot.career.singles_rank,fatigue:boot.career.fatigue,fitness:boot.career.fitness,form:boot.career.form,morale:boot.career.morale};
+      }
+    }
     local.entries=(local.entries||[]).filter(x=>Number(x)!==Number(id));
     if(local.entryMeta)delete local.entryMeta[id];
     if(playPlayerId===primaryManagedPlayerId())mergeServerSinglesEntries(boot.entries||[]);else await loadActiveManagedContext(true,playPlayerId).catch(()=>{});

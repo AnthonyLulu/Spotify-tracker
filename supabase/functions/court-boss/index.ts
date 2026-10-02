@@ -2464,7 +2464,7 @@ Deno.serve(async(req:Request)=>{
     const q=(u.searchParams.get("q")??"").trim().slice(0,80);
     const country=(u.searchParams.get("country")??"").trim().toUpperCase().slice(0,3);
     const nextGenU=n(u.searchParams.get("u"),21,18,21);
-    const career=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
+    const career=await db.from("career_state").select("career_date,managed_player_id").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||AGE_REFERENCE_DATE);
 
 
@@ -7758,6 +7758,10 @@ Deno.serve(async(req:Request)=>{
       const winnerRate=Math.max(4,Math.min(35,Number(userAnalytics.winner_rate_pct||14)+(aggression-50)*.045+jitter(2)));
       const ueRate=Math.max(4,Math.min(32,Number(userAnalytics.unforced_error_pct||15)+(risk-50)*.055+jitter(2)));
       const rawComp=m.matchup_components||{};
+      const scoreText=String(m.score||"");
+      const setTokens=scoreText.match(/\d+\s*-\s*\d+/g)||[];
+      const estimatedServicePoints=Math.max(28,Math.max(2,setTokens.length)*34+(/7\s*-\s*6|6\s*-\s*7/.test(scoreText)?10:0));
+      const aceCount=Math.max(0,Math.round(estimatedServicePoints*acePct/100));
       const sign=userIsA?1:-1;
       const userComponents:any={
         elo_probability:userProb==null?null:Number(userProb.toFixed(4)),
@@ -7784,6 +7788,7 @@ Deno.serve(async(req:Request)=>{
         matchup_components_user:userComponents,
         first_serve_pct:Number(firstServe.toFixed(1)),
         ace_pct:Number(acePct.toFixed(1)),
+        aces:aceCount,
         double_fault_pct:Number(dfPct.toFixed(1)),
         first_serve_points_won_pct:Number((Number(userAnalytics.first_serve_points_won_pct||68)+jitter(2.4)).toFixed(1)),
         second_serve_points_won_pct:Number((Number(userAnalytics.second_serve_points_won_pct||51)+jitter(2.2)).toFixed(1)),
@@ -11725,6 +11730,7 @@ Deno.serve(async(req:Request)=>{
 
     const ncaaProfiles=new Set((ncaaRows.data??[]).map((x:any)=>Number(x.player_id)));
     const ncaaActive=new Set((ncaaRows.data??[]).filter((x:any)=>x.status==="Active").map((x:any)=>Number(x.player_id)));
+    const recordHub=await db.rpc("court_boss_record_hub",{p_player_id:Number(career.data?.managed_player_id||0)||null,p_date:gameDate});
 
     return h({
       methodology:"Indice Court Boss: 10 000/Grand Chelem + 2 200/ATP Finals + 1 200/Masters + 180/autre titre + 2/victoire enregistrée. Ce n'est pas un classement officiel du GOAT.",
@@ -11736,6 +11742,7 @@ Deno.serve(async(req:Request)=>{
       grandSlamRecords,
       nationalRecords,
       rankingRecords,
+      recordHub:recordHub.error?{error:recordHub.error.message}:recordHub.data,
       u18,u21,
       coverage:{
         players:pool.length,

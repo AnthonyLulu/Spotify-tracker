@@ -3,6 +3,7 @@
 
   let cbRecordCategory='Tous';
   const cbBaseHistoryPage=typeof historyPage==='function'?historyPage:null;
+  const cbBaseMore=typeof more==='function'?more:null;
   const cbBaseWorldPage=typeof worldPage==='function'?worldPage:null;
 
   const recordRarityLabel=r=>({
@@ -164,6 +165,16 @@
       +(r.source_url?'<button class="soft-btn" style="margin-top:12px" onclick="openRecordSource(event,\''+esc(String(r.source_url))+'\')">Ouvrir la source · '+esc(r.source_label||'Source')+'</button>':'')
       +'</div></div>';
   };
+
+
+  if(cbBaseMore){
+    more=function(){
+      let html=cbBaseMore();
+      html=html.replace('Histoire & nations','Records & exploits');
+      html=html.replace('Légendes par pays et continent','Golden Slam, Masters, aces, séries & légendes');
+      return html;
+    };
+  }
 
 
   if(cbBaseWorldPage){

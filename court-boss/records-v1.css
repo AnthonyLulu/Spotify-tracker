@@ -15,3 +15,5 @@
 .cb-record-actions{display:flex;gap:5px;align-items:center;margin-top:10px}.cb-record-actions button{padding:6px 8px;font-size:10px}.cb-record-note{margin-top:10px}.cb-record-sheet{max-width:760px}.cb-record-error{margin:12px 0}
 @media(max-width:1050px){.cb-record-hero-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cb-record-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.cb-record-head{grid-template-columns:1fr}.cb-record-kpis{grid-template-columns:1fr 1fr}.cb-record-hero-grid,.cb-record-grid{grid-template-columns:1fr}.cb-record-card.featured{min-height:0}.cb-record-head h2{font-size:21px}}
+
+.cb-record-progress.save{border-color:rgba(82,162,255,.28);background:rgba(82,162,255,.065)}

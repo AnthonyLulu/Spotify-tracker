@@ -9466,7 +9466,7 @@ Deno.serve(async(req:Request)=>{
         .eq("player_id",playerId).eq("status","Active")
         .order("started_at",{ascending:false}).limit(1).maybeSingle(),
       tournamentId
-        ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,singles_draw_size,draw_size").eq("id",tournamentId).maybeSingle()
+        ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,singles_draw_size,draw_size,qualifying_draw_size,prize_currency,prize_breakdown").eq("id",tournamentId).maybeSingle()
         :Promise.resolve({data:null,error:null} as any)
     ]);
     if(managed.error||activeInjury.error||tournament.error)return h({error:(managed.error||activeInjury.error||tournament.error)?.message},500);
@@ -9490,17 +9490,95 @@ Deno.serve(async(req:Request)=>{
 
     let opponentId=Number(body?.opponent_id||0);
     const rank=Math.max(1,Number(managed.data.ranking??(playerId===primaryId?career.data.singles_rank:500)??500));
+    let tournamentRoundOverride=requestedRound;
+    let liveEntryMethod="direct";
+    let tournamentWins=0;
+    let qualifyingRounds=0;
+    let opponentSource=opponentId?"manual":"ranking_pool";
+    let worldMatchId:number|null=null;
 
-    if(!opponentId&&tournamentId){
-      const accepted=await db.from("world_tournament_acceptance_entries")
-        .select("player_id,effective_rank,status,entry_method")
-        .eq("tournament_id",tournamentId).in("status",["accepted","promoted"])
-        .order("effective_rank",{ascending:true}).limit(256);
-      if(accepted.error)return h({error:accepted.error.message},500);
-      const pool=(accepted.data??[])
-        .filter((x:any)=>Number(x.player_id)&&Number(x.player_id)!==playerId)
-        .sort((x:any,y:any)=>Math.abs(Number(x.effective_rank||9999)-rank)-Math.abs(Number(y.effective_rank||9999)-rank));
-      opponentId=Number(pool[0]?.player_id||0);
+    if(tournamentId){
+      const alreadyPlayed=await db.from("tournament_runs")
+        .select("id,user_round").eq("tournament_id",tournamentId).eq("managed_player_id",playerId)
+        .order("played_at",{ascending:false}).limit(1).maybeSingle();
+      if(alreadyPlayed.error)return h({error:alreadyPlayed.error.message},500);
+      if(alreadyPlayed.data)return h({error:"Ce joueur a déjà terminé ce tournoi dans cette sauvegarde.",run_id:alreadyPlayed.data.id,result:alreadyPlayed.data.user_round},409);
+
+      const entry=await db.from("entries").select("entry_method,status")
+        .eq("tournament_id",tournamentId).eq("player_id",playerId)
+        .order("id",{ascending:false}).limit(1).maybeSingle();
+      if(entry.error)return h({error:entry.error.message},500);
+      liveEntryMethod=String(entry.data?.entry_method||"direct");
+      const qualifyingEntry=liveEntryMethod==="qualifying"||liveEntryMethod==="protected_qualifying"||liveEntryMethod.endsWith("_qualifying");
+
+      const prior=await db.from("live_match_sessions")
+        .select("opponent_id,user_sets,opponent_sets,status,stats")
+        .eq("tournament_id",tournamentId).eq("managed_player_id",playerId).eq("status","committed")
+        .order("id",{ascending:true}).limit(32);
+      if(prior.error)return h({error:prior.error.message},500);
+      const priorRows=prior.data??[];
+      const priorLoss=priorRows.find((x:any)=>Number(x.user_sets||0)<Number(x.opponent_sets||0));
+      if(priorLoss)return h({error:"Ce joueur est déjà éliminé de ce tournoi. Recharge une sauvegarde antérieure pour rejouer le parcours.",eliminated:true},409);
+      tournamentWins=priorRows.filter((x:any)=>Number(x.user_sets||0)>Number(x.opponent_sets||0)).length;
+      const faced=new Set(priorRows.map((x:any)=>Number(x.opponent_id||0)).filter(Boolean));
+
+      const mainDraw=Math.max(8,Number(tournament.data?.singles_draw_size||tournament.data?.draw_size||32));
+      const mainRounds:string[]=[];
+      for(let size=mainDraw;size>=2;size=Math.floor(size/2)){
+        mainRounds.push(size<=2?"F":size<=4?"SF":size<=8?"QF":size<=16?"R16":"R"+String(size));
+      }
+      if(qualifyingEntry){
+        const fr=await db.from("tournament_format_rules").select("qualifying_draw_size,qualifier_count")
+          .eq("circuit",String(tournament.data?.circuit||""))
+          .eq("category",String(tournament.data?.category||""))
+          .eq("main_draw_size",mainDraw).maybeSingle();
+        if(fr.error)return h({error:fr.error.message},500);
+        const qDraw=Math.max(0,Number(tournament.data?.qualifying_draw_size||fr.data?.qualifying_draw_size||0));
+        const qSlots=Math.max(1,Number(fr.data?.qualifier_count||Math.max(1,Math.floor(qDraw/4))||1));
+        qualifyingRounds=qDraw>qSlots?Math.max(1,Math.round(Math.log2(qDraw/qSlots))):1;
+      }
+      const inQualifying=qualifyingEntry&&tournamentWins<qualifyingRounds;
+      const mainWins=qualifyingEntry?Math.max(0,tournamentWins-qualifyingRounds):tournamentWins;
+      if(!tournamentRoundOverride){
+        if(inQualifying)tournamentRoundOverride="Q"+String(tournamentWins+1);
+        else if(mainWins<mainRounds.length)tournamentRoundOverride=String(mainRounds[mainWins]||"F");
+        else return h({error:"Ce joueur a déjà remporté le tournoi.",champion:true},409);
+      }
+
+      if(!opponentId){
+        const worldMatch=await db.from("world_tournament_matches")
+          .select("id,round_no,round_code,player_a_id,player_b_id,is_qualifying,winner_id")
+          .eq("tournament_id",tournamentId).eq("is_qualifying",inQualifying).is("winner_id",null)
+          .or(`player_a_id.eq.${playerId},player_b_id.eq.${playerId}`)
+          .order("round_no",{ascending:true}).limit(1).maybeSingle();
+        if(worldMatch.error)return h({error:worldMatch.error.message},500);
+        if(worldMatch.data){
+          const candidate=Number(worldMatch.data.player_a_id)===playerId?Number(worldMatch.data.player_b_id||0):Number(worldMatch.data.player_a_id||0);
+          if(candidate&&!faced.has(candidate)){
+            opponentId=candidate;
+            worldMatchId=Number(worldMatch.data.id||0)||null;
+            tournamentRoundOverride=String(worldMatch.data.round_code||tournamentRoundOverride||"");
+            opponentSource="world_draw";
+          }
+        }
+      }
+
+      if(!opponentId){
+        const acceptanceTable=inQualifying?"world_qualifying_acceptance_entries":"world_tournament_acceptance_entries";
+        const accepted=await db.from(acceptanceTable)
+          .select("player_id,effective_rank,status,entry_method")
+          .eq("tournament_id",tournamentId).in("status",["accepted","promoted"])
+          .order("effective_rank",{ascending:true}).limit(256);
+        if(accepted.error)return h({error:accepted.error.message},500);
+        const pool=(accepted.data??[])
+          .filter((x:any)=>Number(x.player_id)&&Number(x.player_id)!==playerId&&!faced.has(Number(x.player_id)))
+          .sort((x:any,y:any)=>Math.abs(Number(x.effective_rank||9999)-rank)-Math.abs(Number(y.effective_rank||9999)-rank));
+        if(pool.length){
+          const pickIndex=liveMatchHash(String(tournamentId)+"|"+String(playerId)+"|"+String(tournamentWins)+"|"+String(tournamentRoundOverride||""))%Math.min(pool.length,12);
+          opponentId=Number(pool[pickIndex]?.player_id||pool[0]?.player_id||0);
+          opponentSource=inQualifying?"qualifying_field":"main_field";
+        }
+      }
     }
     if(!opponentId){
       const lo=Math.max(1,rank-14),hi=rank+14;
@@ -9525,20 +9603,15 @@ Deno.serve(async(req:Request)=>{
     const surfaceRaw=String(tournament.data?.surface||body?.surface||"Dur").slice(0,30);
     const surface=surfaceRaw==="Dur"&&tournament.data?.indoor?"Dur intérieur":surfaceRaw;
     const environment=buildLiveMatchEnvironment(tournament.data,managed.data,opp.data,String(career.data.career_date||AGE_REFERENCE_DATE),surface);
-    let round=requestedRound||"Exhibition";
-    if(tournamentId&&!requestedRound){
-      const entry=await db.from("entries").select("entry_method").eq("tournament_id",tournamentId).eq("player_id",playerId).order("id",{ascending:false}).limit(1).maybeSingle();
-      if(entry.error)return h({error:entry.error.message},500);
-      const method=String(entry.data?.entry_method||"direct");
-      if(method==="qualifying"||method==="protected_qualifying"||method.endsWith("_qualifying"))round="Q1";
-      else round="R"+String(Math.max(8,Number(tournament.data?.singles_draw_size||tournament.data?.draw_size||32)));
-    }
+    let round=tournamentRoundOverride||"Exhibition";
     const baseStats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
       user_double_faults:0,opp_double_faults:0,
       user_first_serves:0,user_first_serves_in:0,opp_first_serves:0,opp_first_serves_in:0,
       user_unreturned_serves:0,opp_unreturned_serves:0,
-      _meta:{...environment,round,career_date:String(career.data.career_date||AGE_REFERENCE_DATE)}
+      _meta:{...environment,round,career_date:String(career.data.career_date||AGE_REFERENCE_DATE),
+        tournament_live:Boolean(tournamentId),entry_method:liveEntryMethod,tournament_wins:tournamentWins,
+        qualifying_rounds:qualifyingRounds,opponent_source:opponentSource,world_match_id:worldMatchId}
     };
 
     const ins=await db.from("live_match_sessions").insert({
@@ -9553,7 +9626,7 @@ Deno.serve(async(req:Request)=>{
       ok:true,engine:"CB-MATCH-ENGINE-v3",
       managed_player_id:playerId,
       managed_player:{id:managed.data.id,name:managed.data.name,country:managed.data.country,ranking:managed.data.ranking},
-      session:ins.data,match_environment:environment,
+      session:ins.data,match_environment:environment,round,opponent_source:opponentSource,world_match_id:worldMatchId,
       opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking}
     });
   }

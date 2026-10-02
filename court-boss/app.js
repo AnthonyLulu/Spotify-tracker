@@ -2671,7 +2671,8 @@ function applyLiveMatchResponse(d){
    liveMatchSessionsByPlayer.delete(playerId);
    liveMatchOpponentsByPlayer.delete(playerId);
   }
-  if(liveMatchSessionsByPlayer.size===0)clearPendingLiveRollback();
+  // Finir le match ne vaut pas sauvegarde. Le checkpoint reste armé jusqu'à
+  // une vraie sauvegarde manuelle/quicksave ou un autosave explicite hors match.
  }
 }
 window.hasManagedLiveMatches=()=>liveMatchSessionsByPlayer.size>0;

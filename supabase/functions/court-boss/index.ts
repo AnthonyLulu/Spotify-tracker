@@ -6402,7 +6402,7 @@ Deno.serve(async(req:Request)=>{
       squadRole=String(roster.data.squad_role||"Joueur académie");
     }
     const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
-    const [player,entries,doublesEntries,seasonPlan,injury,loadProfile]=await Promise.all([
+    const [player,entries,doublesEntries,seasonPlan,injury,loadProfile,medicalPlan]=await Promise.all([
       db.from("players").select("id,name,country,ranking,points,doubles_ranking,doubles_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,injury_status,career_focus,photo_url").eq("id",requestedId).maybeSingle(),
       db.from("entries")
         .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at,tournaments(id,name,country,circuit,category,start_date,end_date,qualifying_start_date,qualifying_end_date,main_draw_start_date,qualifying_entry_deadline,main_entry_deadline,singles_entry_deadline,late_entry_deadline)")
@@ -6412,9 +6412,10 @@ Deno.serve(async(req:Request)=>{
         .eq("owner_id","demo").eq("player_id",requestedId).eq("status","entered").order("requested_on",{ascending:true}),
       db.from("player_season_plans").select("*").eq("player_id",requestedId).eq("season",season).maybeSingle(),
       db.from("injuries").select("*").eq("player_id",requestedId).eq("status","Active").order("started_at",{ascending:false}).limit(1).maybeSingle(),
-      db.from("player_training_load_profiles").select("*").eq("player_id",requestedId).order("as_of_date",{ascending:false}).limit(1).maybeSingle()
+      db.from("player_training_load_profiles").select("*").eq("player_id",requestedId).order("as_of_date",{ascending:false}).limit(1).maybeSingle(),
+      db.from("player_medical_plans").select("*").eq("player_id",requestedId).maybeSingle()
     ]);
-    const err=player.error||entries.error||doublesEntries.error||seasonPlan.error||injury.error||loadProfile.error;
+    const err=player.error||entries.error||doublesEntries.error||seasonPlan.error||injury.error||loadProfile.error||medicalPlan.error;
     if(err)return h({error:err.message},500);
     if(!player.data)return h({error:"Joueur introuvable"},404);
     return h({
@@ -6429,7 +6430,8 @@ Deno.serve(async(req:Request)=>{
       doubles_entries:doublesEntries.data??[],
       season_plan:seasonPlan.data??null,
       injury:injury.data??null,
-      training_load:loadProfile.data??null
+      training_load:loadProfile.data??null,
+      medical_plan:medicalPlan.data??null
     });
   }
 

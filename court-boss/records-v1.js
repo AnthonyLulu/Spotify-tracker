@@ -23,12 +23,18 @@
       if(!map.has(key))map.set(key,[]);
       map.get(key).push(x);
     }
+    for(const rows of map.values()){
+      rows.sort((a,b)=>Number(b.value||0)-Number(a.value||0)||Number(b.season||0)-Number(a.season||0)||String(a.player_name||'').localeCompare(String(b.player_name||'')));
+    }
     return map;
   }
 
   function recordStatus(r,p){
     const base=r.baseline_value==null?null:Number(r.baseline_value);
     const val=p&&p.value!=null?Number(p.value):null;
+    if(String(r.record_type)==='dynamic'){
+      return {label:p&&val>0?'Record de sauvegarde établi':'À établir dans la sauvegarde',cls:'save'};
+    }
     if(p&&p.achieved){
       if(!r.baseline_holder)return {label:'Nouveau jalon historique',cls:'record'};
       if(base!=null&&val!=null&&val>base)return {label:'Record battu',cls:'record'};
@@ -82,7 +88,7 @@
 
   function recordHero(hub,progress,occurrences){
     const byCode=new Map((hub.catalog||[]).map(x=>[String(x.code),x]));
-    const codes=['calendar_golden_slam_men','career_golden_slam','career_golden_masters','sunshine_double','masters_aces_edition_save'];
+    const codes=['calendar_golden_slam_men','career_golden_slam','career_golden_masters','sunshine_double_career_record','masters_aces_edition_reference'];
     return '<div class="cb-record-hero-grid">'+codes.map(code=>{
       const r=byCode.get(code);return r?recordCard(r,progress,occurrences.get(code)||[],true):'';
     }).join('')+'</div>';
@@ -98,7 +104,7 @@
     const mythic=catalog.filter(x=>String(x.rarity)==='mythic').length;
     const historical=((hub.occurrences)||[]).length;
     const managed=hub.managed||{};
-    const mainCards=filtered.filter(r=>!['calendar_golden_slam_men','career_golden_slam','career_golden_masters','sunshine_double','masters_aces_edition_save'].includes(String(r.code)));
+    const mainCards=filtered.filter(r=>!['calendar_golden_slam_men','career_golden_slam','career_golden_masters','sunshine_double_career_record','masters_aces_edition_reference'].includes(String(r.code)));
 
     return '<section class="cb-record-hub">'
       +'<div class="cb-record-head card"><div><div class="eyebrow">Record Hub · historique + sauvegarde</div><h2>Exploits, séries et records cultes</h2><p class="muted">Records figés sur la référence historique du 1er décembre 2025, puis comparés aux exploits générés dans ta carrière.</p></div>'
@@ -106,7 +112,7 @@
       +'<div class="cb-record-tabs">'+categories.map(x=>'<button class="'+(cbRecordCategory===x?'active':'')+'" onclick="setCourtBossRecordCategory(\''+esc(x)+'\')">'+esc(x)+'</button>').join('')+'</div>'
       +(cbRecordCategory==='Tous'?recordHero(hub,progress,occurrences):'')
       +'<div class="cb-record-grid">'+mainCards.map(r=>recordCard(r,progress,occurrences.get(String(r.code))||[],false)).join('')+'</div>'
-      +'<div class="notice mini cb-record-note"><b>Aces :</b> les records de match et d’édition Masters dans ta sauvegarde sont calculés par Court Boss à partir des matchs simulés. Ils ne sont pas présentés comme un record ATP historique absolu tant qu’une source historique homogène n’existe pas dans la base.</div>'
+      +'<div class="notice mini cb-record-note"><b>Aces :</b> Court Boss compare maintenant ta meilleure édition de Masters au benchmark sourcé de <b>98 aces de John Isner à Miami 2019</b>. Cette marque est enregistrée comme référence documentée de cette édition, pas comme affirmation de record absolu sur toute l’histoire des Masters. Les records de sauvegarde restent calculés match par match par le moteur.</div>'
       +'</section>';
   }
 

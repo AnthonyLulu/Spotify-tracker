@@ -11195,19 +11195,34 @@ Deno.serve(async(req:Request)=>{
 
     if(action==="davis_role"){
       const role=String(body?.role||"Réserve").slice(0,40);
-      if(Number(id)===Number(career.data.managed_player_id||0)){
-        const focus=String(career.data.career_focus||"mixed");
-        if(focus==="doubles_only"&&/^Simple/i.test(role)){
-          return h({error:"Orientation Double exclusivement : ce joueur ne peut pas être aligné en simple en Coupe Davis."},409);
-        }
-        if(focus==="singles_only"&&/^Double/i.test(role)){
-          return h({error:"Orientation Simple exclusivement : ce joueur ne peut pas être aligné en double en Coupe Davis."},409);
+      const targetPlayerId=Number(id||0);
+      const primaryId=Number(career.data.managed_player_id||0);
+      let managedFocus:string|null=null;
+
+      if(targetPlayerId===primaryId){
+        managedFocus=String(career.data.career_focus||"mixed");
+      }else if(targetPlayerId){
+        const roster=await db.from("academy_roster")
+          .select("id").eq("player_id",targetPlayerId).eq("status","active").maybeSingle();
+        if(roster.error)return h({error:roster.error.message},500);
+        if(roster.data){
+          const p=await db.from("players").select("career_focus").eq("id",targetPlayerId).maybeSingle();
+          if(p.error)return h({error:p.error.message},500);
+          managedFocus=String(p.data?.career_focus||"mixed");
         }
       }
+
+      if(managedFocus==="doubles_only"&&/^Simple/i.test(role)){
+        return h({error:"Orientation Double exclusivement : ce joueur ne peut pas être aligné en simple en Coupe Davis."},409);
+      }
+      if(managedFocus==="singles_only"&&/^Double/i.test(role)){
+        return h({error:"Orientation Simple exclusivement : ce joueur ne peut pas être aligné en double en Coupe Davis."},409);
+      }
+
       const nation=String(career.data.selected_federation_nation||career.data.federation_nation||"FRA").toUpperCase();
-      const up=await db.from("davis_squad").update({role}).eq("player_id",id).eq("nation",nation);
+      const up=await db.from("davis_squad").update({role}).eq("player_id",targetPlayerId).eq("nation",nation);
       if(up.error)return h({error:up.error.message},500);
-      return h({ok:true,role,nation});
+      return h({ok:true,role,nation,player_id:targetPlayerId,managed_focus:managedFocus});
     }
 
 

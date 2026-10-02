@@ -127,8 +127,8 @@
           <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
         </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching()}</details>`
-        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Le résultat est validé et sauvegardé dans la carrière.</p></div><div class="cb-result-actions"><button class="primary" onclick="clearLiveMatch()">Fermer</button></div></div>`
-        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne valides pas. Tu peux aussi sauvegarder ce score et décider plus tard.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1()">Valider & sauvegarder</button><button class="soft-btn" onclick="quickSaveLiveV1()">Sauvegarder ce score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
+        :isCommitted?`<div class="cb-result-box committed"><div><small>Résultat officiel</small><h3>${safe(setScore)}</h3><p>Résultat validé dans la session. Sans sauvegarde, un ragequit revient au checkpoint avant-match.</p></div><div class="cb-result-actions"><button class="soft-btn" onclick="saveCommittedLiveV1()">💾 Sauvegarder maintenant</button><button class="primary" onclick="clearLiveMatch()">Fermer</button></div></div>`
+        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne valides pas. Tu peux accepter le résultat avec ou sans sauvegarder.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1(false)">Valider sans sauvegarder</button><button class="soft-btn" onclick="commitLiveMatchV1(true)">Valider + quicksave</button><button class="soft-btn" onclick="quickSaveLiveV1()">Sauvegarder ce score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Annuler le résultat</button></div></div>`}
       </div></div>`;
   };
 
@@ -141,9 +141,19 @@
     }catch(e){alert('Sauvegarde impossible : '+e.message)}
   };
 
-  window.commitLiveMatchV1=async()=>{
+  window.saveCommittedLiveV1=async()=>{
+    try{
+      const d=await saveCareerSlot(9,'quick',true);
+      if(d?.ok===false)throw new Error(d.error||d.reason||'Sauvegarde impossible');
+      clearPendingLiveRollback();
+      alert('Carrière sauvegardée avec ce résultat.');
+      render();
+    }catch(e){alert('Sauvegarde impossible : '+e.message)}
+  };
+
+  window.commitLiveMatchV1=async(saveAfter=false)=>{
     const current=local.liveMatch;if(!current||!finished(current)||committed(current))return;
-    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch();
+    if(typeof window.commitLiveMatch==='function')return await window.commitLiveMatch(Boolean(saveAfter));
     alert('Validation sécurisée indisponible.');
   };
 

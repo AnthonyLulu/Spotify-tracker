@@ -538,7 +538,7 @@ function managerStrip(){
  const activeId=activeManagedId(),primaryId=primaryManagedPlayerId();
  const view=ap&&Number(ap.id)===activeId?ap:null;
  const doublesOnly=String((view?.career_focus??c.career_focus)||'mixed')==='doubles_only';
- const rank=doublesOnly?Number(view?.doubles_ranking??c.doubles_rank||0):Number(view?.ranking??c.singles_rank||0);
+ const rank=doublesOnly?Number((view?.doubles_ranking??c.doubles_rank)??0):Number((view?.ranking??c.singles_rank)??0);
  return `<div class="manager-strip">
   <div class="manager-cell"><span>Semaine</span><b>${local.week||1}</b></div>
   <div class="manager-cell"><span>${doublesOnly?'Double':'ATP'}</span><b>#${fmt(rank)}</b></div>

@@ -454,6 +454,37 @@
     };
   }
 
+  const oldCareerHubPage=typeof careerHubPage==='function'?careerHubPage:null;
+  if(oldCareerHubPage){
+    careerHubPage=function(){
+      ensureLocalCareerConfig();
+      let html=oldCareerHubPage();
+      const roster=academyRosterPlayers();
+      const primary=Number((career()&&career().managed_player_id)||local.primaryPlayerId||0);
+      const rosterRows=(management&&management.academyRoster)||[];
+      const rowById=new Map(rosterRows.map(r=>[Number((r.players||{}).id||r.player_id),r]));
+      const block='<div class="card tm-managed-roster-card"><div class="row between"><div><div class="eyebrow">Groupe géré</div><h2>'+roster.length+' / 8 joueur'+(roster.length>1?'s':'')+'</h2><div class="muted mini">Vue manager rapide : état, rang, potentiel et accès direct au plan individuel.</div></div><button class="soft-btn" onclick="nav(\'academy\')">Academy Hub</button></div>'
+        +'<div class="tm-managed-roster-grid">'+roster.map(x=>{
+          const rr=rowById.get(Number(x.id))||{},p=rr.players||{},isPrimary=Number(x.id)===primary;
+          const fatigue=Number(p.fatigue||0),fitness=Number(p.fitness||90),form=Number(p.form||70);
+          const status=String(p.injury_status||'Fit');
+          const danger=status!=='Fit'||fatigue>=65||fitness<70;
+          const stars=Math.max(.5,Math.min(5,Math.round(Number(p.current_ability||0)/10)/2));
+          const pot=Math.max(.5,Math.min(5,Math.round(Number(p.potential||0)/10)/2));
+          return '<button class="tm-managed-player-card '+(danger?'warn':'')+'" onclick="trainAcademyPlayer('+Number(x.id)+')">'
+            +'<div class="row between"><b>'+(isPrimary?'★ ':'')+(flags[x.country]||'🏳️')+' '+esc(x.name)+'</b><span class="badge '+(danger?'warn':'good')+'">'+(status!=='Fit'?esc(status):fatigue>=65?'Fatigue '+fatigue:'Disponible')+'</span></div>'
+            +'<div class="tm-managed-player-meta"><span>'+(Number(p.ranking||0)?'ATP #'+fmt(p.ranking):'ATP NR')+'</span><span>Forme '+form+'</span><span>Fit '+fitness+'</span></div>'
+            +'<div class="muted micro">Niveau '+stars.toFixed(1)+'★ · potentiel '+pot.toFixed(1)+'★ · '+esc(rr.development_focus||x.focus||'Équilibré')+'</div>'
+            +'<small>Ouvrir son entraînement →</small>'
+            +'</button>';
+        }).join('')+'</div></div>';
+      const hook='<div class="quick-grid">';
+      if(html.includes(hook))html=html.replace(hook,block+hook);
+      else html=block+html;
+      return html;
+    };
+  }
+
   const senderByKind={
     career:'Direction',academy:'Directeur académie',training:'Coach principal',staff:'Direction sportive',
     contract:'Juridique',medical:'Médecin',scouting:'Scouting',sponsor:'Commercial',

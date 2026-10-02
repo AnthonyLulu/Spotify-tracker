@@ -2942,8 +2942,9 @@ function saveCenterPage(){
  const cards=[0,1,2,3,4,5,9].map(n=>{
   const x=byNo.get(n),auto=n===0,quick=n===9;
   const slotLabel=auto?'Autosave':quick?'Quicksave':'Slot '+n;
+  const scopeLabel=x?.snapshot_scope==='managed_academy_exact_v3'?'v3 · multi-joueurs':x?.snapshot_scope==='managed_world_exact_v2'?'v2 · joueur principal':x?'legacy':'';
   return `<div class="card save-slot ${x?'has-save':''} ${auto?'is-autosave':''} ${quick?'is-quicksave':''}">
-    <div class="row between"><div><div class="eyebrow">${slotLabel}</div><h2>${esc(x?.slot_name||(auto?'Autosave hebdomadaire':quick?'Sauvegarde rapide':'Slot vide'))}</h2></div><span class="badge ${x?'good':''}">${x?'Disponible':'Vide'}</span></div>
+    <div class="row between"><div><div class="eyebrow">${slotLabel}</div><h2>${esc(x?.slot_name||(auto?'Autosave hebdomadaire':quick?'Sauvegarde rapide':'Slot vide'))}</h2></div><div class="row" style="gap:6px"><span class="badge ${x?'good':''}">${x?'Disponible':'Vide'}</span>${x&&scopeLabel?`<span class="badge">${esc(scopeLabel)}</span>`:''}</div></div>
     ${x?`<div class="list-item row between"><span>Date carrière</span><b>${df(x.career_date)}</b></div><div class="list-item row between"><span>Semaine</span><b>${fmt(x.week||1)}</b></div><div class="list-item row between"><span>Joueur</span><b>${esc(x.player_name||'—')}</b></div><div class="muted micro" style="margin-top:7px">Dernière écriture : ${new Date(x.updated_at).toLocaleString('fr-FR')}</div>`:auto?'<div class="muted">L’autosave sera créé après la prochaine semaine simulée.</div>':'<div class="empty">Aucune sauvegarde dans ce slot.</div>'}
     <div class="row" style="margin-top:12px;flex-wrap:wrap">
       ${x?`<button class="primary" onclick="loadCareerSlot(${n})">Charger</button>`:''}

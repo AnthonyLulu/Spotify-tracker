@@ -9692,6 +9692,15 @@ Deno.serve(async(req:Request)=>{
     const ret=String(tactics.returnPos||"Neutre");
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const meta:any=session.data.stats?._meta||{};
+    const weather:any=meta.weather||{};
+    const mood:any=meta.mood||{};
+    const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
+    const altitude=Math.max(0,Number(meta.altitude_m||0));
+    const wind=Math.max(0,Number(weather.wind_kph||0));
+    const humidity=Math.max(0,Number(weather.humidity_pct||50));
+    const temperature=Number(weather.temperature_c||21);
+    const moodUser=Number(mood.user||70),moodOpp=Number(mood.opponent||70);
 
     const pressure=(Math.max(Number(session.data.user_points||0),Number(session.data.opponent_points||0))>=3
       &&Math.abs(Number(session.data.user_points||0)-Number(session.data.opponent_points||0))<=1)?1:0;
@@ -9727,7 +9736,8 @@ Deno.serve(async(req:Request)=>{
     ));
 
     let firstIn=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100
-      -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)));
+      -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)
+      -wind*.00075-Math.max(0,temperature-30)*.0012));
     const firstServeIn=Math.random()<firstIn;
     const dfBase=Number(tm.double_fault_pct||4)/100;
     const doubleFault=!firstServeIn&&Math.random()<Math.max(.006,Math.min(.12,
@@ -9742,6 +9752,8 @@ Deno.serve(async(req:Request)=>{
     }else{
       serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     }
+    const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
+    serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018;
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
 
     const serverWon=!doubleFault&&Math.random()<serverWinProb;
@@ -9752,7 +9764,8 @@ Deno.serve(async(req:Request)=>{
     const serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
     const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
     const aceChance=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100*aceSurface
-      *(serverIsUser?(1+Math.max(-20,risk-50)*.004):1)));
+      *(serverIsUser?(1+Math.max(-20,risk-50)*.004):1)
+      *(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))));
     const ace=firstServeIn&&serverWon&&Math.random()<aceChance;
     const unreturned=!ace&&!doubleFault&&serverWon&&Math.random()<Math.max(.02,Math.min(.45,
       Number(tm.unreturned_serve_pct||22)/100*(firstServeIn?1:.52)
@@ -9760,6 +9773,7 @@ Deno.serve(async(req:Request)=>{
 
     const rallyMean=Math.max(2.0,Math.min(10.5,
       Number(tm.avg_rally_shots||5)+(clay?.9:grass?-.7:indoor?-.35:0)
+      -(courtSpeed-1)*2.1+Math.max(0,humidity-65)*.018
       +(serverIsUser?(55-risk)*.012:0)
       +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"])
         -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"]))*.035
@@ -9771,7 +9785,8 @@ Deno.serve(async(req:Request)=>{
 
     const winnerMetric=serverWon?Number(tm.server_winner_rate_pct||14):Number(tm.returner_winner_rate_pct||14);
     const forcedMetric=serverWon?Number(tm.server_forced_error_pct||12):Number(tm.returner_forced_error_pct||12);
-    const loserUe=serverWon?Number(tm.returner_ue_pct||15):Number(tm.server_ue_pct||15);
+    const loserUe=(serverWon?Number(tm.returner_ue_pct||15):Number(tm.server_ue_pct||15))
+      +wind*.13+Math.max(0,temperature-29)*.30;
     let ending="rally_winner";
     if(doubleFault)ending="double_fault";
     else if(ace)ending="ace";
@@ -9813,8 +9828,12 @@ Deno.serve(async(req:Request)=>{
       server_win_probability:Math.round(serverWinProb*1000)/10,
       server_surface_elo:Number(tm.server_surface_elo||0),
       returner_surface_elo:Number(tm.returner_surface_elo||0),
-      model:"Court Boss point-v3 · full attributes",
+      model:"CB-MATCH-ENGINE-v2 · point model",
       full_attribute_edge:Math.round(pointAttrEdge*10000)/10000,
+      environment_effects:{
+        court_speed:courtSpeed,wind_kph:wind,temperature_c:temperature,humidity_pct:humidity,
+        altitude_m:altitude,user_mood:moodUser,opponent_mood:moodOpp
+      },
       user_x:18+Math.floor(Math.random()*64),
       user_y:Math.max(56,Math.min(88,82-Math.round(net*.18)-Math.min(8,Math.floor(rally/2))+Math.floor(Math.random()*7-3))),
       opp_x:18+Math.floor(Math.random()*64),
@@ -9879,15 +9898,20 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
+    const finishedSetGames=setFinished?{user_games:ug,opponent_games:og}:null;
     let status="active",completed=false;
     if(setFinished){
-      if(us>=2||os>=2){status="completed";completed=true}
+      if(us>=2||os>=2){status="finished";completed=true}
       else{setNo++;ug=0;og=0}
     }
 
     const log:any[]=Array.isArray(session.data.score_log)?session.data.score_log:[];
     if(gameFinished){
-      log.push({set:Number(session.data.set_no||1),user_games:ug,opponent_games:og,winner_game:lastPoint.winner==="user"?userName:opp.name,set_finished:setFinished,set_winner:setWinner});
+      log.push({
+        set:Number(session.data.set_no||1),
+        user_games:finishedSetGames?.user_games??ug,opponent_games:finishedSetGames?.opponent_games??og,
+        winner_game:lastPoint.winner==="user"?userName:opp.name,set_finished:setFinished,set_winner:setWinner
+      });
     }
 
     const momentumNew=Math.max(10,Math.min(90,
@@ -9929,38 +9953,9 @@ Deno.serve(async(req:Request)=>{
       returner_surface_elo:Number(tm.returner_surface_elo||0)||null
     },{onConflict:"session_id,point_no"});
 
-    let observedAnalytics:any=null;
-    if(completed&&!eventWrite.error){
-      const learned=await db.rpc("finalize_live_match_analytics",{
-        p_session_id:id,
-        p_date:String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10)
-      });
-      observedAnalytics=learned.error?{error:learned.error.message}:learned.data;
-    }
-
-    if(completed){
-      const won=us>os;
-      const sets=log.filter((x:any)=>x.set_finished).map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ");
-      const nextCondition={
-        fatigue:Math.min(100,Number(managed.data.fatigue||18)+8),
-        fitness:Math.max(35,Number(managed.data.fitness||91)-3),
-        form:Math.max(35,Math.min(100,Number(managed.data.form||72)+(won?2:-1)))
-      };
-      await db.from("match_history").insert({
-        managed_player_id:livePlayerId,tournament_name:"Live Match Center",match_date:career.data.career_date,surface,round:"Match live",
-        player_a:userName,player_b:opp.name,winner:won?userName:opp.name,score:sets,user_involved:true,
-        match_data:{live:true,stats,tactics}
-      });
-      await db.from("players").update(nextCondition).eq("id",livePlayerId);
-      if(isPrimaryLive)await db.from("career_state").update({...nextCondition,updated_at:new Date().toISOString()}).eq("id","demo");
-      await db.rpc("update_player_elo_after_match",{
-        p_winner_id:won?Number(managed.data.id):Number(opp.id),
-        p_loser_id:won?Number(opp.id):Number(managed.data.id),
-        p_surface:surface,
-        p_match_date:String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10),
-        p_doubles:false,p_weight:1
-      });
-    }
+    // The final score is provisional until /api/live-match/commit.
+    // This keeps ragequit / close-without-save a true rollback boundary.
+    const observedAnalytics:any=null;
 
     return h({
       ok:true,session:saved.data,
@@ -9995,6 +9990,14 @@ Deno.serve(async(req:Request)=>{
     const ret=String(tactics.returnPos||"Neutre");
     const surface=String(session.data.surface||"Dur");
     const key=surface==="Terre"?"clay_affinity":surface==="Gazon"?"grass_affinity":"hard_affinity";
+    const meta:any=session.data.stats?._meta||{};
+    const weather:any=meta.weather||{};
+    const mood:any=meta.mood||{};
+    const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
+    const altitude=Math.max(0,Number(meta.altitude_m||0));
+    const wind=Math.max(0,Number(weather.wind_kph||0));
+    const temperature=Number(weather.temperature_c||21);
+    const moodUser=Number(mood.user||70),moodOpp=Number(mood.opponent||70);
 
     const serverIsUser=Boolean(session.data.serving_user);
     const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
@@ -10011,6 +10014,8 @@ Deno.serve(async(req:Request)=>{
       serverPointP+=(ret==="Avancée"?-.010:ret==="Reculée"?.005:0)-
         (Number(session.data.momentum||50)-50)*.0008;
     }
+    const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
+    serverPointP+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018;
     serverPointP=Math.max(.32,Math.min(.86,serverPointP));
     const q=1-serverPointP;
     const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);
@@ -10034,8 +10039,8 @@ Deno.serve(async(req:Request)=>{
       ...(session.data.stats||{})
     };
     const gamePoints=6+Math.floor(Math.random()*5);
-    const firstInPct=Number(tm.first_serve_in_pct||62)/100;
-    const acePct=Number(tm.ace_pct||6)/100;
+    const firstInPct=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012));
+    const acePct=Math.max(.002,Number(tm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006)));
     const dfPct=Number(tm.double_fault_pct||4)/100;
     const unretPct=Number(tm.unreturned_serve_pct||22)/100;
     const srvPrefix=serverIsUser?"user":"opp";
@@ -10064,7 +10069,7 @@ Deno.serve(async(req:Request)=>{
 
     let status="active",completed=false;
     if(setFinished){
-      if(us>=2||os>=2){status="completed";completed=true}
+      if(us>=2||os>=2){status="finished";completed=true}
       else{setNo++;ug=0;og=0}
     }
 
@@ -10080,29 +10085,7 @@ Deno.serve(async(req:Request)=>{
     const up=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
     if(up.error)return h({error:up.error.message},500);
 
-    if(completed){
-      const won=us>os;
-      const sets=log.filter((x:any)=>x.set_finished).map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ");
-      const nextCondition={
-        fatigue:Math.min(100,Number(managed.data.fatigue||18)+8),
-        fitness:Math.max(35,Number(managed.data.fitness||91)-3),
-        form:Math.max(35,Math.min(100,Number(managed.data.form||72)+(won?2:-1)))
-      };
-      await db.from("match_history").insert({
-        managed_player_id:livePlayerId,tournament_name:"Live Match Center",match_date:career.data.career_date,surface,round:"Match live",
-        player_a:String(managed.data.name||"Joueur"),player_b:opp.name,winner:won?String(managed.data.name||"Joueur"):opp.name,score:sets,user_involved:true,
-        match_data:{live:true,stats,tactics}
-      });
-      await db.from("players").update(nextCondition).eq("id",livePlayerId);
-      if(isPrimaryLive)await db.from("career_state").update({...nextCondition,updated_at:new Date().toISOString()}).eq("id","demo");
-      await db.rpc("update_player_elo_after_match",{
-        p_winner_id:won?Number(managed.data.id):Number(opp.id),
-        p_loser_id:won?Number(opp.id):Number(managed.data.id),
-        p_surface:surface,
-        p_match_date:String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10),
-        p_doubles:false,p_weight:1
-      });
-    }
+    // Do not mutate career/history/Elo here. The user can still discard this result.
 
     return h({
       ok:true,session:up.data,
@@ -10110,6 +10093,105 @@ Deno.serve(async(req:Request)=>{
       game_winner:userWon?String(managed.data.name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner,
       completed,win_probability:Math.round(prob*100)
     });
+  }
+
+
+  if(path.endsWith("/api/live-match/commit")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions")
+      .select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,morale)")
+      .eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
+    if(session.data.status==="committed")return h({ok:true,already_committed:true,session:session.data});
+    if(!["finished","completed"].includes(String(session.data.status||""))){
+      return h({error:"Le match doit être terminé avant validation.",status:session.data.status},409);
+    }
+
+    const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(career.error||!career.data)return h({error:career.error?.message||"Carrière introuvable"},500);
+    const playerId=Number(session.data.managed_player_id||career.data.managed_player_id||0);
+    const managed=await db.from("players")
+      .select("id,name,country,form,fitness,fatigue,morale")
+      .eq("id",playerId).maybeSingle();
+    if(managed.error||!managed.data)return h({error:managed.error?.message||"Joueur introuvable"},404);
+
+    const opp:any=Array.isArray(session.data.opponent)?session.data.opponent[0]:session.data.opponent;
+    const stats:any=session.data.stats||{};
+    const meta:any=stats._meta||{};
+    const weather:any=meta.weather||{};
+    const won=Number(session.data.user_sets||0)>Number(session.data.opponent_sets||0);
+    const setRows=(Array.isArray(session.data.score_log)?session.data.score_log:[]).filter((x:any)=>x?.set_finished);
+    const score=setRows.map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ")||
+      ("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
+    const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
+    const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;
+    const matchLoad=Math.min(8,Math.max(3,Math.ceil((Number(session.data.rally_no||0)+setRows.length*18)/55)));
+    const fatigueAdd=Math.max(5,Math.min(16,Math.round(5+matchLoad+heatLoad+windLoad)));
+    const nextCondition={
+      fatigue:Math.min(100,Number(managed.data.fatigue||18)+fatigueAdd),
+      fitness:Math.max(35,Number(managed.data.fitness||91)-Math.max(2,Math.ceil(fatigueAdd*.36))),
+      form:Math.max(35,Math.min(100,Number(managed.data.form||72)+(won?2:-1))),
+      morale:Math.max(30,Math.min(100,Number(managed.data.morale||72)+(won?3:-2)+Math.round((Number(meta.mood?.user||70)-70)*.04)))
+    };
+
+    const matchDate=String(meta.career_date||career.data.career_date||AGE_REFERENCE_DATE).slice(0,10);
+    const tournamentName=String(meta.tournament?.name||"Live Match Center");
+    const round=String(meta.round||"Match live");
+    const history=await db.from("match_history").insert({
+      managed_player_id:playerId,tournament_name:tournamentName,match_date:matchDate,
+      surface:String(session.data.surface||"Dur"),round,
+      player_a:String(managed.data.name||"Joueur"),player_b:String(opp?.name||"Adversaire"),
+      winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
+      score,user_involved:true,
+      match_data:{
+        live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v2",
+        stats,tactics:session.data.tactics||{},environment:meta
+      }
+    }).select("id").single();
+    if(history.error)return h({error:history.error.message},500);
+
+    const playerUpdate=await db.from("players").update(nextCondition).eq("id",playerId);
+    if(playerUpdate.error)return h({error:playerUpdate.error.message},500);
+    if(playerId===Number(career.data.managed_player_id||0)){
+      const careerUpdate=await db.from("career_state").update({...nextCondition,updated_at:new Date().toISOString()}).eq("id","demo");
+      if(careerUpdate.error)return h({error:careerUpdate.error.message},500);
+    }
+
+    const elo=await db.rpc("update_player_elo_after_match",{
+      p_winner_id:won?playerId:Number(opp?.id||0),
+      p_loser_id:won?Number(opp?.id||0):playerId,
+      p_surface:String(session.data.surface||"Dur"),
+      p_match_date:matchDate,p_doubles:false,p_weight:1
+    });
+    const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});
+    const committed=await db.from("live_match_sessions")
+      .update({status:"committed",updated_at:new Date().toISOString()})
+      .eq("id",id).select("*").single();
+    if(committed.error)return h({error:committed.error.message},500);
+
+    return h({
+      ok:true,committed:true,session:committed.data,history_id:history.data.id,
+      result:{won,score,tournament_name:tournamentName,round},
+      condition:nextCondition,fatigue_added:fatigueAdd,
+      elo:elo.error?{error:elo.error.message}:elo.data,
+      analytics:learned.error?{error:learned.error.message}:learned.data
+    });
+  }
+
+  if(path.endsWith("/api/live-match/discard")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions").select("id,status,managed_player_id").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({ok:true,discarded:false,missing:true});
+    if(session.data.status==="committed")return h({error:"Un résultat déjà validé ne peut pas être annulé sans recharger une sauvegarde antérieure."},409);
+    const p1=await db.from("live_match_point_events").delete().eq("session_id",id);
+    if(p1.error)return h({error:p1.error.message},500);
+    const p2=await db.from("live_match_events").delete().eq("session_id",id);
+    if(p2.error)return h({error:p2.error.message},500);
+    const del=await db.from("live_match_sessions").delete().eq("id",id);
+    if(del.error)return h({error:del.error.message},500);
+    return h({ok:true,discarded:true,session_id:id,managed_player_id:session.data.managed_player_id});
   }
 
 

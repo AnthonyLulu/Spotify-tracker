@@ -4614,7 +4614,7 @@ window.staffWorldPage=async dir=>{
 }
 window.approachStaffProfile=async profileId=>{
  try{
-  const d=await managerAction('approach_staff',profileId);
+  const d=await managerAction('approach_staff',profileId,{player_id:activeManagedId()||primaryManagedPlayerId()||0});
   await loadManagement();
   await loadStaffWorld();
   render();
@@ -4623,14 +4623,14 @@ window.approachStaffProfile=async profileId=>{
 }
 window.interviewStaff=async id=>{
  try{
-  const d=await managerAction('interview_staff',id);
+  const d=await managerAction('interview_staff',id,{player_id:activeManagedId()||primaryManagedPlayerId()||0});
   await refreshManagerState();
   render();
   openStaffCandidate(id);
   if(d.status==='rejected')alert("Le candidat n'est pas suffisamment intéressé pour le moment.");
  }catch(e){alert(e.message)}
 }
-window.hireStaff=async id=>{try{const d=await managerAction('hire_staff',id);if(local.career)local.career.budget=d.budget;await refreshManagerState();render()}catch(e){alert(e.message)}}
+window.hireStaff=async id=>{try{const d=await managerAction('hire_staff',id,{player_id:activeManagedId()||primaryManagedPlayerId()||0});if(local.career)local.career.budget=d.budget;await refreshManagerState();render()}catch(e){alert(e.message)}}
 window.openStaffProfile=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Chargement du dossier staff…</div></div></div>';
  try{

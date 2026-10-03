@@ -1,4 +1,4 @@
-/* Court Boss Match Center V7.1 · Unlimited Spatial Rally */
+/* Court Boss Match Center V7.2 · Recognizable Player Styles */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -145,6 +145,8 @@
     const motionStyle=hasFlight?'<style>'+moveKeyframes(userAnim,motionFrames,'user')+moveKeyframes(oppAnim,motionFrames,'opponent')+ballKeyframes(ballAnim,motionFrames)+'</style>':'';
     const tracePoints=ballPath.map(p=>p.x+','+p.y).join(' ');
     const styles=visual.profiles||{},styleText=(styles.user?.archetype&&styles.opponent?.archetype)?(styles.user.archetype+' vs '+styles.opponent.archetype):'';
+    const styleTags=p=>Array.isArray(p?.tags)?p.tags:[];
+    const profileCard=(name,p,side)=>p?.archetype?`<div class="cb-style-card ${side}"><div><small>${safe(name)}</small><b>${safe(p.archetype)} · ${safe(p.dominant_wing||'Équilibré')}</b></div><div class="cb-style-tags">${styleTags(p).map(t=>`<span>${safe(t)}</span>`).join('')}</div><em>Mob ${Number(p.mobility||0).toFixed(1)} · Déf ${Number(p.defense||0).toFixed(1)} · Touch ${Number(p.touch||0).toFixed(1)} · Filet ${Number(p.net||0).toFixed(1)}</em></div>`:'';
 
     return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
       <div class="card fm-live-match cb-live-card">
@@ -169,7 +171,8 @@
           <i class="fm-ball cb-ball ${hasFlight?'cb-ball-flight':''}" style="left:${ballEnd.x}%;top:${ballEnd.y}%;animation:${ballAnim} ${visualMs}ms linear both"></i>
           ${lp.winner?`<div class="fm-rally-call cb-rally"><span>${phase}</span><b>${safe(call)}</b> · ${Number(lp.rally||0)} coups · ${safe(target)}</div>`:''}
         </div>
-        ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)}</b><em>${safe(sh.spin||'Mixte')} · ${safe(patternLabel(sh.pattern))} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.stretched_receiver?' · débordé':''}</em></span>`).join('')}</div>`:''}
+        ${(styles.user?.archetype||styles.opponent?.archetype)?`<div class="cb-style-duel">${profileCard(userName,styles.user,'user')}${profileCard(oppName,styles.opponent,'opponent')}</div>`:''}
+        ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)} · ${safe(patternLabel(sh.pattern))}</b><em>${safe(sh.spin||'Mixte')} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.stretched_receiver?' · débordé':''}${shotRows.length>=16&&sh.hitter_archetype?' · '+safe(sh.hitter_archetype):''}</em></span>`).join('')}</div>`:''}
         <div class="cb-match-story">
           <div class="cb-point-story">
             <span class="badge">${phase}</span>

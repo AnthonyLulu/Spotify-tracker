@@ -100,3 +100,12 @@
 .cb-shot-chip.stretched{border-top-color:rgba(255,190,94,.55)}.cb-shot-chip.stretched i{background:rgba(255,190,94,.16)}
 .cb-ball-flight{z-index:7}.cb-court .cb-dot[style*="animation:"]{transition:none}.cb-court .cb-ball[style*="animation:"]{transition:none}
 @media(prefers-reduced-motion:reduce){.cb-court .cb-dot[style*="animation:"],.cb-court .cb-ball[style*="animation:"]{animation:none!important}}
+
+
+/* Court Boss Player Identity V7.2 */
+.cb-style-duel{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.cb-style-card{padding:9px 10px;border:1px solid rgba(255,255,255,.07);border-radius:12px;background:rgba(255,255,255,.035);min-width:0}
+.cb-style-card.user{border-left:2px solid rgba(97,207,148,.55)}.cb-style-card.opponent{border-left:2px solid rgba(235,132,132,.55)}
+.cb-style-card small,.cb-style-card b,.cb-style-card em{display:block}.cb-style-card small{font-size:8px;opacity:.55}.cb-style-card b{font-size:10px;margin-top:2px}.cb-style-card em{font-size:8px;font-style:normal;opacity:.5;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-style-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}.cb-style-tags span{font-size:8px;font-weight:800;padding:3px 5px;border-radius:6px;background:rgba(255,255,255,.06)}
+@media(max-width:700px){.cb-style-duel{grid-template-columns:1fr}.cb-style-card em{white-space:normal}}

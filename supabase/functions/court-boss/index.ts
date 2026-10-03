@@ -10201,7 +10201,18 @@ Deno.serve(async(req:Request)=>{
         defense>=14&&defense>power+1?"Contreur":
         power>=14&&power>touch+1?"Puncheur":
         touch>=14?"Créatif":"All-court";
-      return {forehand,backhand,mobility,defense,touch,passing,lob,net:netGame,power,positioning,recovery,archetype};
+      const forehandBias=Math.max(-1,Math.min(1,(forehand-backhand)/5));
+      const netBias=Math.max(-1,Math.min(1,(netGame-11)/6+(archetype==="Attaquant filet"?.38:0)));
+      const craftBias=Math.max(-1,Math.min(1,(touch-11)/6+(archetype==="Créatif"?.36:0)));
+      const counterBias=Math.max(-1,Math.min(1,(defense+passing+mobility-34)/14+(archetype==="Contreur"?.30:0)));
+      const powerBias=Math.max(-1,Math.min(1,(power-11)/6+(archetype==="Puncheur"?.34:0)));
+      const patienceBias=Math.max(-1,Math.min(1,(defense+positioning-22)/12-(powerBias*.18)));
+      const tendencies={
+        forehand_bias:forehandBias,net_bias:netBias,craft_bias:craftBias,counter_bias:counterBias,
+        power_bias:powerBias,patience_bias:patienceBias,
+        dominant_wing:forehand>=backhand+1.2?"Coup droit":backhand>=forehand+1.2?"Revers":"Équilibré"
+      };
+      return {forehand,backhand,mobility,defense,touch,passing,lob,net:netGame,power,positioning,recovery,archetype,tendencies};
     };
     const userProfile=profileOf(ua,userFormMultiplier),oppProfile=profileOf(oa,oppFormMultiplier);
     const visualSeed=Number(id||0)*131+pointNo*977+Math.round(courtSpeed*100)*17;
@@ -10246,18 +10257,25 @@ Deno.serve(async(req:Request)=>{
       let pattern=isServeVisual?(serveDirection==="large"?"wide":serveDirection==="corps"?"body":"t"):"crosscourt";
       if(!isServeVisual){
         const receiverDeep=hitterUser?receiverPos.y<25:receiverPos.y>75;
-        const canDrop=hitterProfile.touch>=11&&receiverDeep;
-        const canApproach=shortIncoming&&hitterProfile.net>=11;
-        const insideChance=stroke==="coup_droit"&&Math.abs(hitterPos.x-50)>=12;
+        const t=hitterProfile.tendencies||{};
+        const canDrop=hitterProfile.touch>=10.5&&receiverDeep;
+        const canApproach=shortIncoming&&hitterProfile.net>=10.5;
+        const insideChance=stroke==="coup_droit"&&Math.abs(hitterPos.x-50)>=10;
+        const creativeChance=Math.max(.03,Math.min(.36,.07+(hitterProfile.touch-10)*.012+Number(t.craft_bias||0)*.10-(grassVisual?.02:0)));
+        const approachChance=Math.max(.06,Math.min(.56,.13+(hitterProfile.net-10)*.018+Number(t.net_bias||0)*.18+(grassVisual?.08:0)));
+        const insideChancePct=Math.max(.08,Math.min(.58,.20+(hitterProfile.forehand-hitterProfile.backhand)*.018+Math.max(0,Number(t.forehand_bias||0))*.18+Number(t.power_bias||0)*.08));
+        const lineChance=Math.max(.16,Math.min(.62,.30+Number(t.power_bias||0)*.14-Number(t.patience_bias||0)*.08+Math.max(0,risk-50)*.002));
+        const counterCross=Math.max(.48,Math.min(.88,.66+Number(t.counter_bias||0)*.13+Number(t.patience_bias||0)*.10-Math.max(0,risk-50)*.0015));
         if(hitterAtNet)pattern="volley";
         else if(receiverAtNet){
-          const lobBias=Math.max(.12,Math.min(.72,.34+(hitterProfile.lob-hitterProfile.passing)*.035+(hitterProfile.touch-10)*.01));
+          const lobBias=Math.max(.10,Math.min(.80,.32+(hitterProfile.lob-hitterProfile.passing)*.04+Number(t.craft_bias||0)*.10-Number(t.counter_bias||0)*.05));
           pattern=roll<lobBias?"lob":"passing";
         }
-        else if(canDrop&&roll<Math.max(.05,Math.min(.22,.07+(hitterProfile.touch-10)*.012)))pattern="drop_shot";
-        else if(canApproach&&roll<Math.max(.10,Math.min(.38,.16+(hitterProfile.net-10)*.018)))pattern="approach";
-        else if(insideChance&&roll<.22+(hitterProfile.forehand-hitterProfile.backhand)*.015)pattern=roll2<.72?"inside_out":"inside_in";
-        else pattern=roll<(.68-Math.max(0,risk-50)*.002)?"crosscourt":"down_the_line";
+        else if(canDrop&&roll<creativeChance)pattern="drop_shot";
+        else if(canApproach&&roll<approachChance)pattern="approach";
+        else if(insideChance&&roll<insideChancePct)pattern=roll2<(.64+Math.max(0,Number(t.forehand_bias||0))*.18)?"inside_out":"inside_in";
+        else if(roll<counterCross)pattern="crosscourt";
+        else pattern=roll2<lineChance?"down_the_line":"crosscourt";
       }
       let spin=isServeVisual?(serveDirection==="large"?"Slice":"Plat"):
         hitterUser?(explicitUserSpin||baseRallySpin):
@@ -10314,11 +10332,18 @@ Deno.serve(async(req:Request)=>{
       const moveCapacity=(4.8+receiverProfile.mobility*.70+receiverProfile.defense*.18+receiverProfile.recovery*.10)*reactionFactor;
       const stretched=distance>moveCapacity*1.08;
       const receiverNext=playerClamp(moveToward(receiverPos,desiredReceiver,moveCapacity));
+      const styleT=hitterProfile.tendencies||{};
+      const baseRecoverX=(pattern==="inside_out"||pattern==="inside_in")
+        ?courtClamp(50+(hitterPos.x-50)*.28,34,66)
+        :courtClamp(50+(Number(styleT.forehand_bias||0)*-5),40,60);
+      const baselineHome=hitterUser?82:18;
+      const counterDepth=(hitterProfile.archetype==="Contreur"||Number(styleT.counter_bias||0)>.35)?(hitterUser?86:14):baselineHome;
+      const attackDepth=(hitterProfile.archetype==="Puncheur"||Number(styleT.power_bias||0)>.45)?(hitterUser?78:22):counterDepth;
       const recoveryTarget=playerClamp({
-        x:(pattern==="inside_out"||pattern==="inside_in")?courtClamp(50+(hitterPos.x-50)*.28,34,66):50,
-        y:hitterUser?(pattern==="approach"||pattern==="volley"?58:82):(pattern==="approach"||pattern==="volley"?42:18)
+        x:baseRecoverX,
+        y:hitterUser?(pattern==="approach"||pattern==="volley"?58:attackDepth):(pattern==="approach"||pattern==="volley"?42:attackDepth)
       });
-      const recoveryCapacity=2.8+hitterProfile.positioning*.31+hitterProfile.recovery*.18+(pattern==="approach"?5:0);
+      const recoveryCapacity=2.8+hitterProfile.positioning*.31+hitterProfile.recovery*.18+(pattern==="approach"?5:0)+Math.max(0,Number(styleT.counter_bias||0))*.9;
       const hitterNext=playerClamp(moveToward(hitterPos,recoveryTarget,recoveryCapacity));
       if(hitterUser){userPos=hitterNext;oppPos=receiverNext}else{oppPos=hitterNext;userPos=receiverNext}
       ballCurrent={...target};
@@ -10326,6 +10351,7 @@ Deno.serve(async(req:Request)=>{
       visualShots.push({
         index:shotIndex+1,hitter:hitterUser?"user":"opponent",stroke,spin,pattern,
         speed_kph:visualSpeedKph,arc,stretched_receiver:stretched,
+        hitter_archetype:hitterProfile.archetype,receiver_archetype:receiverProfile.archetype,
         receiver:hitterUser?"opponent":"user",target_x:Math.round(target.x*10)/10,target_y:Math.round(target.y*10)/10
       });
       rallyFrames.push({
@@ -10361,9 +10387,21 @@ Deno.serve(async(req:Request)=>{
       shotCount<=45?(clayVisual?112:88):
       (clayVisual?88:68);
     const durationMs=Math.max(650,Math.min(12000,Math.round(520+shotCount*frameMs)));
+    const describeStyle=(p:any)=>{
+      const t=p.tendencies||{},tags:any[]=[];
+      if(Number(t.net_bias||0)>.28)tags.push("Monte au filet");
+      if(Number(t.craft_bias||0)>.28)tags.push("Variations / amorties");
+      if(Number(t.counter_bias||0)>.28)tags.push("Couverture + passing");
+      if(Number(t.power_bias||0)>.28)tags.push("Ligne / accélération");
+      if(Number(t.forehand_bias||0)>.24)tags.push("Inside-out CD");
+      if(Number(t.forehand_bias||0)<-.24)tags.push("Revers dominant");
+      if(!tags.length)tags.push("Jeu équilibré");
+      return {archetype:p.archetype,dominant_wing:t.dominant_wing||"Équilibré",tags:tags.slice(0,3)};
+    };
+    const userIdentity=describeStyle(userProfile),oppIdentity=describeStyle(oppProfile);
     const styleSummary={
-      user:{archetype:userProfile.archetype,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,passing:Math.round(userProfile.passing*10)/10,lob:Math.round(userProfile.lob*10)/10,net:Math.round(userProfile.net*10)/10},
-      opponent:{archetype:oppProfile.archetype,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10}
+      user:{...userIdentity,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,passing:Math.round(userProfile.passing*10)/10,lob:Math.round(userProfile.lob*10)/10,net:Math.round(userProfile.net*10)/10,tendencies:userProfile.tendencies},
+      opponent:{...oppIdentity,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10,tendencies:oppProfile.tendencies}
     };
 
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
@@ -10452,6 +10490,8 @@ Deno.serve(async(req:Request)=>{
       winner:userWon?"user":"opponent",rally,serve_direction:serveDirection,
       return_depth:returnDepth,target_zone:visualTarget,stake,
       stroke:visualShots[visualShots.length-1]?.stroke||null,spin:visualShots[visualShots.length-1]?.spin||null,
+      pattern:visualShots[visualShots.length-1]?.pattern||null,
+      hitter_archetype:visualShots[visualShots.length-1]?.hitter_archetype||null,
       speed_kph:maxVisualSpeed,at:new Date().toISOString()
     });
     stats._visual_events=visualEvents.slice(-8);

@@ -30,3 +30,17 @@
 .cb-double-replays-v13{margin-top:12px}.cb-double-replay-v13{margin-top:8px;padding:8px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}.cb-double-head-v13{display:flex;justify-content:space-between;gap:8px;align-items:center}.cb-double-head-v13 b{font-size:9px}.cb-double-head-v13 span{font-size:7px;opacity:.62}
 .cb-double-court-v13{position:relative;margin-top:7px;aspect-ratio:1.65/1;border-radius:8px;overflow:hidden;background:linear-gradient(90deg,rgba(37,112,76,.96),rgba(49,130,88,.96));border:3px solid rgba(255,255,255,.12)}.cb-double-court-v13:before{content:"";position:absolute;left:8%;right:8%;top:7%;bottom:7%;border:1px solid rgba(255,255,255,.72)}.cb-double-court-v13 .line{position:absolute;z-index:1;background:rgba(255,255,255,.68)}.cb-double-court-v13 .line.net{left:8%;right:8%;top:50%;height:1px}.cb-double-court-v13 .line.base.a{left:8%;right:8%;top:25%;height:1px}.cb-double-court-v13 .line.base.b{left:8%;right:8%;top:75%;height:1px}.cb-double-court-v13 .p{position:absolute;z-index:3;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:6px;font-weight:950;box-shadow:0 3px 8px rgba(0,0,0,.28)}.cb-double-court-v13 .p.user{background:#d6f4e3;color:#0b2d20}.cb-double-court-v13 .p.opp{background:#e5e9ef;color:#1b2430}.cb-double-court-v13 .ball{position:absolute;z-index:4;width:7px;height:7px;border-radius:50%;background:#dff65d;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(223,246,93,.5)}.cb-double-replay-v13 p{margin:6px 0 0;font-size:7px;opacity:.72}
 @media(max-width:700px){.cb-lab-grid-v13{grid-template-columns:1fr 1fr}.cb-lab-middle-v13{grid-template-columns:1fr}.cb-lab-head-v13{align-items:flex-start}.cb-lab-head-v13>span{max-width:40%;text-align:right}.cb-double-head-v13{align-items:flex-start;flex-direction:column}}
+
+/* Tournament-specific court identity. These override the generic surface gradients. */
+.cb-live-card .cb-court[data-cb-tournament-skin="ao"].hard{background:linear-gradient(180deg,#2c7fc1,#215c95)}
+.cb-live-card .cb-court[data-cb-tournament-skin="rg"].clay{background:linear-gradient(180deg,#c96f3e,#9d4f2e)}
+.cb-live-card .cb-court[data-cb-tournament-skin="wimbledon"].grass{background:linear-gradient(180deg,#628f49,#416c35)}
+.cb-live-card .cb-court[data-cb-tournament-skin="uso"].hard{background:linear-gradient(180deg,#315f9e,#254b82)}
+.cb-live-card .cb-court[data-cb-tournament-skin="laver"]{background:linear-gradient(180deg,#315d7e,#1e3449)}
+.cb-live-card .cb-court[data-cb-tournament-skin="nextgen"]{background:linear-gradient(180deg,#614d91,#3b315d)}
+.cb-live-card .cb-court[data-cb-tournament-skin="finals"]{background:linear-gradient(180deg,#405c7a,#25384f)}
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-court-watermark{opacity:.13;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2))}
+.cb-live-card .cb-court[data-cb-tournament-skin="wimbledon"] .cb-court-watermark{opacity:.10}
+.cb-live-card .cb-court.cb-day{filter:saturate(1.03) brightness(1.02)}
+.cb-live-card .cb-court.cb-night{filter:saturate(.98) brightness(.91)}
+.cb-live-card .cb-court.indoor.cb-night{filter:saturate(.94) brightness(.88)}

@@ -2719,13 +2719,14 @@ function liveMatchPanel(){
     <button class="danger-btn" onclick="discardLiveMatch()">Ne pas sauvegarder / rejouer</button>
    </div>`
   :`<div class="fm-live-toolbar">
-   <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button>
+   <button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'⏸ Pause':'▶ Auto'}</button>
    <button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button>
    <button class="soft-btn ${liveAutoSpeed===2?'active':''}" onclick="setLiveSpeed(2)">2x</button>
-   <button class="soft-btn ${liveAutoSpeed===4?'active':''}" onclick="setLiveSpeed(4)">4x</button>
+   <button class="soft-btn ${liveAutoSpeed===3?'active':''}" onclick="setLiveSpeed(3)">3x</button>
+   <button class="soft-btn" ${liveAutoTimer?'disabled':''} onclick="playLivePoint()">Point suivant</button>
    <button class="soft-btn" onclick="saveLiveCheckpoint()">Sauvegarde rapide</button>
   </div>
-  <div class="fm-sim-controls"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>`}
+  <div class="muted micro" style="margin-top:7px">Mode TM · le match reste point par point. Accélère le direct ou mets en pause pour avancer manuellement d’un point.</div>`}
  </div>`;
 }
 function matchPage(){
@@ -3022,7 +3023,7 @@ window.simulateLiveMatch=async()=>{
  }catch(e){alert(e.message);return local.liveMatch}
 }
 window.setLiveSpeed=speed=>{
- liveAutoSpeed=[1,2,4].includes(Number(speed))?Number(speed):1;
+ liveAutoSpeed=[1,2,3].includes(Number(speed))?Number(speed):1;
  if(liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=setTimeout(liveAutoTick,80)}
  render();
 }

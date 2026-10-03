@@ -1,4 +1,4 @@
-/* Court Boss Match Center V11 · Broadcast Matchday */
+/* Court Boss Match Center V12 · Living Arena */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -73,6 +73,22 @@
     persist();render();
   };
 
+  const cbMatchPlans={
+    balanced:{label:'Équilibré',aggression:56,risk:50,net:28,effort:60,returnPos:'Neutre',servePattern:'Mixte',targetWing:'Mixte',tempo:'Neutre',spin:'Mixte'},
+    pressure:{label:'Mettre la pression',aggression:70,risk:61,net:38,effort:72,returnPos:'Avancée',servePattern:'Large',targetWing:'Revers',tempo:'Rapide',spin:'Plat'},
+    patient:{label:'Faire jouer',aggression:46,risk:36,net:18,effort:58,returnPos:'Reculée',servePattern:'Mixte',targetWing:'Revers',tempo:'Patient',spin:'Lift'},
+    net:{label:'Prendre le filet',aggression:66,risk:54,net:72,effort:68,returnPos:'Avancée',servePattern:'Large',targetWing:'Revers',tempo:'Rapide',spin:'Slice'},
+    protect:{label:'Fermer le jeu',aggression:44,risk:30,net:16,effort:50,returnPos:'Neutre',servePattern:'Corps',targetWing:'Mixte',tempo:'Patient',spin:'Mixte'},
+    redline:{label:'Tout donner',aggression:82,risk:74,net:46,effort:88,returnPos:'Avancée',servePattern:'Large',targetWing:'Revers',tempo:'Rapide',spin:'Plat'}
+  };
+  window.cbApplyMatchPlan=(key)=>{
+    const plan=cbMatchPlans[String(key||'balanced')]||cbMatchPlans.balanced;
+    local.tactics={...(local.tactics||{}),...plan};
+    delete local.tactics.label;
+    local.lastMatchPlan=String(key||'balanced');
+    persist();render();
+  };
+
   function env(meta,userName,oppName){
     const w=meta?.weather||{},m=meta?.mood||{},f=meta?.form||{},t=meta?.tournament||null;
     const fm=n=>{n=Number(n||1);return '×'+n.toFixed(2)};
@@ -108,7 +124,9 @@
 
   function coaching(meta={}){
     const t=tact();
-    return `<div class="cb-coach-grid">
+    const activePlan=String(local.lastMatchPlan||'custom');
+    const planButtons=Object.entries(cbMatchPlans).map(([key,p])=>'<button type="button" class="cb-plan-btn '+(activePlan===key?'active':'')+'" onclick="cbApplyMatchPlan(\''+key+'\')">'+safe(p.label)+'</button>').join('');
+    return `<div class="cb-plan-strip">${planButtons}</div><div class="cb-coach-grid">
       <div class="cb-coach-slider"><div><span>Agressivité</span><b>${t.aggression}%</b></div><input type="range" min="1" max="100" value="${t.aggression}" oninput="cbSetMatchTactic('aggression',this.value)"></div>
       <div class="cb-coach-slider"><div><span>Risque</span><b>${t.risk}%</b></div><input type="range" min="1" max="100" value="${t.risk}" oninput="cbSetMatchTactic('risk',this.value)"></div>
       <div class="cb-coach-slider"><div><span>Filet</span><b>${t.net}%</b></div><input type="range" min="1" max="100" value="${t.net}" oninput="cbSetMatchTactic('net',this.value)"></div>
@@ -241,6 +259,21 @@
     const weatherDifficulty=Math.round(Number(weather?.weather_difficulty||0));
     const serverName=s.serving_user?userName:oppName;
 
+    const roundText=String(meta?.round||'').toUpperCase();
+    const bestRank=Math.min(Number(c?.singles_rank||c?.ranking||9999),Number(opp?.ranking||9999));
+    const lateRound=/^(F|SF|FINAL|FINALE|SEMI|DEMI)/.test(roundText)||/FINALE|DEMI/.test(roundText);
+    const quarterRound=/QF|QUART/.test(roundText);
+    const arenaLevel=lateRound||(eventTier==='grand-slam'&&(quarterRound||bestRank<=10))||(eventTier==='masters'&&quarterRound)
+      ?'center'
+      :(eventTier==='grand-slam'||eventTier==='masters'||bestRank<=32?'show':'outer');
+    const arenaLabel=arenaLevel==='center'?'Court central':arenaLevel==='show'?'Show court':'Court annexe';
+    const arenaCapacity=arenaLevel==='center'
+      ?(eventTier==='grand-slam'?'15–24k':eventTier==='masters'?'9–15k':'6–10k')
+      :arenaLevel==='show'?'3–8k':'0.5–2k';
+    const changeoverCoach=Boolean(lp.changeover)&&!done;
+    const benchUser=cap(100-Number(userConditionDetail?.effective_fatigue??c?.fatigue??18),0,100);
+    const benchOpp=cap(100-Number(opponentConditionDetail?.effective_fatigue??opp?.fatigue??18),0,100);
+
     return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
       <div class="card fm-live-match cb-live-card">
         <div class="cb-broadcast-head">
@@ -264,15 +297,28 @@
           <span>${wi(weather.condition)} ${safe(weather.condition||'Stable')} · ${Math.round(Number(weather.temperature_c||21))}°C · ${Math.round(Number(weather.wind_kph||0))} km/h</span>
           <span class="${weatherDifficulty>=12?'warn':weatherDifficulty>=7?'soft':''}">Difficulté météo ${weatherDifficulty}/20</span>
         </div>
-        <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court cb-weather-${weatherClass} cb-event-${eventTier} ${specialClass} ${endsFlipped?'cb-ends-flipped':''}" style="${courtStyle(meta,surface)};--cb-visual-ms:${visualMs}ms">
+        <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court cb-weather-${weatherClass} cb-event-${eventTier} cb-arena-${arenaLevel} ${specialClass} ${endsFlipped?'cb-ends-flipped':''}" style="${courtStyle(meta,surface)};--cb-visual-ms:${visualMs}ms">
+          <div class="cb-arena-shell" aria-hidden="true">
+            <div class="cb-stand cb-stand-north"></div><div class="cb-stand cb-stand-south"></div>
+            <div class="cb-stand cb-stand-west"></div><div class="cb-stand cb-stand-east"></div>
+            <div class="cb-score-tower"><span>${safe(meta.round||'LIVE')}</span><b>${safe(arenaLabel)}</b></div>
+            <div class="cb-ad-board cb-ad-board-nw">${safe(broadcastTournament.name||broadcastTournament.circuit||'COURT BOSS')}</div>
+            <div class="cb-ad-board cb-ad-board-ne">${safe(broadcastTournament.circuit||broadcastTournament.category||'TENNIS')}</div>
+            <div class="cb-ad-board cb-ad-board-sw">${safe(broadcastTournament.city||'TOUR')}</div>
+            <div class="cb-ad-board cb-ad-board-se">${safe(broadcastTournament.category||'MATCH CENTER')}</div>
+            <div class="cb-umpire-chair"><i></i><b>ARBITRE</b></div>
+            <div class="cb-ball-kid cb-ball-kid-a"></div><div class="cb-ball-kid cb-ball-kid-b"></div>
+            <div class="cb-bench cb-bench-user"><span>${safe(userName.split(' ').slice(-1)[0]||'MOI')}</span><i style="--energy:${benchUser}%"></i></div>
+            <div class="cb-bench cb-bench-opp"><span>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</span><i style="--energy:${benchOpp}%"></i></div>
+          </div>
           ${motionStyle}
           ${tracePoints?`<svg class="cb-rally-trace" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${tracePoints}"></polyline></svg>`:''}
           <i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-court-line service vertical"></i><i class="fm-net"></i>
           <div class="cb-weather-fx" aria-hidden="true"></div>
           <div class="cb-crowd cb-crowd-top" aria-hidden="true"></div><div class="cb-crowd cb-crowd-bottom" aria-hidden="true"></div>
-          <div class="cb-court-hud"><span>${phase}</span><b>${ambienceLabel} · ${wi(weather.condition)} ${Math.round(Number(weather.temperature_c||21))}° · ${Math.round(Number(weather.wind_kph||0))} km/h</b></div>
+          <div class="cb-court-hud"><span>${phase}</span><b>${arenaLabel} · ${arenaCapacity} · ${ambienceLabel} · ${wi(weather.condition)} ${Math.round(Number(weather.temperature_c||21))}° · ${Math.round(Number(weather.wind_kph||0))} km/h</b></div>
           ${stakeText?`<div class="cb-stake-banner cb-stake-${safe(stake)}">${safe(stakeText)}</div>`:''}
-          ${lp.changeover?'<div class="cb-changeover">↔ Changement de côté</div>':''}
+          ${lp.changeover?'<div class="cb-changeover">↔ Changement de côté · fenêtre coaching</div>':''}
           ${meta?.tournament?.logo_url?`<img class="cb-court-watermark" src="${safe(meta.tournament.logo_url)}" alt="" onerror="this.style.display='none'">`:''}
           ${hasFlight?`<i class="cb-target-zone" style="left:${ballEnd.x}%;top:${ballEnd.y}%"></i>`:''}
           <div class="fm-player-dot opponent cb-dot cb-dot-motion ${slideOpp?'cb-clay-slide':''} ${oppWonLast?'cb-point-winner':userWonLast?'cb-point-loser':''}" style="left:${oppEnd.x}%;top:${oppEnd.y}%;animation:${oppAnim} ${visualMs}ms linear both"><span>${oInit}</span><small>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</small>${oppWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
@@ -307,7 +353,17 @@
           <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button><button class="soft-btn" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn" onclick="setLiveSpeed(4)">4x</button></div>
           <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
-        </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching(meta)}</details>`
+        </div>
+        ${changeoverCoach?`<div class="cb-changeover-coach">
+          <div class="cb-changeover-coach-head"><div><small>CHANGEMENT DE CÔTÉ</small><b>30 secondes manager</b></div><span>${safe(arenaLabel)}</span></div>
+          <div class="cb-changeover-read">
+            <div><span>Ton joueur</span><b>Énergie ${Math.round(benchUser)}% · ${mood(userMoodValue)}</b></div>
+            <div><span>Adversaire</span><b>Énergie ${Math.round(benchOpp)}% · ${safe(opponentPlan?.adaptation||'Plan naturel')}</b></div>
+          </div>
+          <div class="cb-changeover-tip">${opponentPlan?'IA adverse : '+safe(opponentPlan.adaptation||'Plan naturel')+' · cible '+safe(opponentPlan.targetWing||'Mixte')+' · '+safe(opponentPlan.tempo||'Neutre'):'Lis le momentum et ajuste tes consignes avant le prochain jeu.'}</div>
+          ${coaching(meta)}
+        </div>`:''}
+        <details class="cb-coach-panel" ${changeoverCoach?'':'open'}><summary>Consignes manager · modifiables pendant le match</summary>${coaching(meta)}</details>`
         :isCommitted?(()=>{
           const r=local.lastCommittedMatchResult||{},out=r.tournament_outcome||{},tid=Number(s.tournament_id||0);
           const next=r.next_match_available&&tid?'<button class="primary" onclick="nextTournamentLiveMatchV1()">Match suivant</button>':'';
@@ -381,5 +437,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V11 Broadcast Matchday active');
+  console.info('Court Boss Match Center V12 Living Arena active');
 })();

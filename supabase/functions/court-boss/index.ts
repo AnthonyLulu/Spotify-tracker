@@ -6641,7 +6641,7 @@ Deno.serve(async(req:Request)=>{
     }
     const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
     const [player,entries,doublesEntries,seasonPlan,injury,loadProfile,medicalPlan]=await Promise.all([
-      db.from("players").select("id,name,country,ranking,points,doubles_ranking,doubles_points,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,injury_status,career_focus,photo_url").eq("id",requestedId).maybeSingle(),
+      db.from("players").select("id,name,country,ranking,points,doubles_ranking,doubles_points,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,injury_status,career_focus,photo_url").eq("id",requestedId).maybeSingle(),
       db.from("entries")
         .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at,tournaments(id,name,country,circuit,category,start_date,end_date,qualifying_start_date,qualifying_end_date,main_draw_start_date,qualifying_entry_deadline,main_entry_deadline,singles_entry_deadline,late_entry_deadline)")
         .eq("player_id",requestedId).eq("status","entered").order("requested_on",{ascending:true}),
@@ -6656,8 +6656,20 @@ Deno.serve(async(req:Request)=>{
     const err=player.error||entries.error||doublesEntries.error||seasonPlan.error||injury.error||loadProfile.error||medicalPlan.error;
     if(err)return h({error:err.message},500);
     if(!player.data)return h({error:"Joueur introuvable"},404);
+    let nextgenFinalsStatus:any=null;
+    const nextgenEvent=await db.from("tournaments")
+      .select("id,name,start_date,end_date,entry_rule_code")
+      .eq("circuit","ATP").eq("category","Next Gen Finals")
+      .gte("start_date",String(career.data.career_date||AGE_REFERENCE_DATE))
+      .order("start_date",{ascending:true}).limit(1).maybeSingle();
+    if(!nextgenEvent.error&&nextgenEvent.data){
+      const ng=await db.rpc("nextgen_finals_player_status",{
+        p_tournament_id:Number(nextgenEvent.data.id),p_player_id:requestedId
+      });
+      if(!ng.error)nextgenFinalsStatus={...ng.data,tournament:nextgenEvent.data};
+    }
     return h({
-      model:"CB-MANAGED-PLAYER-CONTEXT-v1",
+      model:"CB-MANAGED-PLAYER-CONTEXT-v2-NEXTGEN",
       primary_player_id:primaryId,
       player_id:requestedId,
       is_primary:requestedId===primaryId,
@@ -6669,7 +6681,8 @@ Deno.serve(async(req:Request)=>{
       season_plan:seasonPlan.data??null,
       injury:injury.data??null,
       training_load:loadProfile.data??null,
-      medical_plan:medicalPlan.data??null
+      medical_plan:medicalPlan.data??null,
+      nextgen_finals_status:nextgenFinalsStatus
     });
   }
 
@@ -7177,8 +7190,9 @@ Deno.serve(async(req:Request)=>{
     const staffMatchBonus=Math.max(-.8,Math.min(2.8,rawStaffBonus*synergyMult-staffConflictPenalty));
     const isJuniorSingles=String(t.circuit||"")==="Junior";
     const isJuniorFinals=isJuniorSingles&&/Junior Finals/i.test(String(t.category||""))&&!/Double/i.test(String(t.category||""));
+    const isNextGenFinals=String(t.circuit||"")==="ATP"&&/Next Gen Finals/i.test(String(t.category||""))&&Boolean(t.singles);
     const isAtpSinglesFinals=String(t.circuit||"")==="ATP"&&/ATP Finals/i.test(String(t.category||""))&&!/Next Gen/i.test(String(t.category||""))&&Boolean(t.singles);
-    const isSinglesFinals=isJuniorFinals||isAtpSinglesFinals;
+    const isSinglesFinals=isJuniorFinals||isNextGenFinals||isAtpSinglesFinals;
     let finalsRaceRows:any[]=[];
     let rank=Number(c.singles_rank||9999);
     if(isJuniorSingles&&!isJuniorFinals){
@@ -7202,6 +7216,29 @@ Deno.serve(async(req:Request)=>{
       },409);
       rank=Number(own.junior_race_ranking||9999);
       finalsRaceRows=finalsRaceRows.map((x:any)=>({...x,finals_rank:Number(x.junior_race_ranking||9999)}));
+    }else if(isNextGenFinals){
+      const field=await db.rpc("nextgen_finals_field",{p_tournament_id:tid});
+      if(field.error)return h({error:field.error.message},500);
+      finalsRaceRows=(field.data??[]).map((x:any)=>({
+        id:Number(x.player_id),
+        name:String(x.player_name||""),
+        country:x.country,
+        nextgen_ranking:Number(x.nextgen_rank||9999),
+        nextgen_points:Number(x.nextgen_points||0),
+        finals_rank:Number(x.atp_rank||999999),
+        atp_rank:Number(x.atp_rank||999999),
+        field_order:Number(x.field_order||9999),
+        selection_method:String(x.selection_method||""),
+        nitto_finals_exempt:Boolean(x.nitto_finals_exempt)
+      }));
+      const own=finalsRaceRows.find((x:any)=>Number(x.id)===managedId);
+      if(!own)return h({
+        error:"Non sélectionné pour les Next Gen ATP Finals : 7 places viennent de la Race Next Gen et 1 place est attribuée par wildcard ATP.",
+        finals_locked:true,race_required:7,wildcards:1,
+        age_rule:"20 ans ou moins pendant toute l’année",
+        nextgen_rank:Number(managedPlayer.data.nextgen_ranking||9999)
+      },409);
+      rank=Number(own.atp_rank||9999);
     }else if(isAtpSinglesFinals){
       const race=await db.from("players")
         .select("id,name,country,race_ranking,race_points,current_ability,form,fitness,fatigue,player_attributes(*)")
@@ -7423,7 +7460,7 @@ Deno.serve(async(req:Request)=>{
     const isCarpet=/carpet|moquette/.test(surfaceNorm);
     const surfKey=isClay?"clay_affinity":isGrass?"grass_affinity":"hard_affinity";
     const courtSpeed=Number(t.court_speed||(isClay?.68:isGrass?1.15:isCarpet?(indoor?1.22:1.10):indoor?1.18:1.0));
-    const bestOf=String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?5:3;
+    const bestOf=isNextGenFinals?5:(String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||t.level||""))?5:3);
     const managedAttrs:any=Array.isArray(managedPlayer.data.player_attributes)?managedPlayer.data.player_attributes[0]:managedPlayer.data.player_attributes||{};
     const user:any={id:managedId,name:String(c.player_name||managedPlayer.data.name||"Joueur"),ranking:rank,current_ability:Number(c.current_ability||managedPlayer.data.current_ability||56),form:Number(c.form||managedPlayer.data.form||72),fitness:Number(c.fitness||managedPlayer.data.fitness||91),fatigue:Number(c.fatigue||managedPlayer.data.fatigue||18),morale:Number(c.morale||managedPlayer.data.morale||72),handedness:String(managedPlayer.data.handedness||""),career_focus:String(c.career_focus||managedPlayer.data.career_focus||"mixed"),player_attributes:managedAttrs,isUser:true};
 
@@ -7657,6 +7694,19 @@ Deno.serve(async(req:Request)=>{
       for(let i=0;i<loserSets;i++)sequence.push("L");
       for(let i=sequence.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sequence[i],sequence[j]]=[sequence[j],sequence[i]]}
       sequence.push("W");
+
+      if(isNextGenFinals){
+        return sequence.map(result=>{
+          const matchWinnerTakesSet=result==="W";
+          const setWinnerIsA=matchWinnerTakesSet?aWon:!aWon;
+          const tight=Math.random()<(.34+closeness*.42);
+          const w=4;
+          const l=tight?3:(Math.random()<(.36+closeness*.18)?2:Math.random()<.58?1:0);
+          const aScore=setWinnerIsA?w:l,bScore=setWinnerIsA?l:w;
+          return aWon?(aScore+"-"+bScore):(bScore+"-"+aScore);
+        }).join(" ");
+      }
+
       const tbChance=Math.max(.08,Math.min(.52,.13+closeness*.25+Math.max(0,courtSpeed-1)*.45));
       return sequence.map(result=>{
         const matchWinnerTakesSet=result==="W";
@@ -7779,6 +7829,131 @@ Deno.serve(async(req:Request)=>{
         player_a_id:sfWinners[0].id,player_b_id:sfWinners[1].id,
         player_a_name:sfWinners[0].name,player_b_name:sfWinners[1].name,
         winner_id:finalRes.winner.id,winner_name:finalRes.winner.name,score:finalRes.score
+      });
+      if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser){userAlive=false;userRound="F";}
+      if(finalRes.winner.isUser)userRound="Champion";
+      champion=finalRes.winner;
+    }else if(isNextGenFinals){
+      const ordered=[user,...pool].slice(0,8)
+        .sort((a:any,b:any)=>Number(a.ranking||999999)-Number(b.ranking||999999)||strength(b)-strength(a));
+      if(ordered.length<8)return h({error:"Next Gen ATP Finals : 8 joueurs sélectionnés requis.",qualified:ordered.length},409);
+
+      // Seed structure: #1 in A, #2 in B; pairs 3/4, 5/6, 7/8 split across groups.
+      const groups:any[][]=[
+        [ordered[0],ordered[3],ordered[4],ordered[7]],
+        [ordered[1],ordered[2],ordered[5],ordered[6]]
+      ];
+      const table=new Map<number,{player:any,wins:number,losses:number,matches:number,setsWon:number,setsLost:number,gamesWon:number,gamesLost:number}>();
+      const h2h=new Map<string,number>();
+      ordered.forEach((p:any)=>table.set(Number(p.id),{player:p,wins:0,losses:0,matches:0,setsWon:0,setsLost:0,gamesWon:0,gamesLost:0}));
+
+      const hkey=(a:number,b:number)=>a<b?a+":"+b:b+":"+a;
+      const applyScore=(res:any)=>{
+        const wid=Number(res.winner.id),lid=Number(res.loser.id);
+        const ws=table.get(wid),ls=table.get(lid);
+        if(!ws||!ls)return;
+        ws.wins++;ls.losses++;ws.matches++;ls.matches++;
+        h2h.set(hkey(wid,lid),wid);
+        for(const token of String(res.score||"").split(/\s+/).filter(Boolean)){
+          const m=token.match(/^(\d+)-(\d+)/);
+          if(!m)continue;
+          const wg=Number(m[1]),lg=Number(m[2]);
+          ws.gamesWon+=wg;ws.gamesLost+=lg;
+          ls.gamesWon+=lg;ls.gamesLost+=wg;
+          if(wg>lg){ws.setsWon++;ls.setsLost++}
+          else{ls.setsWon++;ws.setsLost++}
+        }
+      };
+      const pct=(w:number,l:number)=>w+l?Number((w/(w+l)).toFixed(8)):0;
+      const headToHead=(a:any,b:any)=>{
+        const winner=h2h.get(hkey(Number(a.id),Number(b.id)));
+        return winner===Number(a.id)?-1:winner===Number(b.id)?1:0;
+      };
+      const rankTie=(rows:any[],criterion:"sets"|"games")=>{
+        if(rows.length===2){
+          const h=headToHead(rows[0],rows[1]);
+          if(h)return h<0?rows:[rows[1],rows[0]];
+        }
+        const value=(p:any)=>{
+          const st=table.get(Number(p.id))!;
+          return criterion==="sets"?pct(st.setsWon,st.setsLost):pct(st.gamesWon,st.gamesLost);
+        };
+        const sorted=rows.slice().sort((a:any,b:any)=>value(b)-value(a)||Number(a.ranking||999999)-Number(b.ranking||999999));
+        if(rows.length===3){
+          const vals=sorted.map(value);
+          if(vals[0]!==vals[1]&&vals[1]===vals[2]){
+            const pair=rankTie([sorted[1],sorted[2]],criterion==="sets"?"games":"games");
+            return [sorted[0],...pair];
+          }
+          if(vals[0]===vals[1]&&vals[1]!==vals[2]){
+            const pair=rankTie([sorted[0],sorted[1]],criterion==="sets"?"games":"games");
+            return [...pair,sorted[2]];
+          }
+          if(vals[0]===vals[1]&&vals[1]===vals[2]&&criterion==="sets")return rankTie(sorted,"games");
+        }
+        if(criterion==="sets"){
+          const allEqual=sorted.every((p:any)=>value(p)===value(sorted[0]));
+          if(allEqual)return rankTie(sorted,"games");
+        }
+        return sorted;
+      };
+      const rankGroup=(g:any[])=>{
+        const primary=g.slice().sort((a:any,b:any)=>{
+          const ta=table.get(Number(a.id))!,tb=table.get(Number(b.id))!;
+          return tb.wins-ta.wins||tb.matches-ta.matches;
+        });
+        const out:any[]=[];
+        for(let i=0;i<primary.length;){
+          const st=table.get(Number(primary[i].id))!;
+          let j=i+1;
+          while(j<primary.length){
+            const sj=table.get(Number(primary[j].id))!;
+            if(sj.wins!==st.wins||sj.matches!==st.matches)break;
+            j++;
+          }
+          const tied=primary.slice(i,j);
+          out.push(...(tied.length===1?tied:rankTie(tied,"sets")));
+          i=j;
+        }
+        return out;
+      };
+
+      let rrNo=1;
+      for(let gi=0;gi<groups.length;gi++){
+        const g=groups[gi];
+        for(let i=0;i<g.length;i++)for(let j=i+1;j<g.length;j++){
+          const a=g[i],b=g[j],res=play(a,b);
+          applyScore(res);
+          matchRows.push({
+            round_no:rrNo++,round_name:"Groupe "+(gi===0?"A":"B"),
+            player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+            winner_id:res.winner.id,winner_name:res.winner.name,score:res.score,
+            nextgen_format:true
+          });
+        }
+      }
+
+      const ga=rankGroup(groups[0]),gb=rankGroup(groups[1]);
+      const semifinalists=[ga[0],gb[1],gb[0],ga[1]];
+      if(!semifinalists.some((p:any)=>p.isUser)){userAlive=false;userRound="Phase de groupes";}
+      const sfWinners:any[]=[];
+      for(let sfi=0;sfi<2;sfi++){
+        const a=semifinalists[sfi*2],b=semifinalists[sfi*2+1],res=play(a,b);
+        matchRows.push({
+          round_no:100+sfi,round_name:"SF",
+          player_a_id:a.id,player_b_id:b.id,player_a_name:a.name,player_b_name:b.name,
+          winner_id:res.winner.id,winner_name:res.winner.name,score:res.score,nextgen_format:true
+        });
+        if((a.isUser||b.isUser)&&!res.winner.isUser){userAlive=false;userRound="SF";}
+        if(res.winner.isUser)userRound="SF";
+        sfWinners.push(res.winner);
+      }
+      const finalRes=play(sfWinners[0],sfWinners[1]);
+      matchRows.push({
+        round_no:200,round_name:"F",
+        player_a_id:sfWinners[0].id,player_b_id:sfWinners[1].id,
+        player_a_name:sfWinners[0].name,player_b_name:sfWinners[1].name,
+        winner_id:finalRes.winner.id,winner_name:finalRes.winner.name,score:finalRes.score,nextgen_format:true
       });
       if((sfWinners[0].isUser||sfWinners[1].isUser)&&!finalRes.winner.isUser){userAlive=false;userRound="F";}
       if(finalRes.winner.isUser)userRound="Champion";

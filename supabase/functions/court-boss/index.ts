@@ -8702,6 +8702,8 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/play-doubles")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const doublesTactics:any=body?.doubles_tactics&&typeof body.doubles_tactics==="object"?body.doubles_tactics:{plan:"balanced"};
+    const doublesPlan=String(doublesTactics.plan||"balanced");
     const tid=n(body?.tournament_id,0,1,99999999);
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Carrière introuvable"},500);
@@ -8715,10 +8717,10 @@ Deno.serve(async(req:Request)=>{
     }
     const [tour,anth,oldRun,partnership]=await Promise.all([
       db.from("tournaments").select("*").eq("id",tid).maybeSingle(),
-      db.from("players").select("id,name,country,doubles_ranking,doubles_points,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,career_focus,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)").eq("id",requestedManagedId).maybeSingle(),
+      db.from("players").select("id,name,country,doubles_ranking,doubles_points,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,career_focus,player_attributes(*)").eq("id",requestedManagedId).maybeSingle(),
       db.from("doubles_runs").select("id").eq("tournament_id",tid).eq("managed_player_id",requestedManagedId).maybeSingle(),
       db.from("doubles_partnerships")
-        .select("*,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity))")
+        .select("*,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(*)),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(*))")
         .or("player_a_id.eq."+requestedManagedId+",player_b_id.eq."+requestedManagedId)
         .order("id",{ascending:false}).limit(1).maybeSingle()
     ]);
@@ -8874,11 +8876,11 @@ Deno.serve(async(req:Request)=>{
     if(finalsPairRows.length){
       const ids=[...new Set(finalsPairRows.flatMap((x:any)=>[Number(x.player_one_id),Number(x.player_two_id)]).filter(Boolean))];
       poolRes=await db.from("players")
-        .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+        .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(*)")
         .in("id",ids);
     }else if(isJuniorDouble){
       poolRes=await db.from("players")
-        .select("id,name,country,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+        .select("id,name,country,junior_doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(*)")
         .not("junior_doubles_ranking","is",null)
         .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
         .order("junior_doubles_ranking",{ascending:true}).limit(160);
@@ -8886,7 +8888,7 @@ Deno.serve(async(req:Request)=>{
       const refYear=Number(String(c.career_date||AGE_REFERENCE_DATE).slice(0,4));
       if(refYear>2025){
         const wp=await db.from("world_doubles_partnerships")
-          .select("id,race_rank,race_points,chemistry,compatibility,pair_strength,affinity_score,player_a:players!world_doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)),player_b:players!world_doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity))")
+          .select("id,race_rank,race_points,chemistry,compatibility,pair_strength,affinity_score,player_a:players!world_doubles_partnerships_player_a_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(*)),player_b:players!world_doubles_partnerships_player_b_id_fkey(id,name,country,doubles_ranking,current_ability,form,fitness,fatigue,player_attributes(*))")
           .eq("season",refYear).eq("active",true)
           .order("race_rank",{ascending:true})
           .limit(256);
@@ -8919,7 +8921,7 @@ Deno.serve(async(req:Request)=>{
           for(const p of projectedPool.data??[])if((p as any)?.id)byId.set(Number((p as any).id),p);
         }
         const rankedPool=await db.from("players")
-          .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+          .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(*)")
           .eq("is_real",true).not("doubles_ranking","is",null)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
           .order("doubles_ranking",{ascending:true}).limit(Math.min(256,Math.max(160,drawSize*3)));
@@ -8928,7 +8930,7 @@ Deno.serve(async(req:Request)=>{
         poolRes={data:[...byId.values()],error:null};
       }else{
         poolRes=await db.from("players")
-          .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(doubles,clay_affinity,hard_affinity,grass_affinity)")
+          .select("id,name,country,doubles_ranking,junior_doubles_ranking,junior_doubles_game_points,current_ability,form,fitness,fatigue,player_attributes(*)")
           .eq("is_real",true).not("doubles_ranking","is",null)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
           .order("doubles_ranking",{ascending:true}).limit(160);
@@ -9099,24 +9101,48 @@ Deno.serve(async(req:Request)=>{
     }
     const matches:any[]=[];
     let userRound=finalsPairRows.length?"Phase de groupes":"R16";
-    const playPair=(A:any,B:any)=>{
-      const prob=1/(1+Math.exp(-(A.strength-B.strength)/8));
-      const Aw=Math.random()<prob,w=Aw?A:B,l=Aw?B:A;
-      const close=Math.abs(A.strength-B.strength)<8;
-      const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
-      return {winner:w,loser:l,score};
-    };
     const doublesAttr=(p:any,key:string,fallback=10)=>Number(p?.player_attributes?.[key]??fallback);
+    const doublesAvg=(p:any,keys:string[])=>keys.reduce((z,k)=>z+doublesAttr(p,k),0)/Math.max(1,keys.length);
+    const userPlanBonus=(pair:any,other:any)=>{
+      if(!pair?.isUser)return 0;
+      const a=pair.a,b=pair.b,oa=other?.a,ob=other?.b;
+      const net=(doublesAvg(a,["volley","net_positioning","poaching","reaction"])+doublesAvg(b,["volley","net_positioning","poaching","reaction"]))/2;
+      const comm=(doublesAvg(a,["doubles_communication","decision_making","anticipation"])+doublesAvg(b,["doubles_communication","decision_making","anticipation"]))/2;
+      const serve=(doublesAvg(a,["first_serve_quality","serve_precision","serve_consistency"])+doublesAvg(b,["first_serve_quality","serve_precision","serve_consistency"]))/2;
+      const consistency=(doublesAvg(a,["return_consistency","consistency","composure"])+doublesAvg(b,["return_consistency","consistency","composure"]))/2;
+      const weakOpp=Math.min(doublesAvg(oa,["return_game","return_consistency","volley"]),doublesAvg(ob,["return_game","return_consistency","volley"]));
+      const oppPass=(doublesAvg(oa,["passing_shot","return_aggression","reaction"])+doublesAvg(ob,["passing_shot","return_aggression","reaction"]))/2;
+      let bonus=0;
+      if(doublesPlan==="poach")bonus=(net-10)*.19+(comm-10)*.09-(oppPass-10)*.07;
+      else if(doublesPlan==="australian")bonus=(net-10)*.15+(serve-10)*.14+(comm-10)*.08-(oppPass-10)*.06;
+      else if(doublesPlan==="target_weak")bonus=Math.max(-1.2,Math.min(2.2,(13.5-weakOpp)*.22))+(comm-10)*.05;
+      else if(doublesPlan==="safe")bonus=(consistency-10)*.14+(comm-10)*.07-Math.max(0,serve-15)*.03;
+      else bonus=(comm-10)*.04;
+      return Math.max(-2.5,Math.min(2.5,bonus));
+    };
+    const playPair=(A:any,B:any)=>{
+      const aBonus=userPlanBonus(A,B),bBonus=userPlanBonus(B,A);
+      const aStrength=Number(A.strength||0)+aBonus,bStrength=Number(B.strength||0)+bBonus;
+      const prob=1/(1+Math.exp(-(aStrength-bStrength)/8));
+      const Aw=Math.random()<prob,w=Aw?A:B,l=Aw?B:A;
+      const close=Math.abs(aStrength-bStrength)<8;
+      const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
+      return {winner:w,loser:l,score,plan_bonus_a:Number(aBonus.toFixed(2)),plan_bonus_b:Number(bBonus.toFixed(2))};
+    };
     const doublesVisual=(round:string,A:any,B:any,res:any)=>{
       if(!A.isUser&&!B.isUser)return null;
       const U=A.isUser?A:B,O=A.isUser?B:A;
       const ua=U.a,ub=U.b,oa=O.a,ob=O.b;
-      const avg=(p:any,keys:string[])=>keys.reduce((z,k)=>z+doublesAttr(p,k),0)/Math.max(1,keys.length);
+      const avg=doublesAvg;
       const poach=(avg(ub,["poaching","reaction","net_positioning"])+avg(ua,["poaching","reaction","net_positioning"]))/2;
       const comm=(avg(ua,["doubles_communication","leadership","decision_making"])+avg(ub,["doubles_communication","leadership","decision_making"]))/2;
       const oppWeak=avg(oa,["return_game","return_consistency","volley"])<=avg(ob,["return_game","return_consistency","volley"])?oa:ob;
       const seed=liveMatchHash(String(tid)+"|"+round+"|"+U.name+"|"+O.name);
-      const formation=poach>=14?(seed%2?"I formation":"Australienne"):comm>=13?"Standard + poach":"Standard";
+      const formation=doublesPlan==="australian"?"Australienne":
+        doublesPlan==="poach"?"I formation":
+        doublesPlan==="safe"?"Standard":
+        doublesPlan==="target_weak"?"Standard + poach":
+        poach>=14?(seed%2?"I formation":"Australienne"):comm>=13?"Standard + poach":"Standard";
       const uNetX=formation==="I formation"?50:formation==="Australienne"?70:62;
       const oNetX=(seed%3===0)?36:42;
       const frames=[
@@ -9126,7 +9152,7 @@ Deno.serve(async(req:Request)=>{
         {user_a:{x:44,y:80},user_b:{x:formation==="Standard"?60:48,y:55},opp_a:{x:64,y:20},opp_b:{x:44,y:41},ball:{x:res.winner.isUser?68:32,y:res.winner.isUser?22:78}}
       ];
       return {
-        model:"CB-DOUBLES-VISUAL-v1",formation,poach_intent:Math.round(Math.max(5,Math.min(95,poach*5))),
+        model:"CB-DOUBLES-VISUAL-v2",formation,manager_plan:doublesPlan,plan_bonus:Number((U.isUser?userPlanBonus(U,O):0).toFixed(2)),poach_intent:Math.round(Math.max(5,Math.min(95,poach*5))),
         communication:Math.round(Math.max(5,Math.min(100,comm*5))),
         target_player_id:Number(oppWeak?.id||0),target_player_name:String(oppWeak?.name||""),
         target_reason:"Retour / volée les plus attaquables",winner:res.winner.isUser?"user":"opponent",
@@ -9518,7 +9544,7 @@ Deno.serve(async(req:Request)=>{
       if(playedEntry.error)return h({error:playedEntry.error.message},500);
     }
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:run.data.id,managed_player_id:Number(anthony.id),managed_player_name:String(anthony.name||""),tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",doubles_entry_status:doublesEntryStatus,entry_method:doublesRunEntryMethod,qualifying_points:qualifyingPointsEarned,protected_ranking_use:protectedDoubleUse,fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
+    return h({ok:true,run_id:run.data.id,managed_player_id:Number(anthony.id),managed_player_name:String(anthony.name||""),tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",doubles_entry_status:doublesEntryStatus,entry_method:doublesRunEntryMethod,qualifying_points:qualifyingPointsEarned,protected_ranking_use:protectedDoubleUse,fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,doubles_tactics:doublesTactics,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }
 
   if(path.endsWith("/api/season-summary")&&req.method==="GET"){

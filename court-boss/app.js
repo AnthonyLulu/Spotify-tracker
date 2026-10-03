@@ -1416,6 +1416,45 @@ function specialTeamEventMeta(t){
  if(code==='JUNIOR_DAVIS_SELECTION'||/Junior Davis Cup/i.test(category))return {code:'junior_davis',label:'Sélection nationale junior',teams:16,format:'4 groupes de 4 · round robin · repos · phase finale',tie:'Rencontres par équipes nationales juniors',selection:'Qualifications régionales + sélection fédérale'};
  return null;
 }
+function laverCaptainPanel(teamEvent){
+ const ctx=teamEvent?.captain_context||null;
+ const caps=ctx?.captains||{};
+ if(!ctx?.ok||(!caps.europe&&!caps.world))return '';
+ const one=(x,label,cls)=>{
+  if(!x?.captain)return '';
+  const p=x.captain||{},record=x.record||{};
+  const photo=String(p.photo_url||'').trim();
+  const initials=String(p.name||'?').split(/\s+/).map(v=>v[0]||'').slice(0,2).join('').toUpperCase();
+  return `<button class="laver-captain-card ${cls}" onclick="openPlayer(${Number(p.id||0)})">
+   <div class="laver-captain-team">${esc(label)}</div>
+   <div class="laver-captain-main">
+    <div class="laver-captain-photo">${photo?`<img src="${esc(photo)}" alt="${esc(p.name||'Capitaine')}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">`:''}<span style="${photo?'display:none':''}">${esc(initials)}</span></div>
+    <div class="laver-captain-copy">
+     <small>Capitaine · légende retraitée</small>
+     <b>${esc(p.name||'—')}</b>
+     <span>${flags[p.country]||'🏳️'} ${esc(p.country||'')} · meilleur rang ${p.career_high_rank?'#'+fmt(p.career_high_rank):'—'}</span>
+    </div>
+   </div>
+   <div class="laver-captain-meta">
+    <span><small>Style</small><b>${esc(x.style_label||'Leadership')}</b></span>
+    <span><small>Mandat</small><b>${fmt(x.term_start_season)}–${fmt(x.term_end_season)}</b></span>
+    <span><small>Bilan</small><b>${fmt(record.wins||0)} titre(s) / ${fmt(record.editions||0)} édition(s)</b></span>
+   </div>
+  </button>`;
+ };
+ return `<section class="laver-captain-panel">
+  <div class="row between laver-captain-head">
+   <div><div class="eyebrow">Bancs Laver Cup</div><h2>Les capitaines</h2></div>
+   <span class="badge">Mandats de ${fmt(ctx.rotation_years||3)} ans · ${fmt(ctx.term_start)}–${fmt(ctx.term_end)}</span>
+  </div>
+  <div class="laver-captain-grid">
+   ${one(caps.europe,'TEAM EUROPE','is-europe')}
+   ${one(caps.world,'TEAM WORLD','is-world')}
+  </div>
+  <div class="muted mini laver-captain-rule">À chaque nouveau mandat, Court Boss choisit une autre légende retraitée de la région. Les stars de ta carrière peuvent donc devenir capitaines après leur retraite.</div>
+ </section>`;
+}
+
 function singlesEligibility(t){
  const c=activePlayerCareerView(),rank=Number(c.singles_rank||99999),age=Number(c.age||99),cuts=tmCuts(t);
  const now=String(local.date||c.career_date||'2025-12-01');
@@ -4685,6 +4724,7 @@ window.openTournament=async id=>{
    </div>
    <div id="tourBody">
     ${teamEvent?`<div class="notice"><b>${esc(teamEvent.label)}</b> · ${esc(teamEvent.format)}<br><span class="muted mini">${esc(teamEvent.tie||"")}${teamEvent.scoring?" · "+esc(teamEvent.scoring):""} · ${esc(teamEvent.selection||"")}</span></div>`:""}
+    ${teamEvent?.code==='laver_cup'?laverCaptainPanel(teamEvent):''}
     <div class="grid g2">
       <div class="card"><div class="row between"><h2>${isNcaa?'Accès NCAA':isFed?'Sélection':isJunior?'Circuit Junior':'Inscription simple'}</h2><span class="badge ${singleRule.cls}">${esc(elig)}</span></div>
         <div class="list-item row between"><span>Cut tableau</span><b>${cuts.direct?'#'+fmt(cuts.direct)+(cuts.projected?' · projeté':''):'—'}</b></div>

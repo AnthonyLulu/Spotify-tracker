@@ -12922,6 +12922,230 @@ Deno.serve(async(req:Request)=>{
   }
 
 
+
+  if(path.endsWith("/api/live-doubles/commit")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions").select("*").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match double introuvable"},404);
+    if(session.data.status==="committed")return h({ok:true,already_committed:true,session:session.data});
+    if(!["finished","completed"].includes(String(session.data.status||"")))return h({error:"Le match doit être terminé avant validation.",status:session.data.status},409);
+    const stats:any=session.data.stats||{},meta:any=stats._meta||{},dmeta:any=meta.doubles||{};
+    if(String(meta.match_type||"")!=="doubles")return h({error:"Cette session n’est pas un match double."},409);
+
+    const userIds=(Array.isArray(dmeta.user_players)?dmeta.user_players:[]).map((p:any)=>Number(p.id||0)).filter(Boolean);
+    const oppIds=(Array.isArray(dmeta.opponent_players)?dmeta.opponent_players:[]).map((p:any)=>Number(p.id||0)).filter(Boolean);
+    if(userIds.length!==2||oppIds.length!==2)return h({error:"Composition du double incomplète."},500);
+    const allIds=[...userIds,...oppIds];
+    const playerRows=await db.from("players").select("*").in("id",allIds);
+    if(playerRows.error)return h({error:playerRows.error.message},500);
+    const byId=new Map((playerRows.data??[]).map((p:any)=>[Number(p.id),p]));
+    const userPlayers=userIds.map(pid=>byId.get(pid)),oppPlayers=oppIds.map(pid=>byId.get(pid));
+    if([...userPlayers,...oppPlayers].some((p:any)=>!p))return h({error:"Un des quatre joueurs est introuvable."},404);
+
+    const won=Number(session.data.user_sets||0)>Number(session.data.opponent_sets||0);
+    const scoreRows=Array.isArray(session.data.score_log)?session.data.score_log:[];
+    const setRows=scoreRows.filter((x:any)=>x?.set_finished);
+    const score=setRows.map((x:any)=>{
+      if(x.match_tiebreak)return "["+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+"]";
+      const base=String(x.user_games)+"-"+String(x.opponent_games);
+      return x.tiebreak?base+" ("+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+")":base;
+    }).join(" ")||("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
+    const userPairName=String(userPlayers[0].name)+" / "+String(userPlayers[1].name);
+    const oppPairName=String(oppPlayers[0].name)+" / "+String(oppPlayers[1].name);
+    const winnerPairName=won?userPairName:oppPairName;
+    const matchDate=String(meta.career_date||AGE_REFERENCE_DATE).slice(0,10);
+    const round=String(meta.round||"R16");
+    const tournamentId=Number(session.data.tournament_id||0);
+    const tournamentName=String(meta.tournament?.name||"Double live");
+
+    const history=await db.from("match_history").insert({
+      managed_player_id:userIds[0],tournament_name:tournamentName,match_date:matchDate,
+      surface:String(session.data.surface||"Dur"),round,
+      player_a:userPairName,player_b:oppPairName,winner:winnerPairName,score,user_involved:true,
+      match_data:{live:true,doubles:true,live_session_id:id,engine:"CB-LIVE-DOUBLES-v1",stats,tactics:session.data.tactics||{},environment:meta}
+    }).select("id").single();
+    if(history.error)return h({error:history.error.message},500);
+
+    const fatigueAdd=Math.max(4,Math.min(16,Math.round(4+Number(session.data.rally_no||0)/65+Math.max(0,Number(meta.weather?.temperature_c||21)-28)*.18)));
+    const managedUpdate={
+      fatigue:Math.min(100,Number(userPlayers[0].fatigue||18)+fatigueAdd),
+      fitness:Math.max(35,Number(userPlayers[0].fitness||90)-Math.ceil(fatigueAdd*.34)),
+      form:Math.max(35,Math.min(100,Number(userPlayers[0].form||70)+(won?2:-1))),
+      morale:Math.max(30,Math.min(100,Number(userPlayers[0].morale||70)+(won?3:-2)))
+    };
+    const partnerUpdate={
+      fatigue:Math.min(100,Number(userPlayers[1].fatigue||18)+Math.max(3,Math.round(fatigueAdd*.9))),
+      fitness:Math.max(35,Number(userPlayers[1].fitness||90)-Math.ceil(fatigueAdd*.30)),
+      form:Math.max(35,Math.min(100,Number(userPlayers[1].form||70)+(won?2:-1))),
+      morale:Math.max(30,Math.min(100,Number(userPlayers[1].morale||70)+(won?2:-1)))
+    };
+    const [mu,pu]=await Promise.all([
+      db.from("players").update(managedUpdate).eq("id",userIds[0]),
+      db.from("players").update(partnerUpdate).eq("id",userIds[1])
+    ]);
+    if(mu.error||pu.error)return h({error:(mu.error||pu.error)?.message},500);
+
+    const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(career.error||!career.data)return h({error:career.error?.message||"Carrière introuvable"},500);
+    if(userIds[0]===Number(career.data.managed_player_id||0)){
+      const cu=await db.from("career_state").update({...managedUpdate,updated_at:new Date().toISOString()}).eq("id","demo");
+      if(cu.error)return h({error:cu.error.message},500);
+    }
+
+    const eloCalls=won
+      ?[
+        db.rpc("update_player_elo_after_match",{p_winner_id:userIds[0],p_loser_id:oppIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55}),
+        db.rpc("update_player_elo_after_match",{p_winner_id:userIds[1],p_loser_id:oppIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55})
+       ]
+      :[
+        db.rpc("update_player_elo_after_match",{p_winner_id:oppIds[0],p_loser_id:userIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55}),
+        db.rpc("update_player_elo_after_match",{p_winner_id:oppIds[1],p_loser_id:userIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55})
+       ];
+    const eloResults=await Promise.all(eloCalls);
+    if(eloResults.some((x:any)=>x.error))return h({error:eloResults.find((x:any)=>x.error)?.error?.message||"Mise à jour Elo double impossible"},500);
+
+    let worldProgress:any=null;
+    const worldMatchId=Number(dmeta.world_match_id||0);
+    if(worldMatchId){
+      const wr=await db.from("world_doubles_tournament_matches").select("*").eq("id",worldMatchId).maybeSingle();
+      if(wr.error)return h({error:wr.error.message},500);
+      if(wr.data){
+        const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
+        const winnerPairId=won?userPairId:oppPairId,loserPairId=won?oppPairId:userPairId;
+        const worldScore=Number(wr.data.pair_a_id)===userPairId?score:liveInvertTennisScore(score);
+        const wu=await db.from("world_doubles_tournament_matches").update({
+          winner_pair_id:winnerPairId,loser_pair_id:loserPairId,score:worldScore,
+          pair_a_win_probability:Number(wr.data.pair_a_id)===userPairId?Number(dmeta.baseline_probability||.5):1-Number(dmeta.baseline_probability||.5),
+          model_version:"CB-LIVE-DOUBLES-v1",
+          matchup_components:{...(wr.data.matchup_components||{}),status:"completed",source:"managed_live",live_session_id:id,
+            pair_model:dmeta.pair_model||null,elo_probability:dmeta.elo_probability||null,tactics:session.data.tactics||{}},
+          simulated_on:String(wr.data.simulated_on||matchDate)
+        }).eq("id",worldMatchId);
+        worldProgress=wu.error?{ok:false,error:wu.error.message}:{ok:true,world_match_id:worldMatchId};
+      }
+    }
+
+    const tournamentTerminal=!won||round==="F";
+    const nextMatchAvailable=won&&round!=="F";
+    let tournamentOutcome:any=null;
+    if(tournamentTerminal&&tournamentId){
+      const [tour,oldRun,entry]=await Promise.all([
+        db.from("tournaments").select("*").eq("id",tournamentId).maybeSingle(),
+        db.from("doubles_runs").select("id").eq("tournament_id",tournamentId).eq("managed_player_id",userIds[0]).limit(1).maybeSingle(),
+        db.from("managed_doubles_entries").select("*").eq("owner_id","demo").eq("tournament_id",tournamentId)
+          .eq("player_id",userIds[0]).eq("partner_id",userIds[1]).order("id",{ascending:false}).limit(1).maybeSingle()
+      ]);
+      if(tour.error||oldRun.error||entry.error)return h({error:(tour.error||oldRun.error||entry.error)?.message},500);
+      if(!tour.data)return h({error:"Tournoi introuvable au moment de clôturer le double."},404);
+      const t:any=tour.data,userRound=won&&round==="F"?"Champion":round,drawSize=Math.max(4,Number(t.doubles_draw_size||16));
+      let pts=0;
+      if(String(t.circuit||"")==="Junior"){
+        const jp=await db.rpc("junior_points_for",{p_event_type:"doubles",p_category:String(t.category||t.level||"J30"),p_round:userRound==="Champion"?"W":userRound});
+        if(jp.error)return h({error:jp.error.message},500);pts=Math.max(0,Number(jp.data||0));
+      }else{
+        const code0=userRound==="Champion"?"W":userRound;
+        const rankingCode=/^R(?:24|28)$/.test(code0)?"R32":code0;
+        const dp=await db.rpc("doubles_points_for_result",{p_category:String(t.category||t.level||""),p_draw_size:drawSize,p_result:rankingCode});
+        if(dp.error)return h({error:dp.error.message},500);pts=Math.max(0,Number(dp.data||0));
+      }
+      const teamPrize=Math.max(0,Number(tournamentRoundPrize(t,userRound,"doubles").amount||0));
+      const prize=Math.round(teamPrize/2*100)/100;
+      const prizeFxRateToEur=prizeFxToEur(t.prize_currency||"USD"),prizeEur=prizeToBaseEur(prize,t.prize_currency||"USD");
+      let runId=Number(oldRun.data?.id||0);
+      if(!runId){
+        const run=await db.from("doubles_runs").insert({
+          tournament_id:tournamentId,managed_player_id:userIds[0],partnership_id:Number(dmeta.managed_partnership_id||0)||null,
+          partner_id:userIds[1],entry_method:String(entry.data?.entry_method||meta.entry_method||"direct"),
+          qualifying_points:0,user_round:userRound,user_points:pts,user_prize:prize,user_prize_eur:prizeEur,
+          prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
+        }).select("id").single();
+        if(run.error)return h({error:run.error.message},500);runId=Number(run.data.id);
+      }
+
+      const pathSessions=await db.from("live_match_sessions").select("id,status,user_sets,opponent_sets,score_log,stats")
+        .eq("tournament_id",tournamentId).eq("managed_player_id",userIds[0])
+        .in("status",["committed","finished","completed"]).order("id",{ascending:true});
+      if(pathSessions.error)return h({error:pathSessions.error.message},500);
+      const histRows=(pathSessions.data??[]).filter((x:any)=>String(x?.stats?._meta?.match_type||"")==="doubles").map((x:any)=>{
+        const xm:any=x.stats?._meta||{},xd:any=xm.doubles||{};
+        const xset=(Array.isArray(x.score_log)?x.score_log:[]).filter((z:any)=>z?.set_finished);
+        const xs=xset.map((z:any)=>z.match_tiebreak?"["+String(z.tiebreak_user_points||0)+"-"+String(z.tiebreak_opponent_points||0)+"]":String(z.user_games)+"-"+String(z.opponent_games)+(z.tiebreak?" ("+String(z.tiebreak_user_points||0)+"-"+String(z.tiebreak_opponent_points||0)+")":"")).join(" ");
+        const upair=(xd.user_players||[]).map((p:any)=>p.name).join(" / ")||userPairName;
+        const opair=(xd.opponent_players||[]).map((p:any)=>p.name).join(" / ")||oppPairName;
+        const xwon=Number(x.user_sets||0)>Number(x.opponent_sets||0);
+        return {run_id:runId,round_name:String(xm.round||"Match"),user_pair:upair,opponent_pair:opair,winner_pair:xwon?upair:opair,score:xs||"—"};
+      });
+      if(histRows.length){
+        const oldHist=await db.from("doubles_match_history").delete().eq("run_id",runId);
+        if(oldHist.error)return h({error:oldHist.error.message},500);
+        const hi=await db.from("doubles_match_history").insert(histRows);
+        if(hi.error)return h({error:hi.error.message},500);
+      }
+
+      const earned=String(t.end_date||t.start_date||matchDate).slice(0,10);
+      let ranking:any=null;
+      if(String(t.circuit||"")==="Junior"){
+        const [ca,cb]=await Promise.all([
+          db.from("players").select("junior_doubles_game_points").eq("id",userIds[0]).maybeSingle(),
+          db.from("players").select("junior_doubles_game_points").eq("id",userIds[1]).maybeSingle()
+        ]);
+        if(ca.error||cb.error)return h({error:(ca.error||cb.error)?.message},500);
+        const [ua,ub]=await Promise.all([
+          db.from("players").update({junior_doubles_game_points:Number(ca.data?.junior_doubles_game_points||0)+pts}).eq("id",userIds[0]),
+          db.from("players").update({junior_doubles_game_points:Number(cb.data?.junior_doubles_game_points||0)+Math.round(pts*.85)}).eq("id",userIds[1])
+        ]);
+        if(ua.error||ub.error)return h({error:(ua.error||ub.error)?.message},500);
+        const rr=await db.rpc("refresh_junior_doubles_ranking",{p_snapshot:earned});
+        if(rr.error)return h({error:rr.error.message},500);
+      }else{
+        if(pts>0){
+          const exp=new Date(earned+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
+          const ledger=await db.from("user_doubles_points").insert({
+            owner_id:"demo",player_id:userIds[0],tournament_id:tournamentId,partner_id:userIds[1],
+            label:String(t.name||tournamentName),earned_date:earned,expiry_date:exp.toISOString().slice(0,10),points:pts,active:true
+          });
+          if(ledger.error)return h({error:ledger.error.message},500);
+        }
+        const rr=await db.rpc("recalculate_managed_player_doubles_ranking",{p_player_id:userIds[0],p_date:earned});
+        if(rr.error)return h({error:rr.error.message},500);ranking=rr.data;
+      }
+
+      if(prizeEur){
+        const bu=await db.from("career_state").update({budget:Number(career.data.budget||0)+prizeEur,updated_at:new Date().toISOString()}).eq("id","demo");
+        if(bu.error)return h({error:bu.error.message},500);
+      }
+      if(entry.data?.id){
+        const eu=await db.from("managed_doubles_entries").update({
+          status:"played",metadata:{...(entry.data.metadata||{}),played_run_id:runId,played_on:earned,result:userRound},updated_at:new Date().toISOString()
+        }).eq("id",Number(entry.data.id));
+        if(eu.error)return h({error:eu.error.message},500);
+      }
+      const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:runId,p_date:earned});
+      if(userRound==="Champion"){
+        await Promise.all(userIds.map(pid=>db.from("player_titles").insert({
+          player_id:pid,tournament_name:String(t.name||tournamentName),title_date:earned,
+          level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
+          event_type:String(t.circuit||"")==="Junior"?"junior_doubles":"doubles",partner_player_id:pid===userIds[0]?userIds[1]:userIds[0]
+        })));
+      }
+      tournamentOutcome={terminal:true,run_id:runId,user_round:userRound,user_points:pts,user_prize:prize,user_prize_eur:prizeEur,
+        new_rank:ranking?.rank??null,total_points:ranking?.points??null,champion:userRound==="Champion",
+        pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data};
+    }
+
+    const committed=await db.from("live_match_sessions").update({status:"committed",updated_at:new Date().toISOString()}).eq("id",id).select("*").single();
+    if(committed.error)return h({error:committed.error.message},500);
+    return h({
+      ok:true,committed:true,session:committed.data,history_id:history.data.id,
+      result:{won,score,tournament_name:tournamentName,round,user_pair:userPairName,opponent_pair:oppPairName},
+      condition:{managed:managedUpdate,partner:partnerUpdate},fatigue_added:fatigueAdd,
+      tournament_live:Boolean(tournamentId),tournament_terminal:tournamentTerminal,next_match_available:nextMatchAvailable,
+      tournament_outcome:tournamentOutcome,world_progress:worldProgress,
+      elo:eloResults.map((x:any)=>x.error?{error:x.error.message}:x.data)
+    });
+  }
+
   if(path.endsWith("/api/live-match/commit")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const id=n(body?.session_id,0,1,99999999);

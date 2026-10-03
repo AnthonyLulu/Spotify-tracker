@@ -350,8 +350,8 @@
           <div><span>Balles de break</span><b>${st.user_break_points_converted||0}/${st.user_break_points||0} - ${st.opp_break_points_converted||0}/${st.opp_break_points||0}</b></div><div><span>BP sauvées</span><b>${st.user_break_points_saved||0}/${st.user_break_points_faced||0} - ${st.opp_break_points_saved||0}/${st.opp_break_points_faced||0}</b></div>
         </div>
         ${!done?`<div class="cb-live-controls">
-          <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button><button class="soft-btn" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn" onclick="setLiveSpeed(4)">4x</button></div>
-          <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
+          <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'⏸ Pause':'▶ Auto'}</button><button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn ${liveAutoSpeed===2?'active':''}" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn ${liveAutoSpeed===3?'active':''}" onclick="setLiveSpeed(3)">3x</button></div>
+          <div class="cb-step-row"><button class="soft-btn" ${liveAutoTimer?'disabled':''} onclick="playLivePoint()">Point suivant</button><span class="muted micro">Point par point · aucune avance automatique par jeu, set ou match.</span></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
         </div>
         ${changeoverCoach?`<div class="cb-changeover-coach">

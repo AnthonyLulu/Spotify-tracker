@@ -2706,6 +2706,30 @@ Deno.serve(async(req:Request)=>{
     const career=await db.from("career_state").select("career_date,managed_player_id").eq("id","demo").maybeSingle();
     const gameDate=String(career.data?.career_date||AGE_REFERENCE_DATE);
 
+    if(kind==="race"){
+      const page=await db.rpc("race_rankings_page_v20",{
+        p_date:gameDate,
+        p_offset:offset,
+        p_limit:limit,
+        p_q:q?normalizeName(q):null,
+        p_country:country||null
+      });
+      if(page.error)return h({error:page.error.message},500);
+      const payload:any=page.data||{};
+      const rows=(payload.rows??[]).map((p:any)=>({
+        ...p,
+        age:ageAt(p.birth_date,AGE_REFERENCE_DATE,p.age,p.age_snapshot_date),
+        official_ranking:p.ranking_current?p.ranking:null,
+        world_rank:p.game_world_rank
+      }));
+      return h({
+        kind,offset,limit,
+        count:Number(payload.count||0),
+        rows,
+        rankingDate:String(payload.rankingDate||gameDate),
+        source:String(payload.source||"ATP Race · Court Boss")
+      });
+    }
 
     if(kind==="doubles_race"){
       let race=db.rpc("doubles_race_for_date",{p_date:gameDate},{count:"exact"});

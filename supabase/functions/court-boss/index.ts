@@ -10971,6 +10971,7 @@ Deno.serve(async(req:Request)=>{
     const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
     const oa:any=opp.player_attributes||{};
     const tactics=body?.tactics||session.data.tactics||{};
+    const risk=n(tactics.risk,52,1,100);
     const surface=String(session.data.surface||"Dur");
     const meta:any=session.data.stats?._meta||{};
     const weather:any=meta.weather||{};
@@ -11036,12 +11037,25 @@ Deno.serve(async(req:Request)=>{
         const pointIndex=tup+top;
         const tbServerUser=liveTiebreakServer(startServerUser,pointIndex);
         const pointTm:any=tbServerUser?userServeTm:oppServeTm;
-        const pointKernel:any=tbServerUser?userServeKernel:oppServeKernel;
         const serverFormLift=tbServerUser?userFormLift:oppFormLift;
-        const firstInPct=Math.max(.42,Math.min(.82,Number(pointTm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
+        const firstInPct=Math.max(.42,Math.min(.82,
+          Number(pointTm.first_serve_in_pct||62)/100
+          -(tbServerUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)
+          -wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015
+        ));
         const firstIn=Math.random()<firstInPct;
-        const dfPct=Math.max(.004,Number(pointTm.double_fault_pct||4)/100*(1-serverFormLift*.035));
+        const dfBase=Number(pointTm.double_fault_pct||4)/100;
+        const dfPct=Math.max(.006,Math.min(.12,dfBase*(tbServerUser?(1+Math.max(-20,risk-50)*.005):1)*(1-serverFormLift*.035)));
         const doubleFault=!firstIn&&Math.random()<dfPct;
+        const pointPressure=livePointPressure(meta,{
+          user_points:tup,opponent_points:top,user_games:ug,opponent_games:og,user_sets:us,opponent_sets:os,set_no:setNo
+        },tbServerUser);
+        const pointKernel=livePointKernel({
+          tm:pointTm,ua,oa,serverIsUser:tbServerUser,userFormMultiplier,oppFormMultiplier,tactics,meta,
+          pressure:Number(pointPressure.level||0),managed:managed.data,opp,
+          pointsPlayed:Number(session.data.rally_no||0)+gamePoints,momentum:Number(session.data.momentum||50),
+          surface,firstServeIn:firstIn
+        });
         const serverWonPoint=!doubleFault&&Math.random()<pointKernel.serverWinProb;
         const userPointWon=tbServerUser?serverWonPoint:!serverWonPoint;
         if(userPointWon)tup++;else top++;
@@ -11049,7 +11063,10 @@ Deno.serve(async(req:Request)=>{
         lastServerWinProbability=pointKernel.serverWinProb;
         lastConditionEdge=pointKernel.conditionEdge;
 
-        const acePct=Math.max(.002,Number(pointTm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
+        const acePct=Math.max(.002,Math.min(.28,Number(pointTm.ace_pct||6)/100
+          *(tbServerUser?(1+Math.max(-20,risk-50)*.004):1)
+          *(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))
+          *(1+serverFormLift*.018)));
         const ace=firstIn&&serverWonPoint&&Math.random()<acePct;
         const unret=!ace&&!doubleFault&&serverWonPoint&&Math.random()<Math.max(.01,Number(pointTm.unreturned_serve_pct||22)/100*(firstIn?1:.52));
         const prefix=tbServerUser?"user":"opp";
@@ -11058,6 +11075,15 @@ Deno.serve(async(req:Request)=>{
         if(doubleFault)stats[prefix+"_double_faults"]=(stats[prefix+"_double_faults"]||0)+1;
         if(ace)stats[prefix+"_aces"]=(stats[prefix+"_aces"]||0)+1;
         if(unret)stats[prefix+"_unreturned_serves"]=(stats[prefix+"_unreturned_serves"]||0)+1;
+        if(!ace&&!doubleFault&&!unret){
+          const winnerMetric=serverWonPoint?Number(pointTm.server_winner_rate_pct||14):Number(pointTm.returner_winner_rate_pct||14);
+          const forcedMetric=serverWonPoint?Number(pointTm.server_forced_error_pct||12):Number(pointTm.returner_forced_error_pct||12);
+          const loserUe=(serverWonPoint?Number(pointTm.returner_ue_pct||15):Number(pointTm.server_ue_pct||15))+wind*.13+Math.max(0,temperature-29)*.30;
+          const total=Math.max(1,winnerMetric+forcedMetric+loserUe),z=Math.random()*total;
+          const winnerEnding=z<winnerMetric;
+          if(winnerEnding){if(userPointWon)stats.user_winners++;else stats.opp_winners++}
+          else{if(userPointWon)stats.opp_errors++;else stats.user_errors++}
+        }
       }
 
       userWon=tup>top;
@@ -11121,42 +11147,58 @@ Deno.serve(async(req:Request)=>{
       };
       const prob=Math.max(.001,Math.min(.999,gameWinFromScore(simUp,simOp)));
       responseWinProbability=Math.round(prob*100);
+      const firstInPct=Math.max(.42,Math.min(.82,
+        Number(tm.first_serve_in_pct||62)/100
+        -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)
+        -wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015
+      ));
+      const dfBase=Number(tm.double_fault_pct||4)/100;
+      const dfPct=Math.max(.006,Math.min(.12,dfBase*(serverIsUser?(1+Math.max(-20,risk-50)*.005):1)*(1-serverFormLift*.035)));
+      const acePct=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100
+        *(serverIsUser?(1+Math.max(-20,risk-50)*.004):1)
+        *(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))
+        *(1+serverFormLift*.018)));
+      const srvPrefix=serverIsUser?"user":"opp";
       let gameSafety=0;
       while(!((simUp>=4||simOp>=4)&&Math.abs(simUp-simOp)>=2)){
         if(++gameSafety>120)return h({error:"Jeu interrompu par la garde de sécurité.",score:{user:simUp,opponent:simOp}},500);
+        const firstIn=Math.random()<firstInPct;
+        const doubleFault=!firstIn&&Math.random()<dfPct;
         const pointPressure=livePointPressure(meta,{
           user_points:simUp,opponent_points:simOp,user_games:ug,opponent_games:og,user_sets:us,opponent_sets:os,set_no:setNo
         },serverIsUser);
         const pointKernel=livePointKernel({
           tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:Number(pointPressure.level||0),
           managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0)+gamePoints,
-          momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+          momentum:Number(session.data.momentum||50),surface,firstServeIn:firstIn
         });
-        const userPointP=serverIsUser?pointKernel.serverWinProb:1-pointKernel.serverWinProb;
-        if(Math.random()<userPointP)simUp++;else simOp++;
+        const serverWonPoint=!doubleFault&&Math.random()<pointKernel.serverWinProb;
+        const userPointWon=serverIsUser?serverWonPoint:!serverWonPoint;
+        if(userPointWon)simUp++;else simOp++;
         gamePoints++;
         lastServerWinProbability=pointKernel.serverWinProb;
         lastConditionEdge=pointKernel.conditionEdge;
+
+        const ace=firstIn&&serverWonPoint&&Math.random()<acePct;
+        const unret=!ace&&!doubleFault&&serverWonPoint&&Math.random()<Math.max(.01,Number(tm.unreturned_serve_pct||22)/100*(firstIn?1:.52));
+        stats[srvPrefix+"_first_serves"]=(stats[srvPrefix+"_first_serves"]||0)+1;
+        if(firstIn)stats[srvPrefix+"_first_serves_in"]=(stats[srvPrefix+"_first_serves_in"]||0)+1;
+        if(doubleFault)stats[srvPrefix+"_double_faults"]=(stats[srvPrefix+"_double_faults"]||0)+1;
+        if(ace)stats[srvPrefix+"_aces"]=(stats[srvPrefix+"_aces"]||0)+1;
+        if(unret)stats[srvPrefix+"_unreturned_serves"]=(stats[srvPrefix+"_unreturned_serves"]||0)+1;
+
+        if(!ace&&!doubleFault&&!unret){
+          const winnerMetric=serverWonPoint?Number(tm.server_winner_rate_pct||14):Number(tm.returner_winner_rate_pct||14);
+          const forcedMetric=serverWonPoint?Number(tm.server_forced_error_pct||12):Number(tm.returner_forced_error_pct||12);
+          const loserUe=(serverWonPoint?Number(tm.returner_ue_pct||15):Number(tm.server_ue_pct||15))+wind*.13+Math.max(0,temperature-29)*.30;
+          const total=Math.max(1,winnerMetric+forcedMetric+loserUe),z=Math.random()*total;
+          const winnerEnding=z<winnerMetric;
+          if(winnerEnding){if(userPointWon)stats.user_winners++;else stats.opp_winners++}
+          else{if(userPointWon)stats.opp_errors++;else stats.user_errors++}
+        }
       }
       userWon=simUp>simOp;
       if(userWon)ug++;else og++;
-      const firstInPct=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
-      const acePct=Math.max(.002,Number(tm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
-      const dfPct=Math.max(.004,Number(tm.double_fault_pct||4)/100*(1-serverFormLift*.035));
-      const unretPct=Number(tm.unreturned_serve_pct||22)/100;
-      const srvPrefix=serverIsUser?"user":"opp";
-      stats[srvPrefix+"_first_serves"]=(stats[srvPrefix+"_first_serves"]||0)+gamePoints;
-      stats[srvPrefix+"_first_serves_in"]=(stats[srvPrefix+"_first_serves_in"]||0)+Math.round(gamePoints*firstInPct);
-      stats[srvPrefix+"_aces"]=(stats[srvPrefix+"_aces"]||0)+Math.max(0,Math.round(gamePoints*acePct*(.65+Math.random()*.7)));
-      stats[srvPrefix+"_double_faults"]=(stats[srvPrefix+"_double_faults"]||0)+Math.max(0,Math.round(gamePoints*(1-firstInPct)*dfPct*(.65+Math.random()*.7)));
-      stats[srvPrefix+"_unreturned_serves"]=(stats[srvPrefix+"_unreturned_serves"]||0)+Math.max(0,Math.round(gamePoints*unretPct*(.65+Math.random()*.7)));
-      if(userWon){
-        stats.user_winners+=Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.server_winner_rate_pct:tm.returner_winner_rate_pct||14)/100));
-        stats.opp_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.returner_ue_pct:tm.server_ue_pct||15)/100));
-      }else{
-        stats.opp_winners+=Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.returner_winner_rate_pct:tm.server_winner_rate_pct||14)/100));
-        stats.user_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.server_ue_pct:tm.returner_ue_pct||15)/100));
-      }
 
       if((ug>=6||og>=6)&&Math.abs(ug-og)>=2){
         setFinished=true;

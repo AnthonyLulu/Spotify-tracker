@@ -1022,6 +1022,10 @@ function activePlayerCareerView(){
   doubles_rank:player.doubles_ranking??base.doubles_rank,
   points:player.points??base.points,
   doubles_points:player.doubles_points??base.doubles_points,
+  nextgen_rank:player.nextgen_ranking??base.nextgen_rank??base.nextgen_ranking,
+  nextgen_ranking:player.nextgen_ranking??base.nextgen_ranking,
+  nextgen_points:player.nextgen_points??base.nextgen_points,
+  nextgen_finals_status:activeManagedContext?.nextgen_finals_status??base.nextgen_finals_status??null,
   age:player.age??base.age,
   current_ability:player.current_ability??base.current_ability,
   potential:player.potential??base.potential,
@@ -1468,6 +1472,17 @@ function singlesEligibility(t){
  if(String(c.career_focus||'mixed')==='doubles_only')return {label:"Double exclusivement",cls:"bad",can:false,phase:"career_focus"};
  const teamEvent=specialTeamEventMeta(t);
  if(teamEvent)return {label:teamEvent.label,cls:"info",can:false,phase:"team_selection",teamEvent};
+ const isNextGenFinals=String(t?.entry_rule_code||'')==='NEXTGEN_FINALS_2026'||(String(t?.circuit||'')==='ATP'&&/Next Gen Finals/i.test(String(t?.category||'')));
+ if(isNextGenFinals){
+  const ng=c.nextgen_finals_status||null;
+  const ngRank=Number(c.nextgen_rank??c.nextgen_ranking??99999);
+  if(ng?.selected===true){
+   const method=String(ng.selection_method||'');
+   return {label:method==='atp_wildcard'?'Wildcard ATP · Next Gen':'Qualifié Next Gen · Race #'+fmt(ng.nextgen_rank||ngRank),method:method==='atp_wildcard'?'wildcard':'direct',cls:'good',can:true,phase:'finals',finals:true};
+  }
+  if(ngRank<=7)return {label:'Top 7 Race Next Gen · sélection en cours',method:'direct',cls:'good',can:true,phase:'finals',finals:true};
+  return {label:ngRank<99999?'Race Next Gen #'+fmt(ngRank)+' · hors Top 7':'Sélection Next Gen · Top 7 + 1 WC ATP',method:'selection',cls:'info',can:false,phase:'finals_selection',canWildcard:false,finals:true};
+ }
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
  if(String(t.circuit)==="NCAA"){
   const mode=String(t.registration_mode||"");
@@ -1813,7 +1828,7 @@ function tournamentTmRow(t){
  const teamEvent=specialTeamEventMeta(t);
  const window=tournamentParticipationWindow(t,se);
  const deadline=window.deadline;
- const raceFinals=/^(ATP Finals|Junior Finals|Junior Double Finals)$/i.test(String(t.category||''));
+ const raceFinals=/^(ATP Finals|Next Gen Finals|Junior Finals|Junior Double Finals)$/i.test(String(t.category||''));
  const selectionEvent=Boolean(teamEvent);
  const sBtn=selectionEvent?"<button class='ghost tm-entry-btn' disabled>Sélection</button>":raceFinals&&t.singles?"<button class='ghost tm-entry-btn' disabled>Race S</button>":se.can?"<button class='"+(joined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleSinglesEntry("+t.id+")'>"+(joined?"S ✓":"S +")+"</button>":"<button class='ghost tm-entry-btn' disabled>S —</button>";
  const dBtn=selectionEvent?"":raceFinals&&t.doubles?"<button class='ghost tm-entry-btn' disabled>Race D</button>":de.can?"<button class='"+(dJoined?"danger-btn":"soft-btn")+" tm-entry-btn' onclick='event.stopPropagation();toggleDoublesEntry("+t.id+")'>"+(dJoined?"D ✓":"D +")+"</button>":"<button class='ghost tm-entry-btn' disabled>D —</button>";

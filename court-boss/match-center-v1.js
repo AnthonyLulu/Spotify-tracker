@@ -1,4 +1,4 @@
-/* Court Boss Match Center V10.1 · Real Tiebreak Scoring */
+/* Court Boss Match Center V10.2 · TV Match Stats */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -242,7 +242,9 @@
         <div class="fm-momentum"><span>${safe(oppName)}</span><div><i style="left:${momentum}%"></i></div><span>${safe(userName)}</span></div>
         <div class="cb-stat-grid">
           <div><span>Winners</span><b>${st.user_winners||0} - ${st.opp_winners||0}</b></div><div><span>Fautes</span><b>${st.user_errors||0} - ${st.opp_errors||0}</b></div><div><span>Aces</span><b>${st.user_aces||0} - ${st.opp_aces||0}</b></div>
-          <div><span>1res IN</span><b>${pct(st.user_first_serves_in,st.user_first_serves)}% - ${pct(st.opp_first_serves_in,st.opp_first_serves)}%</b></div><div><span>DF</span><b>${st.user_double_faults||0} - ${st.opp_double_faults||0}</b></div><div><span>Filet</span><b>${st.user_net_points_won||0}/${st.user_net_points||0}</b></div>
+          <div><span>1res IN</span><b>${pct(st.user_first_serves_in,st.user_first_serves)}% - ${pct(st.opp_first_serves_in,st.opp_first_serves)}%</b></div><div><span>DF</span><b>${st.user_double_faults||0} - ${st.opp_double_faults||0}</b></div><div><span>Filet</span><b>${st.user_net_points_won||0}/${st.user_net_points||0} - ${st.opp_net_points_won||0}/${st.opp_net_points||0}</b></div>
+          <div><span>Points gagnés</span><b>${st.user_points_won||0} - ${st.opp_points_won||0}</b></div><div><span>Pts service</span><b>${pct(st.user_service_points_won,st.user_service_points)}% - ${pct(st.opp_service_points_won,st.opp_service_points)}%</b></div><div><span>Pts retour</span><b>${pct(st.user_return_points_won,st.user_return_points)}% - ${pct(st.opp_return_points_won,st.opp_return_points)}%</b></div>
+          <div><span>Balles de break</span><b>${st.user_break_points_converted||0}/${st.user_break_points||0} - ${st.opp_break_points_converted||0}/${st.opp_break_points||0}</b></div><div><span>BP sauvées</span><b>${st.user_break_points_saved||0}/${st.user_break_points_faced||0} - ${st.opp_break_points_saved||0}/${st.opp_break_points_faced||0}</b></div>
         </div>
         ${!done?`<div class="cb-live-controls">
           <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button><button class="soft-btn" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn" onclick="setLiveSpeed(4)">4x</button></div>

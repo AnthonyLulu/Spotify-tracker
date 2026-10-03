@@ -221,8 +221,20 @@ jobs:
             await page.getByText('Plan de match & coaching').click();
             await page.getByRole('heading',{name:'Tactique'}).waitFor();
             await page.getByRole('button',{name:'Match Center'}).click();
-            await page.getByRole('heading',{name:'Match live'}).waitFor();
+            await page.getByRole('heading',{name:'Match Center'}).waitFor();
 
+            await page.route('**/api/save-slot',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({ok:true,slot:{slot_no:0,slot_name:'CI pre-match',career_date:'2025-12-01',week:1,updated_at:'2025-12-01T00:00:00Z'}})
+            }));
+            await page.route('**/api/save-slots',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({slots:[]})
+            }));
+            await page.route('**/api/save',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({ok:true})
+            }));
             await page.route('**/api/live-match/start',route=>route.fulfill({
               status:200,contentType:'application/json',
               body:JSON.stringify({
@@ -239,7 +251,7 @@ jobs:
                 win_probability:54,last_point:{winner:'user',rally:6,shot:'winner',user_x:62,opp_x:31,ball_x:28,ball_y:24}
               })
             }));
-            const play=page.getByRole('button',{name:'Jouer'}).first();
+            const play=page.getByRole('button',{name:'Lancer un match libre',exact:true});
             await play.click();
             await page.locator('.cb-court').waitFor();
             if(await page.locator('.fm-player-dot').count()!==2)throw new Error('match viewer needs two player circles');

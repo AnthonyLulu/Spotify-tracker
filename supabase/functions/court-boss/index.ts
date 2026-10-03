@@ -11212,6 +11212,299 @@ Deno.serve(async(req:Request)=>{
   }
 
 
+
+  if(path.endsWith("/api/live-doubles/point")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const id=n(body?.session_id,0,1,99999999);
+    const session=await db.from("live_match_sessions").select("*").eq("id",id).maybeSingle();
+    if(session.error||!session.data)return h({error:session.error?.message||"Match double introuvable"},404);
+    if(session.data.status!=="active")return h({ok:true,session:session.data,completed:true});
+    const preStats:any=session.data.stats||{},meta:any=preStats._meta||{},dmeta:any=meta.doubles||{};
+    if(String(meta.match_type||"")!=="doubles")return h({error:"Cette session n’est pas un match double."},409);
+
+    const userIds=(Array.isArray(dmeta.user_players)?dmeta.user_players:[]).map((p:any)=>Number(p.id||0)).filter(Boolean);
+    const oppIds=(Array.isArray(dmeta.opponent_players)?dmeta.opponent_players:[]).map((p:any)=>Number(p.id||0)).filter(Boolean);
+    if(userIds.length!==2||oppIds.length!==2)return h({error:"Composition du double incomplète."},500);
+    const allIds=[...userIds,...oppIds];
+    const rows=await db.from("players").select("*,player_attributes(*)").in("id",allIds);
+    if(rows.error)return h({error:rows.error.message},500);
+    const byId=new Map<number,any>();
+    for(const raw of rows.data??[])byId.set(Number((raw as any).id),{...raw,player_attributes:Array.isArray((raw as any).player_attributes)?(raw as any).player_attributes[0]:(raw as any).player_attributes||{}});
+    if(allIds.some(pid=>!byId.has(pid)))return h({error:"Un des quatre joueurs est introuvable."},404);
+    const userPlayers=userIds.map(pid=>byId.get(pid)),oppPlayers=oppIds.map(pid=>byId.get(pid));
+
+    const tactics:any={...(session.data.tactics||{}),...(body?.tactics||{})};
+    const plan=String(tactics.doublesPlan||"balanced");
+    const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,42,1,100);
+    const effort=n(tactics.effort,60,20,100);
+    const ret=String(tactics.returnPos||"Neutre"),tempo=String(tactics.tempo||"Neutre");
+    const targetWing=String(tactics.targetWing||"Mixte"),servePattern=String(tactics.servePattern||"Mixte"),spinPlan=String(tactics.spin||"Mixte");
+    const surface=String(session.data.surface||"Dur"),weather:any=meta.weather||{};
+    const courtSpeed=Math.max(.55,Math.min(1.45,Number(meta.court_speed||1)));
+    const wind=Math.max(0,Number(weather.wind_kph||0)),humidity=Math.max(0,Number(weather.humidity_pct||50));
+    const temperature=Number(weather.temperature_c||21),altitude=Math.max(0,Number(meta.altitude_m||0));
+    const indoor=/intérieur|indoor/i.test(surface)||meta.indoor===true;
+    const clay=/terre|clay/i.test(surface),grass=/gazon|grass/i.test(surface);
+
+    const up0=Number(session.data.user_points||0),op0=Number(session.data.opponent_points||0);
+    const ug0=Number(session.data.user_games||0),og0=Number(session.data.opponent_games||0);
+    const us0=Number(session.data.user_sets||0),os0=Number(session.data.opponent_sets||0),setNo0=Number(session.data.set_no||1);
+    const matchTb=liveMatchTiebreakActive(meta,us0,os0,setNo0);
+    const regularTb=!matchTb&&ug0===liveTiebreakAtGames(meta)&&og0===liveTiebreakAtGames(meta);
+    const tiebreak=matchTb||regularTb;
+    const tbTarget=tiebreak?liveTiebreakTarget(meta,setNo0,matchTb):0;
+    const pressureContext=livePointPressure(meta,{
+      user_points:up0,opponent_points:op0,user_games:ug0,opponent_games:og0,user_sets:us0,opponent_sets:os0,set_no:setNo0
+    },Boolean(session.data.serving_user));
+    const pressure=Number(pressureContext.level||0);
+
+    const rotation:any={user_server_index:0,opponent_server_index:0,user_return_deuce:0,user_return_ad:1,opponent_return_deuce:0,opponent_return_ad:1,...(preStats._doubles_rotation||{})};
+    let serverIsUser=Boolean(session.data.serving_user),serverIndex=serverIsUser?Number(rotation.user_server_index||0):Number(rotation.opponent_server_index||0);
+    if(tiebreak){
+      const startUser=typeof preStats._tiebreak_start_server_user==="boolean"?Boolean(preStats._tiebreak_start_server_user):Boolean(session.data.serving_user);
+      const pointIndex=up0+op0;
+      const order=startUser
+        ?[{u:true,i:Number(rotation.user_server_index||0)},{u:false,i:Number(rotation.opponent_server_index||0)},{u:true,i:1-Number(rotation.user_server_index||0)},{u:false,i:1-Number(rotation.opponent_server_index||0)}]
+        :[{u:false,i:Number(rotation.opponent_server_index||0)},{u:true,i:Number(rotation.user_server_index||0)},{u:false,i:1-Number(rotation.opponent_server_index||0)},{u:true,i:1-Number(rotation.user_server_index||0)}];
+      const slot=pointIndex===0?0:(1+Math.floor((pointIndex-1)/2))%4;
+      serverIsUser=Boolean(order[slot].u);serverIndex=Number(order[slot].i||0);
+    }
+    const pointInGame=up0+op0;
+    const serviceCourt=pointInGame%2===0?"deuce":"ad";
+    const receiverIndex=serverIsUser
+      ?Number(serviceCourt==="deuce"?rotation.opponent_return_deuce:rotation.opponent_return_ad)
+      :Number(serviceCourt==="deuce"?rotation.user_return_deuce:rotation.user_return_ad);
+    const server=serverIsUser?userPlayers[serverIndex]:oppPlayers[serverIndex];
+    const receiver=serverIsUser?oppPlayers[receiverIndex]:userPlayers[receiverIndex];
+    const serverPartner=serverIsUser?userPlayers[1-serverIndex]:oppPlayers[1-serverIndex];
+    const receiverPartner=serverIsUser?oppPlayers[1-receiverIndex]:userPlayers[1-receiverIndex];
+    const userActive=serverIsUser?server:receiver,oppActive=serverIsUser?receiver:server;
+    const ua:any=userActive.player_attributes||{},oa:any=oppActive.player_attributes||{};
+    const userFormMultiplier=liveFormMultiplier(Number(userActive.form||70)),oppFormMultiplier=liveFormMultiplier(Number(oppActive.form||70));
+
+    const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
+      p_server_id:Number(server.id),p_returner_id:Number(receiver.id),p_surface:surface,p_pressure:pressure
+    });
+    const tm:any=matchup.error?{}:(matchup.data||{});
+    const serverForm=serverIsUser?userFormMultiplier:oppFormMultiplier;
+    const returnForm=serverIsUser?oppFormMultiplier:userFormMultiplier;
+    const formEdge=(serverForm-returnForm)*50;
+    let firstIn=Math.max(.42,Math.min(.84,Number(tm.first_serve_in_pct||62)/100
+      -(serverIsUser?Math.max(-15,Math.min(35,risk-52))*.0010:0)-wind*.00075-Math.max(0,temperature-30)*.0012+formEdge*.0010));
+    const firstServeIn=Math.random()<firstIn;
+    const dfBase=Number(tm.double_fault_pct||4)/100;
+    const doubleFault=!firstServeIn&&Math.random()<Math.max(.006,Math.min(.12,dfBase*(serverIsUser?(1+Math.max(-20,risk-50)*.005):1)));
+
+    let serveDirection="";
+    const dirRoll=Math.random()*100,wide=Number(tm.serve_wide_pct||38),bodyPct=Number(tm.serve_body_pct||14);
+    serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
+    if(serverIsUser&&servePattern!=="Mixte"&&Math.random()<.68)serveDirection=servePattern==="Large"?"large":servePattern==="Corps"?"corps":"T";
+
+    const kernel=livePointKernel({
+      tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure,
+      managed:userActive,opp:oppActive,pointsPlayed:Number(session.data.rally_no||0),
+      momentum:Number(session.data.momentum||50),surface,firstServeIn,serviceCourt,
+      actualServeDirection:serverIsUser?serveDirection:null,tacticalMemory:preStats._tactical_memory
+    });
+
+    const avg=(p:any,keys:string[])=>keys.reduce((sum,k)=>sum+Number(p?.player_attributes?.[k]??10),0)/Math.max(1,keys.length);
+    const userNetPlayer=serverIsUser?serverPartner:receiverPartner;
+    const oppNetPlayer=serverIsUser?receiverPartner:serverPartner;
+    const userNetScore=avg(userNetPlayer,["volley","net_positioning","poaching","reaction","doubles_communication","anticipation"]);
+    const oppNetScore=avg(oppNetPlayer,["volley","net_positioning","poaching","reaction","doubles_communication","anticipation"]);
+    const pairBase=Math.max(.07,Math.min(.93,Number(dmeta.baseline_probability??.5)));
+    let userTeamEdge=(pairBase-.5)*.12+(userNetScore-oppNetScore)*.0018;
+    const userPairAvg=(keys:string[])=>(avg(userPlayers[0],keys)+avg(userPlayers[1],keys))/2;
+    const oppPairAvg=(keys:string[])=>(avg(oppPlayers[0],keys)+avg(oppPlayers[1],keys))/2;
+    if(plan==="poach")userTeamEdge+=(userPairAvg(["volley","poaching","reaction","net_positioning"])-oppPairAvg(["passing_shot","return_aggression","reaction"]))*0.0012;
+    else if(plan==="australian")userTeamEdge+=(userPairAvg(["first_serve_quality","serve_precision","net_positioning","doubles_communication"])-oppPairAvg(["return_game","return_consistency","passing_shot"]))*0.0010;
+    else if(plan==="target_weak"){
+      const weak=Math.min(avg(oppPlayers[0],["return_game","return_consistency","volley"]),avg(oppPlayers[1],["return_game","return_consistency","volley"]));
+      userTeamEdge+=(13-weak)*.0015;
+    }else if(plan==="safe")userTeamEdge+=(userPairAvg(["consistency","return_consistency","composure","doubles_communication"])-10)*.0009;
+    userTeamEdge+=((Number(dmeta.chemistry?.user||70)-Number(dmeta.chemistry?.opponent||60))*.00018);
+    userTeamEdge=Math.max(-.065,Math.min(.065,userTeamEdge));
+    let serverWinProb=Math.max(.22,Math.min(.92,Number(kernel.serverWinProb||.62)+(serverIsUser?userTeamEdge:-userTeamEdge)));
+
+    const serverWon=!doubleFault&&Math.random()<serverWinProb;
+    const userWon=serverIsUser?serverWon:!serverWon;
+    const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
+    const aceChance=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100*aceSurface
+      *(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))));
+    const ace=firstServeIn&&serverWon&&Math.random()<aceChance;
+    const unreturned=!ace&&!doubleFault&&serverWon&&Math.random()<Math.max(.02,Math.min(.42,Number(tm.unreturned_serve_pct||22)/100*(firstServeIn?1:.52)));
+    const rallyMean=Math.max(1.8,Math.min(9.2,Number(tm.avg_rally_shots||5)+(clay?.75:grass?-.75:indoor?-.4:0)
+      +(tempo==="Patient"?.55:tempo==="Rapide"?-.45:0)+(plan==="poach"?-.35:plan==="safe"?.35:0)));
+    const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,2+Math.floor(-Math.log(Math.max(Number.EPSILON,1-Math.random()))*Math.max(1,rallyMean-2)));
+
+    const winnerMetric=serverWon?Number(tm.server_winner_rate_pct||14):Number(tm.returner_winner_rate_pct||14);
+    const forcedMetric=serverWon?Number(tm.server_forced_error_pct||12):Number(tm.returner_forced_error_pct||12);
+    const loserUe=(serverWon?Number(tm.returner_ue_pct||15):Number(tm.server_ue_pct||15))+wind*.12+Math.max(0,temperature-29)*.25;
+    let ending="rally_winner";
+    if(doubleFault)ending="double_fault";
+    else if(ace)ending="ace";
+    else if(unreturned)ending="unreturned_serve";
+    else{
+      const total=Math.max(1,winnerMetric+forcedMetric+loserUe),z=Math.random()*total;
+      ending=z<winnerMetric?"winner":z<winnerMetric+forcedMetric?"forced_error":"unforced_error";
+      if(!serverWon&&ending==="winner"&&rally<=3)ending="return_winner";
+    }
+
+    const side=serviceCourt==="deuce"?1:-1;
+    const baselineX=50+side*12,wideX=50+side*28;
+    const serviceTargetX=serveDirection==="large"?wideX:serveDirection==="corps"?50+side*5:50-side*4;
+    const pos=(x:number,y:number)=>({x:Math.max(8,Math.min(92,x)),y:Math.max(8,Math.min(92,y))});
+    let ua0=pos(34,82),ub0=pos(64,59),oa0=pos(66,18),ob0=pos(36,41);
+    if(serverIsUser){
+      if(serverIndex===0){ua0=pos(baselineX,85);ub0=pos(50-side*16,59)}else{ub0=pos(baselineX,85);ua0=pos(50-side*16,59)}
+      if(receiverIndex===0){oa0=pos(serviceTargetX,15);ob0=pos(50+side*15,41)}else{ob0=pos(serviceTargetX,15);oa0=pos(50+side*15,41)}
+    }else{
+      if(serverIndex===0){oa0=pos(baselineX,15);ob0=pos(50-side*16,41)}else{ob0=pos(baselineX,15);oa0=pos(50-side*16,41)}
+      if(receiverIndex===0){ua0=pos(serviceTargetX,85);ub0=pos(50+side*15,59)}else{ub0=pos(serviceTargetX,85);ua0=pos(50+side*15,59)}
+    }
+    const poachBias=plan==="poach"?.9:plan==="australian"?.65:plan==="target_weak"?.48:.28;
+    const userNetIsA=(serverIsUser?1-serverIndex:1-receiverIndex)===0;
+    const oppNetIsA=(serverIsUser?1-receiverIndex:1-serverIndex)===0;
+    const ua1={...ua0},ub1={...ub0},oa1={...oa0},ob1={...ob0};
+    if(userNetIsA){ua1.x=Math.max(18,Math.min(82,ua1.x+side*-12*poachBias));ua1.y=53}else{ub1.x=Math.max(18,Math.min(82,ub1.x+side*-12*poachBias));ub1.y=53}
+    if(oppNetIsA){oa1.x=Math.max(18,Math.min(82,oa1.x+side*10*.45));oa1.y=47}else{ob1.x=Math.max(18,Math.min(82,ob1.x+side*10*.45));ob1.y=47}
+    const finishX=Math.max(12,Math.min(88,50+(userWon?side*20:-side*20)));
+    const finishY=userWon?22:78;
+    const frames:any[]=[
+      {index:0,stage:"ready",user:{...ua0},user_b:{...ub0},opponent:{...oa0},opponent_b:{...ob0},ball:pos(serverIsUser?baselineX:baselineX,serverIsUser?82:18)},
+      {index:1,stage:"serve",user:{...ua0},user_b:{...ub0},opponent:{...oa0},opponent_b:{...ob0},ball:pos(serviceTargetX,serverIsUser?38:62)},
+      {index:2,stage:"rally",user:{...ua1},user_b:{...ub1},opponent:{...oa1},opponent_b:{...ob1},ball:pos(50+side*7,userWon?42:58)},
+      {index:3,stage:"finish",user:{...ua1},user_b:{...ub1},opponent:{...oa1},opponent_b:{...ob1},ball:pos(finishX,finishY)}
+    ];
+    const durationMs=Math.max(650,Math.min(7000,Math.round(520+Math.max(1,rally)*150)));
+
+    let up=up0,op=op0,ug=ug0,og=og0,us=us0,os=os0,setNo=setNo0,status="active";
+    let gameFinished=false,setFinished=false,matchFinished=false,setWinner:string|null=null;
+    let nextServingUser=Boolean(session.data.serving_user);
+    const log=Array.isArray(session.data.score_log)?[...session.data.score_log]:[];
+    const stats:any={...preStats};
+    if(tiebreak&&typeof stats._tiebreak_start_server_user!=="boolean")stats._tiebreak_start_server_user=Boolean(session.data.serving_user);
+
+    if(tiebreak){
+      if(userWon)up++;else op++;
+      if((Math.max(up,op)>=tbTarget)&&Math.abs(up-op)>=2){
+        setFinished=true;setWinner=up>op?"user":"opponent";
+        if(matchTb){
+          if(setWinner==="user")us++;else os++;
+          log.push({set_no:setNo,user_games:ug,opponent_games:og,tiebreak:true,match_tiebreak:true,tiebreak_user_points:up,tiebreak_opponent_points:op,tiebreak_target:tbTarget,set_finished:true,set_winner:setWinner});
+        }else{
+          ug=up>op?7:6;og=op>up?7:6;
+          if(setWinner==="user")us++;else os++;
+          log.push({set_no:setNo,user_games:ug,opponent_games:og,tiebreak:true,match_tiebreak:false,tiebreak_user_points:up,tiebreak_opponent_points:op,tiebreak_target:tbTarget,set_finished:true,set_winner:setWinner});
+        }
+        matchFinished=us>=2||os>=2;
+        status=matchFinished?"finished":"active";
+        if(!matchFinished){setNo++;ug=0;og=0;up=0;op=0;rotation.user_server_index=0;rotation.opponent_server_index=0;nextServingUser=!Boolean(stats._tiebreak_start_server_user);delete stats._tiebreak_start_server_user}
+      }
+    }else{
+      if(userWon)up++;else op++;
+      gameFinished=up>=4||op>=4;
+      if(gameFinished){
+        const gameUser=up>op;
+        if(gameUser)ug++;else og++;
+        const servedByUser=Boolean(session.data.serving_user);
+        if(servedByUser)rotation.user_server_index=1-Number(rotation.user_server_index||0);
+        else rotation.opponent_server_index=1-Number(rotation.opponent_server_index||0);
+        nextServingUser=!servedByUser;
+        setFinished=(ug>=6||og>=6)&&Math.abs(ug-og)>=2;
+        if(setFinished){
+          setWinner=ug>og?"user":"opponent";
+          if(setWinner==="user")us++;else os++;
+          log.push({set_no:setNo,user_games:ug,opponent_games:og,tiebreak:false,match_tiebreak:false,set_finished:true,set_winner:setWinner});
+          matchFinished=us>=2||os>=2;status=matchFinished?"finished":"active";
+          if(!matchFinished){setNo++;ug=0;og=0;rotation.user_server_index=0;rotation.opponent_server_index=0}
+        }else{
+          log.push({set_no:setNo,user_games:ug,opponent_games:og,tiebreak:false,match_tiebreak:false,set_finished:false,game_winner:gameUser?"user":"opponent"});
+        }
+        up=0;op=0;
+      }
+    }
+
+    const bump=(key:string,amount=1)=>{stats[key]=Number(stats[key]||0)+amount};
+    bump(userWon?"user_points_won":"opp_points_won");
+    bump(serverIsUser?"user_service_points":"opp_service_points");
+    bump(serverIsUser?"opp_return_points":"user_return_points");
+    if(serverWon)bump(serverIsUser?"user_service_points_won":"opp_service_points_won");
+    else bump(serverIsUser?"opp_return_points_won":"user_return_points_won");
+    bump(serverIsUser?"user_first_serves":"opp_first_serves");
+    if(firstServeIn)bump(serverIsUser?"user_first_serves_in":"opp_first_serves_in");
+    if(doubleFault)bump(serverIsUser?"user_double_faults":"opp_double_faults");
+    if(ace)bump(serverIsUser?"user_aces":"opp_aces");
+    if(unreturned)bump(serverIsUser?"user_unreturned_serves":"opp_unreturned_serves");
+    if(ending==="winner"||ending==="return_winner")bump(userWon?"user_winners":"opp_winners");
+    if(ending==="unforced_error"||ending==="forced_error")bump(userWon?"opp_errors":"user_errors");
+    const netAttempt=Math.random()<Math.max(.18,Math.min(.78,(net/100)+(plan==="poach"?.18:plan==="australian"?.12:0)));
+    if(netAttempt){bump(userWon?"user_net_points":"opp_net_points");if(userWon)bump("user_net_points_won");else bump("opp_net_points_won")}
+
+    const ps:any={...(stats._doubles_player_stats||{})};
+    const ensurePs=(pid:number)=>ps[String(pid)]||{points_won:0,service_points:0,return_points:0,aces:0,double_faults:0,winners:0,errors:0};
+    const serverPs={...ensurePs(Number(server.id))},receiverPs={...ensurePs(Number(receiver.id))};
+    serverPs.service_points++;receiverPs.return_points++;
+    if((serverIsUser&&userWon)||(!serverIsUser&&!userWon))serverPs.points_won++;else receiverPs.points_won++;
+    if(ace)serverPs.aces++;if(doubleFault)serverPs.double_faults++;
+    if(ending==="winner"||ending==="return_winner")(userWon===(userIds.includes(Number(server.id))))?serverPs.winners++:receiverPs.winners++;
+    ps[String(server.id)]=serverPs;ps[String(receiver.id)]=receiverPs;stats._doubles_player_stats=ps;
+    stats._doubles_rotation=rotation;
+    stats._tactical_memory=liveTacticalMemoryObserve(stats._tactical_memory,{
+      point_no:Number(session.data.rally_no||0)+1,server:serverIsUser?"user":"opponent",pressure,
+      service_court:serviceCourt,serve_direction:serveDirection,serve_pattern:servePattern,target_wing:targetWing,
+      tempo,spin:spinPlan,return_pos:ret,aggression:ag,risk,net_intent:net,user_at_net:netAttempt,user_won:userWon,stake:String(pressureContext.stake||"normal")
+    });
+
+    const lastPoint:any={
+      winner:userWon?"user":"opponent",server:serverIsUser?"user":"opponent",
+      server_player_id:Number(server.id),server_player_name:String(server.name),
+      returner_player_id:Number(receiver.id),returner_player_name:String(receiver.name),
+      server_partner_id:Number(serverPartner.id),receiver_partner_id:Number(receiverPartner.id),
+      rally,ending,shot:ending,serve_number:firstServeIn?1:2,first_serve_in:firstServeIn,double_fault:doubleFault,ace,unreturned_serve:unreturned,
+      serve_direction:serveDirection,service_court:serviceCourt,point_no:Number(session.data.rally_no||0)+1,
+      phase:matchTb?"match_tiebreak":regularTb?"tiebreak":"doubles",
+      visual_label:doubleFault?"Double faute":ace?"Ace":unreturned?"Service non retourné":ending==="return_winner"?"Retour gagnant":ending==="winner"?"Winner":ending==="forced_error"?"Faute provoquée":"Faute directe",
+      server_win_probability:Math.round(serverWinProb*1000)/10,
+      environment_effects:{
+        pair_baseline_probability:pairBase,user_team_edge:Math.round(userTeamEdge*10000)/10000,
+        opponent_plan:kernel.opponentPlan||null,opponent_memory_read:kernel.opponentMemoryRead||null,
+        tactical_memory:liveTacticalMemoryPublic(stats._tactical_memory),tactical_memory_model:"CB-TACTICAL-MEMORY-v4",
+        doubles_plan:plan,doubles_model:"CB-LIVE-DOUBLES-v1"
+      },
+      visual:{
+        doubles:true,point_no:Number(session.data.rally_no||0)+1,phase:matchTb?"match_tiebreak":regularTb?"tiebreak":"doubles",
+        label:doubleFault?"Double faute":ace?"Ace":unreturned?"Service non retourné":ending==="return_winner"?"Retour gagnant":ending==="winner"?"Winner":ending==="forced_error"?"Faute provoquée":"Faute directe",
+        duration_ms:durationMs,frames,user_end:frames[frames.length-1].user,opponent_end:frames[frames.length-1].opponent,
+        user_b_end:frames[frames.length-1].user_b,opponent_b_end:frames[frames.length-1].opponent_b,
+        ball_path:frames.map((x:any)=>({...x.ball,stage:x.stage})),
+        profiles:{
+          user:{archetype:String(userPlayers[0].style||"Double"),handedness:userPlayers[0].handedness||null,tags:["Paire "+plan]},
+          opponent:{archetype:String(oppPlayers[0].style||"Double"),handedness:oppPlayers[0].handedness||null,tags:["Paire adverse"]}
+        },
+        doubles_players:{user:dmeta.user_players,opponent:dmeta.opponent_players},
+        formation:plan==="australian"?"Australienne":plan==="poach"?"I / poach":plan==="safe"?"Standard sécurisée":"Standard"
+      },
+      at:new Date().toISOString()
+    };
+
+    const momentumNew=Math.max(0,Math.min(100,Number(session.data.momentum||50)+(userWon?2:-2)));
+    const update:any={
+      user_sets:us,opponent_sets:os,set_no:setNo,user_games:ug,opponent_games:og,user_points:up,opponent_points:op,
+      serving_user:nextServingUser,rally_no:Number(session.data.rally_no||0)+1,momentum:momentumNew,
+      tactics,stats,score_log:log,last_point:lastPoint,status,updated_at:new Date().toISOString()
+    };
+    if(matchFinished)update.completed_at=new Date().toISOString();
+    const saved=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
+    if(saved.error)return h({error:saved.error.message},500);
+    return h({
+      ok:true,session:saved.data,completed:matchFinished,engine:"CB-LIVE-DOUBLES-v1",
+      opponent:{id:oppPlayers[0].id,name:String(oppPlayers[0].name)+" / "+String(oppPlayers[1].name),country:oppPlayers[0].country,ranking:oppPlayers[0].doubles_ranking,players:dmeta.opponent_players},
+      server:{id:server.id,name:server.name,team:serverIsUser?"user":"opponent"},
+      receiver:{id:receiver.id,name:receiver.name,team:serverIsUser?"opponent":"user"}
+    });
+  }
+
   if(path.endsWith("/api/live-match/point")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const id=n(body?.session_id,0,1,99999999);

@@ -1370,8 +1370,9 @@ function tournamentEntryContext(c=activePlayerCareerView()){return [c.managed_pl
 function tournamentEntryRestriction(t,c,method){
  const official=t.entry_rule_context===tournamentEntryContext(c)?t.managed_entry_rules?.[method]:null;
  if(official)return official.eligible?null:official.reason;
- const rank=Number(c.singles_rank||999999),cat=String(t.category||'');
- if(t.circuit==='ITF'&&['M15','M25'].includes(cat)&&rank<=200)return 'itf_play_down_top200';
+ const rank=Number(c.singles_rank||999999),cat=String(t.category||''),age=Number(c.age??99);
+ if(['ATP','Challenger','ITF'].includes(String(t.circuit||''))&&age<14)return 'pro_under14';
+ if(cat==='Grand Chelem'&&rank>500)return 'grand_slam_top500_entry_required';
  if(t.circuit==='ATP'&&['ATP 250','ATP 500','Masters 1000'].includes(cat)&&rank>500&&['direct','qualifying'].includes(method))return 'atp_advanced_entry_top500_required';
  if(t.circuit!=='Challenger')return null;
  if(['Challenger 175','Challenger 125'].includes(cat)&&method==='direct'&&rank>500)return 'challenger_175_125_direct_top500_required';
@@ -1388,7 +1389,7 @@ function tournamentEntryRestriction(t,c,method){
  return null;
 }
 function tournamentEntryReason(reason){
- const labels={itf_play_down_top200:'M15/M25 interdits au Top 200 ATP',ch50_top50_prohibited:'Challenger 50 interdit au Top 50',ch50_top150_no_direct_or_qualifying:'Challenger 50 : wild card obligatoire pour le Top 150',ch50_wc_51_100_home_nation_only:'Wild card réservée à la nation hôte pour les rangs 51–100',challenger_top10_prohibited:'Challenger 75–125 interdit au Top 10',ch75_11_50_prohibited:'Challenger 75 interdit au Top 50',challenger_11_50_wildcard_only:'Wild card obligatoire pour les rangs 11–50',atp_advanced_entry_top500_required:'ATP : Top 500 requis pour l’entrée avancée',challenger_175_125_direct_top500_required:'Challenger 125/175 : Top 500 requis en entrée directe',inactive_player:'Joueur inactif',injured:'Joueur blessé',doubles_only:'Double exclusivement',no_active_entry_protection:'Aucun classement protégé actif'};
+ const labels={pro_under14:'Circuit pro : 14 ans minimum',grand_slam_top500_entry_required:'Grand Chelem : classement international Top 500 requis',atp_age_event_cap:'Limite annuelle ATP/Challenger atteinte pour cet âge',ch50_top50_prohibited:'Challenger 50 interdit au Top 50',ch50_top150_no_direct_or_qualifying:'Challenger 50 : wild card obligatoire pour le Top 150',ch50_wc_51_100_home_nation_only:'Wild card réservée à la nation hôte pour les rangs 51–100',challenger_top10_prohibited:'Challenger 75–125 interdit au Top 10',ch75_11_50_prohibited:'Challenger 75 interdit au Top 50',challenger_11_50_wildcard_only:'Wild card obligatoire pour les rangs 11–50',atp_advanced_entry_top500_required:'ATP : Top 500 requis pour l’entrée avancée',challenger_175_125_direct_top500_required:'Challenger 125/175 : Top 500 requis en entrée directe',inactive_player:'Joueur inactif',injured:'Joueur blessé',doubles_only:'Double exclusivement',no_active_entry_protection:'Aucun classement protégé actif'};
  return labels[reason]||'Entrée non autorisée par le règlement';
 }
 function tournamentParticipationWindow(t,elig={},discipline='singles'){

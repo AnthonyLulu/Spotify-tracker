@@ -10830,8 +10830,61 @@ Deno.serve(async(req:Request)=>{
         if(pairRows.error)return h({error:pairRows.error.message},500);
         candidates=(pairRows.data??[]).filter((x:any)=>!facedPairIds.has(Number(x.id)));
       }
-      if(!candidates.length)return h({error:"Aucune paire adverse disponible pour ce tour."},404);
       const userRankSum=Number(managed.doubles_ranking||9999)+Number(partner.doubles_ranking||9999);
+      if(!candidates.length){
+        const avgRank=Math.max(1,Math.round(userRankSum/2));
+        const low=Math.max(1,avgRank-220),high=Math.max(low+40,avgRank+320);
+        let ranked=await db.from("players")
+          .select("id,doubles_ranking")
+          .not("doubles_ranking","is",null)
+          .gte("doubles_ranking",low).lte("doubles_ranking",high)
+          .or("career_status.eq.active,career_status.is.null")
+          .order("doubles_ranking",{ascending:true}).limit(320);
+        if(ranked.error)return h({error:ranked.error.message},500);
+        let rankedPool=(ranked.data??[]).filter((p:any)=>{
+          const pid=Number(p.id||0);
+          return pid&&pid!==playerId&&pid!==partnerId;
+        });
+        if(rankedPool.length<8){
+          ranked=await db.from("players")
+            .select("id,doubles_ranking")
+            .not("doubles_ranking","is",null)
+            .or("career_status.eq.active,career_status.is.null")
+            .order("doubles_ranking",{ascending:true}).limit(640);
+          if(ranked.error)return h({error:ranked.error.message},500);
+          rankedPool=(ranked.data??[]).filter((p:any)=>{
+            const pid=Number(p.id||0);
+            return pid&&pid!==playerId&&pid!==partnerId;
+          });
+        }
+        rankedPool.sort((a:any,b:any)=>{
+          const da=Math.abs(Number(a.doubles_ranking||9999)-avgRank);
+          const dbb=Math.abs(Number(b.doubles_ranking||9999)-avgRank);
+          return da-dbb||Number(a.doubles_ranking||9999)-Number(b.doubles_ranking||9999);
+        });
+        const seed=liveMatchHash([tournamentId,playerId,partnerId,tournamentWins,round,"materialize"].join("|"));
+        const maxPairs=Math.min(32,Math.floor(rankedPool.length/2));
+        for(let step=0;step<maxPairs&&!candidates.length;step++){
+          const slot=(seed+step)%maxPairs;
+          const a:any=rankedPool[slot*2],b:any=rankedPool[slot*2+1];
+          const aid=Number(a?.id||0),bid=Number(b?.id||0);
+          if(!aid||!bid||aid===bid)continue;
+          const ensured=await db.rpc("ensure_world_doubles_partnership_team",{
+            p_season:season,p_player_one:aid,p_player_two:bid,p_date:careerDate,
+            p_race_points:0,p_race_rank:null
+          });
+          if(ensured.error)continue;
+          const pairId=Number(ensured.data||0);
+          if(!pairId||pairId===userWorldPairId||facedPairIds.has(pairId))continue;
+          const created=await db.from("world_doubles_partnerships").select("*").eq("id",pairId).maybeSingle();
+          if(created.error)continue;
+          if(created.data){
+            candidates=[created.data];
+            opponentSource="materialized_ranked_pair";
+          }
+        }
+      }
+      if(!candidates.length)return h({error:"Aucune paire adverse disponible malgré la matérialisation du pool double.",404);
       const ids=[...new Set(candidates.flatMap((x:any)=>[Number(x.player_a_id),Number(x.player_b_id)]).filter(Boolean))];
       const ranks=await db.from("players").select("id,doubles_ranking").in("id",ids);
       if(ranks.error)return h({error:ranks.error.message},500);

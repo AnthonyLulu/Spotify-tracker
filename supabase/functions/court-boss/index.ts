@@ -10308,6 +10308,11 @@ Deno.serve(async(req:Request)=>{
       user_double_faults:0,opp_double_faults:0,
       user_first_serves:0,user_first_serves_in:0,opp_first_serves:0,opp_first_serves_in:0,
       user_unreturned_serves:0,opp_unreturned_serves:0,
+      user_points_won:0,opp_points_won:0,
+      user_service_points:0,user_service_points_won:0,opp_service_points:0,opp_service_points_won:0,
+      user_return_points:0,user_return_points_won:0,opp_return_points:0,opp_return_points_won:0,
+      user_break_points:0,user_break_points_converted:0,user_break_points_faced:0,user_break_points_saved:0,
+      opp_break_points:0,opp_break_points_converted:0,opp_break_points_faced:0,opp_break_points_saved:0,
       _meta:{...environment,round,career_date:String(career.data.career_date||AGE_REFERENCE_DATE),
         tournament_live:Boolean(tournamentId),entry_method:liveEntryMethod,tournament_wins:tournamentWins,
         qualifying_rounds:qualifyingRounds,opponent_source:opponentSource,world_match_id:worldMatchId}
@@ -10981,6 +10986,11 @@ Deno.serve(async(req:Request)=>{
       user_double_faults:0,opp_double_faults:0,
       user_first_serves:0,user_first_serves_in:0,opp_first_serves:0,opp_first_serves_in:0,
       user_unreturned_serves:0,opp_unreturned_serves:0,
+      user_points_won:0,opp_points_won:0,
+      user_service_points:0,user_service_points_won:0,opp_service_points:0,opp_service_points_won:0,
+      user_return_points:0,user_return_points_won:0,opp_return_points:0,opp_return_points_won:0,
+      user_break_points:0,user_break_points_converted:0,user_break_points_faced:0,user_break_points_saved:0,
+      opp_break_points:0,opp_break_points_converted:0,opp_break_points_faced:0,opp_break_points_saved:0,
       user_net_points:0,user_net_points_won:0,opp_net_points:0,opp_net_points_won:0,
       user_short_rallies_won:0,user_medium_rallies_won:0,user_long_rallies_won:0,
       opp_short_rallies_won:0,opp_medium_rallies_won:0,opp_long_rallies_won:0,
@@ -10998,6 +11008,32 @@ Deno.serve(async(req:Request)=>{
       if(doubleFault)stats.opp_double_faults++;
       if(ace)stats.opp_aces++;
       if(unreturned)stats.opp_unreturned_serves++;
+    }
+    if(userWon)stats.user_points_won=(stats.user_points_won||0)+1;
+    else stats.opp_points_won=(stats.opp_points_won||0)+1;
+    if(serverIsUser){
+      stats.user_service_points=(stats.user_service_points||0)+1;
+      stats.opp_return_points=(stats.opp_return_points||0)+1;
+      if(userWon)stats.user_service_points_won=(stats.user_service_points_won||0)+1;
+      else stats.opp_return_points_won=(stats.opp_return_points_won||0)+1;
+    }else{
+      stats.opp_service_points=(stats.opp_service_points||0)+1;
+      stats.user_return_points=(stats.user_return_points||0)+1;
+      if(userWon)stats.user_return_points_won=(stats.user_return_points_won||0)+1;
+      else stats.opp_service_points_won=(stats.opp_service_points_won||0)+1;
+    }
+    if(breakPoint){
+      if(serverIsUser){
+        stats.opp_break_points=(stats.opp_break_points||0)+1;
+        stats.user_break_points_faced=(stats.user_break_points_faced||0)+1;
+        if(userWon)stats.user_break_points_saved=(stats.user_break_points_saved||0)+1;
+        else stats.opp_break_points_converted=(stats.opp_break_points_converted||0)+1;
+      }else{
+        stats.user_break_points=(stats.user_break_points||0)+1;
+        stats.opp_break_points_faced=(stats.opp_break_points_faced||0)+1;
+        if(userWon)stats.user_break_points_converted=(stats.user_break_points_converted||0)+1;
+        else stats.opp_break_points_saved=(stats.opp_break_points_saved||0)+1;
+      }
     }
     if(atNet){
       const prefix=Number(netPlayerId)===Number(managed.data.id)?"user":"opp";
@@ -11265,6 +11301,11 @@ Deno.serve(async(req:Request)=>{
       user_double_faults:0,opp_double_faults:0,
       user_first_serves:0,user_first_serves_in:0,opp_first_serves:0,opp_first_serves_in:0,
       user_unreturned_serves:0,opp_unreturned_serves:0,
+      user_points_won:0,opp_points_won:0,
+      user_service_points:0,user_service_points_won:0,opp_service_points:0,opp_service_points_won:0,
+      user_return_points:0,user_return_points_won:0,opp_return_points:0,opp_return_points_won:0,
+      user_break_points:0,user_break_points_converted:0,user_break_points_faced:0,user_break_points_saved:0,
+      opp_break_points:0,opp_break_points_converted:0,opp_break_points_faced:0,opp_break_points_saved:0,
       ...(session.data.stats||{})
     };
 
@@ -11330,6 +11371,19 @@ Deno.serve(async(req:Request)=>{
         const userPointWon=tbServerUser?serverWonPoint:!serverWonPoint;
         if(userPointWon)tup++;else top++;
         gamePoints++;
+        if(userPointWon)stats.user_points_won=(stats.user_points_won||0)+1;
+        else stats.opp_points_won=(stats.opp_points_won||0)+1;
+        if(tbServerUser){
+          stats.user_service_points=(stats.user_service_points||0)+1;
+          stats.opp_return_points=(stats.opp_return_points||0)+1;
+          if(userPointWon)stats.user_service_points_won=(stats.user_service_points_won||0)+1;
+          else stats.opp_return_points_won=(stats.opp_return_points_won||0)+1;
+        }else{
+          stats.opp_service_points=(stats.opp_service_points||0)+1;
+          stats.user_return_points=(stats.user_return_points||0)+1;
+          if(userPointWon)stats.user_return_points_won=(stats.user_return_points_won||0)+1;
+          else stats.opp_service_points_won=(stats.opp_service_points_won||0)+1;
+        }
         lastServerWinProbability=pointKernel.serverWinProb;
         lastConditionEdge=pointKernel.conditionEdge;
 
@@ -11447,6 +11501,32 @@ Deno.serve(async(req:Request)=>{
         const userPointWon=serverIsUser?serverWonPoint:!serverWonPoint;
         if(userPointWon)simUp++;else simOp++;
         gamePoints++;
+        if(userPointWon)stats.user_points_won=(stats.user_points_won||0)+1;
+        else stats.opp_points_won=(stats.opp_points_won||0)+1;
+        if(serverIsUser){
+          stats.user_service_points=(stats.user_service_points||0)+1;
+          stats.opp_return_points=(stats.opp_return_points||0)+1;
+          if(userPointWon)stats.user_service_points_won=(stats.user_service_points_won||0)+1;
+          else stats.opp_return_points_won=(stats.opp_return_points_won||0)+1;
+        }else{
+          stats.opp_service_points=(stats.opp_service_points||0)+1;
+          stats.user_return_points=(stats.user_return_points||0)+1;
+          if(userPointWon)stats.user_return_points_won=(stats.user_return_points_won||0)+1;
+          else stats.opp_service_points_won=(stats.opp_service_points_won||0)+1;
+        }
+        if(String(pointPressure.stake||"")==="break_point"){
+          if(serverIsUser){
+            stats.opp_break_points=(stats.opp_break_points||0)+1;
+            stats.user_break_points_faced=(stats.user_break_points_faced||0)+1;
+            if(userPointWon)stats.user_break_points_saved=(stats.user_break_points_saved||0)+1;
+            else stats.opp_break_points_converted=(stats.opp_break_points_converted||0)+1;
+          }else{
+            stats.user_break_points=(stats.user_break_points||0)+1;
+            stats.opp_break_points_faced=(stats.opp_break_points_faced||0)+1;
+            if(userPointWon)stats.user_break_points_converted=(stats.user_break_points_converted||0)+1;
+            else stats.opp_break_points_saved=(stats.opp_break_points_saved||0)+1;
+          }
+        }
         lastServerWinProbability=pointKernel.serverWinProb;
         lastConditionEdge=pointKernel.conditionEdge;
 

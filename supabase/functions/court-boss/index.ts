@@ -6008,6 +6008,8 @@ Deno.serve(async(req:Request)=>{
     let developmentSupply:any=null;
     let doublesPairRefresh:any=null;
     let staffMarketRefresh:any=null;
+    let staffLifecycleV14:any=null;
+    let injuryPreventionV14:any=null;
     if(week%4===0 || previousDate.slice(0,7)!==date.slice(0,7)){
       const supply=await db.rpc("maintain_development_circuit_supply",{
         p_date:date,
@@ -6030,6 +6032,12 @@ Deno.serve(async(req:Request)=>{
         const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
         const month=Number(date.slice(5,7));
         const quarterly=month===1||month===4||month===7||month===10;
+
+        const staffLife=await db.rpc("refresh_staff_lifecycle_v14",{p_date:date});
+        staffLifecycleV14=staffLife.error?{error:staffLife.error.message}:staffLife.data;
+        const prevention=await db.rpc("apply_injury_prevention_cycle_v14",{p_date:date});
+        injuryPreventionV14=prevention.error?{error:prevention.error.message}:prevention.data;
+
         const physicalMaturation=await db.rpc("progress_player_physical_maturation",{p_date:date});
         const coachingEnvironmentRefresh=await db.rpc("refresh_player_coaching_environment",{p_date:date});
         const playerDevelopment=await db.rpc("progress_player_development_world",{p_date:date});
@@ -6519,7 +6527,7 @@ Deno.serve(async(req:Request)=>{
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});
     if(careerHealth.error)return h({error:careerHealth.error.message},500);
-    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,userRanking:userRank.data,managedPlayerRankings:managedRankingRows,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medicalPrimary,managedMedical,medicalRecoveryEffects:medicalRecoveryEffects.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:medicalCost,net:weeklyNet-medicalCost,expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,staffLifecycleV14,injuryPreventionV14,userRanking:userRank.data,managedPlayerRankings:managedRankingRows,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medicalPrimary,managedMedical,medicalRecoveryEffects:medicalRecoveryEffects.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:medicalCost,net:weeklyNet-medicalCost,expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){
@@ -14658,6 +14666,103 @@ Deno.serve(async(req:Request)=>{
         metadata:{weekly_value:negotiatedWeekly,visibility_rank:visibilityRank,duration_weeks:sponsorDuration,starts_on:acceptedOn,ends_on:endsOn}
       }]);
       return h({ok:true,budget,status:"accepted",weekly_value:negotiatedWeekly,signing_bonus:negotiatedBonus,duration_weeks:sponsorDuration,starts_on:acceptedOn,ends_on:endsOn,weeks_paid:0,agent_bonus_pct:Math.round((negotiationMult-1)*100),visibility_rank:visibilityRank,career_focus:focus});
+    }
+
+    if(action==="negotiate_contract"){
+      const con=await db.from("contracts").select("*").eq("id",id).maybeSingle();
+      if(con.error||!con.data)return h({error:con.error?.message||"Contract not found"},404);
+      if(String(con.data.status||"")!=="active")return h({error:"Ce contrat n'est plus actif."},409);
+
+      const offeredWeekly=Math.max(0,Math.round(Number(body?.weekly_salary??con.data.weekly_salary??0)));
+      const offeredSigning=Math.max(0,Math.min(250000,Math.round(Number(body?.signing_bonus||0))));
+      const years=n(body?.years,1,1,3);
+      const currentWeekly=Math.max(1,Number(con.data.weekly_salary||1));
+      let expectedFactor=1.08,loyalty=10,negotiation=10,reputation=10,competing=0;
+
+      if(String(con.data.subject_type||"")==="staff"){
+        const sm=await db.from("staff")
+          .select("profile_id,profile:staff_profiles(id,ambition,loyalty,negotiation_rating,reputation)")
+          .eq("name",con.data.subject_name).maybeSingle();
+        if(sm.error)return h({error:sm.error.message},500);
+        const p:any=Array.isArray(sm.data?.profile)?sm.data.profile[0]:sm.data?.profile||{};
+        loyalty=Number(p.loyalty||10);negotiation=Number(p.negotiation_rating||10);reputation=Number(p.reputation||10);
+        expectedFactor=Math.max(1.03,Math.min(1.34,
+          1.04+Number(p.ambition||10)*.006+negotiation*.005+reputation*.004-loyalty*.003
+        ));
+        if(sm.data?.profile_id){
+          const co=await db.from("staff_competing_offers").select("id",{count:"exact",head:true})
+            .eq("staff_profile_id",sm.data.profile_id).eq("status","pending");
+          competing=Number(co.count||0);
+        }
+      }else if(String(con.data.subject_type||"")==="player"){
+        const pl=await db.from("players").select("ranking,game_world_rank,potential,age,morale")
+          .eq("name",con.data.subject_name).maybeSingle();
+        const p:any=pl.data||{};
+        const rank=Number(p.game_world_rank||p.ranking||2500);
+        expectedFactor=Math.max(1.04,Math.min(1.42,
+          1.05+(rank<=100?0.16:rank<=300?0.10:rank<=800?0.06:0.03)
+          +Math.max(0,Number(p.potential||60)-75)*.004
+          +Math.max(0,Number(p.morale||70)-75)*.0015
+        ));
+        loyalty=12;
+      }
+
+      const expectedWeekly=Math.max(currentWeekly,Math.round(currentWeekly*expectedFactor*(1+competing*.025)));
+      const salaryScore=Math.min(92,(offeredWeekly/Math.max(1,expectedWeekly))*78);
+      const signingScore=Math.min(14,offeredSigning/Math.max(1,expectedWeekly*4)*10);
+      const termScore=years===3?8:years===2?5:2;
+      const loyaltyScore=Math.max(-4,Math.min(6,(loyalty-10)*.5));
+      const score=salaryScore+signingScore+termScore+loyaltyScore;
+      const threshold=82+Math.min(8,competing*2)+Math.max(0,negotiation-14)*.35;
+
+      if(score<threshold){
+        const counterWeekly=Math.max(expectedWeekly,Math.round(offeredWeekly+(expectedWeekly-offeredWeekly)*.70));
+        const counterSigning=Math.max(offeredSigning,Math.round(expectedWeekly*(reputation>=17?3:reputation>=14?2:1)));
+        return h({
+          ok:true,status:"counter",score:Math.round(score),threshold:Math.round(threshold),
+          counter_weekly:counterWeekly,counter_signing:counterSigning,counter_years:years,
+          message:"La proposition est insuffisante. Une contre-offre a été formulée."
+        });
+      }
+
+      if(budget<offeredSigning)return h({error:"Budget insuffisant pour la prime de signature."},409);
+      const baseDate=new Date((String(con.data.end_date||career.data.career_date||AGE_REFERENCE_DATE))+"T12:00:00Z");
+      baseDate.setUTCFullYear(baseDate.getUTCFullYear()+years);
+      const newEnd=baseDate.toISOString().slice(0,10);
+      const bonuses={...(con.data.bonuses||{}),renewal_signing_bonus:offeredSigning,negotiated_weekly:offeredWeekly,negotiated_years:years,negotiated_on:String(career.data.career_date||AGE_REFERENCE_DATE)};
+      budget-=offeredSigning;
+
+      const up=await db.from("contracts").update({
+        weekly_salary:offeredWeekly,end_date:newEnd,bonuses,status:"active"
+      }).eq("id",id);
+      if(up.error)return h({error:up.error.message},500);
+
+      if(String(con.data.subject_type||"")==="staff"){
+        await db.from("staff").update({weekly_cost:offeredWeekly}).eq("name",con.data.subject_name);
+      }else if(String(con.data.subject_type||"")==="player"){
+        await db.from("academy_roster").update({weekly_cost:offeredWeekly})
+          .eq("status","active").eq("player_id",
+            (await db.from("players").select("id").eq("name",con.data.subject_name).maybeSingle()).data?.id||-1
+          );
+      }
+
+      const car=await db.from("career_state").update({budget,updated_at:new Date().toISOString()}).eq("id","demo");
+      if(car.error)return h({error:car.error.message},500);
+      if(offeredSigning>0){
+        await recordFinanceTransactions([{
+          transaction_key:"contract:"+id+":renew:"+String(career.data.career_date||AGE_REFERENCE_DATE),
+          game_date:String(career.data.career_date||AGE_REFERENCE_DATE),week:Number(career.data.week||1),
+          category:"contract_bonus",amount:-offeredSigning,source_type:"contract",source_id:id,
+          description:"Prime de renouvellement · "+String(con.data.subject_name),balance_after:budget,
+          metadata:{weekly_salary:offeredWeekly,years,end_date:newEnd}
+        }]);
+      }
+      await db.from("inbox_items").update({decision_status:"resolved",is_read:true})
+        .eq("related_entity_type","contract").eq("related_entity_id",id);
+      return h({
+        ok:true,status:"accepted",weekly_salary:offeredWeekly,signing_bonus:offeredSigning,
+        years,end_date:newEnd,budget,score:Math.round(score),threshold:Math.round(threshold)
+      });
     }
 
     if(action==="renew_contract"){

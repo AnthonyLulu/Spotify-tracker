@@ -202,7 +202,7 @@ jobs:
             await page.getByRole('heading',{name:'Grands Chelems année par année'}).waitFor();
             await page.getByLabel(/Wimbledon 2025/).click();
             await page.getByText('Finaliste').waitFor();
-            await page.getByText('vs Jannik Sinner').waitFor();
+            await page.getByText('Jannik Sinner',{exact:true}).waitFor();
             await page.getByRole('button',{name:'✕'}).click();
 
             await page.evaluate(()=>openPlayer(14405));
@@ -212,7 +212,7 @@ jobs:
             await page.getByRole('heading',{name:'Grands Chelems année par année'}).waitFor();
             await page.getByLabel(/Wimbledon 2009/).click();
             await page.getByText('Vainqueur').waitFor();
-            await page.getByText('vs Andy Roddick').waitFor();
+            await page.getByText('Andy Roddick',{exact:true}).waitFor();
             await page.getByText(/16-14/).waitFor();
             await page.getByRole('button',{name:'✕'}).click();
 

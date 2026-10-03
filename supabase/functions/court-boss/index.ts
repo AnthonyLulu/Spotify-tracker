@@ -9629,11 +9629,14 @@ Deno.serve(async(req:Request)=>{
     const grandSlamMain=grandSlam&&phase!=="qualifying";
     const itfQualifying=Boolean(t&&String(t.circuit||"")==="ITF"&&phase==="qualifying");
     const nextGen=Boolean(t&&String(t.circuit||"")==="ATP"&&/Next Gen Finals/i.test(String(t.category||t.level||"")));
+    const ncaa=Boolean(t&&String(t.circuit||"")==="NCAA");
     const setsToWin=nextGen?3:grandSlamMain?3:2;
     return {
       engine:"CB-MATCH-ENGINE-v6",
       surface,indoor,match_phase:phase,sets_to_win:setsToWin,best_of:setsToWin*2-1,
-      set_games_to_win:nextGen?4:6,tiebreak_at_games:nextGen?3:6,no_ad:nextGen,next_gen_format:nextGen,
+      set_games_to_win:nextGen?4:6,tiebreak_at_games:nextGen?3:6,
+      no_ad:nextGen||ncaa,no_ad_rule:nextGen?"next_gen":ncaa?"ita_college":null,
+      next_gen_format:nextGen,ncaa_format:ncaa,
       match_tiebreak_decider:itfQualifying,match_tiebreak_points:itfQualifying?10:null,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},

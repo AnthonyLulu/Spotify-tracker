@@ -79,6 +79,65 @@
     court.classList.toggle('cb-crowd-roar',['break_point','set_point','match_point','tiebreak'].includes(stake));
   };
 
+  const liveDoublesPlanLabel=plan=>({balanced:'Équilibré',poach:'Poach agressif',australian:'Australienne',target_weak:'Cibler faible',safe:'Sécuriser'}[String(plan||'balanced')]||'Équilibré');
+  window.cbSetLiveDoublesPlanV13=plan=>{
+    if(typeof local==='undefined')return;
+    local.tactics={...(local.tactics||{}),doublesPlan:String(plan||'balanced')};
+    local.doublesTactics={...(local.doublesTactics||{}),plan:String(plan||'balanced')};
+    if(typeof persist==='function')persist();
+    if(typeof render==='function')render();
+  };
+  const liveDoublesFramesCss=(name,frames,key)=>{
+    const valid=(Array.isArray(frames)?frames:[]).filter(f=>f&&f[key]);
+    if(!valid.length)return '';
+    return '@keyframes '+name+'{'+valid.map((f,i)=>{
+      const p=f[key]||{},pct=valid.length===1?100:i/(valid.length-1)*100;
+      return pct.toFixed(1)+'%{left:'+cap(p.x,0,100)+'%;top:'+cap(p.y,0,100)+'%}';
+    }).join('')+'}';
+  };
+  const dotText=(dot,p)=>{
+    if(!dot||!p)return;
+    const parts=String(p.name||'JOUEUR').trim().split(/\s+/),last=parts.slice(-1)[0]||'Joueur';
+    const initials=parts.map(x=>x[0]||'').join('').slice(0,2).toUpperCase();
+    let sp=dot.querySelector('span');if(!sp){sp=el('span');dot.appendChild(sp)}sp.textContent=initials||'P';
+    let sm=dot.querySelector('small');if(!sm){sm=el('small');dot.appendChild(sm)}sm.textContent=last;
+  };
+  const addLiveDoublesDots=()=>{
+    const court=document.querySelector('.cb-live-card .cb-court'),sess=live(),m=meta(),v=visual();
+    if(!court)return;
+    const existing=[...court.querySelectorAll('.cb-live-double-partner-v13')];
+    if(String(m.match_type||'')!=='doubles'||!v?.doubles){existing.forEach(x=>x.remove());court.querySelector('style[data-cb-live-doubles-v13]')?.remove();return}
+    const players=v.doubles_players||m.doubles||{},u=players.user||m.doubles?.user_players||[],o=players.opponent||m.doubles?.opponent_players||[];
+    const frames=Array.isArray(v.frames)?v.frames:[],last=frames[frames.length-1]||{};
+    const point=Number(sess?.last_point?.point_no||0),sid=Number(sess?.id||0),ms=Math.max(500,Number(v.duration_ms||1100));
+    let style=court.querySelector('style[data-cb-live-doubles-v13]');
+    if(!style){style=document.createElement('style');style.dataset.cbLiveDoublesV13='1';court.appendChild(style)}
+    const ua='cbDblUa'+sid+'p'+point,ub='cbDblUb'+sid+'p'+point,oa='cbDblOa'+sid+'p'+point,ob='cbDblOb'+sid+'p'+point;
+    style.textContent=liveDoublesFramesCss(ua,frames,'user')+liveDoublesFramesCss(ub,frames,'user_b')+liveDoublesFramesCss(oa,frames,'opponent')+liveDoublesFramesCss(ob,frames,'opponent_b');
+
+    const mainU=court.querySelector('.fm-player-dot.user:not(.cb-live-double-partner-v13)');
+    const mainO=court.querySelector('.fm-player-dot.opponent:not(.cb-live-double-partner-v13)');
+    if(mainU&&u[0]){dotText(mainU,u[0]);if(frames.length)mainU.style.animation=ua+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both'}
+    if(mainO&&o[0]){dotText(mainO,o[0]);if(frames.length)mainO.style.animation=oa+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both'}
+
+    const ensure=(cls,team,p,end,keyframe)=>{
+      let d=court.querySelector('.cb-live-double-partner-v13.'+cls);
+      if(!d){d=el('div','fm-player-dot cb-dot cb-live-double-partner-v13 '+team+' '+cls);court.appendChild(d)}
+      dotText(d,p);
+      d.style.left=cap(end?.x??50,0,100)+'%';d.style.top=cap(end?.y??50,0,100)+'%';
+      if(frames.length)d.style.animation=keyframe+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both';
+      const pid=Number(p?.id||0),lp=sess?.last_point||{};
+      d.classList.toggle('is-server',pid&&pid===Number(lp.server_player_id||0));
+      d.classList.toggle('is-returner',pid&&pid===Number(lp.returner_player_id||0));
+      return d;
+    };
+    ensure('user-b','user',u[1],last.user_b,ub);
+    ensure('opponent-b','opponent',o[1],last.opponent_b,ob);
+    if(mainU&&u[0]){const pid=Number(u[0].id||0),lp=sess?.last_point||{};mainU.classList.toggle('is-server',pid===Number(lp.server_player_id||0));mainU.classList.toggle('is-returner',pid===Number(lp.returner_player_id||0))}
+    if(mainO&&o[0]){const pid=Number(o[0].id||0),lp=sess?.last_point||{};mainO.classList.toggle('is-server',pid===Number(lp.server_player_id||0));mainO.classList.toggle('is-returner',pid===Number(lp.returner_player_id||0))}
+    court.classList.add('cb-live-doubles-court-v13');
+  };
+
   const heatStore=()=>{
     const s=live();if(!s)return [];
     window.__cbHeatV13=window.__cbHeatV13||{};
@@ -133,10 +192,20 @@
     const serveUser=pct(st.user_first_serves_in,st.user_first_serves),serveOpp=pct(st.opp_first_serves_in,st.opp_first_serves);
     const netUser=pct(st.user_net_points_won,st.user_net_points),netOpp=pct(st.opp_net_points_won,st.opp_net_points);
     const u=profiles.user||{},o=profiles.opponent||{};
+    const isDoubles=String(m.match_type||'')==='doubles',dm=m.doubles||{},lp=s?.last_point||{};
+    const doublesModel=isDoubles
+      ?'<div class="cb-double-live-model-v13"><div><span>Modèle paire</span><b>Attributs '+Math.round(Number(dm.attribute_probability||.5)*100)+'% · Elo '+Math.round(Number(dm.elo_probability||.5)*100)+'% · mix '+Math.round(Number(dm.baseline_probability||.5)*100)+'%</b></div><div><span>Elo double/surface</span><b>'+Math.round(Number(dm.user_pair_elo||0))+' vs '+Math.round(Number(dm.opponent_pair_elo||0))+'</b></div><div><span>Point actuel</span><b>'+esc(lp.server_player_name||'—')+' sert · '+esc(lp.returner_player_name||'—')+' retourne</b></div><div><span>Plan</span><b>'+esc(liveDoublesPlanLabel(local?.tactics?.doublesPlan||s?.tactics?.doublesPlan))+'</b></div></div>'
+      :'';
+    const doublesPlans=isDoubles
+      ?'<div class="cb-live-double-plans-v13"><div class="cb-subhead-v13">Plan de paire · modifiable en match</div><div>'+[
+        ['balanced','Équilibré'],['poach','Poach'],['australian','Australienne'],['target_weak','Cibler faible'],['safe','Sécuriser']
+       ].map(x=>'<button class="'+(String(local?.tactics?.doublesPlan||s?.tactics?.doublesPlan||'balanced')===x[0]?'active':'')+'" onclick="cbSetLiveDoublesPlanV13(\''+x[0]+'\')">'+x[1]+'</button>').join('')+'</div></div>'
+      :'';
     lab.innerHTML=
       '<div class="cb-lab-head-v13"><div><small>TACTICAL LAB V13</small><b>Match vivant · lecture + identité</b></div><div class="cb-lab-actions-v13"><span>'+esc(String(m.ambience?.crowd_profile||'Tour'))+' · '+esc(String(m.ambience?.session_of_day||'live'))+' · public '+Math.round(Number(m.ambience?.crowd_intensity||0))+'%</span><button onclick="cbToggleMatchAudioV13()">'+(audioOn?'🔊':'🔇')+'</button></div></div>'+
       (event?'<div class="cb-event-v13"><b>'+esc(event.label||'Événement match')+'</b><span>'+esc(event.type||event.event_type||'')+(event.duration_min?' · '+Number(event.duration_min)+' min':'')+'</span></div>':'')+
       (review?'<div class="cb-event-v13 review"><b>'+esc(review.label||'Review électronique')+'</b><span>'+esc(review.system||'Electronic Line Calling')+' · '+esc(review.decision||'confirmé')+'</span></div>':'')+
+      doublesModel+
       '<div class="cb-lab-grid-v13">'+
         '<div class="cb-lab-block-v13"><span>Identité de ton joueur</span><b>'+esc(u.archetype||'All-court')+' · '+esc(u.handedness||'')+'</b><em>'+esc(u.movement_signature||'')+' · '+esc(u.baseline_depth||'')+'</em></div>'+
         '<div class="cb-lab-block-v13"><span>Identité adverse</span><b>'+esc(o.archetype||p.archetype||'All-court')+' · '+esc(o.handedness||'')+'</b><em>'+esc(o.movement_signature||'')+' · retour '+esc(o.return_position||p.returnPos||'Neutre')+'</em></div>'+
@@ -148,28 +217,34 @@
       '</div>'+
       '<div class="cb-coach-rec-v13"><small>COACH</small><b>'+esc(recommendation())+'</b></div>'+
       '<div class="cb-auto-v13"><div class="cb-subhead-v13">Règles conditionnelles</div><div>'+ruleButton('attackSecondServe','Attaquer 2e balle')+ruleButton('bigPoints','Points chauds')+ruleButton('frontRun','Protéger avance')+ruleButton('chase','Mode remontée')+'</div>'+(applied.length?'<p>Actif sur ce point : <b>'+applied.map(esc).join(' · ')+'</b></p>':'')+'</div>'+
+      doublesPlans+
       (pending.length?'<div class="cb-pending-events-v13">Événements possibles : '+pending.map(e=>esc(e.label||e.type)).join(' · ')+'</div>':'');
   };
 
 
   const rawPlayDoubles=typeof window.playDoublesTournament==='function'?window.playDoublesTournament:null;
-  window.cbRunDoublesPlanV13=(id,plan)=>{
+  window.cbRunDoublesPlanV13=(id,plan,mode='live')=>{
     if(typeof local!=='undefined'){
       local.doublesTactics={plan:String(plan||'balanced')};
+      local.tactics={...(local.tactics||{}),doublesPlan:String(plan||'balanced')};
       if(typeof persist==='function')persist();
     }
-    if(rawPlayDoubles)rawPlayDoubles(Number(id));
+    if(mode==='sim'){
+      if(rawPlayDoubles)rawPlayDoubles(Number(id));
+      return;
+    }
+    if(typeof window.startTournamentLiveDoubles==='function')window.startTournamentLiveDoubles(Number(id),false);
   };
   if(rawPlayDoubles)window.playDoublesTournament=(id)=>{
     const host=document.getElementById('overlay');if(!host)return rawPlayDoubles(Number(id));
     const plans=[
-      ['balanced','Équilibré','Pas de biais forcé, la paire joue selon ses qualités.'],
-      ['poach','Poach agressif','Le joueur au filet coupe davantage. Fort si volée/réaction/communication suivent.'],
-      ['australian','Formation australienne','Décalage au service + filet pour casser les angles de retour.'],
-      ['target_weak','Cibler le plus faible','Insiste sur le retour/volée adverse les plus attaquables.'],
+      ['balanced','Équilibré','La paire joue selon ses qualités naturelles, sans biais forcé.'],
+      ['poach','Poach agressif','Le joueur au filet coupe davantage. Fort avec volée, réaction et communication.'],
+      ['australian','Formation australienne','Décalage au service et au filet pour casser les angles de retour.'],
+      ['target_weak','Cibler le plus faible','Insiste sur le retourneur ou volleyeur adverse le plus attaquable.'],
       ['safe','Sécuriser','Plus de discipline, moins de prise de risque, priorité à la communication.']
     ];
-    host.innerHTML='<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet cb-double-plan-sheet-v13"><div class="sheet-head"><div><div class="eyebrow">Plan de double</div><h1>Choisis comment ta paire va jouer</h1><div class="muted">Le plan modifie réellement la force de la paire selon ses attributs. Pas de bonus gratuit.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="cb-double-plan-grid-v13">'+plans.map(p=>'<button onclick="cbRunDoublesPlanV13('+Number(id)+',\''+p[0]+'\')"><b>'+p[1]+'</b><span>'+p[2]+'</span></button>').join('')+'</div></div></div>';
+    host.innerHTML='<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet cb-double-plan-sheet-v13"><div class="sheet-head"><div><div class="eyebrow">Match Center Double</div><h1>Choisis ton plan de paire</h1><div class="muted">Tu peux le jouer point par point avec 4 joueurs, ou simuler directement. Le même plan agit dans les deux modes.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="cb-double-plan-grid-v13">'+plans.map(p=>'<div class="cb-double-plan-card-v13"><b>'+p[1]+'</b><span>'+p[2]+'</span><div><button class="primary" onclick="cbRunDoublesPlanV13('+Number(id)+',\''+p[0]+'\',\'live\')">Jouer live</button><button class="ghost" onclick="cbRunDoublesPlanV13('+Number(id)+',\''+p[0]+'\',\'sim\')">Simuler</button></div></div>').join('')+'</div></div></div>';
   };
 
   const doublesAnim=(id,frames,key)=>{
@@ -197,7 +272,7 @@
   };
 
   let queued=false;
-  const enhance=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;addIdentity();addTacticalLab()})};
+  const enhance=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;addIdentity();addLiveDoublesDots();addTacticalLab()})};
   const root=document.getElementById('app')||document.body;
   new MutationObserver(enhance).observe(root,{childList:true,subtree:true});
   enhance();

@@ -5615,9 +5615,9 @@ Deno.serve(async(req:Request)=>{
     const blocked=new Set((forfeits.data??[]).map((x:any)=>Number(x.player_id)));
 
     const [directIds,wildcardIds,qualIds]=await Promise.all([
-      db.rpc("tournament_candidate_player_ids",{p_tournament_id:id,p_entry_method:"direct",p_limit:Math.max(64,directSlots+40)}),
-      wcSlots?db.rpc("tournament_candidate_player_ids",{p_tournament_id:id,p_entry_method:"wildcard",p_limit:Math.max(80,wcSlots*20)}):Promise.resolve({data:[],error:null} as any),
-      qDraw?db.rpc("tournament_candidate_player_ids",{p_tournament_id:id,p_entry_method:"qualifying",p_limit:Math.max(96,qDraw+80)}):Promise.resolve({data:[],error:null} as any)
+      db.rpc("tournament_detail_candidate_player_ids_v21_2",{p_tournament_id:id,p_entry_method:"direct",p_limit:Math.max(64,directSlots+40)}),
+      wcSlots?db.rpc("tournament_detail_candidate_player_ids_v21_2",{p_tournament_id:id,p_entry_method:"wildcard",p_limit:Math.max(80,wcSlots*20)}):Promise.resolve({data:[],error:null} as any),
+      qDraw?db.rpc("tournament_detail_candidate_player_ids_v21_2",{p_tournament_id:id,p_entry_method:"qualifying",p_limit:Math.max(96,qDraw+80)}):Promise.resolve({data:[],error:null} as any)
     ]);
     if(directIds.error||wildcardIds.error||qualIds.error)return h({error:(directIds.error||wildcardIds.error||qualIds.error)?.message},500);
 

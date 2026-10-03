@@ -31,11 +31,16 @@ test('Only genuinely missing estimated tables can use the explicit estimate',()=
  assert.equal(tournamentRoundPrize({prize_money:100000,singles_prize_by_result:{W:18000}},'R16').amount,0);
  assert.equal(tournamentRoundPrize({prize_money:100000},'Non joué').amount,0);
 });
-test('A Top 200 player cannot enter an M15 or receive an M15 wildcard',()=>{
- const f=frontend();f.run("local.career.singles_rank=2;t={circuit:'ITF',category:'M15',direct_cut:600,qual_cut:1000};");
+test('ITF M15/M25 do not invent a Top-200 play-down ban',()=>{
+ const f=frontend();f.run("local.career={...local.career,singles_rank:2,age:22};t={circuit:'ITF',category:'M15',direct_cut:600,qual_cut:1000};");
+ assert.equal(f.run('singlesEligibility(t).can'),true);
+ f.run("t.category='M25'");assert.equal(f.run('singlesEligibility(t).can'),true);
+});
+test('Grand Slam entry requires Top 500 and age 14+',()=>{
+ const f=frontend();f.run("local.career={...local.career,singles_rank:501,age:22};t={circuit:'ATP',category:'Grand Chelem',direct_cut:112,qual_cut:240};");
  assert.equal(f.run('singlesEligibility(t).can'),false);
- assert.equal(f.run('singlesEligibility(t).canWildcard'),false);
- f.run('local.career.singles_rank=201');assert.equal(f.run('singlesEligibility(t).can'),true);
+ f.run('local.career.singles_rank=500');assert.equal(f.run('singlesEligibility(t).can'),true);
+ f.run('local.career.age=13');assert.equal(f.run('singlesEligibility(t).can'),false);
 });
 test('Challenger play-down boundaries and host-country WC restrictions are respected',()=>{
  const f=frontend();f.run("t={circuit:'Challenger',category:'Challenger 50',country:'GBR',direct_cut:500,qual_cut:1000};local.career.singles_rank=50");

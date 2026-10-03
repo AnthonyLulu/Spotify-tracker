@@ -10116,6 +10116,18 @@ Deno.serve(async(req:Request)=>{
 
     // Visual choreography is derived from the simulated point, never from random decoration.
     // It is presentation-only and does not alter match probability or player attributes.
+    const preUserPoints=Number(session.data.user_points||0),preOppPoints=Number(session.data.opponent_points||0);
+    const preUserGames=Number(session.data.user_games||0),preOppGames=Number(session.data.opponent_games||0);
+    const preUserSets=Number(session.data.user_sets||0),preOppSets=Number(session.data.opponent_sets||0);
+    const setsToWinPreview=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
+    const userGamePoint=preUserPoints>=3&&preUserPoints-preOppPoints>=1;
+    const oppGamePoint=preOppPoints>=3&&preOppPoints-preUserPoints>=1;
+    const userSetPoint=userGamePoint&&((((preUserGames+1)>=6||preOppGames>=6)&&Math.abs((preUserGames+1)-preOppGames)>=2)||(preUserGames+1)===7);
+    const oppSetPoint=oppGamePoint&&(((preOppGames+1>=6||preUserGames>=6)&&Math.abs((preOppGames+1)-preUserGames)>=2)||(preOppGames+1)===7);
+    const userMatchPoint=userSetPoint&&preUserSets+1>=setsToWinPreview;
+    const oppMatchPoint=oppSetPoint&&preOppSets+1>=setsToWinPreview;
+    const breakPoint=serverIsUser?oppGamePoint:userGamePoint;
+    const stake=userMatchPoint||oppMatchPoint?"match_point":userSetPoint||oppSetPoint?"set_point":breakPoint?"break_point":userGamePoint||oppGamePoint?"game_point":"normal";
     const pointNo=Number(session.data.rally_no||0)+1;
     const courtClamp=(value:number,min=10,max=90)=>Math.max(min,Math.min(max,value));
     const side=pointNo%2===0?-1:1;
@@ -10170,6 +10182,36 @@ Deno.serve(async(req:Request)=>{
       ending==="return_winner"?"Retour gagnant":ending==="winner"?(atNet?"Coup gagnant au filet":"Coup gagnant"):
       ending==="forced_error"?"Faute provoquée":ending==="unforced_error"?"Faute directe":"Point construit";
     const visualTarget=serveDirection==="large"?"Extérieur":serveDirection==="corps"?"Corps":serveDirection==="T"?"T":"Zone neutre";
+    const clayVisual=/terre|clay/i.test(surface),grassVisual=/gazon|grass/i.test(surface);
+    const baseRallySpin=clayVisual?"Lift":grassVisual?"Slice":"Plat";
+    const explicitUserSpin=["Lift","Slice","Plat"].includes(spinPlan)?spinPlan:null;
+    const shotCount=doubleFault?1:(ace||unreturned?1:Math.max(3,Math.min(8,rally+1)));
+    const detailedPath:any[]=[{x:serverStartX,y:serverIsUser?82:18,stage:"contact"}];
+    const visualShots:any[]=[];
+    for(let shotIndex=0;shotIndex<shotCount;shotIndex++){
+      const hitterUser=serverIsUser?shotIndex%2===0:shotIndex%2===1;
+      const isServeVisual=shotIndex===0;
+      const stroke=isServeVisual?"service":((pointNo+shotIndex+(hitterUser?0:1))%3===0?"revers":"coup_droit");
+      const spin=isServeVisual?(serveDirection==="large"?"Slice":"Plat"):(hitterUser?(explicitUserSpin||baseRallySpin):(clayVisual?"Lift":grassVisual?(shotIndex%2?"Slice":"Plat"):(shotIndex%3===0?"Lift":"Plat")));
+      const surfaceSpeed=grassVisual?12:clayVisual?-10:0;
+      const spinSpeed=spin==="Plat"?8:spin==="Slice"?1:-5;
+      const visualSpeedKph=Math.max(78,Math.min(232,Math.round(
+        isServeVisual
+          ?172+(courtSpeed-1)*42+Math.min(16,altitude/150)+Math.max(0,ag-50)*.28
+          :112+(courtSpeed-1)*30+surfaceSpeed+spinSpeed+Math.max(0,effort-60)*.16
+      )));
+      const arc=spin==="Lift"||clayVisual?"high":spin==="Slice"||grassVisual?"low":"medium";
+      const lane=((pointNo+shotIndex*3)%5)-2;
+      const pathX=isServeVisual?serviceTargetX:courtClamp(50+lane*12+(targetWing==="Revers"?8:targetWing==="Coup droit"?-8:0),16,84);
+      const pathY=isServeVisual?bounceY:(hitterUser?24+(shotIndex%3)*3:76-(shotIndex%3)*3);
+      detailedPath.push({x:pathX,y:pathY,stage:isServeVisual?"serve":"rally",stroke,spin,speed_kph:visualSpeedKph,arc,hitter:hitterUser?"user":"opponent"});
+      visualShots.push({index:shotIndex+1,hitter:hitterUser?"user":"opponent",stroke,spin,speed_kph:visualSpeedKph,arc});
+    }
+    if(!doubleFault&&!ace&&!unreturned&&detailedPath.length>=4){
+      detailedPath[detailedPath.length-1]={...detailedPath[detailedPath.length-1],x:finishX,y:finishY,stage:"finish"};
+      ballPath=detailedPath;
+    }
+    const maxVisualSpeed=visualShots.reduce((mx:any,x:any)=>Math.max(mx,Number(x.speed_kph||0)),0);
 
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
@@ -10199,11 +10241,14 @@ Deno.serve(async(req:Request)=>{
       ball_x:ballPath[ballPath.length-1].x,ball_y:ballPath[ballPath.length-1].y,
       zone:atNet?"Filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
       visual:{
-        phase:visualPhase,label:visualLabel,target_zone:visualTarget,
+        phase:visualPhase,label:visualLabel,target_zone:visualTarget,stake,
         user_start:userStart,user_end:userEnd,opponent_start:opponentStart,opponent_end:opponentEnd,
         user_reaction:userWon?"celebrate":ending==="unforced_error"?"frustrated":"reset",
         opponent_reaction:userWon?(ending==="unforced_error"?"frustrated":"reset"):"celebrate",
-        ball_path:ballPath
+        user_slide:clayVisual&&rally>=4&&Math.abs(userEnd.x-userStart.x)>=5,
+        opponent_slide:clayVisual&&rally>=4&&Math.abs(opponentEnd.x-opponentStart.x)>=5,
+        surface_motion:clayVisual?"slide":grassVisual?"short_steps":"neutral",
+        max_speed_kph:maxVisualSpeed,shots:visualShots,ball_path:ballPath
       },
       at:new Date().toISOString()
     };
@@ -10251,7 +10296,9 @@ Deno.serve(async(req:Request)=>{
     visualEvents.push({
       kind:"point",point_no:pointNo,phase:visualPhase,label:visualLabel,
       winner:userWon?"user":"opponent",rally,serve_direction:serveDirection,
-      return_depth:returnDepth,target_zone:visualTarget,at:new Date().toISOString()
+      return_depth:returnDepth,target_zone:visualTarget,stake,
+      stroke:visualShots[visualShots.length-1]?.stroke||null,spin:visualShots[visualShots.length-1]?.spin||null,
+      speed_kph:maxVisualSpeed,at:new Date().toISOString()
     });
     stats._visual_events=visualEvents.slice(-8);
 
@@ -10286,6 +10333,13 @@ Deno.serve(async(req:Request)=>{
         user_games:finishedSetGames?.user_games??ug,opponent_games:finishedSetGames?.opponent_games??og,
         winner_game:lastPoint.winner==="user"?userName:opp.name,set_finished:setFinished,set_winner:setWinner
       });
+    }
+    lastPoint.ends_flipped=Boolean(log.length%2===1);
+    lastPoint.changeover=Boolean(gameFinished&&log.length%2===1);
+    lastPoint.stake=stake;
+    if(lastPoint.changeover){
+      visualEvents.push({kind:"changeover",phase:"changeover",label:"Changement de côté",winner:null,rally:0,at:new Date().toISOString()});
+      stats._visual_events=visualEvents.slice(-8);
     }
 
     const momentumNew=Math.max(10,Math.min(90,

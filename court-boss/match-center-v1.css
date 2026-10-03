@@ -52,11 +52,11 @@
 .cb-court-watermark{position:absolute;left:50%;top:50%;width:78px;height:78px;object-fit:contain;transform:translate(-50%,-50%);opacity:.13;filter:grayscale(.2);z-index:1;pointer-events:none}
 .cb-target-zone{position:absolute;width:24px;height:24px;border:2px solid rgba(255,255,255,.68);border-radius:50%;transform:translate(-50%,-50%);opacity:0;animation:cb-target .8s ease-out both;z-index:3;pointer-events:none}
 @keyframes cb-target{0%,45%{opacity:0;transform:translate(-50%,-50%) scale(.45)}70%{opacity:.8}100%{opacity:.1;transform:translate(-50%,-50%) scale(1.35)}}
-.cb-dot-motion{animation:cb-player-move .72s cubic-bezier(.2,.75,.25,1) both}
+.cb-dot-motion{animation:cb-player-move var(--cb-visual-ms,820ms) cubic-bezier(.2,.75,.25,1) both}
 @keyframes cb-player-move{0%{left:var(--sx);top:var(--sy)}100%{left:var(--ex);top:var(--ey)}}
-.cb-ball-flight{animation:cb-ball-flight .84s cubic-bezier(.3,.05,.2,1) both;z-index:7}
-@keyframes cb-ball-flight{0%{left:var(--b0x);top:var(--b0y);transform:translate(-50%,-50%) scale(.82)}34%{left:var(--b1x);top:var(--b1y);transform:translate(-50%,-50%) scale(1.08)}64%{left:var(--b2x);top:var(--b2y);transform:translate(-50%,-50%) scale(.92)}100%{left:var(--b3x);top:var(--b3y);transform:translate(-50%,-50%) scale(1)}}
-.cb-point-winner{filter:saturate(1.2);animation:cb-player-move .72s cubic-bezier(.2,.75,.25,1) both,cb-winner-pop .48s .72s ease-out}
+.cb-ball-flight{animation:cb-ball-flight var(--cb-visual-ms,820ms) cubic-bezier(.3,.05,.2,1) both;z-index:7}
+@keyframes cb-ball-flight{0%{left:var(--b0x);top:var(--b0y);transform:translate(-50%,-50%) scale(.82)}14%{left:var(--b1x);top:var(--b1y);transform:translate(-50%,-50%) scale(1.06)}28%{left:var(--b2x);top:var(--b2y);transform:translate(-50%,-50%) scale(.9)}42%{left:var(--b3x);top:var(--b3y);transform:translate(-50%,-50%) scale(1.04)}56%{left:var(--b4x);top:var(--b4y);transform:translate(-50%,-50%) scale(.9)}70%{left:var(--b5x);top:var(--b5y);transform:translate(-50%,-50%) scale(1.04)}84%{left:var(--b6x);top:var(--b6y);transform:translate(-50%,-50%) scale(.92)}100%{left:var(--b7x);top:var(--b7y);transform:translate(-50%,-50%) scale(1)}}
+.cb-point-winner{filter:saturate(1.2);animation:cb-player-move var(--cb-visual-ms,820ms) cubic-bezier(.2,.75,.25,1) both,cb-winner-pop .48s var(--cb-visual-ms,820ms) ease-out}
 .cb-point-loser{opacity:.92}
 @keyframes cb-winner-pop{0%{transform:translate(-50%,-50%) scale(1)}55%{transform:translate(-50%,-50%) scale(1.12)}100%{transform:translate(-50%,-50%) scale(1)}}
 .cb-reaction{position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);padding:3px 6px;border-radius:7px;background:rgba(4,11,9,.84);color:#fff;font-size:8px;font-style:normal;font-weight:900;white-space:nowrap;animation:cb-react .85s ease-out both}
@@ -69,3 +69,26 @@
 .cb-event-line:last-child{border-bottom:0}.cb-event-line span{font-size:8px;font-weight:900;opacity:.55}.cb-event-line b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cb-event-line small{font-size:8px;opacity:.58}.cb-event-line.user b{color:#8de1b3}.cb-event-line.opponent b{color:#f1a6a6}.cb-event-empty{padding:10px 2px;font-size:9px;opacity:.55}
 @media(max-width:700px){.cb-court{min-height:355px}.cb-match-story{grid-template-columns:1fr}.cb-event-feed{max-height:108px}.cb-court-watermark{width:62px;height:62px}.cb-court-hud{right:10px;justify-content:space-between}.cb-point-story small{white-space:normal}}
 @media(prefers-reduced-motion:reduce){.cb-weather-fx,.cb-target-zone,.cb-dot-motion,.cb-ball-flight,.cb-point-winner,.cb-reaction{animation:none!important}.cb-reaction{opacity:1}}
+
+
+/* Court Boss Rally Cinema V6 */
+.cb-crowd{position:absolute;left:4%;right:4%;height:24px;z-index:1;pointer-events:none;opacity:.28;background-image:radial-gradient(circle,rgba(248,250,249,.7) 0 1px,transparent 1.5px),radial-gradient(circle,rgba(10,18,16,.85) 0 1.5px,transparent 2px);background-size:12px 8px,17px 10px}
+.cb-crowd-top{top:0}.cb-crowd-bottom{bottom:0;transform:rotate(180deg)}
+.cb-event-grand-slam .cb-crowd{height:34px;opacity:.62;background-size:9px 7px,13px 8px}.cb-event-grand-slam{box-shadow:inset 0 0 0 3px rgba(255,255,255,.08),inset 0 0 40px rgba(0,0,0,.2)}
+.cb-event-masters .cb-crowd{height:30px;opacity:.48}.cb-event-tour .cb-crowd{height:24px;opacity:.34}
+.cb-event-challenger .cb-crowd{height:17px;opacity:.22;left:12%;right:12%}.cb-event-itf .cb-crowd{height:12px;opacity:.14;left:20%;right:20%}
+.cb-stake-banner{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);z-index:8;padding:7px 11px;border-radius:9px;background:rgba(5,12,10,.84);border:1px solid rgba(255,255,255,.32);font-size:10px;font-weight:950;letter-spacing:.09em;animation:cb-stake-pop .85s ease-out both;white-space:nowrap}
+@keyframes cb-stake-pop{0%{opacity:0;transform:translate(-50%,-50%) scale(.72)}35%,72%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:.15;transform:translate(-50%,-50%) scale(1.04)}}
+.cb-special-ace .cb-ball{box-shadow:0 0 0 3px rgba(255,255,255,.18),0 0 18px rgba(255,255,255,.75)}.cb-special-ace .cb-rally b{letter-spacing:.08em}
+.cb-special-break{outline:2px solid rgba(242,189,94,.35)}.cb-special-set{outline:2px solid rgba(126,197,255,.38)}.cb-special-match{outline:3px solid rgba(255,255,255,.4)}
+.cb-changeover{position:absolute;right:10px;bottom:10px;z-index:8;padding:5px 7px;border-radius:8px;background:rgba(4,11,9,.76);font-size:9px;font-weight:850;animation:cb-change .9s ease both}
+@keyframes cb-change{0%{opacity:0;transform:translateX(12px)}30%,75%{opacity:1;transform:none}100%{opacity:.15}}
+.cb-clay-slide::after{content:"";position:absolute;width:28px;height:5px;left:50%;top:80%;transform:translate(-50%,-50%) rotate(-8deg);border-radius:50%;background:rgba(82,42,24,.24);filter:blur(1px);animation:cb-dust var(--cb-visual-ms,820ms) ease-out both;z-index:-1}
+@keyframes cb-dust{0%{opacity:0;width:6px}55%{opacity:.8;width:30px}100%{opacity:.15;width:42px}}
+.cb-shot-strip{display:flex;gap:6px;margin-top:8px;padding:2px 1px 4px;overflow-x:auto;scrollbar-width:none}.cb-shot-strip::-webkit-scrollbar{display:none}
+.cb-shot-chip{flex:0 0 auto;display:grid;grid-template-columns:16px auto;column-gap:5px;align-items:center;min-width:122px;padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
+.cb-shot-chip i{grid-row:1/3;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:8px;font-style:normal;font-weight:900}.cb-shot-chip b{font-size:9px}.cb-shot-chip em{font-size:8px;font-style:normal;opacity:.58}
+.cb-shot-chip.user{border-bottom-color:rgba(97,207,148,.4)}.cb-shot-chip.opponent{border-bottom-color:rgba(235,132,132,.4)}.cb-shot-chip.lift em::before{content:"↗ "}.cb-shot-chip.slice em::before{content:"↘ "}.cb-shot-chip.plat em::before{content:"→ "}
+.cb-ends-flipped .cb-court-hud::after{content:"CÔTÉS INVERSÉS";margin-left:5px;font-size:7px;opacity:.48;letter-spacing:.06em}
+@media(max-width:700px){.cb-crowd{height:15px}.cb-event-grand-slam .cb-crowd{height:22px}.cb-shot-chip{min-width:112px}.cb-stake-banner{font-size:9px}.cb-court-hud b{max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+@media(prefers-reduced-motion:reduce){.cb-stake-banner,.cb-changeover,.cb-clay-slide::after{animation:none!important}}

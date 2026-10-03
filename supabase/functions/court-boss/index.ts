@@ -2509,7 +2509,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:69,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v2+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:70,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -9848,10 +9848,13 @@ Deno.serve(async(req:Request)=>{
       avg_risk:Number(risk.value.toFixed(1)),avg_aggression:Number(aggression.value.toFixed(1)),
       avg_net_intent:Number(netIntent.value.toFixed(1)),user_net_rate:Number(userNet.value.toFixed(3)),
       user_recent_win_rate:Number(recentWin.value.toFixed(3)),
+      pattern_age_points:Math.max(0,totalPoints-Number(memory?.signature_started_point||1)+1),
+      last_switch_age_points:Number(memory?.last_switch_point||0)>0?Math.max(0,totalPoints-Number(memory.last_switch_point)):null,
+      deception_window_points:Number(memory?.last_switch_point||0)>0?Math.max(0,4-Math.max(0,totalPoints-Number(memory.last_switch_point))):0,
       last_signature:memory?.last_signature||null,last_switch_point:Number(memory?.last_switch_point||0)
     };
   };
-  const liveTacticalMemoryPublic=(memory:any={})=>({version:"CB-TACTICAL-MEMORY-v3",...(memory?.summary||liveTacticalMemorySummary(memory))});
+  const liveTacticalMemoryPublic=(memory:any={})=>({version:"CB-TACTICAL-MEMORY-v4",...(memory?.summary||liveTacticalMemorySummary(memory))});
   const liveTacticalMemoryObserve=(memory:any,obs:any)=>{
     const prior:any=memory&&typeof memory==="object"?memory:{};
     const recent:Array<any>=Array.isArray(prior.recent)?[...prior.recent]:[];
@@ -9877,9 +9880,10 @@ Deno.serve(async(req:Request)=>{
     };
     recent.push(row);
     const next:any={
-      version:"CB-TACTICAL-MEMORY-v3",recent:recent.slice(-48),
+      version:"CB-TACTICAL-MEMORY-v4",recent:recent.slice(-48),
       total_points:Math.max(Number(prior.total_points||0)+1,pointNo),
       switches:Number(prior.switches||0)+(switched?1:0),
+      signature_started_point:switched?pointNo:Number(prior.signature_started_point||1),
       last_signature:signature,last_switch_point:switched?pointNo:Number(prior.last_switch_point||0),updated_at:row.at
     };
     next.summary=liveTacticalMemorySummary(next);return next;
@@ -9916,7 +9920,10 @@ Deno.serve(async(req:Request)=>{
       confidence:Number(confidence.toFixed(3)),maturity:Number(maturity.toFixed(3)),stability:Number(stability.toFixed(3)),
       serve_direction:serveRead,serve_read_source:serveReadSource,serve_sequence:s.serve_sequence,serve_plan:s.serve_plan,target_wing:s.target_wing,tempo:s.tempo,spin:s.spin,return_pos:s.return_pos,
       risk_mode:riskMode,net_mode:netMode,user_recent_win_rate:Number(s.user_recent_win_rate||0),
-      switch_rate:Number(s.switch_rate||0),total_points:Number(s.total_points||0)
+      switch_rate:Number(s.switch_rate||0),total_points:Number(s.total_points||0),
+      pattern_age_points:Number(s.pattern_age_points||0),
+      last_switch_age_points:s.last_switch_age_points==null?null:Number(s.last_switch_age_points||0),
+      deception_window_points:Number(s.deception_window_points||0)
     };
   };
 
@@ -10047,9 +10054,13 @@ Deno.serve(async(req:Request)=>{
     if(memoryRead.risk_mode&&memoryRead.risk_mode!=="Neutre")memoryReadScore+=memoryRead.risk_mode===currentRiskMode?.22:-.18;
     const currentNetMode=net>=55?"Filet":net<=22?"Fond":"Mixte";
     if(memoryRead.net_mode&&memoryRead.net_mode!=="Mixte"&&currentNetMode!=="Mixte")memoryReadScore+=memoryRead.net_mode===currentNetMode?.24:-.20;
-    const opponentMemoryEdge=Math.max(-.026,Math.min(.026,memoryReadScore*readConfidence*.026));
+    const deceptionWindow=Math.max(0,Math.min(4,Number(memoryRead.deception_window_points||0)));
+    const rawMemoryEdge=memoryReadScore*readConfidence*.026;
+    const deceptionBoost=rawMemoryEdge<0&&deceptionWindow>0?1+deceptionWindow*.14:1;
+    const opponentMemoryEdge=Math.max(-.034,Math.min(.026,rawMemoryEdge*deceptionBoost));
     const opponentMemoryState=readConfidence<.22?"IA en observation"
       :opponentMemoryEdge>=.008?"IA t'a lu"
+      :opponentMemoryEdge<=-.007&&deceptionWindow>0?"IA piégée par ton switch"
       :opponentMemoryEdge<=-.007?"Piège tactique réussi"
       :"Lecture contestée";
     const pointAttrEdge=Math.max(-.06,Math.min(.06,
@@ -10144,7 +10155,8 @@ Deno.serve(async(req:Request)=>{
     return {
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
       styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,
-      opponentMemoryEdge,opponentMemoryRead:memoryRead,opponentMemoryState,userDeceptionEdge:Math.max(0,-opponentMemoryEdge),mentalPressureEdge,pressureLevel:pressure,
+      opponentMemoryEdge,opponentMemoryRead:memoryRead,opponentMemoryState,opponentMemoryDeceptionWindow:deceptionWindow,
+      userDeceptionEdge:Math.max(0,-opponentMemoryEdge),mentalPressureEdge,pressureLevel:pressure,
       userConditionDetail,oppConditionDetail,serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };
@@ -11355,9 +11367,10 @@ Deno.serve(async(req:Request)=>{
         opponent_plan:kernel.opponentPlan||null,
         opponent_memory_edge:Math.round(Number(kernel.opponentMemoryEdge||0)*10000)/10000,
         opponent_memory_state:kernel.opponentMemoryState||"IA en observation",
+        opponent_deception_window_points:Number(kernel.opponentMemoryDeceptionWindow||0),
         user_deception_edge:Math.round(Number(kernel.userDeceptionEdge||0)*10000)/10000,
         opponent_memory_read:kernel.opponentMemoryRead||null,
-        opponent_ai_model:"CB-OPPONENT-AI-v3-memory",
+        opponent_ai_model:"CB-OPPONENT-AI-v4-memory",
         server_archetype:kernel.serverArchetype,
         returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,
@@ -11409,7 +11422,7 @@ Deno.serve(async(req:Request)=>{
     });
     if(lastPoint.environment_effects&&typeof lastPoint.environment_effects==="object"){
       lastPoint.environment_effects.tactical_memory=liveTacticalMemoryPublic(stats._tactical_memory);
-      lastPoint.environment_effects.tactical_memory_model="CB-TACTICAL-MEMORY-v3";
+      lastPoint.environment_effects.tactical_memory_model="CB-TACTICAL-MEMORY-v4";
     }
     if(serverIsUser){
       stats.user_first_serves++;
@@ -12057,8 +12070,8 @@ Deno.serve(async(req:Request)=>{
         runtime_condition_edge:Math.round(lastConditionEdge*10000)/10000,
         environment_effects:{
           opponent_plan:gameOpponentPlan,opponent_memory_read:gameOpponentPlan?.memory_read||null,
-          opponent_ai_model:"CB-OPPONENT-AI-v3-memory",
-          tactical_memory:liveTacticalMemoryPublic(stats._tactical_memory),tactical_memory_model:"CB-TACTICAL-MEMORY-v3"
+          opponent_ai_model:"CB-OPPONENT-AI-v4-memory",
+          tactical_memory:liveTacticalMemoryPublic(stats._tactical_memory),tactical_memory_model:"CB-TACTICAL-MEMORY-v4"
         },
         form_modifier_runtime_only:true,at:new Date().toISOString()
       },

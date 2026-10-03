@@ -10607,17 +10607,17 @@ Deno.serve(async(req:Request)=>{
   const liveInvertTennisScore=(value:any)=>{
     const input=String(value||"").trim();
     if(!input)return input;
-    const retirement=/\\bRET\\b/i.test(input);
-    if(/^Sets\\s+\\d+-\\d+(?:\\s+RET)?$/i.test(input)){
-      const inverted=input.replace(/(\\d+)-(\\d+)/,(_m,a,b)=>String(b)+"-"+String(a)).replace(/\\s+RET$/i,"");
+    const retirement=/\bRET\b/i.test(input);
+    if(/^Sets\s+\d+-\d+(?:\s+RET)?$/i.test(input)){
+      const inverted=input.replace(/(\d+)-(\d+)/,(_m,a,b)=>String(b)+"-"+String(a)).replace(/\s+RET$/i,"");
       return inverted+(retirement?" RET":"");
     }
-    const parts=input.match(/\\[\\d+-\\d+\\]|\\d+-\\d+(?:\\s+\\(\\d+-\\d+\\))?/g);
+    const parts=input.match(/\[\d+-\d+\]|\d+-\d+(?:\s+\(\d+-\d+\))?/g);
     if(!parts?.length)return input;
     const inverted=parts.map((token:string)=>{
-      let m=token.match(/^\\[(\\d+)-(\\d+)\\]$/);
+      let m=token.match(/^\[(\d+)-(\d+)\]$/);
       if(m)return "["+m[2]+"-"+m[1]+"]";
-      m=token.match(/^(\\d+)-(\\d+)(?:\\s+\\((\\d+)-(\\d+)\\))?$/);
+      m=token.match(/^(\d+)-(\d+)(?:\s+\((\d+)-(\d+)\))?$/);
       if(!m)return token;
       return m[2]+"-"+m[1]+(m[3]!=null?" ("+m[4]+"-"+m[3]+")":"");
     }).join(" ");

@@ -192,7 +192,8 @@ jobs:
             await firstPlayer.click();
             await page.getByText('Dossier joueur').waitFor();
             await page.getByRole('button',{name:'Attributs'}).click();
-            await page.getByText('Technique').waitFor();
+            await page.locator('.attr-sections').waitFor();
+            if(await page.locator('.attr-row').count()<10)throw new Error('player attributes tab did not render');
             await page.getByRole('button',{name:'✕'}).click();
 
             await page.evaluate(()=>openPlayer(3));

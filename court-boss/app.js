@@ -2708,6 +2708,18 @@ window.setMatchSurface=(surface,indoor=false)=>{local.matchSurface=surface;local
 function liveMatchOwnerId(session=local.liveMatch){
  return Number(session?.managed_player_id||activeManagedId()||primaryManagedPlayerId()||0);
 }
+function liveIsDoubles(session=local.liveMatch){
+ return String(session?.stats?._meta?.match_type||'')==='doubles';
+}
+function livePointEndpoint(session=local.liveMatch){
+ return liveIsDoubles(session)?'/api/live-doubles/point':'/api/live-match/point';
+}
+function liveCommitEndpoint(session=local.liveMatch){
+ return liveIsDoubles(session)?'/api/live-doubles/commit':'/api/live-match/commit';
+}
+async function requestLivePoint(){
+ return get(livePointEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+}
 function rememberCurrentLiveMatch(){
  const s=local.liveMatch;
  if(!s)return;
@@ -2804,6 +2816,23 @@ window.startTournamentLiveMatch=async(id,quick=false)=>{
   if(quick)await simulateLiveMatch();
  }catch(e){alert(e.message)}
 };
+window.startTournamentLiveDoubles=async(id,quick=false)=>{
+ const playerId=activeManagedId()||primaryManagedPlayerId()||0;
+ if(!playerId)return alert('Joueur géré introuvable.');
+ if(liveMatchSessionsByPlayer.has(playerId))return alert('Ce joueur a déjà un match en attente. Termine, valide ou annule-le d’abord.');
+ try{
+  await ensureLivePreMatchCheckpoint();
+  local.tactics={...(local.tactics||{}),doublesPlan:String(local.doublesTactics?.plan||local.tactics?.doublesPlan||'balanced')};
+  const d=await get('/api/live-doubles/start',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{},doubles_plan:local.tactics.doublesPlan})
+  });
+  applyLiveMatchResponse(d);
+  closeOverlay();
+  route='match';persist();render();
+  if(quick)await simulateLiveMatch();
+ }catch(e){alert(e.message)}
+};
 window.saveLiveCheckpoint=async()=>{
  if(!local.liveMatch)return;
  const d=await saveCareerSlot(9,'quick',true);
@@ -2836,7 +2865,7 @@ window.discardLiveMatch=async()=>{
 window.commitLiveMatch=async(saveAfter=true)=>{
  if(!local.liveMatch||!['finished','completed'].includes(String(local.liveMatch.status||'')))return;
  try{
-  const d=await get('/api/live-match/commit',{
+  const d=await get(liveCommitEndpoint(),{
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({session_id:Number(local.liveMatch.id)})
   });
@@ -2869,7 +2898,7 @@ window.playLivePoint=async()=>{
  if(!local.liveMatch||liveAutoBusy)return;
  liveAutoBusy=true;
  try{
-  const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+  const d=await requestLivePoint();
   applyLiveMatchResponse(d);if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null}persist();render();
   await liveSleep(liveVisualDelayMs());
  }catch(e){alert(e.message)}
@@ -2878,8 +2907,21 @@ window.playLivePoint=async()=>{
 window.simulateLiveGame=async()=>{
  if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return;
  try{
-  const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  applyLiveMatchResponse(d);persist();render();
+  if(liveIsDoubles()){
+   const startSet=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
+   const startGames=Number(local.liveMatch.user_games||0)+Number(local.liveMatch.opponent_games||0);
+   let guard=0;
+   while(local.liveMatch?.status==='active'&&guard++<40){
+    const d=await requestLivePoint();applyLiveMatchResponse(d);
+    const sets=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
+    const games=Number(local.liveMatch.user_games||0)+Number(local.liveMatch.opponent_games||0);
+    if(sets!==startSet||games!==startGames)break;
+   }
+  }else{
+   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+   applyLiveMatchResponse(d);
+  }
+  persist();render();
  }catch(e){alert(e.message)}
 }
 function liveSimulationProgressKey(session=local.liveMatch){
@@ -2893,8 +2935,20 @@ function liveSimulationProgressKey(session=local.liveMatch){
 async function simulateLiveGamesUntil(stopWhen){
  while(local.liveMatch&&local.liveMatch.status==='active'&&!stopWhen(local.liveMatch)){
   const before=liveSimulationProgressKey(local.liveMatch);
-  const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  applyLiveMatchResponse(d);
+  if(liveIsDoubles()){
+   const startSet=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
+   const startGames=Number(local.liveMatch.user_games||0)+Number(local.liveMatch.opponent_games||0);
+   let guard=0;
+   while(local.liveMatch?.status==='active'&&guard++<40){
+    const d=await requestLivePoint();applyLiveMatchResponse(d);
+    const sets=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
+    const games=Number(local.liveMatch.user_games||0)+Number(local.liveMatch.opponent_games||0);
+    if(sets!==startSet||games!==startGames)break;
+   }
+  }else{
+   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+   applyLiveMatchResponse(d);
+  }
   const after=liveSimulationProgressKey(local.liveMatch);
   if(local.liveMatch?.status==='active'&&after===before)throw new Error('Simulation bloquée : le score n’a pas progressé.');
  }
@@ -2928,7 +2982,7 @@ async function liveAutoTick(){
  }
  liveAutoBusy=true;
  try{
-   const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+    const d=await requestLivePoint();
    applyLiveMatchResponse(d);persist();render();
    if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null;render()}
  }catch(e){

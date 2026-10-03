@@ -117,7 +117,7 @@
       <label>Côté ciblé<select onchange="cbSetMatchTactic('targetWing',this.value)"><option ${t.targetWing==='Mixte'?'selected':''}>Mixte</option><option ${t.targetWing==='Revers'?'selected':''}>Revers</option><option ${t.targetWing==='Coup droit'?'selected':''}>Coup droit</option></select></label>
       <label>Tempo<select onchange="cbSetMatchTactic('tempo',this.value)"><option ${t.tempo==='Patient'?'selected':''}>Patient</option><option ${t.tempo==='Neutre'?'selected':''}>Neutre</option><option ${t.tempo==='Rapide'?'selected':''}>Rapide</option></select></label>
       <label>Effet / variation<select onchange="cbSetMatchTactic('spin',this.value)"><option ${t.spin==='Mixte'?'selected':''}>Mixte</option><option ${t.spin==='Lift'?'selected':''}>Lift</option><option ${t.spin==='Slice'?'selected':''}>Slice</option><option ${t.spin==='Plat'?'selected':''}>Plat</option></select></label>
-      ${meta?.no_ad?`<label>Côté point décisif<select onchange="cbSetMatchTactic('decidingSide',this.value)"><option ${t.decidingSide==='Mixte'?'selected':''}>Mixte</option><option ${t.decidingSide==='Deuce'?'selected':''}>Deuce</option><option ${t.decidingSide==='Avantage'?'selected':''}>Avantage</option></select></label>`:''}
+      ${meta?.no_ad?`<label>Côté retour · point décisif<select onchange="cbSetMatchTactic('decidingSide',this.value)"><option ${t.decidingSide==='Mixte'?'selected':''}>Mixte</option><option ${t.decidingSide==='Deuce'?'selected':''}>Deuce</option><option ${t.decidingSide==='Avantage'?'selected':''}>Avantage</option></select></label>`:''}
     </div>`;
   }
 

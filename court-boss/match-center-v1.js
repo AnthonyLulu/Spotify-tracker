@@ -351,7 +351,7 @@
         </div>
         ${!done?`<div class="cb-live-controls">
           <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'⏸ Pause':'▶ Auto'}</button><button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn ${liveAutoSpeed===2?'active':''}" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn ${liveAutoSpeed===3?'active':''}" onclick="setLiveSpeed(3)">3x</button></div>
-          <div class="cb-step-row"><button class="soft-btn" ${liveAutoTimer?'disabled':''} onclick="playLivePoint()">Point suivant</button><span class="muted micro">Point par point · aucune avance automatique par jeu, set ou match.</span></div>
+          <div class="cb-live-flow-note"><span class="muted micro">Flux direct point par point · pause pour modifier les consignes, puis reprise instantanée.</span></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
         </div>
         ${changeoverCoach?`<div class="cb-changeover-coach">

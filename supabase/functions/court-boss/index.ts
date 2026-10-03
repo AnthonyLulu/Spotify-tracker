@@ -10244,8 +10244,10 @@ Deno.serve(async(req:Request)=>{
     const breakPoint=!tiebreakActivePreview&&(serverIsUser?oppGamePoint:userGamePoint);
     const stake=userMatchPoint||oppMatchPoint?"match_point":userSetPoint||oppSetPoint?"set_point":breakPoint?"break_point":userGamePoint||oppGamePoint?"game_point":"normal";
     const pointNo=Number(session.data.rally_no||0)+1;
+    const pointInCurrentGame=preUserPoints+preOppPoints;
+    const serviceCourt=pointInCurrentGame%2===0?"deuce":"ad";
     const courtClamp=(value:number,min=10,max=90)=>Math.max(min,Math.min(max,value));
-    const side=pointNo%2===0?-1:1;
+    const side=serviceCourt==="deuce"?1:-1;
     const serverStartX=courtClamp(50+side*11,24,76);
     const serviceTargetX=courtClamp(
       serveDirection==="T"?50-side*4:serveDirection==="corps"?50+side*4:50+side*27,
@@ -10627,7 +10629,7 @@ Deno.serve(async(req:Request)=>{
       rally,rally_band:rallyBand,shot:ending,ending,
       serve_number:firstServeIn?1:2,first_serve_in:firstServeIn,
       double_fault:doubleFault,ace,unreturned_serve:unreturned,
-      serve_direction:serveDirection,return_depth:returnDepth,at_net:atNet,net_player_id:netPlayerId,
+      serve_direction:serveDirection,service_court:serviceCourt,return_depth:returnDepth,at_net:atNet,net_player_id:netPlayerId,
       server:serverIsUser?"user":"opponent",
       server_win_probability:Math.round(serverWinProb*1000)/10,
       server_surface_elo:Number(tm.server_surface_elo||0),
@@ -10708,7 +10710,7 @@ Deno.serve(async(req:Request)=>{
     visualEvents.push({
       kind:"point",point_no:pointNo,phase:visualPhase,label:visualLabel,
       winner:userWon?"user":"opponent",rally,serve_direction:serveDirection,
-      return_depth:returnDepth,target_zone:visualTarget,stake,
+      return_depth:returnDepth,target_zone:visualTarget,stake,service_court:serviceCourt,
       stroke:finalShot?.stroke||null,spin:finalShot?.spin||null,
       pattern:finalPattern,intent:finalShot?.intent||null,
       hitter_archetype:finalShot?.hitter_archetype||null,
@@ -10827,6 +10829,7 @@ Deno.serve(async(req:Request)=>{
       serve_number:firstServeIn?1:2,
       first_serve_in:firstServeIn,
       serve_direction:serveDirection,
+      service_court:serviceCourt,
       ace,
       double_fault:doubleFault,
       unreturned_serve:unreturned,

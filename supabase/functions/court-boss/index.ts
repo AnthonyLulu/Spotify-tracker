@@ -2520,7 +2520,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:71,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v1+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:71,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")

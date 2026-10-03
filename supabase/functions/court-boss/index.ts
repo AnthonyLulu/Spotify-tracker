@@ -9476,6 +9476,46 @@ Deno.serve(async(req:Request)=>{
         dominant_wing:forehand>=backhand+1.2?"Coup droit":backhand>=forehand+1.2?"Revers":"Équilibré"}
     };
   };
+  const liveOpponentPlan=(oppAttrs:any,userAttrs:any,oppFormMultiplier=1,userFormMultiplier=1,ctx:any={})=>{
+    const profile=liveStyleProfile(oppAttrs,oppFormMultiplier);
+    const avgOpp=(keys:string[])=>liveRuntimeAvgAttr(oppAttrs,keys,oppFormMultiplier);
+    const avgUser=(keys:string[])=>liveRuntimeAvgAttr(userAttrs,keys,userFormMultiplier);
+    const surface=String(ctx?.surface||"Dur").toLowerCase();
+    const clay=surface.includes("terre")||surface.includes("clay");
+    const grass=surface.includes("gazon")||surface.includes("grass");
+    const indoor=surface.includes("intérieur")||surface.includes("indoor");
+    const pressure=Math.max(0,Math.min(1,Number(ctx?.pressure||0)));
+    const userMomentum=Math.max(10,Math.min(90,Number(ctx?.momentum??50)));
+    const chase=Math.max(-1,Math.min(1,(userMomentum-50)/28));
+    const decision=avgOpp(["tactics","decision_making","shot_selection","adaptability"]);
+    const composure=avgOpp(["composure","concentration","confidence","big_points"]);
+    const aggressionAttr=avgOpp(["aggression","killer_instinct","forehand_power","backhand_power"]);
+    const patience=avgOpp(["patience","rally_tolerance","defensive_skill","tenacity"]);
+    const returnAgg=avgOpp(["return_aggression","reaction","anticipation","return_game"]);
+    const topspin=avgOpp(["topspin","forehand_consistency","rally_tolerance"]);
+    const slice=avgOpp(["slice","touch","shot_selection"]);
+    const userFh=avgUser(["forehand","forehand_power","forehand_accuracy","forehand_consistency"]);
+    const userBh=avgUser(["backhand","backhand_power","backhand_accuracy","backhand_consistency"]);
+    let aggression=Math.round(50+(aggressionAttr-10)*2.6+Math.max(0,chase)*7-Math.max(0,-chase)*3);
+    let risk=Math.round(46+(aggressionAttr-10)*2.2+(decision-10)*.7+Math.max(0,chase)*8-Math.max(0,-chase)*5);
+    let net=Math.round(18+(profile.net-10)*4.1+(profile.archetype==="Attaquant filet"?18:0)+(grass||indoor?6:0));
+    let effort=Math.round(58+Math.max(0,chase)*9+(pressure>.75?3:0)+(avgOpp(["stamina","natural_fitness","work_rate"])-10)*.45);
+    if(pressure>.7&&composure<11){risk-=5;aggression-=2}
+    if(pressure>.7&&composure>=15){risk+=2;aggression+=2}
+    aggression=Math.max(30,Math.min(82,aggression));
+    risk=Math.max(28,Math.min(78,risk));
+    net=Math.max(8,Math.min(72,net));
+    effort=Math.max(45,Math.min(82,effort));
+    let tempo=profile.archetype==="Contreur"||patience>=14?"Patient":profile.archetype==="Puncheur"||profile.archetype==="Attaquant filet"?"Rapide":"Neutre";
+    if(chase>.45&&decision>=11)tempo="Rapide";
+    if(chase<-.45&&patience>=12)tempo="Patient";
+    const spin=clay?(topspin>=slice-1?"Lift":"Mixte"):grass?(slice>=topspin-1?"Slice":"Plat"):topspin>=slice+2?"Lift":slice>=topspin+2?"Slice":aggressionAttr>=14?"Plat":"Mixte";
+    const targetWing=userBh<=userFh-1?"Revers":userFh<=userBh-1?"Coup droit":"Mixte";
+    const returnPos=returnAgg>=14&&(grass||indoor||risk>=60)?"Avancée":profile.archetype==="Contreur"&&clay?"Reculée":"Neutre";
+    const adaptation=chase>.35?"Accélère pour revenir":chase<-.35?"Gère l’avantage":pressure>=.7?"Serrage sur point clé":"Plan naturel";
+    return {aggression,risk,net,effort,tempo,spin,targetWing,returnPos,adaptation,archetype:profile.archetype,
+      decision:Math.round(decision*10)/10,composure:Math.round(composure*10)/10,momentum_response:Math.round(chase*100),pressure_response:Math.round(pressure*100)};
+  };
 
   const livePointKernel=(ctx:any)=>{
     const tm:any=ctx.tm||{},ua:any=ctx.ua||{},oa:any=ctx.oa||{},meta:any=ctx.meta||{};
@@ -9509,8 +9549,11 @@ Deno.serve(async(req:Request)=>{
     const targetWing=String(tactics.targetWing||"Mixte"),spinPlan=String(tactics.spin||"Mixte"),tempo=String(tactics.tempo||"Neutre");
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100),effort=n(tactics.effort,60,20,100);
     const ret=String(tactics.returnPos||"Neutre");
+    const opponentPlan=liveOpponentPlan(oa,ua,oppFormMultiplier,userFormMultiplier,{surface,pressure,momentum:ctx.momentum});
     const opponentBh=liveRuntimeAvgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],oppFormMultiplier);
     const opponentFh=liveRuntimeAvgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormMultiplier);
+    const userBh=liveRuntimeAvgAttr(ua,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],userFormMultiplier);
+    const userFh=liveRuntimeAvgAttr(ua,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],userFormMultiplier);
     const targetEdge=targetWing==="Revers"?Math.max(-4,Math.min(4,opponentFh-opponentBh))*.00115:
       targetWing==="Coup droit"?Math.max(-4,Math.min(4,opponentBh-opponentFh))*.00115:0;
     const spinEdge=spinPlan==="Lift"?(clay?.006:grass?-.003:.002):
@@ -9519,10 +9562,18 @@ Deno.serve(async(req:Request)=>{
     const tempoEdge=tempo==="Rapide"?.0045:tempo==="Patient"?.002:0;
     const effortEdge=(effort-60)*.00032;
     const userTacticEdge=targetEdge+spinEdge+tempoEdge+effortEdge;
+    const oppTargetEdge=opponentPlan.targetWing==="Revers"?Math.max(-4,Math.min(4,userFh-userBh))*.00110:
+      opponentPlan.targetWing==="Coup droit"?Math.max(-4,Math.min(4,userBh-userFh))*.00110:0;
+    const oppSpinEdge=opponentPlan.spin==="Lift"?(clay?.006:grass?-.003:.002):
+      opponentPlan.spin==="Slice"?(grass?.006:indoor?.003:0):
+      opponentPlan.spin==="Plat"?(indoor?.006:clay?-.004:.003):0;
+    const oppTempoEdge=opponentPlan.tempo==="Rapide"?.0045:opponentPlan.tempo==="Patient"?.002:0;
+    const oppEffortEdge=(Number(opponentPlan.effort||60)-60)*.00030;
+    const opponentTacticEdge=oppTargetEdge+oppSpinEdge+oppTempoEdge+oppEffortEdge;
     const pointAttrEdge=Math.max(-.06,Math.min(.06,
       groundEdge*.00135+movementEdge*.00085+mentalEdge*(.00070+pressure*.00075)+
       netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+
-      (serverIsUser?userTacticEdge:-userTacticEdge)
+      (serverIsUser?(userTacticEdge-opponentTacticEdge):(opponentTacticEdge-userTacticEdge))
     ));
 
     const weather:any=meta.weather||{},mood:any=meta.mood||{};
@@ -9581,6 +9632,20 @@ Deno.serve(async(req:Request)=>{
       userStyleFitEdge+=(tempo==="Patient"?.001:tempo==="Rapide"?.001:0)+(spinPlan!=="Mixte"?.0008:0);
     }
     userStyleFitEdge=Math.max(-.018,Math.min(.018,userStyleFitEdge));
+    const opponentProfile=serverIsUser?returnerProfile:serverProfile;
+    let opponentStyleFitEdge=0;
+    if(opponentProfile.archetype==="Attaquant filet"){
+      opponentStyleFitEdge+=(Number(opponentPlan.net||28)-28)*.00022+(opponentPlan.tempo==="Rapide"?.003:0)+(opponentPlan.spin==="Slice"?.002:0);
+    }else if(opponentProfile.archetype==="Puncheur"){
+      opponentStyleFitEdge+=(Number(opponentPlan.aggression||58)-58)*.00022+(Number(opponentPlan.risk||52)-52)*.00016+(opponentPlan.tempo==="Rapide"?.004:0)+(opponentPlan.spin==="Plat"?.002:0);
+    }else if(opponentProfile.archetype==="Contreur"){
+      opponentStyleFitEdge+=(52-Number(opponentPlan.risk||52))*.00017+(opponentPlan.tempo==="Patient"?.004:0)+(opponentPlan.returnPos==="Reculée"?.0025:0);
+    }else if(opponentProfile.archetype==="Créatif"){
+      opponentStyleFitEdge+=(opponentPlan.tempo==="Patient"?.0025:0)+(opponentPlan.spin!=="Mixte"?.002:0)+(Math.max(0,58-Math.abs(Number(opponentPlan.risk||52)-50)))*.000035;
+    }else{
+      opponentStyleFitEdge+=(opponentPlan.tempo==="Patient"?.001:opponentPlan.tempo==="Rapide"?.001:0)+(opponentPlan.spin!=="Mixte"?.0008:0);
+    }
+    opponentStyleFitEdge=Math.max(-.018,Math.min(.018,opponentStyleFitEdge));
 
     const firstServeIn=ctx.firstServeIn;
     let serverWinProb=Number(firstServeIn===true?tm.first_serve_point_win_prob:firstServeIn===false?tm.second_serve_point_win_prob:tm.expected_server_point_win_prob);
@@ -9590,11 +9655,11 @@ Deno.serve(async(req:Request)=>{
     if(serverIsUser)serverWinProb+=(ag-58)*.0008+(risk-52)*.00035+Math.min(70,net)*.00007+userMomentum;
     else serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0018+conditionEdge;
-    serverWinProb+=styleMatchupEdge+(serverIsUser?userStyleFitEdge:-userStyleFitEdge)+mentalPressureEdge;
+    serverWinProb+=styleMatchupEdge+(serverIsUser?(userStyleFitEdge-opponentStyleFitEdge):(opponentStyleFitEdge-userStyleFitEdge))+mentalPressureEdge;
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
     return {
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
-      styleMatchupEdge,userStyleFitEdge,mentalPressureEdge,pressureLevel:pressure,
+      styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,mentalPressureEdge,pressureLevel:pressure,
       serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };
@@ -10462,9 +10527,9 @@ Deno.serve(async(req:Request)=>{
         const canDrop=hitterProfile.touch>=10.5&&receiverDeep;
         const canApproach=shortIncoming&&hitterProfile.net>=10.5;
         const insideChance=stroke==="coup_droit"&&Math.abs(hitterPos.x-50)>=10;
-        const playerAgg=hitterUser?ag:Math.max(42,Math.min(72,50+(hitterProfile.power-11)*2));
-        const playerRisk=hitterUser?risk:Math.max(38,Math.min(68,48+(hitterProfile.power-11)*1.8-(hitterProfile.defense-11)*.7));
-        const netPlan=hitterUser?Math.max(.55,Math.min(1.65,.62+net/62)):1;
+        const playerAgg=hitterUser?ag:Number(kernel.opponentPlan?.aggression??Math.max(42,Math.min(72,50+(hitterProfile.power-11)*2)));
+        const playerRisk=hitterUser?risk:Number(kernel.opponentPlan?.risk??Math.max(38,Math.min(68,48+(hitterProfile.power-11)*1.8-(hitterProfile.defense-11)*.7)));
+        const netPlan=hitterUser?Math.max(.55,Math.min(1.65,.62+net/62)):Math.max(.55,Math.min(1.65,.62+Number(kernel.opponentPlan?.net??28)/62));
         const archetype=String(hitterProfile.archetype||"All-court");
 
         if(hitterAtNet){
@@ -10514,7 +10579,8 @@ Deno.serve(async(req:Request)=>{
       }
       let spin=isServeVisual?(serveDirection==="large"?"Slice":"Plat"):
         hitterUser?(explicitUserSpin||baseRallySpin):
-        clayVisual?"Lift":grassVisual?(roll2<.58?"Slice":"Plat"):(roll2<.26?"Lift":roll2<.42?"Slice":"Plat");
+        (["Lift","Slice","Plat"].includes(String(kernel.opponentPlan?.spin||""))?String(kernel.opponentPlan.spin):
+          clayVisual?"Lift":grassVisual?(roll2<.58?"Slice":"Plat"):(roll2<.26?"Lift":roll2<.42?"Slice":"Plat"));
       if(pattern==="drop_shot"||pattern==="volley")spin="Slice";
       if(pattern==="lob")spin="Lift";
       const surfaceSpeed=grassVisual?12:clayVisual?-10:0;
@@ -10747,6 +10813,10 @@ Deno.serve(async(req:Request)=>{
         server_pressure_mental:Math.round(Number(kernel.serverPressureMental||0)*10)/10,
         returner_pressure_mental:Math.round(Number(kernel.returnerPressureMental||0)*10)/10,
         pressure_model:"CB-PRESSURE-v2",
+        opponent_tactic_edge:Math.round(Number(kernel.opponentTacticEdge||0)*10000)/10000,
+        opponent_style_fit_edge:Math.round(Number(kernel.opponentStyleFitEdge||0)*10000)/10000,
+        opponent_plan:kernel.opponentPlan||null,
+        opponent_ai_model:"CB-OPPONENT-AI-v1",
         server_archetype:kernel.serverArchetype,
         returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,

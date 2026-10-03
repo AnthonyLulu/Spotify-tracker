@@ -1680,6 +1680,21 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     const restored=new Set<number>();
     for(const row of rows??[]){
       const meta:any=row?.stats?._meta||{};
+      const doublesRollback:Array<any>=Array.isArray(meta?.rollback_doubles_players)?meta.rollback_doubles_players:[];
+      for(const item of doublesRollback){
+        const did=Number(item?.player?.id||0);
+        if(!did||restored.has(did)||!item?.player)continue;
+        restored.add(did);
+        const playerRestore=await db.from("players").upsert(item.player,{onConflict:"id"});
+        if(playerRestore.error)throw new Error("doubles rollback player: "+playerRestore.error.message);
+        const eloClear=await db.from("player_elo_ratings").delete().eq("player_id",did);
+        if(eloClear.error)throw new Error("doubles rollback Elo cleanup: "+eloClear.error.message);
+        if(item.elo){
+          const eloRestore=await db.from("player_elo_ratings").upsert(item.elo,{onConflict:"player_id"});
+          if(eloRestore.error)throw new Error("doubles rollback Elo: "+eloRestore.error.message);
+        }
+      }
+
       const rb:any=meta?.rollback_opponent||null;
       const pid=Number(rb?.player?.id||row?.opponent_id||0);
       if(!pid||restored.has(pid)||!rb?.player)continue;
@@ -1697,20 +1712,6 @@ async function restoreManagedSaveSnapshot(snapshot:any){
       if(rb.elo){
         const eloRestore=await db.from("player_elo_ratings").upsert(rb.elo,{onConflict:"player_id"});
         if(eloRestore.error)throw new Error("opponent rollback Elo: "+eloRestore.error.message);
-      }
-      const doublesRollback:Array<any>=Array.isArray(meta?.rollback_doubles_players)?meta.rollback_doubles_players:[];
-      for(const item of doublesRollback){
-        const did=Number(item?.player?.id||0);
-        if(!did||restored.has(did)||!item?.player)continue;
-        restored.add(did);
-        const playerRestore=await db.from("players").upsert(item.player,{onConflict:"id"});
-        if(playerRestore.error)throw new Error("doubles rollback player: "+playerRestore.error.message);
-        const eloClear=await db.from("player_elo_ratings").delete().eq("player_id",did);
-        if(eloClear.error)throw new Error("doubles rollback Elo cleanup: "+eloClear.error.message);
-        if(item.elo){
-          const eloRestore=await db.from("player_elo_ratings").upsert(item.elo,{onConflict:"player_id"});
-          if(eloRestore.error)throw new Error("doubles rollback Elo: "+eloRestore.error.message);
-        }
       }
     }
   };
@@ -11218,7 +11219,18 @@ Deno.serve(async(req:Request)=>{
     if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
     const events=await db.from("live_match_events").select("*").eq("session_id",id).order("id",{ascending:true});
     if(events.error)return h({error:events.error.message},500);
-    return h({session:session.data,events:events.data??[]});
+    let opponent:any=Array.isArray((session.data as any).opponent)?(session.data as any).opponent[0]:(session.data as any).opponent;
+    const lm:any=(session.data as any).stats?._meta||{},dm:any=lm.doubles||{};
+    if(String(lm.match_type||"")==="doubles"&&Array.isArray(dm.opponent_players)&&dm.opponent_players.length===2){
+      opponent={
+        id:Number(dm.opponent_players[0]?.id||0),
+        name:dm.opponent_players.map((p:any)=>String(p?.name||"")).filter(Boolean).join(" / "),
+        country:dm.opponent_players[0]?.country||null,
+        ranking:Math.min(...dm.opponent_players.map((p:any)=>Number(p?.doubles_ranking||9999))),
+        pair_id:Number(dm.opponent_pair_id||0),players:dm.opponent_players
+      };
+    }
+    return h({session:session.data,opponent,events:events.data??[]});
   }
 
   if(path.endsWith("/api/live-match/advance")&&req.method==="POST"){

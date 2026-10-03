@@ -2354,6 +2354,36 @@ async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
       advance_deadline:advance||null,onsite_deadline:null,method
     };
   }
+  if(String(t?.circuit)==="ATP"&&/Masters 1000/i.test(category)&&Number(String(t?.start_date||"").slice(0,4))===2026){
+    const season=Number(String(t?.start_date||now).slice(0,4))||2026;
+    const worldPair=await db.from("world_doubles_partnerships")
+      .select("id")
+      .eq("season",season).eq("active",true)
+      .or(
+        "and(player_a_id.eq."+Number(mine.id)+",player_b_id.eq."+Number(partner.id)+"),"+
+        "and(player_a_id.eq."+Number(partner.id)+",player_b_id.eq."+Number(mine.id)+")"
+      )
+      .limit(1).maybeSingle();
+    if(worldPair.error)throw worldPair.error;
+    if(worldPair.data?.id){
+      const auto=await db.rpc("doubles_m1000_auto_acceptance_v20",{
+        p_pair_id:Number(worldPair.data.id),p_tournament_id:Number(t?.id||0)
+      });
+      if(auto.error)throw auto.error;
+      if(auto.data?.eligible===true){
+        return {
+          can_schedule:true,projected_acceptance:true,
+          label:"Admission automatique M1000 · équipe #"+String(auto.data?.team_rank||"?"),
+          phase:"advance",entry_method:"auto_direct",
+          best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,
+          composition,advance_deadline:advance||null,onsite_deadline:null,method,
+          automatic_team_entry:auto.data,
+          partner:{id:partner.id,name:partner.name,country:partner.country,ranking:partner.ranking,doubles_ranking:partner.doubles_ranking}
+        };
+      }
+    }
+  }
+
   if(/Finals/i.test(category)){
     return {
       can_schedule:true,projected_acceptance:true,label:"Qualification par la Race",phase:"race",
@@ -4563,17 +4593,18 @@ Deno.serve(async(req:Request)=>{
     if(!partnership.data)return h({error:"Partenariat double introuvable"},409);
 
     const entryMethod=String(
-      entryStatus?.requires_qualifying
-        ?(entryStatus.qualifying_entry_method||"qualifying")
-        :entryStatus?.projected_acceptance===false
-          ?"alternate"
-          :entryStatus?.use_protected_ranking
-            ?"protected"
-            :entryStatus?.phase==="onsite"
-              ?"onsite"
-              :entryStatus?.phase==="race"
-                ?"race"
-                :"direct"
+      entryStatus?.entry_method
+        ||(entryStatus?.requires_qualifying
+          ?(entryStatus.qualifying_entry_method||"qualifying")
+          :entryStatus?.projected_acceptance===false
+            ?"alternate"
+            :entryStatus?.use_protected_ranking
+              ?"protected"
+              :entryStatus?.phase==="onsite"
+                ?"onsite"
+                :entryStatus?.phase==="race"
+                  ?"race"
+                  :"direct")
     );
     const entryPhase=String(entryStatus?.phase||"advance");
     const calendarMode=entryStatus?.requires_qualifying?"qualifying":"direct";

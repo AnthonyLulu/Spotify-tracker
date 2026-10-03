@@ -8,10 +8,11 @@ const app=read('court-boss/app.js');
 const v1=read('court-boss/match-center-v1.js');
 const v12=read('court-boss/match-center-v12.js');
 const v13=read('court-boss/match-center-v13.js');
+const v14=read('court-boss/match-center-v14.js');
 const play=read('court-boss/play.html');
 
 test('all Match Center browser scripts parse',()=>{
-  for(const [name,source] of [['app',app],['v1',v1],['v12',v12],['v13',v13]]){
+  for(const [name,source] of [['app',app],['v1',v1],['v12',v12],['v13',v13],['v14',v14]]){
     assert.doesNotThrow(()=>new Function(source),name+' should parse');
   }
 });
@@ -112,4 +113,15 @@ test('TM live presentation uses names, dense motion and automatic flow',()=>{
   assert.match(v1,/cb-ball-shadow/);
   assert.match(app,/startLiveAutoFlow/);
   assert.doesNotMatch(v1,/simulateLiveGame\(\)">Jeu<\/button>/);
+});
+
+
+test('tournament identity covers signatures and stable generated fallbacks',()=>{
+  for(const marker of [
+    'signatureTheme','generatedTheme','tournamentTheme','themeHash',
+    'indian-wells','monte-carlo','wimbledon','roland','us open',
+    'challenger','itf','cbTournamentSkin','cbScene','--cb-theme-accent'
+  ]) assert.ok(v14.includes(marker),'missing '+marker);
+  assert.match(play,/match-center-v14\.js\?v=20261004-tournament-identity-v22-0/);
+  assert.match(play,/match-center-v14\.css\?v=20261004-tournament-identity-v22-0/);
 });

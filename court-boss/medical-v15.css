@@ -1,0 +1,10 @@
+/* Court Boss Medical V15 */
+.cb-medical-decision-v15{max-width:720px}
+.cb-med-risk-v15{margin-top:14px;padding:12px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
+.cb-med-risk-v15>div{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cb-med-risk-v15>div span{font-size:12px;opacity:.68}.cb-med-risk-v15>div b{font-size:22px}
+.cb-med-risk-v15>i{display:block;height:8px;margin-top:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.cb-med-risk-v15>i em{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#78c98d,#e0b85d,#dd6a6a)}
+.cb-medical-actions-v15{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}
+.cb-medical-history-v15 h3{font-size:12px;margin:4px 0 8px}
+@media(max-width:700px){.cb-medical-actions-v15>*{flex:1}.cb-medical-history-v15 .g2{grid-template-columns:1fr}}

@@ -1693,6 +1693,17 @@ async function restoreManagedSaveSnapshot(snapshot:any){
           const eloRestore=await db.from("player_elo_ratings").upsert(item.elo,{onConflict:"player_id"});
           if(eloRestore.error)throw new Error("doubles rollback Elo: "+eloRestore.error.message);
         }
+        const psychClear=await db.from("player_psychology_state").delete().eq("player_id",did);
+        if(psychClear.error)throw new Error("doubles rollback psychology cleanup: "+psychClear.error.message);
+        if(item.psychology){
+          const psychRestore=await db.from("player_psychology_state").upsert(item.psychology,{onConflict:"player_id"});
+          if(psychRestore.error)throw new Error("doubles rollback psychology: "+psychRestore.error.message);
+        }
+      }
+      const worldDoublesRollback:any=meta?.rollback_world_doubles_match||null;
+      if(worldDoublesRollback?.id){
+        const worldRestore=await db.from("world_doubles_tournament_matches").upsert(worldDoublesRollback,{onConflict:"id"});
+        if(worldRestore.error)throw new Error("doubles rollback world match: "+worldRestore.error.message);
       }
 
       const rb:any=meta?.rollback_opponent||null;
@@ -10847,9 +10858,13 @@ Deno.serve(async(req:Request)=>{
     const oppB=normalize((oppPlayers.data??[]).find((p:any)=>Number(p.id)===opponentIds[1]));
 
     const allIds=[playerId,partnerId,...opponentIds];
-    const eloRows=await db.from("player_elo_ratings").select("*").in("player_id",allIds);
-    if(eloRows.error)return h({error:eloRows.error.message},500);
+    const [eloRows,psychRows]=await Promise.all([
+      db.from("player_elo_ratings").select("*").in("player_id",allIds),
+      db.from("player_psychology_state").select("*").in("player_id",allIds)
+    ]);
+    if(eloRows.error||psychRows.error)return h({error:(eloRows.error||psychRows.error)?.message},500);
     const eloById=new Map((eloRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
+    const psychById=new Map((psychRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
     const surfaceRaw=String(tour.data.surface||"Dur");
     const surface=surfaceRaw==="Dur"&&tour.data.indoor?"Dur intérieur":surfaceRaw;
     const surfaceElo=(pid:number)=>{
@@ -10880,8 +10895,9 @@ Deno.serve(async(req:Request)=>{
     environment.rollback_doubles_players=allIds.map((pid:number)=>{
       const p:any=byId.get(pid)||{};
       const {player_attributes:_attrs,...player}=p;
-      return {player,elo:eloById.get(pid)||null};
+      return {player,elo:eloById.get(pid)||null,psychology:psychById.get(pid)||null};
     });
+    environment.rollback_world_doubles_match=worldMatch?{...worldMatch}:null;
     environment.doubles={
       model:"CB-LIVE-DOUBLES-v1",
       managed_partnership_id:Number(partnership.data.id),

@@ -1488,6 +1488,13 @@ function singlesEligibility(t){
   const racePts=Number(ng?.nextgen_points??c.nextgen_points??0);
   return {label:raceRank?'Race Next Gen #'+fmt(raceRank)+' · '+fmt(racePts)+' pts · 7 places + 1 WC ATP':'Race Next Gen · 7 places + 1 WC ATP',method:'selection',cls:'info',can:false,phase:'finals_selection',canWildcard:false,finals:true};
  }
+ if(String(t.registration_mode||'')==='nextgen_selection'||String(t.category||'')==='Next Gen Finals'){
+  const nr=Number(c.nextgen_rank||c.nextgen_ranking||0);
+  const label=nr>0
+    ?'Race Next Gen #'+fmt(nr)+' · sélection automatique'
+    :'Sélection via Race Next Gen';
+  return {label,cls:nr>0&&nr<=7?'good':'info',can:false,phase:'nextgen_selection',nextgen:true};
+ }
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
  if(String(t.circuit)==="NCAA"){
   const mode=String(t.registration_mode||"");

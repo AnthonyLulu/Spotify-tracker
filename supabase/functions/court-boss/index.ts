@@ -10884,7 +10884,7 @@ Deno.serve(async(req:Request)=>{
           }
         }
       }
-      if(!candidates.length)return h({error:"Aucune paire adverse disponible malgré la matérialisation du pool double.",404);
+      if(!candidates.length)return h({error:"Aucune paire adverse disponible malgré la matérialisation du pool double."},404);
       const ids=[...new Set(candidates.flatMap((x:any)=>[Number(x.player_a_id),Number(x.player_b_id)]).filter(Boolean))];
       const ranks=await db.from("players").select("id,doubles_ranking").in("id",ids);
       if(ranks.error)return h({error:ranks.error.message},500);

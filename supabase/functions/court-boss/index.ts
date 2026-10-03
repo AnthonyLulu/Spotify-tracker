@@ -10177,8 +10177,8 @@ Deno.serve(async(req:Request)=>{
     }else if(ace||unreturned){
       ballPath[3]={x:returnerStartX,y:serverIsUser?20:80,stage:ace?"ace":"unreturned"};
     }
-    const visualPhase=ace||doubleFault||unreturned?"service":ending==="return_winner"?"return":atNet?"net":"rally";
-    const visualLabel=doubleFault?"Double faute":ace?"Ace":unreturned?"Service non retourné":
+    let visualPhase=ace||doubleFault||unreturned?"service":ending==="return_winner"?"return":atNet?"net":"rally";
+    let visualLabel=doubleFault?"Double faute":ace?"Ace":unreturned?"Service non retourné":
       ending==="return_winner"?"Retour gagnant":ending==="winner"?(atNet?"Coup gagnant au filet":"Coup gagnant"):
       ending==="forced_error"?"Faute provoquée":ending==="unforced_error"?"Faute directe":"Point construit";
     const visualTarget=serveDirection==="large"?"Extérieur":serveDirection==="corps"?"Corps":serveDirection==="T"?"T":"Zone neutre";
@@ -10458,6 +10458,47 @@ Deno.serve(async(req:Request)=>{
       opponent:{...oppIdentity,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10,tendencies:oppProfile.tendencies}
     };
 
+    // The kernel keeps authority over the point winner.
+    // Spatial pressure now determines the causal ending shown and logged.
+    const finalShot:any=visualShots[visualShots.length-1]||{};
+    const priorShots:any[]=visualShots.slice(Math.max(0,visualShots.length-4),Math.max(0,visualShots.length-1));
+    const recentStretch=priorShots.filter((x:any)=>Boolean(x.stretched_receiver)).length;
+    const totalStretch=visualShots.filter((x:any)=>Boolean(x.stretched_receiver)).length;
+    const attackingPatterns=new Set(["down_the_line","inside_out","inside_in","approach","volley","passing","drop_shot","lob"]);
+    const attackingCount=visualShots.filter((x:any)=>attackingPatterns.has(String(x.pattern||""))).length;
+    const maxRecentSpeed=priorShots.reduce((mx:number,x:any)=>Math.max(mx,Number(x.speed_kph||0)),0);
+    const spatialPressureScore=Math.max(0,Math.min(100,Math.round(
+      totalStretch*9+recentStretch*13+attackingCount*3.5+
+      Math.max(0,maxRecentSpeed-115)*.22+
+      Math.max(0,shotCount-8)*.55
+    )));
+    const winnerEndingBeforeSpatial=ending==="winner"||ending==="return_winner"||ending==="rally_winner";
+    const finalPattern=String(finalShot.pattern||"");
+    const finalHitterUser=String(finalShot.hitter||"")==="user";
+    const finalHitterWon=finalHitterUser===userWon;
+    let spatialResolution="kernel";
+    if(!ace&&!doubleFault&&!unreturned){
+      if(finalHitterWon&&winnerEndingBeforeSpatial){
+        if(finalPattern==="passing"){ending="passing_winner";visualLabel="Passing gagnant";spatialResolution="passing"}
+        else if(finalPattern==="lob"){ending="lob_winner";visualLabel="Lob gagnant";spatialResolution="lob"}
+        else if(finalPattern==="drop_shot"){ending="drop_shot_winner";visualLabel="Amortie gagnante";spatialResolution="drop_shot"}
+        else if(finalPattern==="volley"){ending="volley_winner";visualLabel="Volée gagnante";visualPhase="net";spatialResolution="volley"}
+        else if(finalPattern==="inside_out"){ending="inside_out_winner";visualLabel="Inside-out gagnant";spatialResolution="inside_out"}
+        else if(finalPattern==="inside_in"){ending="inside_in_winner";visualLabel="Inside-in gagnant";spatialResolution="inside_in"}
+        else if(finalPattern==="down_the_line"){ending="line_winner";visualLabel="Long de ligne gagnant";spatialResolution="down_the_line"}
+        else if(rally<=3&&!serverWon){ending="return_winner";visualLabel="Retour gagnant";visualPhase="return";spatialResolution="return"}
+        else {ending="winner";visualLabel=spatialPressureScore>=65?"Winner sous pression":"Coup gagnant";spatialResolution="winner"}
+      }else{
+        const forcedBySpatial=recentStretch>=1||spatialPressureScore>=52||String(priorShots[priorShots.length-1]?.pattern||"")==="passing";
+        if(finalPattern==="net_error"){ending=forcedBySpatial?"forced_error":"net_error";visualLabel=forcedBySpatial?"Faute provoquée au filet":"Faute au filet";spatialResolution=forcedBySpatial?"forced_error":"net_error"}
+        else if(finalPattern==="out"){ending=forcedBySpatial?"forced_error":"out_error";visualLabel=forcedBySpatial?"Faute provoquée":"Faute en longueur";spatialResolution=forcedBySpatial?"forced_error":"out_error"}
+        else if(forcedBySpatial){ending="forced_error";visualLabel="Faute provoquée";spatialResolution="forced_error"}
+        else {ending="unforced_error";visualLabel="Faute directe";spatialResolution="unforced_error"}
+      }
+      if(finalPattern==="volley"||finalPattern==="approach")visualPhase="net";
+    }
+    const resolvedWinnerEnding=new Set(["winner","return_winner","rally_winner","passing_winner","lob_winner","drop_shot_winner","volley_winner","inside_out_winner","inside_in_winner","line_winner"]).has(ending);
+
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
 
@@ -10494,6 +10535,7 @@ Deno.serve(async(req:Request)=>{
         opponent_slide:clayVisual&&rally>=4&&rallyFrames.some((f:any)=>f.stretched_receiver&&f.hitter==="user"),
         surface_motion:clayVisual?"slide":grassVisual?"short_steps":"neutral",
         duration_ms:durationMs,max_speed_kph:maxVisualSpeed,profiles:styleSummary,pattern_mix:patternMix,
+        resolution:{ending,pattern:finalPattern,pressure_score:spatialPressureScore,source:spatialResolution,recent_stretch:recentStretch,total_stretch:totalStretch},
         shots:visualShots,frames:rallyFrames,ball_path:ballPath
       },
       at:new Date().toISOString()
@@ -10529,7 +10571,7 @@ Deno.serve(async(req:Request)=>{
       if(netPlayerWon)stats[prefix+"_net_points_won"]=(stats[prefix+"_net_points_won"]||0)+1;
     }
     if(!ace&&!doubleFault&&!unreturned){
-      if(ending==="winner"||ending==="return_winner"){
+      if(resolvedWinnerEnding){
         if(userWon)stats.user_winners++;else stats.opp_winners++;
       }else{
         if(userWon)stats.opp_errors++;else stats.user_errors++;
@@ -10543,10 +10585,10 @@ Deno.serve(async(req:Request)=>{
       kind:"point",point_no:pointNo,phase:visualPhase,label:visualLabel,
       winner:userWon?"user":"opponent",rally,serve_direction:serveDirection,
       return_depth:returnDepth,target_zone:visualTarget,stake,
-      stroke:visualShots[visualShots.length-1]?.stroke||null,spin:visualShots[visualShots.length-1]?.spin||null,
-      pattern:visualShots[visualShots.length-1]?.pattern||null,
-      intent:visualShots[visualShots.length-1]?.intent||null,
-      hitter_archetype:visualShots[visualShots.length-1]?.hitter_archetype||null,
+      stroke:finalShot?.stroke||null,spin:finalShot?.spin||null,
+      pattern:finalPattern,intent:finalShot?.intent||null,
+      hitter_archetype:finalShot?.hitter_archetype||null,
+      ending,pressure_score:spatialPressureScore,resolution_source:spatialResolution,
       speed_kph:maxVisualSpeed,at:new Date().toISOString()
     });
     stats._visual_events=visualEvents.slice(-8);

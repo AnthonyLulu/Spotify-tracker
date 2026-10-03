@@ -109,3 +109,10 @@
 .cb-style-card small,.cb-style-card b,.cb-style-card em{display:block}.cb-style-card small{font-size:8px;opacity:.55}.cb-style-card b{font-size:10px;margin-top:2px}.cb-style-card em{font-size:8px;font-style:normal;opacity:.5;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cb-style-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}.cb-style-tags span{font-size:8px;font-weight:800;padding:3px 5px;border-radius:6px;background:rgba(255,255,255,.06)}
 @media(max-width:700px){.cb-style-duel{grid-template-columns:1fr}.cb-style-card em{white-space:normal}}
+
+
+/* Court Boss Spatial Causality V8 */
+.cb-resolution-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,.7fr);gap:12px;align-items:center;margin-top:8px;padding:9px 11px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}
+.cb-resolution-card small,.cb-resolution-card b{display:block}.cb-resolution-card small{font-size:8px;opacity:.55;text-transform:uppercase;letter-spacing:.08em}.cb-resolution-card b{margin-top:2px;font-size:11px}
+.cb-pressure span{display:block;margin-bottom:4px;font-size:8px;opacity:.65;text-align:right}.cb-pressure>i{display:block;height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.cb-pressure>i>b{display:block;height:100%;border-radius:999px;background:currentColor}
+@media(max-width:700px){.cb-resolution-card{grid-template-columns:1fr}.cb-pressure span{text-align:left}}

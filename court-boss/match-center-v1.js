@@ -16,7 +16,10 @@
   const endingLabel=v=>({
     ace:'Ace',double_fault:'Double faute',unreturned_serve:'Service non retourné',
     return_winner:'Retour gagnant',winner:'Coup gagnant',forced_error:'Faute provoquée',
-    unforced_error:'Faute directe',rally_winner:'Point construit'
+    unforced_error:'Faute directe',rally_winner:'Point construit',
+    passing_winner:'Passing gagnant',lob_winner:'Lob gagnant',drop_shot_winner:'Amortie gagnante',
+    volley_winner:'Volée gagnante',inside_out_winner:'Inside-out gagnant',inside_in_winner:'Inside-in gagnant',
+    line_winner:'Long de ligne gagnant',net_error:'Faute au filet',out_error:'Faute en longueur'
   }[String(v||'').toLowerCase()]||String(v||'Point').replaceAll('_',' '));
   const pos=(p,f)=>({x:cap(Number(p?.x??f.x),8,92),y:cap(Number(p?.y??f.y),7,93)});
   const ballPos=(p,f)=>({x:cap(Number(p?.x??f.x),3,97),y:cap(Number(p?.y??f.y),3,97)});
@@ -146,6 +149,8 @@
     const motionStyle=hasFlight?'<style>'+moveKeyframes(userAnim,motionFrames,'user')+moveKeyframes(oppAnim,motionFrames,'opponent')+ballKeyframes(ballAnim,motionFrames)+'</style>':'';
     const tracePoints=ballPath.map(p=>p.x+','+p.y).join(' ');
     const styles=visual.profiles||{},styleText=(styles.user?.archetype&&styles.opponent?.archetype)?(styles.user.archetype+' vs '+styles.opponent.archetype):'';
+    const resolution=visual.resolution||{},pressureScore=cap(Number(resolution.pressure_score||0),0,100);
+    const resolutionText=resolution.pattern?patternLabel(resolution.pattern):'';
     const mix=visual.pattern_mix||{};
     const patternSummary=Object.entries(mix).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,4).map(([k,v])=>patternLabel(k)+' ×'+Number(v)).join(' · ');
     const styleTags=p=>Array.isArray(p?.tags)?p.tags:[];
@@ -175,6 +180,7 @@
           ${lp.winner?`<div class="fm-rally-call cb-rally"><span>${phase}</span><b>${safe(call)}</b> · ${Number(lp.rally||0)} coups · ${safe(target)}</div>`:''}
         </div>
         ${(styles.user?.archetype||styles.opponent?.archetype)?`<div class="cb-style-duel">${profileCard(userName,styles.user,'user')}${profileCard(oppName,styles.opponent,'opponent')}</div>`:''}
+        ${resolution.source&&resolution.source!=='kernel'?`<div class="cb-resolution-card"><div><small>Résolution spatiale</small><b>${safe(endingLabel(lp.ending||lp.shot))}${resolutionText?' · '+safe(resolutionText):''}</b></div><div class="cb-pressure"><span>Pression ${Math.round(pressureScore)}/100</span><i><b style="width:${pressureScore}%"></b></i></div></div>`:''}
         ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)} · ${safe(patternLabel(sh.pattern))}</b><em>${safe(sh.spin||'Mixte')} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.intent?' · '+safe(intentLabel(sh.intent)):''}${sh.stretched_receiver?' · débordé':''}${shotRows.length>=16&&sh.hitter_archetype?' · '+safe(sh.hitter_archetype):''}</em></span>`).join('')}</div>`:''}
         <div class="cb-match-story">
           <div class="cb-point-story">
@@ -182,7 +188,7 @@
             <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+' · retour '+safe(lp.return_depth||'—')+' · '+shotRows.length+' frappes'+(patternSummary?' · '+safe(patternSummary):'')+(styleText?' · '+safe(styleText):'')):'Le prochain point utilisera le moteur v5.'}</small></div>
           </div>
           <div class="cb-event-feed">
-            ${eventRows.length?eventRows.map(e=>`<div class="cb-event-line ${e.winner==='user'?'user':e.winner==='opponent'?'opponent':''}"><span>${safe(phaseLabel(e.phase||e.kind))}</span><b>${safe(e.label||'Point')}</b><small>${e.kind==='point'?((Number(e.rally||0)+' coups')+(e.speed_kph?' · '+Math.round(Number(e.speed_kph))+' km/h':'')):(e.score||'')}</small></div>`).join(''):'<div class="cb-event-empty">Les événements du match apparaîtront ici.</div>'}
+            ${eventRows.length?eventRows.map(e=>`<div class="cb-event-line ${e.winner==='user'?'user':e.winner==='opponent'?'opponent':''}"><span>${safe(phaseLabel(e.phase||e.kind))}</span><b>${safe(e.label||'Point')}</b><small>${e.kind==='point'?((Number(e.rally||0)+' coups')+(e.pressure_score!=null?' · P'+Math.round(Number(e.pressure_score)):'')):(e.score||'')}</small></div>`).join(''):'<div class="cb-event-empty">Les événements du match apparaîtront ici.</div>'}
           </div>
         </div>
         <div class="fm-momentum"><span>${safe(oppName)}</span><div><i style="left:${momentum}%"></i></div><span>${safe(userName)}</span></div>

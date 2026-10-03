@@ -3513,12 +3513,39 @@ function inboxActionButton(x,type,label,payload,cls='primary'){
  const p=JSON.stringify(payload||{}).replace(/'/g,'&#39;');
  return `<button class="${cls}" onclick='event.stopPropagation();runInboxDecision(${Number(x.id)},${JSON.stringify(String(type))},${p})'>${esc(label)}</button>`;
 }
+function inboxEventVisual(x){
+ const hay=[x?.title,x?.body,x?.related_entity_type,x?.action_type].filter(Boolean).join(' ');
+ const isLaver=String(x?.related_entity_type||'')==='laver_cup_invitation'
+  ||String(x?.action_type||'')==='respond_laver_cup_invitation'
+  ||/Laver Cup/i.test(hay);
+ if(!isLaver)return '';
+ const payload=x?.action_payload||x?.secondary_action_payload||{};
+ const tournamentId=Number(payload?.tournament_id||0);
+ const found=tournamentId?findTournamentById(tournamentId):null;
+ const t=found||{
+  id:tournamentId||null,
+  name:'Laver Cup',
+  category:'Laver Cup',
+  circuit:'ATP',
+  logo_url:'https://commons.wikimedia.org/wiki/Special:Redirect/file/Laver_Cup_logo.png'
+ };
+ const team=/Team World/i.test(hay)?'Team World':/Team Europe/i.test(hay)?'Team Europe':'Team Europe vs Team World';
+ const teamClass=team==='Team World'?'is-world':team==='Team Europe'?'is-europe':'is-neutral';
+ const dateText=t?.start_date?(df(t.start_date)+(t.end_date?' → '+df(t.end_date):'')):'';
+ const location=[t?.venue,t?.city].filter(Boolean).join(' · ');
+ return `<div class="inbox-event-brand inbox-event-laver ${teamClass}">
+  ${tournamentLogoHtml(t,'tm-inbox-event-logo')}
+  <div class="inbox-event-copy"><span>Invitation officielle</span><b>Laver Cup</b><small>${esc(team)}${dateText?' · '+esc(dateText):''}${location?' · '+esc(location):''}</small></div>
+ </div>`;
+}
+
 function inboxPage(){
  const rows=[...(boot.inbox||[])].sort((a,b)=>Number(a.is_read)-Number(b.is_read)||({urgent:0,high:1,normal:2}[a.priority]??2)-({urgent:0,high:1,normal:2}[b.priority]??2)||String(b.created_at||'').localeCompare(String(a.created_at||'')));
  const unread=rows.filter(x=>!x.is_read).length,decisions=rows.filter(x=>x.decision_status==='pending'&&x.action_type&&!['open_route'].includes(x.action_type)).length;
  return `<div class="section-head"><div><div class="eyebrow">Communication</div><h1>Boîte de réception</h1><div class="muted">${unread} non lu(s) · ${decisions} décision(s) en attente</div></div><button class="soft-btn" onclick="markAllInboxRead()">Tout marquer lu</button></div>
  <div class="inbox-layout"><div class="stack">${rows.map(x=>`<div class="card inbox-card ${x.is_read?'':'is-unread'} ${x.priority==='high'||x.priority==='urgent'?'is-priority':''}" onclick="openInboxItem(${x.id},'${esc(x.action_route||'home')}')">
    <div class="row between"><div class="eyebrow">${esc(x.kind||'info')} · ${x.game_date?df(x.game_date):new Date(x.created_at).toLocaleDateString('fr-FR')}</div><div class="row"><span class="badge ${x.priority==='high'||x.priority==='urgent'?'warn':''}">${esc(x.priority||'normal')}</span><span class="badge ${x.is_read?'':'good'}">${x.is_read?'Lu':'Nouveau'}</span></div></div>
+   ${inboxEventVisual(x)}
    <h2>${esc(x.title)}</h2><p class="muted">${esc(x.body)}</p>
    ${x.decision_status==='resolved'?'<span class="badge good">Décision prise</span>':x.decision_status==='expired'?'<span class="badge warn">Expiré</span>':''}
    ${x.action_type&&!['resolved','expired'].includes(String(x.decision_status||''))?`<div class="row" style="margin-top:10px;flex-wrap:wrap">${inboxActionButton(x,x.action_type,x.action_label||'Ouvrir',x.action_payload,'primary')}${inboxActionButton(x,x.secondary_action_type,x.secondary_action_label,x.secondary_action_payload,'soft-btn')}</div>`:''}

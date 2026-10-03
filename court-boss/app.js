@@ -219,7 +219,7 @@ function tournamentFormatHtml(fr,t,qs=null){
   </div>`;
 }
 function tournamentEntryRowsHtml(rows,isJunior=false){
- const labels={direct:'Admission directe',protected:'Classement protégé',wildcard:'WC',wildcard_a_plus:'WC A+',qualifying:'Qualifications',protected_qualifying:'Qualifs · classement protégé',qualifying_wildcard:'WC qualifs',qualifier:'Qualifié',qualifier_slot:'Qualifié à déterminer',lucky_loser:'Lucky Loser',alternate:'Alternate',special_exempt:'SE',late_entry:'Late Entry',performance_bye:'Performance Bye',junior_accelerator:'Next Gen Accelerator',junior_accelerator_qualifier:'Next Gen Accelerator · Q',college_accelerator:'College Accelerator',junior_reserved:'Place junior réservée',special_exempt_slot:'SE réservé',late_entry_slot:'Late Entry réservé',junior_reserved_slot:'Place junior réservée',junior_accelerator_slot:'Next Gen Accelerator réservé',college_accelerator_slot:'College Accelerator réservé',direct_fallback_slot:'Entry list / alternate'};
+ const labels={direct:'Admission directe',auto_direct:'Admission automatique',advance:'Advance Entry',onsite:'On-site',protected:'Classement protégé',wildcard:'WC',wildcard_a_plus:'WC A+',qualifying:'Qualifications',protected_qualifying:'Qualifs · classement protégé',qualifying_wildcard:'WC qualifs',qualifier:'Qualifié',qualifier_slot:'Qualifié à déterminer',lucky_loser:'Lucky Loser',alternate:'Alternate',special_exempt:'SE',late_entry:'Late Entry',performance_bye:'Performance Bye',junior_accelerator:'Next Gen Accelerator',junior_accelerator_qualifier:'Next Gen Accelerator · Q',college_accelerator:'College Accelerator',junior_reserved:'Place junior réservée',special_exempt_slot:'SE réservé',late_entry_slot:'Late Entry réservé',junior_reserved_slot:'Place junior réservée',junior_accelerator_slot:'Next Gen Accelerator réservé',college_accelerator_slot:'College Accelerator réservé',direct_fallback_slot:'Entry list / alternate'};
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 
@@ -1704,12 +1704,15 @@ function managedRegulatoryPathwaysHtml(t,fr){
 }
 
 function doublesEligibility(t){
- const partner=activeDoublesPartner(),c=activePlayerCareerView(),myRank=Number(c.doubles_rank||99999),partnerRank=Number(partner?.doubles_ranking||99999);
+ const partner=activeDoublesPartner(),c=activePlayerCareerView();
+ const myDouble=Number(c.doubles_rank||99999),partnerDouble=Number(partner?.doubles_ranking||99999);
+ const mySingles=Number(c.singles_rank||99999),partnerSingles=Number(partner?.ranking||99999);
+ const myRank=Math.min(mySingles,myDouble),partnerRank=Math.min(partnerSingles,partnerDouble);
  const server=t?.managed_doubles_entry_status;
  if(server){
    return {
      label:server.label||"Statut double",cls:server.projected_acceptance===false?"bad":server.phase==="onsite"?"warn":"good",
-     can:server.can_schedule!==false,phase:server.phase||"server",projectedAcceptance:server.projected_acceptance,
+     can:server.can_schedule!==false,phase:server.phase||"server",entryMethod:server.entry_method||null,projectedAcceptance:server.projected_acceptance,
      projectedCut:server.projected_cut,bestCombinedRank:server.best_combined_rank,composition:server.composition,
      requiresQualifying:Boolean(server.requires_qualifying),qualifyingCut:server.qualifying_cut,
      qualifyingEntryMethod:server.qualifying_entry_method||null,
@@ -1728,11 +1731,16 @@ function doublesEligibility(t){
  if(!partner)return {label:"Partenaire requis",cls:"warn",can:false,phase:"partner"};
  if(onsite&&now>onsite)return {label:"Double clos",cls:"bad",can:false,phase:"closed"};
  const method=String(t.doubles_entry_method||"");
- if(method==="onsite_only")return {label:"Sign-in sur site"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite"};
- if(advance&&now>advance&&(!onsite||now<=onsite))return {label:"On-site sign-in"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite"};
- if(String(t.entry_rule_code)==="ITF_M25"&&(myRank>=99999||partnerRank>=99999))return {label:"Sur site uniquement"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite"};
- const combined=(myRank>=99999||partnerRank>=99999)?null:myRank+partnerRank;
- return {label:(method.includes("advance")?"Advance entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance"};
+ if(method==="onsite_only")return {label:"On-site · système de mérite"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite",entryMethod:"onsite"};
+ const isM25=String(t.entry_rule_code)==="ITF_M25"||String(t.category||"")==="M25";
+ if(isM25&&advance&&now<=advance&&(myDouble>=99999||partnerDouble>=99999)){
+   return {label:"Advance impossible · on-site disponible ensuite",cls:"warn",can:true,phase:"onsite",entryMethod:"onsite"};
+ }
+ if(advance&&now>advance&&onsite&&now<=onsite)return {label:"On-site sign-in"+(onsite?" · "+df(onsite):""),cls:"warn",can:true,phase:"onsite",entryMethod:"onsite"};
+ if(advance&&now>advance&&!onsite)return {label:"Advance entry close",cls:"bad",can:false,phase:"closed"};
+ const rankA=isM25?myDouble:myRank,rankB=isM25?partnerDouble:partnerRank;
+ const combined=(rankA>=99999||rankB>=99999)?null:rankA+rankB;
+ return {label:(method.includes("advance")||advance?"Advance Entry · ":"")+(combined?"rang combiné "+fmt(combined):"équipe enregistrable"),cls:"good",can:true,phase:"advance",entryMethod:"direct"};
 }
 const MAJOR_TOURNAMENT_LOGOS=[
  {re:/Australian Open/i,url:"https://commons.wikimedia.org/wiki/Special:Redirect/file/Australian_Open_Logo_2017.svg",label:"AO",cls:"logo-ao"},

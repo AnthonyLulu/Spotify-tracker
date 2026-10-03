@@ -2455,7 +2455,7 @@ async function publishActionableInbox(pDate?:string){
   const nextGenEvents=await db.from("tournaments")
     .select("id,start_date")
     .eq("circuit","ATP").eq("category","Next Gen Finals").eq("is_active",true)
-    .gte("start_date",date).lte("start_date",datePlus(21))
+    .gte("start_date",date).lte("start_date",datePlus(45))
     .order("start_date",{ascending:true});
   if(!nextGenEvents.error){
     for(const ng of nextGenEvents.data??[]){
@@ -4328,7 +4328,7 @@ Deno.serve(async(req:Request)=>{
       const status=await db.rpc("nextgen_finals_player_status",{p_tournament_id:tid,p_player_id:playerId});
       if(status.error)return h({error:status.error.message},500);
       return h({
-        error:"Next Gen ATP Finals : sélection uniquement. Les 8 meilleurs U21 au classement ATP sont appelés, avec remontée du suivant en cas de refus.",
+        error:"Next Gen ATP Finals : sélection uniquement via la Race Next Gen. Les 7 premiers de la Race sont qualifiés directement, plus 1 wild card ATP ; un forfait/refus fait remonter le suivant de la Race.",
         nextgen_selection:true,selection_status:status.data||null
       },409);
     }
@@ -5382,7 +5382,7 @@ Deno.serve(async(req:Request)=>{
     const isNextGenDetail=String(t.data.circuit||"")==="ATP"&&/Next Gen Finals/i.test(String(t.data.category||""))&&Boolean(t.data.singles);
     if(isNextGenDetail){
       const start=String(t.data.start_date||referenceDate);
-      if(referenceDate>=String(addIsoDays(start,-21)||start)){
+      if(referenceDate>=String(addIsoDays(start,-45)||start)){
         const prep=await db.rpc("prepare_nextgen_finals_selection",{p_tournament_id:id});
         if(prep.error)return h({error:prep.error.message},500);
       }
@@ -5394,23 +5394,27 @@ Deno.serve(async(req:Request)=>{
       if(field.error||status.error||format.error)return h({error:(field.error||status.error||format.error)?.message},500);
       const main=(field.data??[]).map((x:any)=>({
         id:Number(x.player_id),name:String(x.player_name||""),country:x.country,
-        ranking:Number(x.atp_rank||999999),seed:Number(x.field_slot||0)||null,
-        qualification:String(x.selection_status||"")==="pending"?"Invitation en attente":"Top 8 U21 ATP",
-        entry_method:String(x.selection_method||"atp_u21_ranking"),
+        ranking:Number(x.nextgen_rank||999999),points:Number(x.nextgen_points||0),
+        seed:Number(x.field_slot||0)||null,
+        qualification:String(x.selection_status||"")==="pending"
+          ?"Invitation en attente"
+          :(String(x.selection_method||"")==="atp_wildcard"?"Wild card ATP":"Race Next Gen #"+Number(x.nextgen_rank||0)),
+        entry_method:String(x.selection_method||"race_direct"),
         selection_status:String(x.selection_status||""),
+        atp_rank:Number(x.atp_rank||999999),
         is_managed:Boolean(x.is_managed)
       }));
       return h({
         tournament:t.data,main,qualifying:[],wildcard:null,forfeits:forfeits.data??[],
         run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:[],doubles_completed_draw:[],
         completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
-        format_rule:format.data??null,ranking_kind:"singles",
+        format_rule:format.data??null,ranking_kind:"nextgen",
         nextgen_finals_status:status.data??null,
         finals_qualification:{
-          required:8,name:"Top 8 U21 · classement ATP",
-          refusal_model:"Refus surtout chez les joueurs d’élite · maximum 2 refus IA par édition"
+          required:8,name:"7 Race Next Gen + 1 wild card ATP",
+          refusal_model:"Les qualifiés Nitto ATP Finals peuvent privilégier les Finals ; forfait/refus = suivant de la Race"
         },
-        entry_preview_model:"nextgen_u21_atp_selection_v2"
+        entry_preview_model:"nextgen_race_selection_v3"
       });
     }
     const isAtpSinglesFinals=String(t.data.circuit||"")==="ATP"&&/ATP Finals/i.test(String(t.data.category||""))&&!/Next Gen/i.test(String(t.data.category||""))&&Boolean(t.data.singles);
@@ -7315,23 +7319,25 @@ Deno.serve(async(req:Request)=>{
           name:String(x.player_name||""),
           country:x.country,
           ranking:Number(x.atp_rank||999999),
-          finals_rank:Number(x.field_slot||9999),
+          finals_rank:Number(x.atp_rank||999999),
           atp_rank:Number(x.atp_rank||999999),
+          nextgen_rank:Number(x.nextgen_rank||999999),
+          nextgen_points:Number(x.nextgen_points||0),
           field_order:Number(x.field_slot||9999),
-          selection_method:String(x.selection_method||"atp_u21_ranking")
+          selection_method:String(x.selection_method||"race_direct")
         }));
       if(finalsRaceRows.length!==8)return h({
         error:"Next Gen ATP Finals : les 8 sélections doivent être résolues avant de jouer.",
         finals_locked:true,selected:finalsRaceRows.length,required:8,
-        selection_rule:"Top 8 U21 au classement ATP"
+        selection_rule:"Top 7 Race Next Gen + 1 wild card ATP"
       },409);
       const own=finalsRaceRows.find((x:any)=>Number(x.id)===managedId);
       if(!own)return h({
-        error:"Non sélectionné pour les Next Gen ATP Finals : Top 8 U21 ATP après refus et remplacements.",
+        error:"Non sélectionné pour les Next Gen ATP Finals : il faut être dans les 7 qualifiés de la Race Next Gen ou recevoir la wild card ATP.",
         finals_locked:true,required:8,
-        age_rule:"moins de 21 ans sur la saison Next Gen"
+        age_rule:"20 ans ou moins pendant toute l’année civile"
       },409);
-      rank=Number(own.atp_rank||9999);
+      rank=Number(own.nextgen_rank||own.atp_rank||9999);
     }else if(isAtpSinglesFinals){
       const race=await db.from("players")
         .select("id,name,country,race_ranking,race_points,current_ability,form,fitness,fatigue,player_attributes(*)")

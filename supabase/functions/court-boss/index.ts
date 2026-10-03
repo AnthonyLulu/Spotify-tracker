@@ -4750,7 +4750,7 @@ Deno.serve(async(req:Request)=>{
       db.from("tournament_runs").select("*")
         .eq("tournament_id",id).eq("managed_player_id",detailPlayerId)
         .order("played_at",{ascending:false}).limit(1).maybeSingle(),
-      db.from("doubles_runs").select("*,partner:players(id,name,country,doubles_ranking)").eq("tournament_id",id).eq("managed_player_id",detailPlayerId).order("played_at",{ascending:false}).limit(1).maybeSingle()
+      db.from("doubles_runs").select("*,partner:players!doubles_runs_partner_id_fkey(id,name,country,doubles_ranking)").eq("tournament_id",id).eq("managed_player_id",detailPlayerId).order("played_at",{ascending:false}).limit(1).maybeSingle()
     ]);
     if(run.error||doublesRun.error)return h({error:(run.error||doublesRun.error)?.message},500);
     let completedDraw:any[]=[];
@@ -9791,7 +9791,7 @@ Deno.serve(async(req:Request)=>{
 
     const [singles,doubles,pts,dpts,matches]=await Promise.all([
       db.from("tournament_runs").select("*,tournaments(*)").eq("managed_player_id",playerId).order("played_at",{ascending:false}).limit(100),
-      db.from("doubles_runs").select("*,tournaments(*),partner:players(id,name,country)").eq("managed_player_id",playerId).order("played_at",{ascending:false}).limit(100),
+      db.from("doubles_runs").select("*,tournaments(*),partner:players!doubles_runs_partner_id_fkey(id,name,country)").eq("managed_player_id",playerId).order("played_at",{ascending:false}).limit(100),
       db.from("user_ranking_points").select("*").eq("owner_id","demo").eq("player_id",playerId).order("earned_date",{ascending:false}),
       db.from("user_doubles_points").select("*").eq("owner_id","demo").eq("player_id",playerId).order("earned_date",{ascending:false}),
       db.from("match_history").select("*").eq("user_involved",true).order("match_date",{ascending:false}).limit(500)

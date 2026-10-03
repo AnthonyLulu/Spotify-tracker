@@ -71,3 +71,56 @@
 .cb-double-plan-grid-v13 .cb-double-plan-card-v13>div{display:flex;gap:6px;margin-top:9px}
 .cb-double-plan-grid-v13 .cb-double-plan-card-v13 button{flex:1;padding:7px 8px;text-align:center}
 @media(max-width:700px){.cb-double-live-model-v13{grid-template-columns:1fr 1fr}.cb-live-doubles-court-v13 .cb-live-double-partner-v13{transform:translate(-50%,-50%) scale(.88)}}
+
+
+/* Court Boss Match Center V21.8–V21.9 · doubles + tournament identity */
+.cb-live-doubles-court-v13 .cb-live-double-partner-v13,
+.cb-live-doubles-court-v13 .fm-player-dot{
+  overflow:visible!important
+}
+.cb-live-doubles-court-v13 .fm-player-dot small,
+.cb-double-court-v13 .p small{
+  position:absolute;left:50%;top:calc(100% + 4px);transform:translateX(-50%);
+  padding:2px 5px;border-radius:6px;background:rgba(4,11,9,.82);
+  border:1px solid rgba(255,255,255,.12);color:#fff;
+  font-size:6px;font-weight:900;letter-spacing:.05em;white-space:nowrap;
+  text-transform:uppercase;pointer-events:none
+}
+.cb-live-doubles-court-v13 .is-server{box-shadow:0 0 0 3px rgba(244,218,94,.32),0 4px 12px rgba(0,0,0,.25)!important}
+.cb-live-doubles-court-v13 .is-returner{outline:2px dashed rgba(255,255,255,.42)!important}
+.cb-live-doubles-court-v13[data-cb-doubles-plan="poach"]:after{
+  content:"POACH";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  z-index:2;padding:4px 7px;border-radius:7px;background:rgba(5,12,10,.48);
+  border:1px solid rgba(255,255,255,.08);font-size:6px;font-weight:900;letter-spacing:.12em;
+  opacity:.55;pointer-events:none
+}
+.cb-live-doubles-court-v13[data-cb-doubles-plan="australian"]:before{
+  content:"FORMATION AUSTRALIENNE";position:absolute;left:50%;top:8%;
+  transform:translateX(-50%);z-index:2;font-size:6px;font-weight:900;letter-spacing:.09em;
+  color:rgba(255,255,255,.68);pointer-events:none
+}
+.cb-live-doubles-court-v13[data-cb-doubles-plan="target_weak"] .cb-target-zone{
+  width:38px;height:38px;border-style:dashed
+}
+.cb-double-court-v13 .p{overflow:visible}
+.cb-double-court-v13 .p>span{font-size:6px;font-weight:950}
+.cb-double-court-v13 .p small{top:calc(100% + 3px);font-size:5px;max-width:70px;overflow:hidden;text-overflow:ellipsis}
+.cb-double-court-v13 .p.user small{border-color:rgba(93,219,151,.32)}
+.cb-double-court-v13 .p.opp small{border-color:rgba(235,132,132,.3)}
+
+.cb-live-card .cb-court[data-cb-tournament-skin="rg"] .cb-score-tower-v12,
+.cb-live-card .cb-court[data-cb-tournament-skin="wimbledon"] .cb-score-tower-v12,
+.cb-live-card .cb-court[data-cb-tournament-skin="ao"] .cb-score-tower-v12,
+.cb-live-card .cb-court[data-cb-tournament-skin="uso"] .cb-score-tower-v12{
+  backdrop-filter:blur(6px);border-color:rgba(255,255,255,.18)
+}
+.cb-live-card .cb-court.cb-arena-center{box-shadow:inset 0 0 0 3px rgba(255,255,255,.08),0 18px 38px rgba(0,0,0,.28)}
+.cb-live-card .cb-court.cb-arena-show{box-shadow:inset 0 0 0 2px rgba(255,255,255,.06),0 14px 28px rgba(0,0,0,.22)}
+.cb-live-card .cb-court.cb-arena-outer{box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),0 10px 20px rgba(0,0,0,.16)}
+
+@media(max-width:700px){
+  .cb-live-doubles-court-v13 .fm-player-dot small{font-size:6px;max-width:64px}
+  .cb-double-court-v13{aspect-ratio:1.48/1}
+  .cb-double-court-v13 .p{width:22px;height:22px}
+  .cb-double-court-v13 .p small{max-width:56px;font-size:5px}
+}

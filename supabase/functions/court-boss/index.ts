@@ -11001,18 +11001,29 @@ Deno.serve(async(req:Request)=>{
       lastServerWinProbability=serverPointP;
       lastConditionEdge=kernel.conditionEdge;
       const serverFormLift=serverIsUser?userFormLift:oppFormLift;
-      const q=1-serverPointP;
-      const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);
-      const serverGameP=Math.max(.02,Math.min(.98,
-        Math.pow(serverPointP,4)*(1+4*q+10*q*q)+
-        20*Math.pow(serverPointP,3)*Math.pow(q,3)*deuceWin
-      ));
-      const prob=serverIsUser?serverGameP:1-serverGameP;
+      const userPointP=serverIsUser?serverPointP:1-serverPointP;
+      const qUser=1-userPointP;
+      const deuceUserWin=(userPointP*userPointP)/(userPointP*userPointP+qUser*qUser);
+      const gameWinFromScore=(a:number,b:number):number=>{
+        if((a>=4||b>=4)&&Math.abs(a-b)>=2)return a>b?1:0;
+        if(a>=3&&b>=3){
+          if(a===b)return deuceUserWin;
+          if(a===b+1)return userPointP+qUser*deuceUserWin;
+          if(b===a+1)return userPointP*deuceUserWin;
+        }
+        return userPointP*gameWinFromScore(a+1,b)+qUser*gameWinFromScore(a,b+1);
+      };
+      let simUp=Number(session.data.user_points||0),simOp=Number(session.data.opponent_points||0);
+      const prob=Math.max(.001,Math.min(.999,gameWinFromScore(simUp,simOp)));
       responseWinProbability=Math.round(prob*100);
-      userWon=Math.random()<prob;
+      let gameSafety=0;
+      while(!((simUp>=4||simOp>=4)&&Math.abs(simUp-simOp)>=2)){
+        if(++gameSafety>120)return h({error:"Jeu interrompu par la garde de sécurité.",score:{user:simUp,opponent:simOp}},500);
+        if(Math.random()<userPointP)simUp++;else simOp++;
+        gamePoints++;
+      }
+      userWon=simUp>simOp;
       if(userWon)ug++;else og++;
-
-      gamePoints=6+Math.floor(Math.random()*5);
       const firstInPct=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
       const acePct=Math.max(.002,Number(tm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
       const dfPct=Math.max(.004,Number(tm.double_fault_pct||4)/100*(1-serverFormLift*.035));

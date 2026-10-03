@@ -2426,6 +2426,17 @@ async function publishActionableInbox(pDate?:string){
     const d=new Date(date+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);
   };
 
+  const nextGenEvents=await db.from("tournaments")
+    .select("id,start_date")
+    .eq("circuit","ATP").eq("category","Next Gen Finals").eq("is_active",true)
+    .gte("start_date",date).lte("start_date",datePlus(21))
+    .order("start_date",{ascending:true});
+  if(!nextGenEvents.error){
+    for(const ng of nextGenEvents.data??[]){
+      await db.rpc("prepare_nextgen_finals_selection",{p_tournament_id:Number(ng.id)});
+    }
+  }
+
   const sponsors=await db.from("sponsor_offers").select("*").eq("status","available").order("weekly_value",{ascending:false});
   if(!sponsors.error){
     for(const x of sponsors.data??[])add({
@@ -4287,6 +4298,15 @@ Deno.serve(async(req:Request)=>{
     }
     if(playerFocus==="doubles_only")return h({error:"Orientation Double exclusivement : inscription simple désactivée."},409);
 
+    if(String(tour.data.registration_mode||"")==="nextgen_selection"||String(tour.data.category||"")==="Next Gen Finals"){
+      const status=await db.rpc("nextgen_finals_player_status",{p_tournament_id:tid,p_player_id:playerId});
+      if(status.error)return h({error:status.error.message},500);
+      return h({
+        error:"Next Gen ATP Finals : sélection uniquement. Les 8 meilleurs U21 au classement ATP sont appelés, avec remontée du suivant en cas de refus.",
+        nextgen_selection:true,selection_status:status.data||null
+      },409);
+    }
+
     if(action==="withdraw"){
       const upd=await db.from("entries").update({
         status:"withdrawn",withdrawn_on:gameDate,updated_at:new Date().toISOString()
@@ -5333,6 +5353,40 @@ Deno.serve(async(req:Request)=>{
 
     const directCut=Number(t.data.direct_cut??t.data.projected_direct_cut??0);
     const qualCut=Number(t.data.qual_cut??t.data.projected_qual_cut??0);
+    const isNextGenDetail=String(t.data.circuit||"")==="ATP"&&/Next Gen Finals/i.test(String(t.data.category||""))&&Boolean(t.data.singles);
+    if(isNextGenDetail){
+      const start=String(t.data.start_date||referenceDate);
+      if(referenceDate>=String(addIsoDays(start,-21)||start)){
+        const prep=await db.rpc("prepare_nextgen_finals_selection",{p_tournament_id:id});
+        if(prep.error)return h({error:prep.error.message},500);
+      }
+      const [field,status,format]=await Promise.all([
+        db.rpc("nextgen_finals_field",{p_tournament_id:id}),
+        detailPlayerId?db.rpc("nextgen_finals_player_status",{p_tournament_id:id,p_player_id:detailPlayerId}):Promise.resolve({data:null,error:null} as any),
+        db.from("tournament_format_rules").select("*").eq("rule_key","NEXTGEN_8").maybeSingle()
+      ]);
+      if(field.error||status.error||format.error)return h({error:(field.error||status.error||format.error)?.message},500);
+      const main=(field.data??[]).map((x:any)=>({
+        id:Number(x.player_id),name:String(x.player_name||""),country:x.country,
+        ranking:Number(x.atp_rank||999999),seed:Number(x.field_slot||0)||null,
+        qualification:String(x.selection_status||"")==="pending"?"Invitation en attente":"Top 8 U21 ATP",
+        entry_method:String(x.selection_method||"atp_u21_ranking"),
+        selection_status:String(x.selection_status||""),
+        is_managed:Boolean(x.is_managed)
+      }));
+      return h({
+        tournament:t.data,main,qualifying:[],wildcard:null,forfeits:forfeits.data??[],
+        run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:[],doubles_completed_draw:[],
+        completed_draw:completedDraw,tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
+        format_rule:format.data??null,ranking_kind:"singles",
+        nextgen_finals_status:status.data??null,
+        finals_qualification:{
+          required:8,name:"Top 8 U21 · classement ATP",
+          refusal_model:"Refus surtout chez les joueurs d’élite · maximum 2 refus IA par édition"
+        },
+        entry_preview_model:"nextgen_u21_atp_selection_v2"
+      });
+    }
     const isAtpSinglesFinals=String(t.data.circuit||"")==="ATP"&&/ATP Finals/i.test(String(t.data.category||""))&&!/Next Gen/i.test(String(t.data.category||""))&&Boolean(t.data.singles);
     if(isAtpSinglesFinals){
       const careerNow=await db.from("career_state").select("career_date").eq("id","demo").maybeSingle();
@@ -6957,7 +7011,9 @@ Deno.serve(async(req:Request)=>{
         injury_status:String(managedPlayer.data.injury_status||"Blessé")
       },409);
     }
-    const frozenCircuit=["ATP","Challenger","ITF"].includes(String(t.circuit||""));
+    const frozenCircuit=["ATP","Challenger","ITF"].includes(String(t.circuit||""))
+      &&String(t.registration_mode||"")!=="nextgen_selection"
+      &&String(t.category||"")!=="Next Gen Finals";
     let frozenEntryMode:string|null=null;
     let frozenEntryPhase:string|null=null;
     let frozenEntryStatus:any=null;
@@ -7217,26 +7273,37 @@ Deno.serve(async(req:Request)=>{
       rank=Number(own.junior_race_ranking||9999);
       finalsRaceRows=finalsRaceRows.map((x:any)=>({...x,finals_rank:Number(x.junior_race_ranking||9999)}));
     }else if(isNextGenFinals){
+      const prep=await db.rpc("prepare_nextgen_finals_selection",{p_tournament_id:tid});
+      if(prep.error)return h({error:prep.error.message},500);
+      const gameDate=String(c.career_date||AGE_REFERENCE_DATE);
+      if(gameDate>=String(t.start_date||gameDate)){
+        const expired=await db.rpc("expire_nextgen_finals_invitations",{p_tournament_id:tid});
+        if(expired.error)return h({error:expired.error.message},500);
+      }
       const field=await db.rpc("nextgen_finals_field",{p_tournament_id:tid});
       if(field.error)return h({error:field.error.message},500);
-      finalsRaceRows=(field.data??[]).map((x:any)=>({
-        id:Number(x.player_id),
-        name:String(x.player_name||""),
-        country:x.country,
-        nextgen_ranking:Number(x.nextgen_rank||9999),
-        nextgen_points:Number(x.nextgen_points||0),
-        finals_rank:Number(x.atp_rank||999999),
-        atp_rank:Number(x.atp_rank||999999),
-        field_order:Number(x.field_order||9999),
-        selection_method:String(x.selection_method||""),
-        nitto_finals_exempt:Boolean(x.nitto_finals_exempt)
-      }));
+      finalsRaceRows=(field.data??[])
+        .filter((x:any)=>String(x.selection_status||"")==="accepted")
+        .map((x:any)=>({
+          id:Number(x.player_id),
+          name:String(x.player_name||""),
+          country:x.country,
+          ranking:Number(x.atp_rank||999999),
+          finals_rank:Number(x.field_slot||9999),
+          atp_rank:Number(x.atp_rank||999999),
+          field_order:Number(x.field_slot||9999),
+          selection_method:String(x.selection_method||"atp_u21_ranking")
+        }));
+      if(finalsRaceRows.length!==8)return h({
+        error:"Next Gen ATP Finals : les 8 sélections doivent être résolues avant de jouer.",
+        finals_locked:true,selected:finalsRaceRows.length,required:8,
+        selection_rule:"Top 8 U21 au classement ATP"
+      },409);
       const own=finalsRaceRows.find((x:any)=>Number(x.id)===managedId);
       if(!own)return h({
-        error:"Non sélectionné pour les Next Gen ATP Finals : 7 places viennent de la Race Next Gen et 1 place est attribuée par wildcard ATP.",
-        finals_locked:true,race_required:7,wildcards:1,
-        age_rule:"20 ans ou moins pendant toute l’année",
-        nextgen_rank:Number(managedPlayer.data.nextgen_ranking||9999)
+        error:"Non sélectionné pour les Next Gen ATP Finals : Top 8 U21 ATP après refus et remplacements.",
+        finals_locked:true,required:8,
+        age_rule:"moins de 21 ans sur la saison Next Gen"
       },409);
       rank=Number(own.atp_rank||9999);
     }else if(isAtpSinglesFinals){
@@ -13406,6 +13473,26 @@ Deno.serve(async(req:Request)=>{
         const reason=String(payload.reason||"Décision refusée");
         const code=reason==="expired"||reason==="already_resolved"?409:404;
         return h({error:reason,result:payload},code);
+      }
+      return h({ok:true,result:payload});
+    }
+
+    if(action==="respond_nextgen_finals_invitation"){
+      const decision=String(body?.decision||"decline").toLowerCase();
+      if(!["accept","decline"].includes(decision))return h({error:"Décision invalide"},400);
+      const invitationId=n(body?.invitation_id,id,1,999999999);
+      if(!invitationId)return h({error:"Invitation Next Gen introuvable"},400);
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const resolved=await db.rpc("resolve_nextgen_finals_invitation",{
+        p_invitation_id:invitationId,
+        p_accept:decision==="accept",
+        p_response_date:today
+      });
+      if(resolved.error)return h({error:resolved.error.message},500);
+      const payload:any=resolved.data||{};
+      if(payload.ok===false){
+        const reason=String(payload.reason||"Décision refusée");
+        return h({error:reason,result:payload},reason==="expired"||reason==="already_resolved"?409:404);
       }
       return h({ok:true,result:payload});
     }

@@ -2520,7 +2520,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:70,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:71,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v1+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -10049,11 +10049,40 @@ Deno.serve(async(req:Request)=>{
       momentum_response:Math.round(chase*100),pressure_response:Math.round(pressure*100)};
   };
 
+  const liveSituationalTactics=(base:any={},ctx:any={})=>{
+    const raw=base&&typeof base==="object"?base:{};
+    const t:any={...raw};
+    const rules:any=raw.autoRules&&typeof raw.autoRules==="object"?raw.autoRules:{};
+    const applied:string[]=[];
+    const clamp=(v:any,min:number,max:number)=>Math.max(min,Math.min(max,Number(v)));
+    if(rules.attackSecondServe&&ctx.serverIsUser===false&&ctx.firstServeIn===false){
+      t.returnPos="Avancée";t.aggression=clamp(Number(t.aggression??58)+8,1,100);t.risk=clamp(Number(t.risk??52)+5,1,100);
+      applied.push("Attaque 2e balle");
+    }
+    if(rules.bigPoints&&Number(ctx.pressure||0)>=.68){
+      t.effort=clamp(Number(t.effort??60)+7,20,100);t.risk=clamp(Number(t.risk??52)-3,1,100);
+      if(String(t.tempo||"Neutre")==="Neutre")t.tempo="Patient";
+      applied.push("Points chauds");
+    }
+    if(rules.frontRun&&Number(ctx.userMomentum??50)>=64){
+      t.risk=clamp(Number(t.risk??52)-5,1,100);t.effort=clamp(Number(t.effort??60)-3,20,100);
+      applied.push("Protéger l'avance");
+    }
+    if(rules.chase&&Number(ctx.userMomentum??50)<=36){
+      t.aggression=clamp(Number(t.aggression??58)+7,1,100);t.effort=clamp(Number(t.effort??60)+8,20,100);
+      if(String(t.tempo||"Neutre")==="Neutre")t.tempo="Rapide";
+      applied.push("Mode remontée");
+    }
+    t._applied_rules=applied;return t;
+  };
+
   const livePointKernel=(ctx:any)=>{
     const tm:any=ctx.tm||{},ua:any=ctx.ua||{},oa:any=ctx.oa||{},meta:any=ctx.meta||{};
-    const tactics:any=ctx.tactics||{};
     const serverIsUser=Boolean(ctx.serverIsUser);
     const pressure=Number(ctx.pressure||0);
+    const tactics:any=liveSituationalTactics(ctx.tactics||{},{
+      serverIsUser,pressure,firstServeIn:ctx.firstServeIn,userMomentum:Number(ctx.momentum??50)
+    });
     const surface=String(ctx.surface||"Dur"),lowerSurface=surface.toLowerCase();
     const indoor=lowerSurface.includes("intérieur")||lowerSurface.includes("indoor");
     const clay=surface==="Terre"||lowerSurface.includes("clay");
@@ -10223,7 +10252,7 @@ Deno.serve(async(req:Request)=>{
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
       styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,
       opponentMemoryEdge,opponentMemoryRead:memoryRead,opponentMemoryState,opponentMemoryDeceptionWindow:deceptionWindow,
-      userDeceptionEdge:Math.max(0,-opponentMemoryEdge),mentalPressureEdge,pressureLevel:pressure,
+      userDeceptionEdge:Math.max(0,-opponentMemoryEdge),situationalRules:tactics._applied_rules||[],mentalPressureEdge,pressureLevel:pressure,
       userConditionDetail,oppConditionDetail,serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };
@@ -10821,14 +10850,14 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/live-match/point")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const id=n(body?.session_id,0,1,99999999);
-    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*))").eq("id",id).maybeSingle();
+    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style,handedness,backhand,player_attributes(*))").eq("id",id).maybeSingle();
     if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
     if(session.data.status!=="active")return h({ok:true,session:session.data,completed:true});
 
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Données match incomplètes"},500);
     const livePlayerId=Number(session.data.managed_player_id||career.data.managed_player_id||0);
-    const managed=await db.from("players").select("id,name,country,current_ability,form,fitness,fatigue,morale,player_attributes(*)").eq("id",livePlayerId).maybeSingle();
+    const managed=await db.from("players").select("id,name,country,current_ability,form,fitness,fatigue,morale,style,handedness,backhand,player_attributes(*)").eq("id",livePlayerId).maybeSingle();
     if(managed.error||!managed.data)return h({error:managed.error?.message||"Joueur du match introuvable"},500);
     const isPrimaryLive=livePlayerId===Number(career.data.managed_player_id||0);
 
@@ -10884,7 +10913,7 @@ Deno.serve(async(req:Request)=>{
       p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:pressure
     });
     const tm:any=matchup.error?{}:(matchup.data||{});
-    const indoor=surface.toLowerCase().includes("intérieur")||surface.toLowerCase().includes("indoor");
+    const indoor=surface.toLowerCase().includes("intérieur")||surface.toLowerCase().includes("indoor")||meta.indoor===true;
     const clay=surface==="Terre"||surface.toLowerCase().includes("clay");
     const grass=surface==="Gazon"||surface.toLowerCase().includes("grass");
     const sAttr:any=serverIsUser?ua:oa;
@@ -11034,14 +11063,18 @@ Deno.serve(async(req:Request)=>{
       serveDirection==="T"?50-side*4:serveDirection==="corps"?50+side*4:50+side*27,
       18,82
     );
-    const returnerStartX=courtClamp(serviceTargetX-side*(serveDirection==="large"?5:2),18,82);
+    const returnerIdentity:any=serverIsUser?opp:managed.data;
+    const returnerLeft=/left|gauch/i.test(String(returnerIdentity?.handedness||""));
+    const returnHandShift=(returnerLeft?-1:1)*side*2.2;
+    const returnerStartX=courtClamp(serviceTargetX-side*(serveDirection==="large"?5:2)+returnHandShift,18,82);
+    const opponentReturnPos=String(kernel.opponentPlan?.returnPos||"Neutre");
     const userStart={
       x:serverIsUser?serverStartX:returnerStartX,
-      y:serverIsUser?86:(ret==="Avancée"?74:ret==="Reculée"?88:82)
+      y:serverIsUser?86:(ret==="Avancée"?74:ret==="Reculée"?89:82)
     };
     const opponentStart={
       x:serverIsUser?returnerStartX:serverStartX,
-      y:14
+      y:serverIsUser?(opponentReturnPos==="Avancée"?26:opponentReturnPos==="Reculée"?11:18):14
     };
     const userAtNet=Number(netPlayerId)===Number(managed.data.id);
     const opponentAtNet=Number(netPlayerId)===Number(opp.id);
@@ -11349,9 +11382,15 @@ Deno.serve(async(req:Request)=>{
       return {archetype:p.archetype,dominant_wing:t.dominant_wing||"Équilibré",tags:tags.slice(0,3)};
     };
     const userIdentity=describeStyle(userProfile),oppIdentity=describeStyle(oppProfile);
+    const movementIdentity=(p:any,profile:any,returnPos:string)=>({
+      handedness:String(p?.handedness||"Droitier"),backhand_style:String(p?.backhand||"2 mains"),return_position:returnPos,
+      baseline_depth:profile.archetype==="Contreur"?"Profond":profile.archetype==="Puncheur"?"Près de la ligne":profile.archetype==="Attaquant filet"?"Vers l'avant":"Neutre",
+      split_step:Math.round(liveRuntimeAvgAttr(p?.player_attributes||{},["reaction","footwork","anticipation"],1)*10)/10,
+      movement_signature:profile.archetype==="Contreur"?"Couverture / replacement":profile.archetype==="Attaquant filet"?"Premier pas vers l'avant":profile.archetype==="Puncheur"?"Prise de balle tôt":profile.archetype==="Créatif"?"Ruptures de rythme":"All-court"
+    });
     const styleSummary={
-      user:{...userIdentity,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,passing:Math.round(userProfile.passing*10)/10,lob:Math.round(userProfile.lob*10)/10,net:Math.round(userProfile.net*10)/10,tendencies:userProfile.tendencies},
-      opponent:{...oppIdentity,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10,tendencies:oppProfile.tendencies}
+      user:{...userIdentity,...movementIdentity(managed.data,userProfile,ret),mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,passing:Math.round(userProfile.passing*10)/10,lob:Math.round(userProfile.lob*10)/10,net:Math.round(userProfile.net*10)/10,tendencies:userProfile.tendencies},
+      opponent:{...oppIdentity,...movementIdentity(opp,oppProfile,opponentReturnPos),mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10,tendencies:oppProfile.tendencies}
     };
     const physicsSummary={
       surface:clayVisual?"clay":grassVisual?"grass":"hard",
@@ -11437,6 +11476,7 @@ Deno.serve(async(req:Request)=>{
         opponent_deception_window_points:Number(kernel.opponentMemoryDeceptionWindow||0),
         user_deception_edge:Math.round(Number(kernel.userDeceptionEdge||0)*10000)/10000,
         opponent_memory_read:kernel.opponentMemoryRead||null,
+        situational_rules_applied:kernel.situationalRules||[],
         opponent_ai_model:"CB-OPPONENT-AI-v4-memory",
         server_archetype:kernel.serverArchetype,
         returner_archetype:kernel.returnerArchetype,
@@ -11757,14 +11797,14 @@ Deno.serve(async(req:Request)=>{
   if(path.endsWith("/api/live-match/game")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const id=n(body?.session_id,0,1,99999999);
-    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style,player_attributes(*))").eq("id",id).maybeSingle();
+    const session=await db.from("live_match_sessions").select("*,opponent:players(id,name,country,ranking,current_ability,form,fitness,fatigue,style,handedness,backhand,player_attributes(*))").eq("id",id).maybeSingle();
     if(session.error||!session.data)return h({error:session.error?.message||"Match introuvable"},404);
     if(session.data.status!=="active")return h({ok:true,session:session.data,completed:true});
 
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Données match incomplètes"},500);
     const livePlayerId=Number(session.data.managed_player_id||career.data.managed_player_id||0);
-    const managed=await db.from("players").select("id,name,country,current_ability,form,fitness,fatigue,morale,player_attributes(*)").eq("id",livePlayerId).maybeSingle();
+    const managed=await db.from("players").select("id,name,country,current_ability,form,fitness,fatigue,morale,style,handedness,backhand,player_attributes(*)").eq("id",livePlayerId).maybeSingle();
     if(managed.error||!managed.data)return h({error:managed.error?.message||"Joueur du match introuvable"},500);
 
     const opp:any={...session.data.opponent,player_attributes:Array.isArray(session.data.opponent?.player_attributes)?session.data.opponent.player_attributes[0]:session.data.opponent?.player_attributes||{}};

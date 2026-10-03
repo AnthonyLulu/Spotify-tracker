@@ -99,8 +99,8 @@
     if(!dot||!p)return;
     const parts=String(p.name||'JOUEUR').trim().split(/\s+/),last=parts.slice(-1)[0]||'Joueur';
     const initials=parts.map(x=>x[0]||'').join('').slice(0,2).toUpperCase();
-    let sp=dot.querySelector('span');if(!sp){sp=el('span');dot.appendChild(sp)}sp.textContent=initials||'P';
-    let sm=dot.querySelector('small');if(!sm){sm=el('small');dot.appendChild(sm)}sm.textContent=last;
+    let sp=dot.querySelector('span');if(!sp){sp=el('span');dot.appendChild(sp)}if(sp.textContent!==(initials||'P'))sp.textContent=initials||'P';
+    let sm=dot.querySelector('small');if(!sm){sm=el('small');dot.appendChild(sm)}if(sm.textContent!==last)sm.textContent=last;
   };
   const addLiveDoublesDots=()=>{
     const court=document.querySelector('.cb-live-card .cb-court'),sess=live(),m=meta(),v=visual();
@@ -113,7 +113,8 @@
     let style=court.querySelector('style[data-cb-live-doubles-v13]');
     if(!style){style=document.createElement('style');style.dataset.cbLiveDoublesV13='1';court.appendChild(style)}
     const ua='cbDblUa'+sid+'p'+point,ub='cbDblUb'+sid+'p'+point,oa='cbDblOa'+sid+'p'+point,ob='cbDblOb'+sid+'p'+point;
-    style.textContent=liveDoublesFramesCss(ua,frames,'user')+liveDoublesFramesCss(ub,frames,'user_b')+liveDoublesFramesCss(oa,frames,'opponent')+liveDoublesFramesCss(ob,frames,'opponent_b');
+    const nextFrameCss=liveDoublesFramesCss(ua,frames,'user')+liveDoublesFramesCss(ub,frames,'user_b')+liveDoublesFramesCss(oa,frames,'opponent')+liveDoublesFramesCss(ob,frames,'opponent_b');
+    if(style.textContent!==nextFrameCss)style.textContent=nextFrameCss;
 
     const mainU=court.querySelector('.fm-player-dot.user:not(.cb-live-double-partner-v13)');
     const mainO=court.querySelector('.fm-player-dot.opponent:not(.cb-live-double-partner-v13)');
@@ -201,7 +202,7 @@
         ['balanced','Équilibré'],['poach','Poach'],['australian','Australienne'],['target_weak','Cibler faible'],['safe','Sécuriser']
        ].map(x=>'<button class="'+(String(local?.tactics?.doublesPlan||s?.tactics?.doublesPlan||'balanced')===x[0]?'active':'')+'" onclick="cbSetLiveDoublesPlanV13(\''+x[0]+'\')">'+x[1]+'</button>').join('')+'</div></div>'
       :'';
-    lab.innerHTML=
+    const labHtml=
       '<div class="cb-lab-head-v13"><div><small>TACTICAL LAB V13</small><b>Match vivant · lecture + identité</b></div><div class="cb-lab-actions-v13"><span>'+esc(String(m.ambience?.crowd_profile||'Tour'))+' · '+esc(String(m.ambience?.session_of_day||'live'))+' · public '+Math.round(Number(m.ambience?.crowd_intensity||0))+'%</span><button onclick="cbToggleMatchAudioV13()">'+(audioOn?'🔊':'🔇')+'</button></div></div>'+
       (event?'<div class="cb-event-v13"><b>'+esc(event.label||'Événement match')+'</b><span>'+esc(event.type||event.event_type||'')+(event.duration_min?' · '+Number(event.duration_min)+' min':'')+'</span></div>':'')+
       (review?'<div class="cb-event-v13 review"><b>'+esc(review.label||'Review électronique')+'</b><span>'+esc(review.system||'Electronic Line Calling')+' · '+esc(review.decision||'confirmé')+'</span></div>':'')+
@@ -219,6 +220,7 @@
       '<div class="cb-auto-v13"><div class="cb-subhead-v13">Règles conditionnelles</div><div>'+ruleButton('attackSecondServe','Attaquer 2e balle')+ruleButton('bigPoints','Points chauds')+ruleButton('frontRun','Protéger avance')+ruleButton('chase','Mode remontée')+'</div>'+(applied.length?'<p>Actif sur ce point : <b>'+applied.map(esc).join(' · ')+'</b></p>':'')+'</div>'+
       doublesPlans+
       (pending.length?'<div class="cb-pending-events-v13">Événements possibles : '+pending.map(e=>esc(e.label||e.type)).join(' · ')+'</div>':'');
+    if(lab.innerHTML!==labHtml)lab.innerHTML=labHtml;
   };
 
 

@@ -5782,9 +5782,21 @@ Deno.serve(async(req:Request)=>{
       db.from("facilities").select("level")
     ]);
     const dev:any=devRow.data||{};
-    const sessions=Array.isArray(body?.training)?body.training.slice(0,7).map(String):[];
-    const weights:any={"Service":2,"Retour":2,"Coup droit":2,"Revers":2,"Déplacements":3,"Endurance":3,"Match play":3,"Double":2,"Récupération":0,"Repos":-1};
-    const load=sessions.reduce((sum:number,s:string)=>sum+Number(weights[s]??1),0);
+    const dailyPlan=Array.isArray(body?.daily_training)?body.daily_training.slice(0,7):null;
+    const sessions=dailyPlan
+      ?dailyPlan.flatMap((d:any)=>[String(d?.morning||"Repos"),String(d?.afternoon||"Repos")])
+      :Array.isArray(body?.training)?body.training.slice(0,7).map(String):[];
+    const weights:any={"Service":2,"Retour":2,"Coup droit":2,"Revers":2,"Déplacements":3,"Endurance":3,"Match play":3,"Double":2,"Récupération":-.75,"Repos":-1.25};
+    const intensityFactor=(value:any)=>{
+      const x=String(value||"Normal").toLowerCase();
+      return x==="léger"||x==="leger"||x==="light"?.78:x==="élevé"||x==="eleve"||x==="high"?1.16:1;
+    };
+    const load=dailyPlan
+      ?dailyPlan.reduce((sum:number,d:any)=>{
+          const factor=intensityFactor(d?.intensity);
+          return sum+(Number(weights[String(d?.morning||"Repos")]??1)+Number(weights[String(d?.afternoon||"Repos")]??1))*factor*.55;
+        },0)
+      :sessions.reduce((sum:number,s:string)=>sum+Number(weights[s]??1),0);
     const playerAge=ageAt(managed.data.birth_date,String(current.data.career_date||AGE_REFERENCE_DATE),managed.data.age)||Number(managed.data.age||24);
     const fatigue=Number(isPrimary?current.data.fatigue:(managed.data as any).fatigue||0);
     const fitness=Number(isPrimary?current.data.fitness:(managed.data as any).fitness||90);
@@ -5836,8 +5848,16 @@ Deno.serve(async(req:Request)=>{
     if(load<minLoad-2)warnings.push("Charge très basse : bonne récupération mais progression technique lente.");
     if(!sessions.some((s:string)=>s==="Repos"||s==="Récupération"))warnings.push("Aucune journée de récupération prévue.");
     let hardRun=0,maxHardRun=0;
-    for(const s of sessions){hardRun=Number(weights[s]||0)>=2?hardRun+1:0;maxHardRun=Math.max(maxHardRun,hardRun)}
-    if(maxHardRun>=4)warnings.push("Quatre séances exigeantes consécutives ou plus : surcharge probable.");
+    if(dailyPlan){
+      for(const d of dailyPlan){
+        const dayLoad=(Number(weights[String(d?.morning||"Repos")]??0)+Number(weights[String(d?.afternoon||"Repos")]??0))*intensityFactor(d?.intensity);
+        hardRun=dayLoad>=4.5?hardRun+1:0;maxHardRun=Math.max(maxHardRun,hardRun);
+      }
+      if(maxHardRun>=3)warnings.push("Trois journées lourdes consécutives ou plus : prévois récupération ou allègement.");
+    }else{
+      for(const s of sessions){hardRun=Number(weights[s]||0)>=2?hardRun+1:0;maxHardRun=Math.max(maxHardRun,hardRun)}
+      if(maxHardRun>=4)warnings.push("Quatre séances exigeantes consécutives ou plus : surcharge probable.");
+    }
     if(careerFocus==="doubles_only"&&sessions.filter((s:string)=>s==="Double").length<2)warnings.push("Profil double exclusif : ajoute au moins deux séances Double.");
     if(careerFocus==="singles_only"&&sessions.filter((s:string)=>s==="Double").length>1)warnings.push("Profil simple exclusif : trop de volume consacré au Double.");
     const multiplier=personalBase*ageMult*conditionMult*(.84+avgStaff/80+avgFacility/20)*difficultyTrainingMult;
@@ -5957,9 +5977,9 @@ Deno.serve(async(req:Request)=>{
     const difficultyTrainingMult=({discovery:1.12,normal:1,manager:.94,hardcore:.88} as any)[difficultyKey]||1;
     let trainingSessions=checkpointOnly?[]:(Array.isArray(body?.training)?body.training.slice(0,7):[]);
     const careerFocus=String(current.data.career_focus||"mixed");
-    if(careerFocus==="doubles_only"&&!trainingSessions.length){
+    if(!checkpointOnly&&careerFocus==="doubles_only"&&!trainingSessions.length){
       trainingSessions=["Double","Service","Retour","Double","Match play","Récupération","Repos"];
-    }else if(careerFocus==="singles_only"&&!trainingSessions.length){
+    }else if(!checkpointOnly&&careerFocus==="singles_only"&&!trainingSessions.length){
       trainingSessions=["Service","Retour","Coup droit","Revers","Match play","Déplacements","Récupération"];
     }
     const [anthony,facilityRows,progressRows]=await Promise.all([

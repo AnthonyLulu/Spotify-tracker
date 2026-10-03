@@ -9842,18 +9842,21 @@ Deno.serve(async(req:Request)=>{
   const liveInvertTennisScore=(value:any)=>{
     const input=String(value||"").trim();
     if(!input)return input;
-    if(/^Sets\\s+\\d+-\\d+$/i.test(input)){
-      return input.replace(/(\\d+)-(\\d+)/,(_m,a,b)=>String(b)+"-"+String(a));
+    const retirement=/\\bRET\\b/i.test(input);
+    if(/^Sets\\s+\\d+-\\d+(?:\\s+RET)?$/i.test(input)){
+      const inverted=input.replace(/(\\d+)-(\\d+)/,(_m,a,b)=>String(b)+"-"+String(a)).replace(/\\s+RET$/i,"");
+      return inverted+(retirement?" RET":"");
     }
     const parts=input.match(/\\[\\d+-\\d+\\]|\\d+-\\d+(?:\\s+\\(\\d+-\\d+\\))?/g);
     if(!parts?.length)return input;
-    return parts.map((token:string)=>{
+    const inverted=parts.map((token:string)=>{
       let m=token.match(/^\\[(\\d+)-(\\d+)\\]$/);
       if(m)return "["+m[2]+"-"+m[1]+"]";
       m=token.match(/^(\\d+)-(\\d+)(?:\\s+\\((\\d+)-(\\d+)\\))?$/);
       if(!m)return token;
       return m[2]+"-"+m[1]+(m[3]!=null?" ("+m[4]+"-"+m[3]+")":"");
     }).join(" ");
+    return inverted+(retirement?" RET":"");
   };
 
   const liveIsoAddDays=(iso:string,days:number)=>{
@@ -10090,7 +10093,7 @@ Deno.serve(async(req:Request)=>{
         .eq("id",playerId).maybeSingle(),
       db.from("injuries")
         .select("id,injury_type,severity,expected_return,aggravation_risk,status")
-        .eq("player_id",playerId).eq("status","Active")
+        .eq("player_id",playerId).in("status",["active","Active"])
         .order("started_at",{ascending:false}).limit(1).maybeSingle(),
       tournamentId
         ?db.from("tournaments").select("id,name,city,country,surface,indoor,venue,circuit,category,level,logo_url,image_url,court_speed,altitude_m,environment,environment_profile,start_date,end_date,main_draw_start_date,qualifying_start_date,qualifying_end_date,singles_draw_size,draw_size,qualifying_draw_size").eq("id",tournamentId).maybeSingle()
@@ -10145,9 +10148,12 @@ Deno.serve(async(req:Request)=>{
         .order("id",{ascending:true}).limit(32);
       if(prior.error)return h({error:prior.error.message},500);
       const priorRows=prior.data??[];
-      const priorLoss=priorRows.find((x:any)=>Number(x.user_sets||0)<Number(x.opponent_sets||0));
+      const rowWon=(x:any)=>x?.stats?._retirement?.winner
+        ?String(x.stats._retirement.winner)==="user"
+        :Number(x.user_sets||0)>Number(x.opponent_sets||0);
+      const priorLoss=priorRows.find((x:any)=>!rowWon(x));
       if(priorLoss)return h({error:"Ce joueur est déjà éliminé de ce tournoi. Recharge une sauvegarde antérieure pour rejouer le parcours.",eliminated:true},409);
-      tournamentWins=priorRows.filter((x:any)=>Number(x.user_sets||0)>Number(x.opponent_sets||0)).length;
+      tournamentWins=priorRows.filter((x:any)=>rowWon(x)).length;
       const faced=new Set(priorRows.map((x:any)=>Number(x.opponent_id||0)).filter(Boolean));
 
       const mainDraw=Math.max(8,Number(tournament.data?.singles_draw_size||tournament.data?.draw_size||32));

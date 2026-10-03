@@ -2509,7 +2509,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:68,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:69,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v2+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -9581,6 +9581,137 @@ Deno.serve(async(req:Request)=>{
         dominant_wing:forehand>=backhand+1.2?"Coup droit":backhand>=forehand+1.2?"Revers":"Équilibré"}
     };
   };
+
+  const liveTacticalMemoryNormalize=(value:any)=>{
+    const v=String(value||"").trim().toLowerCase();
+    if(!v)return "";
+    if(v==="large"||v==="extérieur"||v==="exterieur"||v==="wide")return "Large";
+    if(v==="corps"||v==="body")return "Corps";
+    if(v==="t"||v==="centre"||v==="center")return "T";
+    if(v==="revers"||v==="backhand")return "Revers";
+    if(v==="coup droit"||v==="forehand")return "Coup droit";
+    if(v==="rapide"||v==="fast")return "Rapide";
+    if(v==="patient"||v==="lent"||v==="slow")return "Patient";
+    if(v==="lift"||v==="topspin")return "Lift";
+    if(v==="slice")return "Slice";
+    if(v==="plat"||v==="flat")return "Plat";
+    if(v==="avancée"||v==="avancee"||v==="advanced")return "Avancée";
+    if(v==="reculée"||v==="reculee"||v==="deep")return "Reculée";
+    if(v==="neutre"||v==="neutral")return "Neutre";
+    if(v==="mixte"||v==="mixed")return "Mixte";
+    return String(value||"");
+  };
+  const liveTacticalMemorySummary=(memory:any={})=>{
+    const rows=(Array.isArray(memory?.recent)?memory.recent:[]).slice(-48);
+    const cat=(key:string,predicate:(row:any)=>boolean=()=>true)=>{
+      const weights:any={};let total=0,samples=0;
+      rows.forEach((row:any,idx:number)=>{
+        if(!predicate(row))return;
+        const raw=liveTacticalMemoryNormalize(row?.[key]);
+        if(!raw||raw==="Mixte")return;
+        const age=Math.max(0,rows.length-1-idx);
+        const w=Math.pow(.935,age)*(Number(row?.pressure||0)>=.70?1.45:1);
+        weights[raw]=(weights[raw]||0)+w;total+=w;samples++;
+      });
+      const entries=Object.entries(weights).sort((a:any,b:any)=>Number(b[1])-Number(a[1]));
+      const best:any=entries[0]||null;
+      return {value:best?String(best[0]):null,share:best&&total>0?Number(best[1])/total:0,samples,weights};
+    };
+    const weightedAvg=(key:string,predicate:(row:any)=>boolean=()=>true)=>{
+      let total=0,weight=0,samples=0;
+      rows.forEach((row:any,idx:number)=>{
+        if(!predicate(row)||!Number.isFinite(Number(row?.[key])))return;
+        const age=Math.max(0,rows.length-1-idx),w=Math.pow(.94,age)*(Number(row?.pressure||0)>=.70?1.25:1);
+        total+=Number(row[key])*w;weight+=w;samples++;
+      });
+      return {value:weight?total/weight:0,samples};
+    };
+    const serve=cat("serve_direction",(r:any)=>r?.server==="user");
+    const pressureServe=cat("serve_direction",(r:any)=>r?.server==="user"&&Number(r?.pressure||0)>=.55);
+    const servePlan=cat("serve_pattern",(r:any)=>r?.server==="user");
+    const target=cat("target_wing"),tempo=cat("tempo"),spin=cat("spin");
+    const returnPos=cat("return_pos",(r:any)=>r?.server==="opponent");
+    const risk=weightedAvg("risk"),aggression=weightedAvg("aggression"),netIntent=weightedAvg("net_intent");
+    const userNet=weightedAvg("user_at_net");
+    const switches=rows.slice(-14).filter((r:any)=>Boolean(r?.switched)).length;
+    const switchRate=rows.length?switches/Math.min(14,rows.length):0;
+    const totalPoints=Math.max(Number(memory?.total_points||0),rows.length);
+    const stabilityParts=[pressureServe,serve,target,tempo,spin,returnPos]
+      .filter((x:any)=>Number(x?.samples||0)>=3).map((x:any)=>Number(x?.share||0));
+    const stability=stabilityParts.length?stabilityParts.reduce((a:number,b:number)=>a+b,0)/stabilityParts.length:0;
+    return {
+      total_points:totalPoints,recent_points:rows.length,switch_rate:Number(switchRate.toFixed(3)),
+      stability:Number(stability.toFixed(3)),
+      serve_direction:{value:serve.value,share:Number(serve.share.toFixed(3)),samples:serve.samples},
+      pressure_serve_direction:{value:pressureServe.value,share:Number(pressureServe.share.toFixed(3)),samples:pressureServe.samples},
+      serve_plan:{value:servePlan.value,share:Number(servePlan.share.toFixed(3)),samples:servePlan.samples},
+      target_wing:{value:target.value,share:Number(target.share.toFixed(3)),samples:target.samples},
+      tempo:{value:tempo.value,share:Number(tempo.share.toFixed(3)),samples:tempo.samples},
+      spin:{value:spin.value,share:Number(spin.share.toFixed(3)),samples:spin.samples},
+      return_pos:{value:returnPos.value,share:Number(returnPos.share.toFixed(3)),samples:returnPos.samples},
+      avg_risk:Number(risk.value.toFixed(1)),avg_aggression:Number(aggression.value.toFixed(1)),
+      avg_net_intent:Number(netIntent.value.toFixed(1)),user_net_rate:Number(userNet.value.toFixed(3)),
+      last_signature:memory?.last_signature||null,last_switch_point:Number(memory?.last_switch_point||0)
+    };
+  };
+  const liveTacticalMemoryPublic=(memory:any={})=>({version:"CB-TACTICAL-MEMORY-v2",...(memory?.summary||liveTacticalMemorySummary(memory))});
+  const liveTacticalMemoryObserve=(memory:any,obs:any)=>{
+    const prior:any=memory&&typeof memory==="object"?memory:{};
+    const recent:Array<any>=Array.isArray(prior.recent)?[...prior.recent]:[];
+    const risk=Number(obs?.risk||52),netIntent=Number(obs?.net_intent||28);
+    const signature=[
+      liveTacticalMemoryNormalize(obs?.serve_pattern)||"Mixte",
+      liveTacticalMemoryNormalize(obs?.target_wing)||"Mixte",
+      liveTacticalMemoryNormalize(obs?.tempo)||"Neutre",
+      liveTacticalMemoryNormalize(obs?.spin)||"Mixte",
+      liveTacticalMemoryNormalize(obs?.return_pos)||"Neutre",
+      risk>=62?"R+":risk<=42?"R-":"R0",netIntent>=55?"N+":netIntent<=22?"N-":"N0"
+    ].join("|");
+    const pointNo=Math.max(1,Number(obs?.point_no||Number(prior.total_points||0)+1));
+    const switched=Boolean(prior.last_signature&&prior.last_signature!==signature);
+    const row={
+      point_no:pointNo,server:String(obs?.server||""),pressure:Number(obs?.pressure||0),
+      serve_direction:liveTacticalMemoryNormalize(obs?.serve_direction),serve_pattern:liveTacticalMemoryNormalize(obs?.serve_pattern),
+      target_wing:liveTacticalMemoryNormalize(obs?.target_wing),tempo:liveTacticalMemoryNormalize(obs?.tempo),
+      spin:liveTacticalMemoryNormalize(obs?.spin),return_pos:liveTacticalMemoryNormalize(obs?.return_pos),
+      aggression:Number(obs?.aggression||58),risk,net_intent:netIntent,user_at_net:obs?.user_at_net?1:0,
+      user_won:Boolean(obs?.user_won),stake:String(obs?.stake||"normal"),synthetic:Boolean(obs?.synthetic),
+      signature,switched,at:new Date().toISOString()
+    };
+    recent.push(row);
+    const next:any={
+      version:"CB-TACTICAL-MEMORY-v2",recent:recent.slice(-48),
+      total_points:Math.max(Number(prior.total_points||0)+1,pointNo),
+      switches:Number(prior.switches||0)+(switched?1:0),
+      last_signature:signature,last_switch_point:switched?pointNo:Number(prior.last_switch_point||0),updated_at:row.at
+    };
+    next.summary=liveTacticalMemorySummary(next);return next;
+  };
+  const liveTacticalMemoryObserveGame=(memory:any,obs:any,count:number)=>{
+    let next:any=memory;const points=Math.max(1,Math.round(Number(count)||1)),loops=Math.max(1,Math.min(8,points));
+    for(let i=0;i<loops;i++)next=liveTacticalMemoryObserve(next,{...obs,point_no:Number(obs?.point_no||0)+i+1,synthetic:true});
+    next.total_points=Math.max(Number(next?.total_points||0),Number(obs?.point_no||0)+points);
+    next.summary=liveTacticalMemorySummary(next);return next;
+  };
+  const liveTacticalMemoryRead=(memory:any,readSkill:number)=>{
+    const s:any=memory?.summary||liveTacticalMemorySummary(memory);
+    const maturity=Math.min(1,Number(s.total_points||0)/18);
+    const parts=[s.pressure_serve_direction,s.serve_direction,s.target_wing,s.tempo,s.spin,s.return_pos]
+      .filter((x:any)=>Number(x?.samples||0)>=3).map((x:any)=>Number(x?.share||0));
+    const stability=parts.length?parts.reduce((a:number,b:number)=>a+b,0)/parts.length:Number(s.stability||0);
+    const skill=Math.max(.45,Math.min(1.15,.50+Number(readSkill||10)*.035));
+    const confidence=Math.max(0,Math.min(.94,(maturity*.42+stability*.58)*skill*(1-Number(s.switch_rate||0)*.58)));
+    const riskMode=Number(s.avg_risk||52)>=62?"Agressif":Number(s.avg_risk||52)<=42?"Prudent":"Neutre";
+    const netMode=(Number(s.user_net_rate||0)>=.33||Number(s.avg_net_intent||0)>=55)?"Filet":(Number(s.avg_net_intent||0)<=22?"Fond":"Mixte");
+    const serveRead=Number(s.pressure_serve_direction?.samples||0)>=4?s.pressure_serve_direction
+      :Number(s.serve_direction?.samples||0)>=3?s.serve_direction:s.serve_plan;
+    return {
+      confidence:Number(confidence.toFixed(3)),maturity:Number(maturity.toFixed(3)),stability:Number(stability.toFixed(3)),
+      serve_direction:serveRead,serve_plan:s.serve_plan,target_wing:s.target_wing,tempo:s.tempo,spin:s.spin,return_pos:s.return_pos,
+      risk_mode:riskMode,net_mode:netMode,switch_rate:Number(s.switch_rate||0),total_points:Number(s.total_points||0)
+    };
+  };
+
   const liveOpponentPlan=(oppAttrs:any,userAttrs:any,oppFormMultiplier=1,userFormMultiplier=1,ctx:any={})=>{
     const profile=liveStyleProfile(oppAttrs,oppFormMultiplier);
     const avgOpp=(keys:string[])=>liveRuntimeAvgAttr(oppAttrs,keys,oppFormMultiplier);
@@ -9601,6 +9732,8 @@ Deno.serve(async(req:Request)=>{
     const slice=avgOpp(["slice","touch","shot_selection"]);
     const userFh=avgUser(["forehand","forehand_power","forehand_accuracy","forehand_consistency"]);
     const userBh=avgUser(["backhand","backhand_power","backhand_accuracy","backhand_consistency"]);
+    const readSkill=avgOpp(["anticipation","tactics","decision_making","shot_selection","concentration"]);
+    const memoryRead=liveTacticalMemoryRead(ctx?.memory,readSkill);
     let aggression=Math.round(50+(aggressionAttr-10)*2.6+Math.max(0,chase)*7-Math.max(0,-chase)*3);
     let risk=Math.round(46+(aggressionAttr-10)*2.2+(decision-10)*.7+Math.max(0,chase)*8-Math.max(0,-chase)*5);
     let net=Math.round(18+(profile.net-10)*4.1+(profile.archetype==="Attaquant filet"?18:0)+(grass||indoor?6:0));
@@ -9616,10 +9749,22 @@ Deno.serve(async(req:Request)=>{
     if(chase<-.45&&patience>=12)tempo="Patient";
     const spin=clay?(topspin>=slice-1?"Lift":"Mixte"):grass?(slice>=topspin-1?"Slice":"Plat"):topspin>=slice+2?"Lift":slice>=topspin+2?"Slice":aggressionAttr>=14?"Plat":"Mixte";
     const targetWing=userBh<=userFh-1?"Revers":userFh<=userBh-1?"Coup droit":"Mixte";
-    const returnPos=returnAgg>=14&&(grass||indoor||risk>=60)?"Avancée":profile.archetype==="Contreur"&&clay?"Reculée":"Neutre";
-    const adaptation=chase>.35?"Accélère pour revenir":chase<-.35?"Gère l’avantage":pressure>=.7?"Serrage sur point clé":"Plan naturel";
-    return {aggression,risk,net,effort,tempo,spin,targetWing,returnPos,adaptation,archetype:profile.archetype,
-      decision:Math.round(decision*10)/10,composure:Math.round(composure*10)/10,momentum_response:Math.round(chase*100),pressure_response:Math.round(pressure*100)};
+    let returnPos=returnAgg>=14&&(grass||indoor||risk>=60)?"Avancée":profile.archetype==="Contreur"&&clay?"Reculée":"Neutre";
+    let servePattern="Mixte",counterMode="Lecture neutre";
+    const readConfidence=Number(memoryRead.confidence||0);
+    if(readConfidence>=.32){
+      if(memoryRead.return_pos?.value==="Avancée")servePattern="Corps";
+      else if(memoryRead.return_pos?.value==="Reculée")servePattern="Large";
+      if(memoryRead.net_mode==="Filet"){counterMode="Passing + lob";net=Math.max(8,net-7);tempo="Patient"}
+      else if(memoryRead.risk_mode==="Agressif"){counterMode="Absorber puis contrer";risk=Math.max(28,risk-5);tempo="Patient"}
+      else if(memoryRead.target_wing?.value){counterMode="Protéger "+String(memoryRead.target_wing.value)}
+      if(memoryRead.serve_direction?.value&&Number(memoryRead.serve_direction.share||0)>=.62)counterMode="Lecture service "+String(memoryRead.serve_direction.value);
+    }
+    const baseAdaptation=chase>.35?"Accélère pour revenir":chase<-.35?"Gère l’avantage":pressure>=.7?"Serrage sur point clé":"Plan naturel";
+    const adaptation=readConfidence>=.32?("Lecture "+Math.round(readConfidence*100)+"% · "+counterMode):baseAdaptation;
+    return {aggression,risk,net,effort,tempo,spin,targetWing,returnPos,servePattern,counterMode,adaptation,archetype:profile.archetype,
+      memory_read:memoryRead,decision:Math.round(decision*10)/10,composure:Math.round(composure*10)/10,
+      momentum_response:Math.round(chase*100),pressure_response:Math.round(pressure*100)};
   };
 
   const livePointKernel=(ctx:any)=>{
@@ -9652,9 +9797,10 @@ Deno.serve(async(req:Request)=>{
     const formEdge=(serverIsUser?userFormMultiplier-oppFormMultiplier:oppFormMultiplier-userFormMultiplier)*50;
 
     const targetWing=String(tactics.targetWing||"Mixte"),spinPlan=String(tactics.spin||"Mixte"),tempo=String(tactics.tempo||"Neutre");
+    const servePattern=String(tactics.servePattern||"Mixte");
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100),effort=n(tactics.effort,60,20,100);
     const ret=String(tactics.returnPos||"Neutre");
-    const opponentPlan=liveOpponentPlan(oa,ua,oppFormMultiplier,userFormMultiplier,{surface,pressure,momentum:ctx.momentum});
+    const opponentPlan=liveOpponentPlan(oa,ua,oppFormMultiplier,userFormMultiplier,{surface,pressure,momentum:ctx.momentum,memory:ctx.tacticalMemory});
     const opponentBh=liveRuntimeAvgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],oppFormMultiplier);
     const opponentFh=liveRuntimeAvgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormMultiplier);
     const userBh=liveRuntimeAvgAttr(ua,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],userFormMultiplier);
@@ -9675,6 +9821,24 @@ Deno.serve(async(req:Request)=>{
     const oppTempoEdge=opponentPlan.tempo==="Rapide"?.0045:opponentPlan.tempo==="Patient"?.002:0;
     const oppEffortEdge=(Number(opponentPlan.effort||60)-60)*.00030;
     const opponentTacticEdge=oppTargetEdge+oppSpinEdge+oppTempoEdge+oppEffortEdge;
+    const memoryRead:any=opponentPlan.memory_read||{};
+    const readConfidence=Math.max(0,Math.min(.94,Number(memoryRead.confidence||0)));
+    const catRead=(expected:any,current:any,weight:number)=>{
+      const e=liveTacticalMemoryNormalize(expected),c=liveTacticalMemoryNormalize(current);
+      if(!e||!c||e==="Mixte"||c==="Mixte")return 0;
+      return e===c?weight:-weight*.88;
+    };
+    let memoryReadScore=0;
+    if(serverIsUser)memoryReadScore+=catRead(memoryRead.serve_direction?.value,servePattern,.54);
+    else memoryReadScore+=catRead(memoryRead.return_pos?.value,ret,.32);
+    memoryReadScore+=catRead(memoryRead.target_wing?.value,targetWing,.30);
+    memoryReadScore+=catRead(memoryRead.tempo?.value,tempo,.22);
+    memoryReadScore+=catRead(memoryRead.spin?.value,spinPlan,.18);
+    const currentRiskMode=risk>=62?"Agressif":risk<=42?"Prudent":"Neutre";
+    if(memoryRead.risk_mode&&memoryRead.risk_mode!=="Neutre")memoryReadScore+=memoryRead.risk_mode===currentRiskMode?.22:-.18;
+    const currentNetMode=net>=55?"Filet":net<=22?"Fond":"Mixte";
+    if(memoryRead.net_mode&&memoryRead.net_mode!=="Mixte"&&currentNetMode!=="Mixte")memoryReadScore+=memoryRead.net_mode===currentNetMode?.24:-.20;
+    const opponentMemoryEdge=Math.max(-.026,Math.min(.026,memoryReadScore*readConfidence*.026));
     const pointAttrEdge=Math.max(-.06,Math.min(.06,
       groundEdge*.00135+movementEdge*.00085+mentalEdge*(.00070+pressure*.00075)+
       netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+
@@ -9762,10 +9926,12 @@ Deno.serve(async(req:Request)=>{
     else serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0018+conditionEdge;
     serverWinProb+=styleMatchupEdge+(serverIsUser?(userStyleFitEdge-opponentStyleFitEdge):(opponentStyleFitEdge-userStyleFitEdge))+mentalPressureEdge;
+    serverWinProb+=serverIsUser?-opponentMemoryEdge:opponentMemoryEdge;
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
     return {
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
-      styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,mentalPressureEdge,pressureLevel:pressure,
+      styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,
+      opponentMemoryEdge,opponentMemoryRead:memoryRead,mentalPressureEdge,pressureLevel:pressure,
       userConditionDetail,oppConditionDetail,serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };
@@ -10447,7 +10613,8 @@ Deno.serve(async(req:Request)=>{
     const kernel=livePointKernel({
       tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure,
       managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
-      momentum:Number(session.data.momentum||50),surface,firstServeIn
+      momentum:Number(session.data.momentum||50),surface,firstServeIn,
+      tacticalMemory:preStats._tactical_memory
     });
     const serverWinProb=kernel.serverWinProb;
     const pointAttrEdge=kernel.pointAttrEdge;
@@ -10460,6 +10627,12 @@ Deno.serve(async(req:Request)=>{
     let serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
     if(serverIsUser&&servePattern!=="Mixte"&&Math.random()<.68){
       serveDirection=servePattern==="Large"?"large":servePattern==="Corps"?"corps":"T";
+    }else if(!serverIsUser&&kernel.opponentPlan?.servePattern&&kernel.opponentPlan.servePattern!=="Mixte"){
+      const aiRead=Math.max(0,Math.min(.94,Number(kernel.opponentPlan?.memory_read?.confidence||0)));
+      if(Math.random()<.52+aiRead*.28){
+        const aiServe=String(kernel.opponentPlan.servePattern);
+        serveDirection=aiServe==="Large"?"large":aiServe==="Corps"?"corps":"T";
+      }
     }
     const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
     const aceChance=Math.max(.002,Math.min(.28,Number(tm.ace_pct||6)/100*aceSurface
@@ -10958,7 +11131,9 @@ Deno.serve(async(req:Request)=>{
         opponent_tactic_edge:Math.round(Number(kernel.opponentTacticEdge||0)*10000)/10000,
         opponent_style_fit_edge:Math.round(Number(kernel.opponentStyleFitEdge||0)*10000)/10000,
         opponent_plan:kernel.opponentPlan||null,
-        opponent_ai_model:"CB-OPPONENT-AI-v1",
+        opponent_memory_edge:Math.round(Number(kernel.opponentMemoryEdge||0)*10000)/10000,
+        opponent_memory_read:kernel.opponentMemoryRead||null,
+        opponent_ai_model:"CB-OPPONENT-AI-v2-memory",
         server_archetype:kernel.serverArchetype,
         returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,
@@ -11002,6 +11177,16 @@ Deno.serve(async(req:Request)=>{
       opp_short_rallies_won:0,opp_medium_rallies_won:0,opp_long_rallies_won:0,
       ...(session.data.stats||{})
     };
+    stats._tactical_memory=liveTacticalMemoryObserve(stats._tactical_memory,{
+      point_no:pointNo,server:serverIsUser?"user":"opponent",pressure,
+      serve_direction:serveDirection,serve_pattern:servePattern,target_wing:targetWing,tempo,spin:spinPlan,return_pos:ret,
+      aggression:ag,risk,net_intent:net,user_at_net:atNet&&Number(netPlayerId)===Number(managed.data.id),
+      user_won:userWon,stake
+    });
+    if(lastPoint.environment_effects&&typeof lastPoint.environment_effects==="object"){
+      lastPoint.environment_effects.tactical_memory=liveTacticalMemoryPublic(stats._tactical_memory);
+      lastPoint.environment_effects.tactical_memory_model="CB-TACTICAL-MEMORY-v2";
+    }
     if(serverIsUser){
       stats.user_first_serves++;
       if(firstServeIn)stats.user_first_serves_in++;
@@ -11338,11 +11523,11 @@ Deno.serve(async(req:Request)=>{
       const oppServeTm:any=oppServeMatch.error?{}:(oppServeMatch.data||{});
       const userServeKernel=livePointKernel({
         tm:userServeTm,ua,oa,serverIsUser:true,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:1,
-        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),momentum:Number(session.data.momentum||50),surface,firstServeIn:null,tacticalMemory:stats._tactical_memory
       });
       const oppServeKernel=livePointKernel({
         tm:oppServeTm,ua,oa,serverIsUser:false,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:1,
-        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),momentum:Number(session.data.momentum||50),surface,firstServeIn:null,tacticalMemory:stats._tactical_memory
       });
       const userServePointP=userServeKernel.serverWinProb;
       const userReturnPointP=1-oppServeKernel.serverWinProb;
@@ -11371,7 +11556,7 @@ Deno.serve(async(req:Request)=>{
           tm:pointTm,ua,oa,serverIsUser:tbServerUser,userFormMultiplier,oppFormMultiplier,tactics,meta,
           pressure:Number(pointPressure.level||0),managed:managed.data,opp,
           pointsPlayed:Number(session.data.rally_no||0)+gamePoints,momentum:Number(session.data.momentum||50),
-          surface,firstServeIn:firstIn
+          surface,firstServeIn:firstIn,tacticalMemory:stats._tactical_memory
         });
         const serverWonPoint=!doubleFault&&Math.random()<pointKernel.serverWinProb;
         const userPointWon=tbServerUser?serverWonPoint:!serverWonPoint;
@@ -11461,7 +11646,7 @@ Deno.serve(async(req:Request)=>{
       const initialKernel=livePointKernel({
         tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:Number(initialPressure.level||0),
         managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
-        momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+        momentum:Number(session.data.momentum||50),surface,firstServeIn:null,tacticalMemory:stats._tactical_memory
       });
       const initialUserPointP=serverIsUser?initialKernel.serverWinProb:1-initialKernel.serverWinProb;
       const qUser=1-initialUserPointP;
@@ -11501,7 +11686,7 @@ Deno.serve(async(req:Request)=>{
         const pointKernel=livePointKernel({
           tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:Number(pointPressure.level||0),
           managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0)+gamePoints,
-          momentum:Number(session.data.momentum||50),surface,firstServeIn:firstIn
+          momentum:Number(session.data.momentum||50),surface,firstServeIn:firstIn,tacticalMemory:stats._tactical_memory
         });
         const serverWonPoint=!doubleFault&&Math.random()<pointKernel.serverWinProb;
         const userPointWon=serverIsUser?serverWonPoint:!serverWonPoint;
@@ -11611,6 +11796,16 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
+    stats._tactical_memory=liveTacticalMemoryObserveGame(stats._tactical_memory,{
+      point_no:Number(session.data.rally_no||0),server:tiebreakActive?"mixed":(Boolean(session.data.serving_user)?"user":"opponent"),
+      pressure:tiebreakActive?1:.30,serve_pattern:String(tactics.servePattern||"Mixte"),target_wing:String(tactics.targetWing||"Mixte"),
+      tempo:String(tactics.tempo||"Neutre"),spin:String(tactics.spin||"Mixte"),return_pos:String(tactics.returnPos||"Neutre"),
+      aggression:Number(tactics.aggression||58),risk:Number(tactics.risk||52),net_intent:Number(tactics.net||28),
+      user_at_net:Number(tactics.net||28)>=55,user_won:userWon,stake:tiebreakActive?"tiebreak":"game"
+    },gamePoints);
+    const gameOpponentPlan=liveOpponentPlan(oa,ua,oppFormMultiplier,userFormMultiplier,{
+      surface,pressure:tiebreakActive?1:.30,momentum:Number(session.data.momentum||50),memory:stats._tactical_memory
+    });
     const userName=String(managed.data.name||"Joueur");
     const momentumNew=Math.max(10,Math.min(90,
       Number(session.data.momentum||50)+(userWon?4:-4)+(setFinished?(setWinner===userName?8:-8):0)
@@ -11636,6 +11831,11 @@ Deno.serve(async(req:Request)=>{
         model:"CB-MATCH-ENGINE-v6 · canonical game kernel",
         server_win_probability:Math.round(lastServerWinProbability*1000)/10,
         runtime_condition_edge:Math.round(lastConditionEdge*10000)/10000,
+        environment_effects:{
+          opponent_plan:gameOpponentPlan,opponent_memory_read:gameOpponentPlan?.memory_read||null,
+          opponent_ai_model:"CB-OPPONENT-AI-v2-memory",
+          tactical_memory:liveTacticalMemoryPublic(stats._tactical_memory),tactical_memory_model:"CB-TACTICAL-MEMORY-v2"
+        },
         form_modifier_runtime_only:true,at:new Date().toISOString()
       },
       status,updated_at:new Date().toISOString()

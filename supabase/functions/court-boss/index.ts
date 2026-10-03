@@ -9629,6 +9629,23 @@ Deno.serve(async(req:Request)=>{
     };
     const serve=cat("serve_direction",(r:any)=>r?.server==="user");
     const pressureServe=cat("serve_direction",(r:any)=>r?.server==="user"&&Number(r?.pressure||0)>=.55);
+    const deuceServe=cat("serve_direction",(r:any)=>r?.server==="user"&&String(r?.service_court||"")==="deuce");
+    const adServe=cat("serve_direction",(r:any)=>r?.server==="user"&&String(r?.service_court||"")==="ad");
+    const userServeRows=rows.filter((r:any)=>r?.server==="user"&&liveTacticalMemoryNormalize(r?.serve_direction));
+    const serveAfter=(from:string)=>{
+      const weights:any={},winWeights:any={};let total=0,samples=0;
+      for(let i=1;i<userServeRows.length;i++){
+        if(liveTacticalMemoryNormalize(userServeRows[i-1]?.serve_direction)!==from)continue;
+        const raw=liveTacticalMemoryNormalize(userServeRows[i]?.serve_direction);if(!raw)continue;
+        const age=Math.max(0,userServeRows.length-1-i),w=Math.pow(.93,age)*(Number(userServeRows[i]?.pressure||0)>=.70?1.35:1);
+        weights[raw]=(weights[raw]||0)+w;if(userServeRows[i]?.user_won)winWeights[raw]=(winWeights[raw]||0)+w;total+=w;samples++;
+      }
+      const entries=Object.entries(weights).sort((a:any,b:any)=>Number(b[1])-Number(a[1])),best:any=entries[0]||null;
+      const bestWeight=best?Number(best[1]):0;
+      return {value:best?String(best[0]):null,share:best&&total>0?bestWeight/total:0,samples,success:bestWeight>0?Number(winWeights[String(best[0])]||0)/bestWeight:.5};
+    };
+    const lastUserServe=liveTacticalMemoryNormalize(userServeRows[userServeRows.length-1]?.serve_direction);
+    const sequenceRead=lastUserServe?serveAfter(lastUserServe):{value:null,share:0,samples:0,success:.5};
     const servePlan=cat("serve_pattern",(r:any)=>r?.server==="user");
     const target=cat("target_wing"),tempo=cat("tempo"),spin=cat("spin");
     const returnPos=cat("return_pos",(r:any)=>r?.server==="opponent");
@@ -9645,6 +9662,9 @@ Deno.serve(async(req:Request)=>{
       stability:Number(stability.toFixed(3)),
       serve_direction:{value:serve.value,share:Number(serve.share.toFixed(3)),samples:serve.samples,success:Number(serve.success.toFixed(3))},
       pressure_serve_direction:{value:pressureServe.value,share:Number(pressureServe.share.toFixed(3)),samples:pressureServe.samples,success:Number(pressureServe.success.toFixed(3))},
+      deuce_serve_direction:{value:deuceServe.value,share:Number(deuceServe.share.toFixed(3)),samples:deuceServe.samples,success:Number(deuceServe.success.toFixed(3))},
+      ad_serve_direction:{value:adServe.value,share:Number(adServe.share.toFixed(3)),samples:adServe.samples,success:Number(adServe.success.toFixed(3))},
+      serve_sequence:{previous:lastUserServe||null,next:sequenceRead.value,share:Number(sequenceRead.share.toFixed(3)),samples:sequenceRead.samples,success:Number(sequenceRead.success.toFixed(3))},
       serve_plan:{value:servePlan.value,share:Number(servePlan.share.toFixed(3)),samples:servePlan.samples,success:Number(servePlan.success.toFixed(3))},
       target_wing:{value:target.value,share:Number(target.share.toFixed(3)),samples:target.samples,success:Number(target.success.toFixed(3))},
       tempo:{value:tempo.value,share:Number(tempo.share.toFixed(3)),samples:tempo.samples,success:Number(tempo.success.toFixed(3))},
@@ -9672,7 +9692,7 @@ Deno.serve(async(req:Request)=>{
     const pointNo=Math.max(1,Number(obs?.point_no||Number(prior.total_points||0)+1));
     const switched=Boolean(prior.last_signature&&prior.last_signature!==signature);
     const row={
-      point_no:pointNo,server:String(obs?.server||""),pressure:Number(obs?.pressure||0),
+      point_no:pointNo,server:String(obs?.server||""),pressure:Number(obs?.pressure||0),service_court:String(obs?.service_court||""),
       serve_direction:liveTacticalMemoryNormalize(obs?.serve_direction),serve_pattern:liveTacticalMemoryNormalize(obs?.serve_pattern),
       target_wing:liveTacticalMemoryNormalize(obs?.target_wing),tempo:liveTacticalMemoryNormalize(obs?.tempo),
       spin:liveTacticalMemoryNormalize(obs?.spin),return_pos:liveTacticalMemoryNormalize(obs?.return_pos),

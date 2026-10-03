@@ -3579,6 +3579,20 @@ window.runInboxDecision=async(id,type,payload={})=>{
     await managerAction('respond_partner_offer',Number(payload.offer_id||0),{decision:payload.decision||'decline',player_id:Number(payload.player_id||activeManagedId()||primaryManagedPlayerId()||0)});
     careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
+  if(type==='respond_laver_cup_invitation'){
+    const invitationId=Number(payload?.invitation_id||0);
+    if(!invitationId)throw new Error('Invitation Laver Cup introuvable.');
+    await managerAction('respond_laver_cup_invitation',invitationId,{
+      invitation_id:invitationId,
+      decision:String(payload?.decision||'decline'),
+      player_id:Number(payload?.player_id||activeManagedId()||primaryManagedPlayerId()||0),
+      tournament_id:Number(payload?.tournament_id||0)
+    });
+    careerHub=null;
+    boot=await get('/api/bootstrap');
+    await Promise.allSettled([loadManagement(),loadCareerHub(true)]);
+    render();return;
+  }
   if(type==='match_staff_offer'||type==='release_staff_offer'){
     await managerAction(type,Number(payload.offer_id||0));
     careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;

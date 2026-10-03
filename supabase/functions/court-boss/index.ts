@@ -9106,13 +9106,42 @@ Deno.serve(async(req:Request)=>{
       const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
       return {winner:w,loser:l,score};
     };
+    const doublesAttr=(p:any,key:string,fallback=10)=>Number(p?.player_attributes?.[key]??fallback);
+    const doublesVisual=(round:string,A:any,B:any,res:any)=>{
+      if(!A.isUser&&!B.isUser)return null;
+      const U=A.isUser?A:B,O=A.isUser?B:A;
+      const ua=U.a,ub=U.b,oa=O.a,ob=O.b;
+      const avg=(p:any,keys:string[])=>keys.reduce((z,k)=>z+doublesAttr(p,k),0)/Math.max(1,keys.length);
+      const poach=(avg(ub,["poaching","reaction","net_positioning"])+avg(ua,["poaching","reaction","net_positioning"]))/2;
+      const comm=(avg(ua,["doubles_communication","leadership","decision_making"])+avg(ub,["doubles_communication","leadership","decision_making"]))/2;
+      const oppWeak=avg(oa,["return_game","return_consistency","volley"])<=avg(ob,["return_game","return_consistency","volley"])?oa:ob;
+      const seed=liveMatchHash(String(tid)+"|"+round+"|"+U.name+"|"+O.name);
+      const formation=poach>=14?(seed%2?"I formation":"Australienne"):comm>=13?"Standard + poach":"Standard";
+      const uNetX=formation==="I formation"?50:formation==="Australienne"?70:62;
+      const oNetX=(seed%3===0)?36:42;
+      const frames=[
+        {user_a:{x:34,y:84},user_b:{x:uNetX,y:61},opp_a:{x:66,y:16},opp_b:{x:oNetX,y:39},ball:{x:37,y:78}},
+        {user_a:{x:41,y:78},user_b:{x:uNetX+(poach>=14?-9:2),y:56},opp_a:{x:61,y:23},opp_b:{x:oNetX+5,y:43},ball:{x:60,y:38}},
+        {user_a:{x:47,y:76},user_b:{x:53,y:51},opp_a:{x:58,y:26},opp_b:{x:48,y:45},ball:{x:48,y:50}},
+        {user_a:{x:44,y:80},user_b:{x:formation==="Standard"?60:48,y:55},opp_a:{x:64,y:20},opp_b:{x:44,y:41},ball:{x:res.winner.isUser?68:32,y:res.winner.isUser?22:78}}
+      ];
+      return {
+        model:"CB-DOUBLES-VISUAL-v1",formation,poach_intent:Math.round(Math.max(5,Math.min(95,poach*5))),
+        communication:Math.round(Math.max(5,Math.min(100,comm*5))),
+        target_player_id:Number(oppWeak?.id||0),target_player_name:String(oppWeak?.name||""),
+        target_reason:"Retour / volée les plus attaquables",winner:res.winner.isUser?"user":"opponent",
+        user_players:[{id:ua?.id,name:ua?.name,role:"fond"},{id:ub?.id,name:ub?.name,role:"filet"}],
+        opponent_players:[{id:oa?.id,name:oa?.name,role:"fond"},{id:ob?.id,name:ob?.name,role:"filet"}],
+        frames
+      };
+    };
     const pushPairMatch=(round:string,A:any,B:any,res:any)=>{
       const involvesUser=!!A.isUser||!!B.isUser;
       matches.push({
         round_name:round,
         user_pair:involvesUser?userPair.name:null,
         opponent_pair:A.isUser?B.name:B.isUser?A.name:A.name+" vs "+B.name,
-        winner_pair:res.winner.name,score:res.score
+        winner_pair:res.winner.name,score:res.score,visual:doublesVisual(round,A,B,res)
       });
     };
 
@@ -10643,7 +10672,7 @@ Deno.serve(async(req:Request)=>{
 
     const [managed,activeInjury,tournament]=await Promise.all([
       db.from("players")
-        .select("id,name,country,ranking,career_focus,current_ability,form,fitness,fatigue,morale")
+        .select("id,name,country,ranking,career_focus,current_ability,form,fitness,fatigue,morale,style,handedness,backhand")
         .eq("id",playerId).maybeSingle(),
       db.from("injuries")
         .select("id,injury_type,severity,expected_return,aggravation_risk,status")
@@ -10873,9 +10902,9 @@ Deno.serve(async(req:Request)=>{
     return h({
       ok:true,engine:"CB-MATCH-ENGINE-v6",
       managed_player_id:playerId,
-      managed_player:{id:managed.data.id,name:managed.data.name,country:managed.data.country,ranking:managed.data.ranking},
+      managed_player:{id:managed.data.id,name:managed.data.name,country:managed.data.country,ranking:managed.data.ranking,handedness:managed.data.handedness,backhand:managed.data.backhand,style:managed.data.style},
       session:ins.data,match_environment:environment,round,opponent_source:opponentSource,world_match_id:worldMatchId,
-      opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking}
+      opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking,handedness:opp.data.handedness,backhand:opp.data.backhand,style:opp.data.style}
     });
   }
 

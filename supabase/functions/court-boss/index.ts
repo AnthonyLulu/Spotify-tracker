@@ -2475,7 +2475,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:67,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v5+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:67,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -9410,7 +9410,7 @@ Deno.serve(async(req:Request)=>{
   }
 
 
-  // CB-MATCH-ENGINE-v5 · deterministic match-day environment + tournament identity.
+  // CB-MATCH-ENGINE-v6 · deterministic match-day environment + tournament identity.
   const liveMatchHash=(value:string)=>{
     let h=2166136261;
     for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619)}
@@ -9447,6 +9447,36 @@ Deno.serve(async(req:Request)=>{
     const effectiveFatigue=Math.min(100,baseFatigue+liveLoad);
     return Math.max(-1,Math.min(1,(effectiveFitness-effectiveFatigue-20)/80));
   };
+  const liveStyleProfile=(attrs:any,formMultiplier=1)=>{
+    const avg=(keys:string[])=>liveRuntimeAvgAttr(attrs,keys,formMultiplier);
+    const forehand=avg(["forehand","forehand_power","forehand_accuracy"]);
+    const backhand=avg(["backhand","backhand_power","backhand_accuracy"]);
+    const mobility=avg(["movement","speed","acceleration","agility","balance","footwork","court_positioning","anticipation"]);
+    const defense=avg(["defensive_skill","rally_tolerance","stamina","court_positioning","anticipation","reaction","defense_to_attack"]);
+    const touch=avg(["touch","drop_shot","slice","half_volley","shot_selection"]);
+    const passing=avg(["passing_shot","forehand_accuracy","backhand_accuracy","timing","shot_control"]);
+    const lob=avg(["lob","touch","shot_control","anticipation"]);
+    const netGame=avg(["volley","net_positioning","transition_game","half_volley","touch"]);
+    const power=avg(["forehand_power","backhand_power","serve_power"]);
+    const positioning=avg(["court_positioning","anticipation","decision_making","movement","footwork"]);
+    const recovery=avg(["recovery","stamina","natural_fitness","balance","footwork"]);
+    const archetype=netGame>=14&&netGame>defense+1?"Attaquant filet":
+      defense>=14&&defense>power+1?"Contreur":
+      power>=14&&power>touch+1?"Puncheur":
+      touch>=14?"Créatif":"All-court";
+    const forehandBias=Math.max(-1,Math.min(1,(forehand-backhand)/5));
+    const netBias=Math.max(-1,Math.min(1,(netGame-11)/6+(archetype==="Attaquant filet"?.38:0)));
+    const craftBias=Math.max(-1,Math.min(1,(touch-11)/6+(archetype==="Créatif"?.36:0)));
+    const counterBias=Math.max(-1,Math.min(1,(defense+passing+mobility-34)/14+(archetype==="Contreur"?.30:0)));
+    const powerBias=Math.max(-1,Math.min(1,(power-11)/6+(archetype==="Puncheur"?.34:0)));
+    const patienceBias=Math.max(-1,Math.min(1,(defense+positioning-22)/12-(powerBias*.18)));
+    return {
+      forehand,backhand,mobility,defense,touch,passing,lob,net:netGame,power,positioning,recovery,archetype,
+      tendencies:{forehand_bias:forehandBias,net_bias:netBias,craft_bias:craftBias,counter_bias:counterBias,power_bias:powerBias,patience_bias:patienceBias,
+        dominant_wing:forehand>=backhand+1.2?"Coup droit":backhand>=forehand+1.2?"Revers":"Équilibré"}
+    };
+  };
+
   const livePointKernel=(ctx:any)=>{
     const tm:any=ctx.tm||{},ua:any=ctx.ua||{},oa:any=ctx.oa||{},meta:any=ctx.meta||{};
     const tactics:any=ctx.tactics||{};
@@ -9502,6 +9532,53 @@ Deno.serve(async(req:Request)=>{
     const oppCondition=liveRuntimeConditionScore(ctx.opp,oa,oppFormMultiplier,meta,Number(ctx.pointsPlayed||0),60);
     const conditionEdge=(serverIsUser?userCondition-oppCondition:oppCondition-userCondition)*.018;
 
+    // V6: player identity is causal, not only visual. Archetype strengths are matched
+    // against the opponent's natural counters, then the user's tactics can amplify
+    // or punish that identity without ever mutating base player_attributes.
+    const serverProfile=liveStyleProfile(sAttr,sFormMultiplier);
+    const returnerProfile=liveStyleProfile(rAttr,rFormMultiplier);
+    const profilePressure=(p:any,o:any,isServing:boolean)=>{
+      const fastCourt=Math.max(-1,Math.min(1,(courtSpeed-1)*2.4+(grass||indoor?.24:clay?-.20:0)));
+      const slowCourt=-fastCourt;
+      if(p.archetype==="Attaquant filet"){
+        const counter=(o.passing*1.15+o.lob*.70+o.mobility*.45)/2.30;
+        return (p.net-counter)*1.12+(isServing?1.25:.35)+fastCourt*1.45;
+      }
+      if(p.archetype==="Puncheur"){
+        const counter=(o.defense*1.05+o.mobility*.70+o.recovery*.45)/2.20;
+        return (p.power-counter)*1.02+(isServing?.72:.18)+fastCourt*.72;
+      }
+      if(p.archetype==="Créatif"){
+        const counter=(o.mobility*.90+o.anticipation??0);
+        const defenseCounter=(o.defense*1.05+o.mobility*.95)/2;
+        return (p.touch-defenseCounter)*.96+slowCourt*.62+(isServing?.18:.28);
+      }
+      if(p.archetype==="Contreur"){
+        const attack=(o.power*1.10+o.forehand*.50+o.net*.35)/1.95;
+        const counterBase=(p.defense*.95+p.passing*.60+p.mobility*.65)/2.20;
+        return (counterBase-attack)*.95+(isServing?.05:1.05)+slowCourt*.88;
+      }
+      const balance=(p.forehand+p.backhand+p.defense+p.net+p.touch)/5;
+      const opposing=(o.defense+o.mobility+o.positioning)/3;
+      return (balance-opposing)*.42;
+    };
+    const rawStyleDelta=profilePressure(serverProfile,returnerProfile,true)-profilePressure(returnerProfile,serverProfile,false);
+    const styleMatchupEdge=Math.max(-.025,Math.min(.025,rawStyleDelta*.00155));
+    const userProfile=serverIsUser?serverProfile:returnerProfile;
+    let userStyleFitEdge=0;
+    if(userProfile.archetype==="Attaquant filet"){
+      userStyleFitEdge+=(net-28)*.00022+(tempo==="Rapide"?.003:0)+(spinPlan==="Slice"?.002:0);
+    }else if(userProfile.archetype==="Puncheur"){
+      userStyleFitEdge+=(ag-58)*.00022+(risk-52)*.00016+(tempo==="Rapide"?.004:0)+(spinPlan==="Plat"?.002:0);
+    }else if(userProfile.archetype==="Contreur"){
+      userStyleFitEdge+=(52-risk)*.00017+(tempo==="Patient"?.004:0)+(ret==="Reculée"?.0025:0);
+    }else if(userProfile.archetype==="Créatif"){
+      userStyleFitEdge+=(tempo==="Patient"?.0025:0)+(spinPlan!=="Mixte"?.002:0)+(Math.max(0,58-Math.abs(risk-50)))*.000035;
+    }else{
+      userStyleFitEdge+=(tempo==="Patient"?.001:tempo==="Rapide"?.001:0)+(spinPlan!=="Mixte"?.0008:0);
+    }
+    userStyleFitEdge=Math.max(-.018,Math.min(.018,userStyleFitEdge));
+
     const firstServeIn=ctx.firstServeIn;
     let serverWinProb=Number(firstServeIn===true?tm.first_serve_point_win_prob:firstServeIn===false?tm.second_serve_point_win_prob:tm.expected_server_point_win_prob);
     if(!Number.isFinite(serverWinProb))serverWinProb=firstServeIn===false?.51:firstServeIn===true?.64:.62;
@@ -9510,8 +9587,13 @@ Deno.serve(async(req:Request)=>{
     if(serverIsUser)serverWinProb+=(ag-58)*.0008+(risk-52)*.00035+Math.min(70,net)*.00007+userMomentum;
     else serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0018+conditionEdge;
+    serverWinProb+=styleMatchupEdge+(serverIsUser?userStyleFitEdge:-userStyleFitEdge);
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
-    return {serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge};
+    return {
+      serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
+      styleMatchupEdge,userStyleFitEdge,
+      serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
+    };
   };
 
   const buildLiveMatchEnvironment=(t:any,managed:any,opp:any,gameDate:string,surfaceOverride?:string)=>{
@@ -9541,7 +9623,7 @@ Deno.serve(async(req:Request)=>{
     const grandSlam=Boolean(t&&String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||"")));
     const setsToWin=grandSlam?3:2;
     return {
-      engine:"CB-MATCH-ENGINE-v5",
+      engine:"CB-MATCH-ENGINE-v6",
       surface,indoor,sets_to_win:setsToWin,best_of:setsToWin*2-1,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
@@ -9735,7 +9817,7 @@ Deno.serve(async(req:Request)=>{
         tournament_id:Number(t.id),round_no:currentRound,round_code:roundCode,match_no:matchNo,
         player_a_id:playerA||null,player_b_id:playerB||null,winner_id:null,loser_id:null,score:null,best_of:bestOf,
         player_a_win_probability:null,court_speed:Number(t.court_speed??(/terre/i.test(String(t.surface||""))?.68:/gazon/i.test(String(t.surface||""))?1.15:t.indoor?1.18:1)),
-        model_version:"CB-MATCH-ENGINE-v5-LIVE-PENDING",
+        model_version:"CB-MATCH-ENGINE-v6-LIVE-PENDING",
         matchup_components:{status:"managed_live_pending",managed_player_id:playerId},
         simulated_on:scheduledDate,is_qualifying:false
       };
@@ -9949,7 +10031,7 @@ Deno.serve(async(req:Request)=>{
     if(ins.error)return h({error:ins.error.message},500);
 
     return h({
-      ok:true,engine:"CB-MATCH-ENGINE-v5",
+      ok:true,engine:"CB-MATCH-ENGINE-v6",
       managed_player_id:playerId,
       managed_player:{id:managed.data.id,name:managed.data.name,country:managed.data.country,ranking:managed.data.ranking},
       session:ins.data,match_environment:environment,round,opponent_source:opponentSource,world_match_id:worldMatchId,
@@ -9970,7 +10052,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       error:"Endpoint obsolète : ce raccourci modifiait autrefois la carrière avant validation.",
       replacement:"/api/live-match/point ou /api/live-match/game",
-      engine:"CB-MATCH-ENGINE-v5",
+      engine:"CB-MATCH-ENGINE-v6",
       provisional_only:true
     },410);
   }
@@ -10115,7 +10197,8 @@ Deno.serve(async(req:Request)=>{
     const atNet=netPlayerId!==null;
 
     // Visual choreography is derived from the simulated point, never from random decoration.
-    // It is presentation-only and does not alter match probability or player attributes.
+    // Archetype/tactic identity already affects probability in the V6 kernel; this sequence
+    // remains post-outcome presentation and never mutates base player_attributes.
     const preUserPoints=Number(session.data.user_points||0),preOppPoints=Number(session.data.opponent_points||0);
     const preUserGames=Number(session.data.user_games||0),preOppGames=Number(session.data.opponent_games||0);
     const preUserSets=Number(session.data.user_sets||0),preOppSets=Number(session.data.opponent_sets||0);
@@ -10185,35 +10268,7 @@ Deno.serve(async(req:Request)=>{
     const clayVisual=/terre|clay/i.test(surface),grassVisual=/gazon|grass/i.test(surface);
     const baseRallySpin=clayVisual?"Lift":grassVisual?"Slice":"Plat";
     const explicitUserSpin=["Lift","Slice","Plat"].includes(spinPlan)?spinPlan:null;
-    const profileOf=(attrs:any,mult:number)=>{
-      const forehand=avgAttr(attrs,["forehand","forehand_power","forehand_accuracy"],mult);
-      const backhand=avgAttr(attrs,["backhand","backhand_power","backhand_accuracy"],mult);
-      const mobility=avgAttr(attrs,["movement","speed","acceleration","agility","balance","footwork","court_positioning","anticipation"],mult);
-      const defense=avgAttr(attrs,["defensive_skill","rally_tolerance","stamina","court_positioning","anticipation","reaction","defense_to_attack"],mult);
-      const touch=avgAttr(attrs,["touch","drop_shot","slice","half_volley","shot_selection"],mult);
-      const passing=avgAttr(attrs,["passing_shot","forehand_accuracy","backhand_accuracy","timing","shot_control"],mult);
-      const lob=avgAttr(attrs,["lob","touch","shot_control","anticipation"],mult);
-      const netGame=avgAttr(attrs,["volley","net_positioning","transition_game","half_volley","touch"],mult);
-      const power=avgAttr(attrs,["forehand_power","backhand_power","serve_power"],mult);
-      const positioning=avgAttr(attrs,["court_positioning","anticipation","decision_making","movement","footwork"],mult);
-      const recovery=avgAttr(attrs,["recovery","stamina","natural_fitness","balance","footwork"],mult);
-      const archetype=netGame>=14&&netGame>defense+1?"Attaquant filet":
-        defense>=14&&defense>power+1?"Contreur":
-        power>=14&&power>touch+1?"Puncheur":
-        touch>=14?"Créatif":"All-court";
-      const forehandBias=Math.max(-1,Math.min(1,(forehand-backhand)/5));
-      const netBias=Math.max(-1,Math.min(1,(netGame-11)/6+(archetype==="Attaquant filet"?.38:0)));
-      const craftBias=Math.max(-1,Math.min(1,(touch-11)/6+(archetype==="Créatif"?.36:0)));
-      const counterBias=Math.max(-1,Math.min(1,(defense+passing+mobility-34)/14+(archetype==="Contreur"?.30:0)));
-      const powerBias=Math.max(-1,Math.min(1,(power-11)/6+(archetype==="Puncheur"?.34:0)));
-      const patienceBias=Math.max(-1,Math.min(1,(defense+positioning-22)/12-(powerBias*.18)));
-      const tendencies={
-        forehand_bias:forehandBias,net_bias:netBias,craft_bias:craftBias,counter_bias:counterBias,
-        power_bias:powerBias,patience_bias:patienceBias,
-        dominant_wing:forehand>=backhand+1.2?"Coup droit":backhand>=forehand+1.2?"Revers":"Équilibré"
-      };
-      return {forehand,backhand,mobility,defense,touch,passing,lob,net:netGame,power,positioning,recovery,archetype,tendencies};
-    };
+    const profileOf=(attrs:any,mult:number)=>liveStyleProfile(attrs,mult);
     const userProfile=profileOf(ua,userFormMultiplier),oppProfile=profileOf(oa,oppFormMultiplier);
     const visualSeed=Number(id||0)*131+pointNo*977+Math.round(courtSpeed*100)*17;
     const visualRand=(salt:number)=>{
@@ -10545,12 +10600,16 @@ Deno.serve(async(req:Request)=>{
       server_win_probability:Math.round(serverWinProb*1000)/10,
       server_surface_elo:Number(tm.server_surface_elo||0),
       returner_surface_elo:Number(tm.returner_surface_elo||0),
-      model:"CB-MATCH-ENGINE-v5 · point model",
+      model:"CB-MATCH-ENGINE-v6 · point model",
       full_attribute_edge:Math.round(pointAttrEdge*10000)/10000,
       environment_effects:{
         court_speed:courtSpeed,wind_kph:wind,temperature_c:temperature,humidity_pct:humidity,
         altitude_m:altitude,user_mood:moodUser,opponent_mood:moodOpp,
         runtime_condition_edge:Math.round(kernel.conditionEdge*10000)/10000,
+        style_matchup_edge:Math.round(kernel.styleMatchupEdge*10000)/10000,
+        user_style_tactic_fit_edge:Math.round(kernel.userStyleFitEdge*10000)/10000,
+        server_archetype:kernel.serverArchetype,
+        returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,
         opponent_runtime_condition:Math.round(kernel.oppCondition*1000)/1000,
         form_modifier_runtime_only:true
@@ -10849,7 +10908,7 @@ Deno.serve(async(req:Request)=>{
       last_point:{
         winner:userWon?"user":"opponent",server:serverIsUser?"user":"opponent",
         phase:setFinished?"set":"game",visual_label:setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
-        model:"CB-MATCH-ENGINE-v5 · canonical game kernel",
+        model:"CB-MATCH-ENGINE-v6 · canonical game kernel",
         server_win_probability:Math.round(serverPointP*1000)/10,
         runtime_condition_edge:Math.round(kernel.conditionEdge*10000)/10000,
         form_modifier_runtime_only:true,
@@ -10869,7 +10928,7 @@ Deno.serve(async(req:Request)=>{
       opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},
       game_winner:userWon?String(managed.data.name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner,
       completed,win_probability:Math.round(prob*100),
-      engine:"CB-MATCH-ENGINE-v5",simulation_granularity:"game",
+      engine:"CB-MATCH-ENGINE-v6",simulation_granularity:"game",
       runtime_form_persistence:false
     });
   }
@@ -10930,7 +10989,7 @@ Deno.serve(async(req:Request)=>{
       winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
       score,user_involved:true,
       match_data:{
-        live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v5",
+        live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
         stats,tactics:session.data.tactics||{},environment:meta
       }
     }).select("id").single();
@@ -10973,7 +11032,7 @@ Deno.serve(async(req:Request)=>{
       }
       const worldUpdate=await db.from("world_tournament_matches").update({
         winner_id:winnerId,loser_id:loserId,score:worldScore,
-        model_version:"CB-MATCH-ENGINE-v5-LIVE",
+        model_version:"CB-MATCH-ENGINE-v6-LIVE",
         matchup_components:{
           ...(wr.matchup_components||{}),status:"completed",source:"managed_live",
           live_session_id:id,managed_player_id:playerId,form:meta.form||{},

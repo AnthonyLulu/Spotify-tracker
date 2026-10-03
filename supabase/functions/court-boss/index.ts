@@ -11598,12 +11598,19 @@ Deno.serve(async(req:Request)=>{
     const weather:any=meta.weather||{};
     const retirement:any=stats._retirement||null;
     const won=retirement?String(retirement.winner)==="user":Number(session.data.user_sets||0)>Number(session.data.opponent_sets||0);
-    const setRows=(Array.isArray(session.data.score_log)?session.data.score_log:[]).filter((x:any)=>x?.set_finished);
-    const scoreBase=setRows.map((x:any)=>{
+    const scoreRows=Array.isArray(session.data.score_log)?session.data.score_log:[];
+    const setRows=scoreRows.filter((x:any)=>x?.set_finished);
+    const completedScore=setRows.map((x:any)=>{
       const base=String(x.user_games)+"-"+String(x.opponent_games);
       if(x.match_tiebreak)return "["+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+"]";
       return x.tiebreak?base+" ("+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+")":base;
-    }).join(" ")||("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
+    }).join(" ");
+    const retirementRow=retirement?[...scoreRows].reverse().find((x:any)=>x?.retirement):null;
+    const partialRetirementSet=retirementRow&&!retirementRow.set_finished
+      ?String(retirementRow.user_games??session.data.user_games??0)+"-"+String(retirementRow.opponent_games??session.data.opponent_games??0)
+      :"";
+    const scoreBase=[completedScore,partialRetirementSet].filter(Boolean).join(" ")
+      ||("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
     const score=scoreBase+(retirement?" RET":"");
     const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
     const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;

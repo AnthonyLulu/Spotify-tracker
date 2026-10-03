@@ -154,7 +154,7 @@ test('Special team events never enter the standard individual tournament flow',(
 test('Backend exposes team event metadata and blocks standard tournament simulation',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/function specialTeamEventMeta\(t:any\)/);
- assert.match(code,/entry_preview_model:"team_selection_v1"/);
+ assert.match(code,/entry_preview_model:"team_selection_v2_captains"/);
  assert.match(code,/Cette compétition se joue par équipes et par sélection/);
  assert.match(code,/UNITED_CUP_TEAM/);
  assert.match(code,/LAVER_CUP_INVITE/);
@@ -374,16 +374,16 @@ test('Live and quick simulations share the canonical runtime point kernel',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/const livePointKernel=\(ctx:any\)=>/);
  assert.ok((code.match(/livePointKernel\(\{/g)||[]).length>=2);
- assert.match(code,/simulation_granularity:"game"/);
+ assert.match(code,/simulation_granularity:matchTiebreakActive\?"match_tiebreak":tiebreakActive\?"tiebreak":"game"/);
  assert.match(code,/rally_no:Number\(session\.data\.rally_no\|\|0\)\+gamePoints/);
 });
 
 test('Match form is a temporary runtime modifier and never a base attribute write',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
- assert.match(code,/mode:"temporary_integer_bonus_runtime_only"/);
+ assert.match(code,/mode:"temporary_multiplier_runtime_only"/);
  assert.match(code,/persists_to_player_attributes:false/);
- const liveStart=code.indexOf('if\(path.endsWith("/api/live-match/point")');
- const commitStart=code.indexOf('if\(path.endsWith("/api/live-match/commit")');
+ const liveStart=code.indexOf('if(path.endsWith("/api/live-match/point")');
+ const commitStart=code.indexOf('if(path.endsWith("/api/live-match/commit")');
  const liveBlock=code.slice(liveStart,commitStart);
  assert.doesNotMatch(liveBlock,/db\.from\("player_attributes"\)\.update/);
 });
@@ -401,13 +401,39 @@ test('Legacy live advance cannot mutate career before explicit validation',()=>{
 
 test('Match Center tells the player that form does not rewrite permanent attributes',()=>{
  const ui=fs.readFileSync(new URL('../court-boss/match-center-v1.js',import.meta.url),'utf8');
- assert.match(ui,/La forme ajoute temporairement de -3 à \+3/);
+ assert.match(ui,/La forme est un multiplicateur temporaire de match/);
  assert.match(ui,/aucune note de base n’est réécrite/);
- assert.match(ui,/Même moteur que le live/);
+ assert.match(ui,/Même moteur pour le live et la simulation/);
 });
 
 test('Backend uses the ITF junior fallback when no explicit format row exists',()=>{
  const code=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
  assert.match(code,/juniorFormatRes\.data\|\|juniorTournamentFormatRule\(t\.data\)/);
  assert.match(code,/String\(t\.circuit\|\|""\)===\"Junior\"\?juniorTournamentFormatRule\(t\):null/);
+});
+
+
+test('Medical V15 exposes play-hurt decisions and persistent injury history',()=>{
+ const backend=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+ const ui=fs.readFileSync(new URL('../court-boss/medical-v15.js',import.meta.url),'utf8');
+ assert.match(backend,/medical_decision/);
+ assert.match(backend,/can_play_hurt/);
+ assert.match(backend,/playing_hurt/);
+ assert.match(backend,/injury_history/);
+ assert.match(backend,/player_injury_vulnerabilities/);
+ assert.match(backend,/player_injury_recovery_effects/);
+ assert.match(ui,/Déclarer forfait/);
+ assert.match(ui,/Jouer diminué/);
+ assert.match(ui,/Historique, zones fragiles & séquelles/);
+});
+
+test('Match Center V14 spectacle layer is wired into the playable client',()=>{
+ const html=fs.readFileSync(new URL('../court-boss/play.html',import.meta.url),'utf8');
+ const js=fs.readFileSync(new URL('../court-boss/match-center-v14.js',import.meta.url),'utf8');
+ assert.match(html,/match-center-v14\.js/);
+ assert.match(html,/match-center-v14\.css/);
+ assert.match(js,/cb-atmosphere-v14/);
+ assert.match(js,/cb-weather-v14/);
+ assert.match(js,/cb-medical-scene-v14/);
+ assert.match(js,/cb-momentum-v14/);
 });

@@ -44,3 +44,7 @@
 .cb-live-card .cb-court.cb-day{filter:saturate(1.03) brightness(1.02)}
 .cb-live-card .cb-court.cb-night{filter:saturate(.98) brightness(.91)}
 .cb-live-card .cb-court.indoor.cb-night{filter:saturate(.94) brightness(.88)}
+
+.cb-lab-actions-v13{display:flex;align-items:center;gap:6px}.cb-lab-actions-v13 span{font-size:7px;opacity:.58;text-transform:uppercase}.cb-lab-actions-v13 button{width:28px;height:25px;border-radius:8px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:inherit;cursor:pointer}
+.cb-event-v13.review{background:rgba(148,117,219,.09);border-color:rgba(148,117,219,.2)}
+@media(max-width:700px){.cb-lab-actions-v13{justify-content:flex-end;flex-wrap:wrap}.cb-lab-actions-v13 span{max-width:100%;text-align:right}}

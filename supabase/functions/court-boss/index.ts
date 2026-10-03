@@ -2509,7 +2509,7 @@ Deno.serve(async(req:Request)=>{
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:67,season_model:"priority-national-teams-united-cup-laver-pro-atp-finals-junior-ncaa-fatigue-sync-v26",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:68,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
     path.endsWith("/api/refresh-live-rankings")
@@ -12864,6 +12864,27 @@ Deno.serve(async(req:Request)=>{
         action_route:"season",game_date:String(career.data.career_date||AGE_REFERENCE_DATE),priority:"normal",is_read:false
       });
       return h({ok:true,season_plan:up.data});
+    }
+
+    if(action==="respond_laver_cup_invitation"){
+      const decision=String(body?.decision||"decline").toLowerCase();
+      if(!["accept","decline"].includes(decision))return h({error:"Décision invalide"},400);
+      const invitationId=n(body?.invitation_id,id,1,999999999);
+      if(!invitationId)return h({error:"Invitation Laver Cup introuvable"},400);
+      const today=String(career.data.career_date||AGE_REFERENCE_DATE);
+      const resolved=await db.rpc("resolve_laver_cup_invitation",{
+        p_invitation_id:invitationId,
+        p_accept:decision==="accept",
+        p_response_date:today
+      });
+      if(resolved.error)return h({error:resolved.error.message},500);
+      const payload:any=resolved.data||{};
+      if(payload.ok===false){
+        const reason=String(payload.reason||"Décision refusée");
+        const code=reason==="expired"||reason==="already_resolved"?409:404;
+        return h({error:reason,result:payload},code);
+      }
+      return h({ok:true,result:payload});
     }
 
     if(action==="decline_sponsor"){

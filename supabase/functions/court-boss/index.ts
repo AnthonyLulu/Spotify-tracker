@@ -10114,6 +10114,63 @@ Deno.serve(async(req:Request)=>{
     }
     const atNet=netPlayerId!==null;
 
+    // Visual choreography is derived from the simulated point, never from random decoration.
+    // It is presentation-only and does not alter match probability or player attributes.
+    const pointNo=Number(session.data.rally_no||0)+1;
+    const courtClamp=(value:number,min=10,max=90)=>Math.max(min,Math.min(max,value));
+    const side=pointNo%2===0?-1:1;
+    const serverStartX=courtClamp(50+side*11,24,76);
+    const serviceTargetX=courtClamp(
+      serveDirection==="T"?50-side*4:serveDirection==="corps"?50+side*4:50+side*27,
+      18,82
+    );
+    const returnerStartX=courtClamp(serviceTargetX-side*(serveDirection==="large"?5:2),18,82);
+    const userStart={
+      x:serverIsUser?serverStartX:returnerStartX,
+      y:serverIsUser?86:(ret==="Avancée"?74:ret==="Reculée"?88:82)
+    };
+    const opponentStart={
+      x:serverIsUser?returnerStartX:serverStartX,
+      y:14
+    };
+    const userAtNet=Number(netPlayerId)===Number(managed.data.id);
+    const opponentAtNet=Number(netPlayerId)===Number(opp.id);
+    const rallyStep=Math.min(10,Math.max(0,Math.floor(rally/2)));
+    const targetShift=targetWing==="Revers"?18:targetWing==="Coup droit"?-18:side*8;
+    const userEnd={
+      x:courtClamp(userStart.x+(userWon?targetShift*.18:-targetShift*.10),16,84),
+      y:userAtNet?58:courtClamp(82-rallyStep*.45,65,88)
+    };
+    const opponentEnd={
+      x:courtClamp(opponentStart.x+(userWon?-targetShift*.10:targetShift*.18),16,84),
+      y:opponentAtNet?42:courtClamp(18+rallyStep*.45,12,35)
+    };
+    const bounceY=serverIsUser?38:62;
+    const returnStrikeY=serverIsUser?opponentStart.y+7:userStart.y-7;
+    const finishX=courtClamp(50+targetShift+(userWon?side*2:-side*2),16,84);
+    const finishY=userWon?(opponentAtNet?38:24):(userAtNet?62:76);
+    let ballPath:any[]=[
+      {x:serverStartX,y:serverIsUser?82:18,stage:"serve"},
+      {x:serviceTargetX,y:bounceY,stage:"bounce"},
+      {x:returnerStartX,y:returnStrikeY,stage:"return"},
+      {x:finishX,y:finishY,stage:"finish"}
+    ];
+    if(doubleFault){
+      ballPath=[
+        {x:serverStartX,y:serverIsUser?82:18,stage:"serve"},
+        {x:serviceTargetX,y:bounceY,stage:"fault"},
+        {x:courtClamp(serviceTargetX+side*8,16,84),y:serverIsUser?48:52,stage:"out"},
+        {x:courtClamp(serviceTargetX+side*8,16,84),y:serverIsUser?48:52,stage:"finish"}
+      ];
+    }else if(ace||unreturned){
+      ballPath[3]={x:returnerStartX,y:serverIsUser?20:80,stage:ace?"ace":"unreturned"};
+    }
+    const visualPhase=ace||doubleFault||unreturned?"service":ending==="return_winner"?"return":atNet?"net":"rally";
+    const visualLabel=doubleFault?"Double faute":ace?"Ace":unreturned?"Service non retourné":
+      ending==="return_winner"?"Retour gagnant":ending==="winner"?(atNet?"Coup gagnant au filet":"Coup gagnant"):
+      ending==="forced_error"?"Faute provoquée":ending==="unforced_error"?"Faute directe":"Point construit";
+    const visualTarget=serveDirection==="large"?"Extérieur":serveDirection==="corps"?"Corps":serveDirection==="T"?"T":"Zone neutre";
+
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
 
@@ -10137,13 +10194,17 @@ Deno.serve(async(req:Request)=>{
         opponent_runtime_condition:Math.round(kernel.oppCondition*1000)/1000,
         form_modifier_runtime_only:true
       },
-      user_x:18+Math.floor(Math.random()*64),
-      user_y:Math.max(56,Math.min(88,82-Math.round(net*.18)-Math.min(8,Math.floor(rally/2))+Math.floor(Math.random()*7-3))),
-      opp_x:18+Math.floor(Math.random()*64),
-      opp_y:Math.max(12,Math.min(44,18+Math.min(12,Math.floor(rally/2))+Math.floor(Math.random()*9-4))),
-      ball_x:18+Math.floor(Math.random()*64),
-      ball_y:userWon?20+Math.floor(Math.random()*28):52+Math.floor(Math.random()*28),
+      phase:visualPhase,visual_label:visualLabel,
+      user_x:userEnd.x,user_y:userEnd.y,opp_x:opponentEnd.x,opp_y:opponentEnd.y,
+      ball_x:ballPath[ballPath.length-1].x,ball_y:ballPath[ballPath.length-1].y,
       zone:atNet?"Filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
+      visual:{
+        phase:visualPhase,label:visualLabel,target_zone:visualTarget,
+        user_start:userStart,user_end:userEnd,opponent_start:opponentStart,opponent_end:opponentEnd,
+        user_reaction:userWon?"celebrate":ending==="unforced_error"?"frustrated":"reset",
+        opponent_reaction:userWon?(ending==="unforced_error"?"frustrated":"reset"):"celebrate",
+        ball_path:ballPath
+      },
       at:new Date().toISOString()
     };
 
@@ -10186,6 +10247,13 @@ Deno.serve(async(req:Request)=>{
     const bandKey=rallyBand==="0-4"?"short":rallyBand==="5-8"?"medium":"long";
     if(userWon)stats["user_"+bandKey+"_rallies_won"]=(stats["user_"+bandKey+"_rallies_won"]||0)+1;
     else stats["opp_"+bandKey+"_rallies_won"]=(stats["opp_"+bandKey+"_rallies_won"]||0)+1;
+    const visualEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
+    visualEvents.push({
+      kind:"point",point_no:pointNo,phase:visualPhase,label:visualLabel,
+      winner:userWon?"user":"opponent",rally,serve_direction:serveDirection,
+      return_depth:returnDepth,target_zone:visualTarget,at:new Date().toISOString()
+    });
+    stats._visual_events=visualEvents.slice(-8);
 
     let ug=Number(session.data.user_games||0),og=Number(session.data.opponent_games||0);
     let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
@@ -10384,6 +10452,16 @@ Deno.serve(async(req:Request)=>{
     }
 
     const userName=String(managed.data.name||"Joueur");
+    const gameLog:any=log[log.length-1]||{};
+    const gameVisualEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
+    gameVisualEvents.push({
+      kind:setFinished?"set":"game",phase:setFinished?"set":"game",
+      label:setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
+      winner:userWon?"user":"opponent",
+      score:String(gameLog.user_games??ug)+"-"+String(gameLog.opponent_games??og),
+      set:setNo,at:new Date().toISOString()
+    });
+    stats._visual_events=gameVisualEvents.slice(-8);
     const momentumNew=Math.max(10,Math.min(90,Number(session.data.momentum||50)+(userWon?4:-4)+(setFinished?(setWinner===userName?8:-8):0)));
     const update:any={
       user_sets:us,opponent_sets:os,set_no:setNo,user_games:ug,opponent_games:og,
@@ -10392,6 +10470,7 @@ Deno.serve(async(req:Request)=>{
       serving_user:!session.data.serving_user,momentum:momentumNew,tactics,stats,score_log:log,
       last_point:{
         winner:userWon?"user":"opponent",server:serverIsUser?"user":"opponent",
+        phase:setFinished?"set":"game",visual_label:setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
         model:"CB-MATCH-ENGINE-v5 · canonical game kernel",
         server_win_probability:Math.round(serverPointP*1000)/10,
         runtime_condition_edge:Math.round(kernel.conditionEdge*10000)/10000,

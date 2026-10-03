@@ -2723,10 +2723,9 @@ function liveMatchPanel(){
    <button class="soft-btn ${liveAutoSpeed===1?'active':''}" onclick="setLiveSpeed(1)">1x</button>
    <button class="soft-btn ${liveAutoSpeed===2?'active':''}" onclick="setLiveSpeed(2)">2x</button>
    <button class="soft-btn ${liveAutoSpeed===3?'active':''}" onclick="setLiveSpeed(3)">3x</button>
-   <button class="soft-btn" ${liveAutoTimer?'disabled':''} onclick="playLivePoint()">Point suivant</button>
    <button class="soft-btn" onclick="saveLiveCheckpoint()">Sauvegarde rapide</button>
   </div>
-  <div class="muted micro" style="margin-top:7px">Mode TM · le match reste point par point. Accélère le direct ou mets en pause pour avancer manuellement d’un point.</div>`}
+  <div class="muted micro" style="margin-top:7px">Mode TM · direct automatique point par point. Mets en pause pour intervenir tactiquement, puis reprends en 1x, 2x ou 3x.</div>`}
  </div>`;
 }
 function matchPage(){
@@ -2830,6 +2829,12 @@ function applyLiveMatchResponse(d){
  }
 }
 window.hasManagedLiveMatches=()=>liveMatchSessionsByPlayer.size>0;
+function startLiveAutoFlow(delay=700){
+ if(liveAutoTimer)clearTimeout(liveAutoTimer);
+ if(!local.liveMatch||local.liveMatch.status!=='active')return;
+ liveAutoTimer=setTimeout(liveAutoTick,Math.max(120,Number(delay||700)));
+ render();
+}
 window.startLiveMatch=async(medicalDecision=null)=>{
  const livePlayer=activePlayerCareerView();
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
@@ -2844,6 +2849,7 @@ window.startLiveMatch=async(medicalDecision=null)=>{
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
   const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{},medical_decision:medicalDecision||undefined})});
   applyLiveMatchResponse(d);persist();render();
+  startLiveAutoFlow(760);
  }catch(e){
    if(e?.data?.injured&&e.data.can_play_hurt&&!medicalDecision&&typeof openMedicalPlayDecisionV15==='function')return openMedicalPlayDecisionV15('free',0,false,e.data);
    alert(e.message)
@@ -2863,6 +2869,7 @@ window.startTournamentLiveMatch=async(id,quick=false,medicalDecision=null)=>{
   closeOverlay();
   route='match';persist();render();
   if(quick)await simulateLiveMatch();
+  else startLiveAutoFlow(820);
  }catch(e){
    if(e?.data?.injured&&e.data.can_play_hurt&&!medicalDecision&&typeof openMedicalPlayDecisionV15==='function')return openMedicalPlayDecisionV15('live-tournament',Number(id),quick,e.data);
    alert(e.message)
@@ -2883,6 +2890,7 @@ window.startTournamentLiveDoubles=async(id,quick=false)=>{
   closeOverlay();
   route='match';persist();render();
   if(quick)await simulateLiveMatch();
+  else startLiveAutoFlow(820);
  }catch(e){alert(e.message)}
 };
 window.saveLiveCheckpoint=async()=>{

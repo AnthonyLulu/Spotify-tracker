@@ -9675,8 +9675,9 @@ Deno.serve(async(req:Request)=>{
     const us=Math.max(0,Number(state?.user_sets||0)),os=Math.max(0,Number(state?.opponent_sets||0));
     const setNo=Math.max(1,Number(state?.set_no||1));
     const setsToWin=Math.max(2,Math.min(3,Number(meta?.sets_to_win||2)));
-    const tiebreak=ug===6&&og===6;
-    const target=tiebreak?liveTiebreakTarget(meta,setNo):0;
+    const matchTiebreak=liveMatchTiebreakActive(meta,us,os,setNo);
+    const tiebreak=matchTiebreak||(ug===6&&og===6);
+    const target=tiebreak?liveTiebreakTarget(meta,setNo,matchTiebreak):0;
     const userGamePoint=!tiebreak&&up>=3&&up-op>=1;
     const oppGamePoint=!tiebreak&&op>=3&&op-up>=1;
     const userSetPoint=tiebreak

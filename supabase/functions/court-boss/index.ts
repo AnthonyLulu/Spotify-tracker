@@ -6256,6 +6256,9 @@ Deno.serve(async(req:Request)=>{
         const staffJobMarketV17=await db.rpc("refresh_staff_job_market_v17",{p_date:date});
         const staffEmployerHistoryV17=await db.rpc("sync_staff_employer_history_v17",{p_date:date});
         const staffWorldNews=await db.rpc("publish_staff_world_news",{p_date:date});
+        const staffIntegrityV21=quarterly
+          ?await db.rpc("staff_world_integrity_audit_v21",{p_date:date})
+          :{data:null,error:null};
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
           meta:meta.error?{error:meta.error.message}:meta.data,
@@ -6279,6 +6282,7 @@ Deno.serve(async(req:Request)=>{
           employerMarketV17:staffJobMarketV17.error?{error:staffJobMarketV17.error.message}:staffJobMarketV17.data,
           employerHistoryV17:staffEmployerHistoryV17.error?{error:staffEmployerHistoryV17.error.message}:staffEmployerHistoryV17.data,
           staffWorldNews:staffWorldNews.error?{error:staffWorldNews.error.message}:staffWorldNews.data,
+          integrityV21:staffIntegrityV21.error?{error:staffIntegrityV21.error.message}:staffIntegrityV21.data,
           careerFocus:careerFocus.error?{error:careerFocus.error.message}:careerFocus.data,
           careerLifecycle:careerLifecycle.error?{error:careerLifecycle.error.message}:careerLifecycle.data
         };

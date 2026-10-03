@@ -125,8 +125,29 @@
       let med=card.querySelector('.cb-medical-scene-v14');
       if(!med){med=el('div','cb-medical-scene-v14');court.appendChild(med)}
       const md=v.medical||lp.medical||{};
-      med.innerHTML='<div><small>ARRÊT MÉDICAL</small><b>'+esc(md.player_name||'Joueur')+'</b><span>'+esc(md.injury_type||lp.visual_label||'Intervention du kiné')+'</span></div>';
-    }else card.querySelector('.cb-medical-scene-v14')?.remove();
+      const isRetirement=Boolean(md.winner||lp.match_winner||lp.retirement||/abandon|ret\b/i.test(String(lp.visual_label||'')));
+      med.className='cb-medical-scene-v14'+(isRetirement?' cb-retirement-scene-v14':'');
+      if(isRetirement){
+        const retiredSide=String(md.side||lp.retired_side||'');
+        const winnerSide=String(md.winner||lp.match_winner||'');
+        const injured=md.player_name||'Joueur';
+        const detail=[md.injury_type,md.severity].filter(Boolean).join(' · ')||'Le match ne peut pas continuer';
+        med.innerHTML='<div><small>ABANDON · RET</small><b>'+esc(injured)+'</b><span>'+esc(detail)+'</span><em>Victoire '+esc(winnerSide==='user'?'joueur géré':winnerSide==='opponent'?'adversaire':'sur abandon')+'</em></div>';
+        court.classList.add('cb-v14-retirement');
+        court.querySelectorAll('.fm-player-dot').forEach(d=>d.classList.remove('cb-retired-v14','cb-ret-winner-v14'));
+        const userDots=[...court.querySelectorAll('.fm-player-dot.user')];
+        const oppDots=[...court.querySelectorAll('.fm-player-dot.opponent')];
+        (retiredSide==='user'?userDots:retiredSide==='opponent'?oppDots:[]).forEach(d=>d.classList.add('cb-retired-v14'));
+        (winnerSide==='user'?userDots:winnerSide==='opponent'?oppDots:[]).forEach(d=>d.classList.add('cb-ret-winner-v14'));
+      }else{
+        med.innerHTML='<div><small>ARRÊT MÉDICAL</small><b>'+esc(md.player_name||'Joueur')+'</b><span>'+esc(md.injury_type||lp.visual_label||'Intervention du kiné')+'</span></div>';
+        court.classList.remove('cb-v14-retirement');
+      }
+    }else{
+      card.querySelector('.cb-medical-scene-v14')?.remove();
+      court.classList.remove('cb-v14-retirement');
+      court.querySelectorAll('.fm-player-dot').forEach(d=>d.classList.remove('cb-retired-v14','cb-ret-winner-v14'));
+    }
 
     if(key!==lastPointKey){
       lastPointKey=key;

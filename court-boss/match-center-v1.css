@@ -206,3 +206,59 @@
   .cb-save-row{grid-template-columns:1fr 1fr}
   .cb-live-controls button{min-width:0!important;padding-left:6px;padding-right:6px;font-size:9px}
 }
+
+
+/* Court Boss Living Arena V12 */
+.cb-arena-shell{position:absolute;inset:0;pointer-events:none;z-index:1}
+.cb-stand{position:absolute;opacity:.72;background:
+  repeating-linear-gradient(90deg,rgba(255,255,255,.18) 0 2px,rgba(6,12,11,.2) 2px 7px),
+  linear-gradient(180deg,rgba(22,31,29,.78),rgba(5,10,9,.88));border:1px solid rgba(255,255,255,.08)}
+.cb-stand-north{left:5%;right:5%;top:0;height:8%;border-radius:0 0 12px 12px}
+.cb-stand-south{left:5%;right:5%;bottom:0;height:8%;border-radius:12px 12px 0 0}
+.cb-stand-west{top:8%;bottom:8%;left:0;width:5%;border-radius:0 10px 10px 0}
+.cb-stand-east{top:8%;bottom:8%;right:0;width:5%;border-radius:10px 0 0 10px}
+.cb-arena-center .cb-stand{opacity:.95}
+.cb-arena-center .cb-stand-north,.cb-arena-center .cb-stand-south{height:12%}
+.cb-arena-center .cb-stand-west,.cb-arena-center .cb-stand-east{width:7%;top:11%;bottom:11%}
+.cb-arena-show .cb-stand{opacity:.78}
+.cb-arena-outer .cb-stand{opacity:.38}
+.cb-arena-outer .cb-stand-west,.cb-arena-outer .cb-stand-east{display:none}
+.cb-arena-outer .cb-stand-north,.cb-arena-outer .cb-stand-south{left:18%;right:18%;height:6%}
+.cb-score-tower{position:absolute;right:7%;top:10%;display:grid;gap:1px;padding:5px 7px;border-radius:7px;background:rgba(3,9,8,.82);border:1px solid rgba(255,255,255,.11);box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.cb-score-tower span{font-size:6px;font-weight:900;letter-spacing:.08em;opacity:.54}.cb-score-tower b{font-size:7px}
+.cb-ad-board{position:absolute;padding:3px 7px;border-radius:4px;background:rgba(5,14,12,.78);border:1px solid rgba(255,255,255,.13);font-size:6px;font-weight:950;letter-spacing:.06em;text-transform:uppercase;max-width:25%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-ad-board-nw{left:8%;top:9%}.cb-ad-board-ne{right:8%;top:9%}.cb-ad-board-sw{left:8%;bottom:9%}.cb-ad-board-se{right:8%;bottom:9%}
+.cb-umpire-chair{position:absolute;right:5.3%;top:47%;transform:translateY(-50%);display:grid;justify-items:center;gap:1px}
+.cb-umpire-chair i{width:10px;height:27px;border-radius:4px 4px 2px 2px;border:2px solid rgba(255,255,255,.65);border-top-width:5px;background:rgba(12,25,21,.72)}
+.cb-umpire-chair b{font-size:5px;opacity:.65}
+.cb-ball-kid{position:absolute;width:7px;height:7px;border-radius:50%;background:#d7e1dd;box-shadow:0 0 0 2px rgba(5,14,11,.72)}
+.cb-ball-kid-a{left:8%;top:49%}.cb-ball-kid-b{right:8%;top:49%}
+.cb-bench{position:absolute;display:flex;align-items:center;gap:4px;padding:3px 5px;border-radius:5px;background:rgba(4,12,10,.72);border:1px solid rgba(255,255,255,.09);font-size:5px;font-weight:850}
+.cb-bench-user{left:6.5%;bottom:13%}.cb-bench-opp{right:6.5%;top:13%}
+.cb-bench i{display:block;width:22px;height:3px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
+.cb-bench i::after{content:"";display:block;width:var(--energy);height:100%;border-radius:inherit;background:rgba(118,221,163,.82)}
+.cb-arena-center .cb-crowd{opacity:.68}.cb-arena-show .cb-crowd{opacity:.44}.cb-arena-outer .cb-crowd{opacity:.18}
+.cb-arena-center.indoor::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.08),transparent 17%,transparent 82%,rgba(0,0,0,.12))}
+.cb-plan-strip{display:flex;gap:5px;overflow-x:auto;padding:2px 0 7px;scrollbar-width:none}.cb-plan-strip::-webkit-scrollbar{display:none}
+.cb-plan-btn{flex:0 0 auto;padding:7px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:inherit;font-size:8px;font-weight:850;white-space:nowrap}
+.cb-plan-btn.active{background:rgba(110,215,158,.12);border-color:rgba(110,215,158,.35);box-shadow:inset 0 0 0 1px rgba(110,215,158,.08)}
+.cb-changeover-coach{margin-top:10px;padding:11px;border-radius:15px;background:linear-gradient(145deg,rgba(21,49,39,.94),rgba(8,20,17,.98));border:1px solid rgba(125,220,167,.2);box-shadow:0 12px 26px rgba(0,0,0,.14)}
+.cb-changeover-coach-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.cb-changeover-coach-head small,.cb-changeover-coach-head b{display:block}.cb-changeover-coach-head small{font-size:7px;letter-spacing:.1em;opacity:.55}.cb-changeover-coach-head b{margin-top:2px;font-size:13px}
+.cb-changeover-coach-head>span{padding:5px 7px;border-radius:8px;background:rgba(255,255,255,.06);font-size:8px}
+.cb-changeover-read{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cb-changeover-read>div{padding:7px 8px;border-radius:9px;background:rgba(255,255,255,.035)}
+.cb-changeover-read span,.cb-changeover-read b{display:block}.cb-changeover-read span{font-size:7px;opacity:.55}.cb-changeover-read b{font-size:9px;margin-top:2px}
+.cb-changeover-tip{margin:7px 0;padding:7px 8px;border-radius:9px;background:rgba(255,255,255,.045);font-size:8px;line-height:1.35;opacity:.82}
+.cb-changeover-coach .cb-coach-grid{margin-top:2px}
+.cb-changeover-coach .cb-plan-strip{padding-top:3px}
+@media(max-width:700px){
+  .cb-arena-center .cb-stand-west,.cb-arena-center .cb-stand-east{width:6%}
+  .cb-ad-board{font-size:5px;padding:2px 5px}
+  .cb-score-tower{right:7%;top:11%}
+  .cb-umpire-chair{right:4.4%}
+  .cb-ball-kid-a{left:7%}.cb-ball-kid-b{right:7%}
+  .cb-bench{display:none}
+  .cb-changeover-read{grid-template-columns:1fr}
+  .cb-plan-btn{font-size:7px}
+}

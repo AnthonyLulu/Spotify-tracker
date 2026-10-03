@@ -4891,7 +4891,7 @@ window.playDoublesTournament=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Simulation du tableau double…</div></div></div>';
  try{
   const playPlayerId=activeManagedId()||primaryManagedPlayerId()||0;
-  const d=await get('/api/play-doubles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId})});
+  const d=await get('/api/play-doubles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,doubles_tactics:local.doublesTactics||{plan:'balanced'}})});
   boot=await get('/api/bootstrap');
   if(boot.career){
    local.career={...(local.career||{}),budget:boot.career.budget};

@@ -9676,7 +9676,7 @@ Deno.serve(async(req:Request)=>{
       last_signature:memory?.last_signature||null,last_switch_point:Number(memory?.last_switch_point||0)
     };
   };
-  const liveTacticalMemoryPublic=(memory:any={})=>({version:"CB-TACTICAL-MEMORY-v2",...(memory?.summary||liveTacticalMemorySummary(memory))});
+  const liveTacticalMemoryPublic=(memory:any={})=>({version:"CB-TACTICAL-MEMORY-v3",...(memory?.summary||liveTacticalMemorySummary(memory))});
   const liveTacticalMemoryObserve=(memory:any,obs:any)=>{
     const prior:any=memory&&typeof memory==="object"?memory:{};
     const recent:Array<any>=Array.isArray(prior.recent)?[...prior.recent]:[];
@@ -9702,7 +9702,7 @@ Deno.serve(async(req:Request)=>{
     };
     recent.push(row);
     const next:any={
-      version:"CB-TACTICAL-MEMORY-v2",recent:recent.slice(-48),
+      version:"CB-TACTICAL-MEMORY-v3",recent:recent.slice(-48),
       total_points:Math.max(Number(prior.total_points||0)+1,pointNo),
       switches:Number(prior.switches||0)+(switched?1:0),
       last_signature:signature,last_switch_point:switched?pointNo:Number(prior.last_switch_point||0),updated_at:row.at
@@ -11182,7 +11182,7 @@ Deno.serve(async(req:Request)=>{
         opponent_memory_state:kernel.opponentMemoryState||"IA en observation",
         user_deception_edge:Math.round(Number(kernel.userDeceptionEdge||0)*10000)/10000,
         opponent_memory_read:kernel.opponentMemoryRead||null,
-        opponent_ai_model:"CB-OPPONENT-AI-v2-memory",
+        opponent_ai_model:"CB-OPPONENT-AI-v3-memory",
         server_archetype:kernel.serverArchetype,
         returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,
@@ -11234,7 +11234,7 @@ Deno.serve(async(req:Request)=>{
     });
     if(lastPoint.environment_effects&&typeof lastPoint.environment_effects==="object"){
       lastPoint.environment_effects.tactical_memory=liveTacticalMemoryPublic(stats._tactical_memory);
-      lastPoint.environment_effects.tactical_memory_model="CB-TACTICAL-MEMORY-v2";
+      lastPoint.environment_effects.tactical_memory_model="CB-TACTICAL-MEMORY-v3";
     }
     if(serverIsUser){
       stats.user_first_serves++;
@@ -11882,8 +11882,8 @@ Deno.serve(async(req:Request)=>{
         runtime_condition_edge:Math.round(lastConditionEdge*10000)/10000,
         environment_effects:{
           opponent_plan:gameOpponentPlan,opponent_memory_read:gameOpponentPlan?.memory_read||null,
-          opponent_ai_model:"CB-OPPONENT-AI-v2-memory",
-          tactical_memory:liveTacticalMemoryPublic(stats._tactical_memory),tactical_memory_model:"CB-TACTICAL-MEMORY-v2"
+          opponent_ai_model:"CB-OPPONENT-AI-v3-memory",
+          tactical_memory:liveTacticalMemoryPublic(stats._tactical_memory),tactical_memory_model:"CB-TACTICAL-MEMORY-v3"
         },
         form_modifier_runtime_only:true,at:new Date().toISOString()
       },

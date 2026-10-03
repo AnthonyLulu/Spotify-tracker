@@ -27,7 +27,8 @@ test('Challenger play-down rules remain singles-only',()=>{
 
 test('ITF M15 and M25 use ATP then ITF then rating merit instead of a fake Top-200 ban',()=>{
   assert.doesNotMatch(app,/itf_play_down_top200/);
-  assert.match(migration,/p\.itf_ranking is not null then 2/);
+  assert.match(migration,/2::int merit_tier/);
+  assert.match(migration,/p\.ranking is null[\s\S]{0,120}p\.itf_ranking is not null/);
   assert.match(migration,/tier2 as \(/);
   assert.match(migration,/tier3 as \(/);
   assert.match(migration,/Legal does not mean sensible/);

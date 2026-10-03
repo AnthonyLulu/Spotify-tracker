@@ -1,4 +1,4 @@
-/* Court Boss Match Center V10.2 · TV Match Stats */
+/* Court Boss Match Center V11 · Broadcast Matchday */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -200,12 +200,69 @@
     const styleTags=p=>Array.isArray(p?.tags)?p.tags:[];
     const profileCard=(name,p,side)=>p?.archetype?`<div class="cb-style-card ${side}"><div><small>${safe(name)}</small><b>${safe(p.archetype)} · ${safe(p.dominant_wing||'Équilibré')}</b></div><div class="cb-style-tags">${styleTags(p).map(t=>`<span>${safe(t)}</span>`).join('')}</div><em>Mob ${Number(p.mobility||0).toFixed(1)} · Déf ${Number(p.defense||0).toFixed(1)} · Touch ${Number(p.touch||0).toFixed(1)} · Filet ${Number(p.net||0).toFixed(1)}</em></div>`:'';
 
+
+    const broadcastRows=(Array.isArray(s.score_log)?s.score_log:[]).filter(x=>x?.set_finished);
+    const broadcastBestOf=Math.max(3,Number(meta?.best_of||3));
+    const broadcastSetCount=Math.max(broadcastBestOf,broadcastRows.length+(!done?1:0));
+    const broadcastSetHead=Array.from({length:broadcastSetCount},(_,i)=>{
+      const r=broadcastRows[i];
+      return '<span>'+(r?.match_tiebreak?'MTB':'S'+(i+1))+'</span>';
+    }).join('');
+    const broadcastCell=(side,i)=>{
+      const r=broadcastRows[i];
+      if(r){
+        const isUser=side==='user';
+        const value=r.match_tiebreak
+          ?Number(isUser?r.tiebreak_user_points:r.tiebreak_opponent_points)
+          :Number(isUser?r.user_games:r.opponent_games);
+        const other=r.match_tiebreak
+          ?Number(isUser?r.tiebreak_opponent_points:r.tiebreak_user_points)
+          :Number(isUser?r.opponent_games:r.user_games);
+        return '<b class="cb-tv-set '+(value>other?'won ':'')+(r.match_tiebreak?'tb':'')+'">'+value+'</b>';
+      }
+      if(!done&&i===broadcastRows.length){
+        const value=matchTiebreakActive?(side==='user'?up:op):(side==='user'?ug:og);
+        return '<b class="cb-tv-set live '+(matchTiebreakActive?'tb':'')+'">'+value+'</b>';
+      }
+      return '<b class="cb-tv-set empty">–</b>';
+    };
+    const broadcastUserSets=Array.from({length:broadcastSetCount},(_,i)=>broadcastCell('user',i)).join('');
+    const broadcastOppSets=Array.from({length:broadcastSetCount},(_,i)=>broadcastCell('opponent',i)).join('');
+    const broadcastTournament=meta?.tournament||{};
+    const broadcastLogo=broadcastTournament&&typeof tournamentLogoHtml==='function'
+      ?tournamentLogoHtml(broadcastTournament,'cb-broadcast-logo')
+      :(broadcastTournament?.logo_url?'<img class="cb-broadcast-logo-img" src="'+safe(broadcastTournament.logo_url)+'" alt="">':'<div class="cb-broadcast-logo-fallback">CB</div>');
+    const broadcastCategory=[broadcastTournament?.circuit,broadcastTournament?.category].filter(Boolean).join(' · ')||'Court Boss Tour';
+    const broadcastLocation=[broadcastTournament?.city,broadcastTournament?.venue].filter(Boolean).join(' · ')||'Match Center';
+    const userMoodValue=Math.round(Number(meta?.mood?.user||70));
+    const oppMoodValue=Math.round(Number(meta?.mood?.opponent||70));
+    const userFormValue=Math.round(Number(meta?.form?.user||70));
+    const oppFormValue=Math.round(Number(meta?.form?.opponent||70));
+    const weatherDifficulty=Math.round(Number(weather?.weather_difficulty||0));
+    const serverName=s.serving_user?userName:oppName;
+
     return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
       <div class="card fm-live-match cb-live-card">
-        <div class="fm-match-top"><div><div class="eyebrow">${safe(meta.round||'Match live')} · ${safe(surface)}</div><h2>${safe(userName)} vs ${safe(oppName)}</h2></div><span class="badge ${isCommitted?'good':done?'warn':''}">${isCommitted?'Validé':done?'À valider':matchTiebreakActive?'Match TB · '+tiebreakTarget+' pts':tiebreakActive?'Tie-break · '+tiebreakTarget+' pts':meta?.next_gen_format?'Set '+Number(s.set_no||1)+' · 4 jeux':'Set '+Number(s.set_no||1)}</span></div>
-        <div class="fm-scoreboard cb-scoreboard">
-          <div class="fm-score-name">${s.serving_user?'● ':''}${safe(userName)} <small>${flags?.[c.country]||''}</small></div><b>${us}</b><b>${ug}</b><strong>${pA}</strong>
-          <div class="fm-score-name">${!s.serving_user?'● ':''}${safe(oppName)} <small>${flags?.[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pB}</strong>
+        <div class="cb-broadcast-head">
+          <div class="cb-broadcast-brand">${broadcastLogo}<div><small>${safe(broadcastCategory)}</small><b>${safe(broadcastTournament.name||'Match Center')}</b><em>${safe(broadcastLocation)}</em></div></div>
+          <div class="cb-broadcast-status"><span>${safe(meta.round||'Match live')}</span><b>${isCommitted?'VALIDÉ':done?'À VALIDER':phase}</b></div>
+        </div>
+        <div class="cb-tv-score" style="--cb-set-count:${broadcastSetCount}">
+          <div class="cb-tv-score-row cb-tv-score-head"><span>JOUEUR</span>${broadcastSetHead}<span>JEU</span><span>PT</span></div>
+          <div class="cb-tv-score-row user">
+            <div class="cb-tv-player"><i class="${s.serving_user?'serving':''}"></i><div><b>${safe(userName)} <small>${flags?.[c.country]||''}</small></b><em>${mood(userMoodValue)} · moral ${userMoodValue} · forme ${userFormValue}</em></div></div>
+            ${broadcastUserSets}<b class="cb-tv-game">${ug}</b><strong class="cb-tv-point">${pA}</strong>
+          </div>
+          <div class="cb-tv-score-row opponent">
+            <div class="cb-tv-player"><i class="${!s.serving_user?'serving':''}"></i><div><b>${safe(oppName)} <small>${flags?.[opp.country]||''}</small></b><em>${mood(oppMoodValue)} · moral ${oppMoodValue} · forme ${oppFormValue}</em></div></div>
+            ${broadcastOppSets}<b class="cb-tv-game">${og}</b><strong class="cb-tv-point">${pB}</strong>
+          </div>
+        </div>
+        <div class="cb-match-context">
+          <span><i class="cb-context-ball"></i><b>${safe(serverName)}</b> au service</span>
+          <span>${safe(surface)} · ${indoor?'Indoor':'Outdoor'}</span>
+          <span>${wi(weather.condition)} ${safe(weather.condition||'Stable')} · ${Math.round(Number(weather.temperature_c||21))}°C · ${Math.round(Number(weather.wind_kph||0))} km/h</span>
+          <span class="${weatherDifficulty>=12?'warn':weatherDifficulty>=7?'soft':''}">Difficulté météo ${weatherDifficulty}/20</span>
         </div>
         <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court cb-weather-${weatherClass} cb-event-${eventTier} ${specialClass} ${endsFlipped?'cb-ends-flipped':''}" style="${courtStyle(meta,surface)};--cb-visual-ms:${visualMs}ms">
           ${motionStyle}
@@ -324,5 +381,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V9 Surface Physics active');
+  console.info('Court Boss Match Center V11 Broadcast Matchday active');
 })();

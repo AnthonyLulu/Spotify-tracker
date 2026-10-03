@@ -13074,15 +13074,14 @@ Deno.serve(async(req:Request)=>{
       if(cu.error)return h({error:cu.error.message},500);
     }
 
-    const eloCalls=won
-      ?[
-        db.rpc("update_player_elo_after_match",{p_winner_id:userIds[0],p_loser_id:oppIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55}),
-        db.rpc("update_player_elo_after_match",{p_winner_id:userIds[1],p_loser_id:oppIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55})
-       ]
-      :[
-        db.rpc("update_player_elo_after_match",{p_winner_id:oppIds[0],p_loser_id:userIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55}),
-        db.rpc("update_player_elo_after_match",{p_winner_id:oppIds[1],p_loser_id:userIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.55})
-       ];
+    const winningIds=won?userIds:oppIds;
+    const losingIds=won?oppIds:userIds;
+    const eloCalls=[
+      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[0],p_loser_id:losingIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275}),
+      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[0],p_loser_id:losingIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275}),
+      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[1],p_loser_id:losingIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275}),
+      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[1],p_loser_id:losingIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275})
+    ];
     const eloResults=await Promise.all(eloCalls);
     if(eloResults.some((x:any)=>x.error))return h({error:eloResults.find((x:any)=>x.error)?.error?.message||"Mise à jour Elo double impossible"},500);
 

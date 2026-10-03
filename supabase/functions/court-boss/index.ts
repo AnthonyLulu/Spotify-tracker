@@ -9434,7 +9434,7 @@ Deno.serve(async(req:Request)=>{
     const bonus=liveRuntimeBonusFromMultiplier(formMultiplier);
     return keys.reduce((sum,k)=>sum+Math.max(1,Math.min(20,Number(attrs?.[k]??10)+bonus)),0)/Math.max(1,keys.length);
   };
-  const liveRuntimeConditionScore=(player:any,attrs:any,formMultiplier:number,meta:any,pointsPlayed:number,effort=60)=>{
+  const liveRuntimeConditionDetail=(player:any,attrs:any,formMultiplier:number,meta:any,pointsPlayed:number,effort=60)=>{
     const weather:any=meta?.weather||{};
     const stamina=liveRuntimeAvgAttr(attrs,["stamina","natural_fitness","recovery","rally_tolerance","work_rate"],formMultiplier);
     const baseFitness=Math.max(25,Math.min(100,Number(player?.fitness??88)));
@@ -9443,10 +9443,19 @@ Deno.serve(async(req:Request)=>{
     const endurance=Math.max(.55,Math.min(1.35,.72+stamina*.032));
     const effortLoad=Math.max(.72,Math.min(1.55,Number(effort||60)/60));
     const liveLoad=Math.max(0,Number(pointsPlayed||0))*.035*(1+weatherLoad*.55)*effortLoad/endurance;
-    const effectiveFitness=baseFitness-Math.min(18,liveLoad*.28);
+    const effectiveFitness=Math.max(0,baseFitness-Math.min(18,liveLoad*.28));
     const effectiveFatigue=Math.min(100,baseFatigue+liveLoad);
-    return Math.max(-1,Math.min(1,(effectiveFitness-effectiveFatigue-20)/80));
+    const score=Math.max(-1,Math.min(1,(effectiveFitness-effectiveFatigue-20)/80));
+    return {
+      score,stamina:Math.round(stamina*10)/10,effort:Math.round(Number(effort||60)),
+      effective_fitness:Math.round(effectiveFitness*10)/10,
+      effective_fatigue:Math.round(effectiveFatigue*10)/10,
+      live_load:Math.round(liveLoad*10)/10,
+      weather_load:Math.round(weatherLoad*100)/100
+    };
   };
+  const liveRuntimeConditionScore=(player:any,attrs:any,formMultiplier:number,meta:any,pointsPlayed:number,effort=60)=>
+    liveRuntimeConditionDetail(player,attrs,formMultiplier,meta,pointsPlayed,effort).score;
   const liveMedicalRetirementCandidate=(side:"user"|"opponent",player:any,attrs:any,medical:any,meta:any,pointsPlayed:number,effort=60)=>{
     const fatigue=Math.max(0,Math.min(100,Number(player?.fatigue??18)));
     const fitness=Math.max(0,Math.min(100,Number(player?.fitness??90)));
@@ -9633,8 +9642,9 @@ Deno.serve(async(req:Request)=>{
     const wind=Math.max(0,Number(weather.wind_kph||0));
     const moodUser=Number(mood.user||70),moodOpp=Number(mood.opponent||70);
     const serverMood=serverIsUser?moodUser:moodOpp,returnerMood=serverIsUser?moodOpp:moodUser;
-    const userCondition=liveRuntimeConditionScore(ctx.managed,ua,userFormMultiplier,meta,Number(ctx.pointsPlayed||0),effort);
-    const oppCondition=liveRuntimeConditionScore(ctx.opp,oa,oppFormMultiplier,meta,Number(ctx.pointsPlayed||0),60);
+    const userConditionDetail=liveRuntimeConditionDetail(ctx.managed,ua,userFormMultiplier,meta,Number(ctx.pointsPlayed||0),effort);
+    const oppConditionDetail=liveRuntimeConditionDetail(ctx.opp,oa,oppFormMultiplier,meta,Number(ctx.pointsPlayed||0),Number(opponentPlan.effort||60));
+    const userCondition=userConditionDetail.score,oppCondition=oppConditionDetail.score;
     const conditionEdge=(serverIsUser?userCondition-oppCondition:oppCondition-userCondition)*.018;
 
     // V6: player identity is causal, not only visual. Archetype strengths are matched
@@ -9711,7 +9721,7 @@ Deno.serve(async(req:Request)=>{
     return {
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
       styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,mentalPressureEdge,pressureLevel:pressure,
-      serverPressureMental,returnerPressureMental,
+      userConditionDetail,oppConditionDetail,serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };
   };
@@ -10887,6 +10897,9 @@ Deno.serve(async(req:Request)=>{
         returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,
         opponent_runtime_condition:Math.round(kernel.oppCondition*1000)/1000,
+        user_condition_detail:kernel.userConditionDetail||null,
+        opponent_condition_detail:kernel.oppConditionDetail||null,
+        condition_model:"CB-LIVE-CONDITION-v2",
         form_modifier_runtime_only:true
       },
       point_no:pointNo,phase:visualPhase,visual_label:visualLabel,

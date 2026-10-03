@@ -1771,7 +1771,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
         .gt("started_at",String(snapshot.captured_at))
         .order("started_at",{ascending:true});
       if(unsavedRows.error)throw new Error("unsaved live session read: "+unsavedRows.error.message);
-      await restoreUnsavedOpponentRollback(unsavedRows.data??[]);
+      if(String(snapshot.rollback_scope||"")==="pre_match")await restoreUnsavedOpponentRollback(unsavedRows.data??[]);
     }
     const liveCleanup=await db.from("live_match_sessions")
       .delete().eq("managed_player_id",cleanupPlayerId).in("status",["active","finished"]);
@@ -14411,6 +14411,7 @@ Deno.serve(async(req:Request)=>{
       slotType==="autosave"?"Autosave":slotType==="quick"?"Sauvegarde rapide":"Sauvegarde "+slotNo
     )).slice(0,80);
     const baseSnapshot=await captureManagedSaveSnapshot();
+    if(body?.pre_match_checkpoint===true)baseSnapshot.rollback_scope="pre_match";
     let snapshot:any=baseSnapshot;
     // Manual and quick saves are true in-match checkpoints. Autosave remains a
     // pre-match rollback boundary so a ragequit never silently commits live points.

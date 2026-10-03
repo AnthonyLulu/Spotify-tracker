@@ -65,7 +65,7 @@ begin
     'nextgen_rank',p.nextgen_ranking
   );
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.nextgen_finals_candidate_pool(p_tournament_id bigint)
@@ -109,7 +109,7 @@ AS $function$
     and p.nextgen_ranking is not null
     and coalesce(p.data_source,'') not ilike 'hidden duplicate merged into %'
   order by p.nextgen_ranking,p.id;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.nextgen_fill_finals_slot(p_tournament_id bigint, p_field_slot integer, p_invited_on date, p_allow_managed_pending boolean DEFAULT true)
@@ -280,7 +280,7 @@ begin
 
   return jsonb_build_object('ok',false,'reason','candidate_pool_exhausted','slot',p_field_slot);
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.prepare_nextgen_finals_selection(p_tournament_id bigint)
@@ -370,7 +370,7 @@ begin
     'rule','7 Race Next Gen + 1 ATP wild card · refusal/forfeit = next eligible'
   );
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.nextgen_finals_field(p_tournament_id bigint)
@@ -395,7 +395,7 @@ AS $function$
   where i.tournament_id=p_tournament_id
     and i.status in ('accepted','pending')
   order by i.field_slot;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.nextgen_finals_player_status(p_tournament_id bigint, p_player_id bigint)
@@ -435,7 +435,7 @@ begin
     'rule','7 Race Next Gen + 1 ATP wild card'
   );
 end;
-$function$
+$function$;
 
 
 update public.tournament_format_rules

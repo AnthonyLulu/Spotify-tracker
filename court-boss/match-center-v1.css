@@ -126,3 +126,83 @@
 .cb-shot-chip.lift{border-bottom-color:rgba(239,183,92,.32)}.cb-shot-chip.slice{border-bottom-color:rgba(132,202,235,.34)}.cb-shot-chip.plat{border-bottom-color:rgba(255,255,255,.16)}
 @media(max-width:700px){.cb-physics-card{align-items:flex-start;flex-direction:column}.cb-physics-metrics{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){.cb-ball{filter:none!important}}
+
+
+/* Court Boss Match TV V11 */
+.cb-match-shell{display:flex;flex-direction:column;gap:12px}
+.cb-live-card{order:1;background:linear-gradient(180deg,rgba(8,20,17,.985),rgba(5,13,11,.995));border:1px solid rgba(255,255,255,.085);box-shadow:0 18px 44px rgba(0,0,0,.18)}
+.cb-env-card{order:2}
+.cb-broadcast-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px}
+.cb-broadcast-brand{display:flex;align-items:center;gap:10px;min-width:0}
+.cb-broadcast-brand>div:last-child{min-width:0}
+.cb-broadcast-brand small,.cb-broadcast-brand b,.cb-broadcast-brand em{display:block}
+.cb-broadcast-brand small{font-size:8px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;opacity:.52}
+.cb-broadcast-brand b{margin-top:2px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-broadcast-brand em{margin-top:2px;font-size:9px;font-style:normal;opacity:.58;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-broadcast-logo,.cb-broadcast-logo-img,.cb-broadcast-logo-fallback{width:44px;height:44px;min-width:44px;border-radius:11px}
+.cb-broadcast-logo{display:grid;place-items:center;background:rgba(255,255,255,.94);padding:5px;overflow:hidden}
+.cb-broadcast-logo .tm-tour-logo{max-width:100%;max-height:100%;object-fit:contain}
+.cb-broadcast-logo-img{object-fit:contain;background:rgba(255,255,255,.94);padding:5px}
+.cb-broadcast-logo-fallback{display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:9px;font-weight:950}
+.cb-broadcast-status{display:grid;justify-items:end;gap:3px;flex:0 0 auto}
+.cb-broadcast-status span{font-size:9px;opacity:.62}
+.cb-broadcast-status b{padding:5px 8px;border-radius:8px;background:rgba(255,255,255,.07);font-size:9px;letter-spacing:.08em}
+.cb-tv-score{overflow-x:auto;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(0,0,0,.18);scrollbar-width:none}
+.cb-tv-score::-webkit-scrollbar{display:none}
+.cb-tv-score-row{display:grid;grid-template-columns:minmax(170px,1.75fr) repeat(var(--cb-set-count),minmax(36px,.36fr)) 50px 58px;align-items:stretch;min-width:calc(330px + var(--cb-set-count) * 36px)}
+.cb-tv-score-row>*{display:flex;align-items:center;justify-content:center;min-height:43px;border-right:1px solid rgba(255,255,255,.06)}
+.cb-tv-score-row>*:last-child{border-right:0}
+.cb-tv-score-head{border-bottom:1px solid rgba(255,255,255,.075)}
+.cb-tv-score-head>*{min-height:24px;font-size:7px;font-weight:900;letter-spacing:.08em;opacity:.48}
+.cb-tv-score-head>span:first-child{justify-content:flex-start;padding-left:14px}
+.cb-tv-player{justify-content:flex-start!important;gap:9px;padding:6px 12px;min-width:0}
+.cb-tv-player>i{width:8px;height:8px;min-width:8px;border-radius:50%;background:rgba(255,255,255,.16);box-shadow:0 0 0 3px transparent}
+.cb-tv-player>i.serving{background:#f5df57;box-shadow:0 0 0 3px rgba(245,223,87,.13),0 0 10px rgba(245,223,87,.38)}
+.cb-tv-player>div{min-width:0}
+.cb-tv-player b,.cb-tv-player em{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cb-tv-player b{font-size:12px}
+.cb-tv-player b small{font-size:11px}
+.cb-tv-player em{margin-top:2px;font-size:8px;font-style:normal;opacity:.52}
+.cb-tv-set{font-size:13px;font-weight:750}
+.cb-tv-set.won{background:rgba(112,214,157,.065);font-weight:950}
+.cb-tv-set.live{position:relative;background:rgba(255,255,255,.07);font-weight:950}
+.cb-tv-set.live::after{content:"";position:absolute;bottom:4px;left:35%;right:35%;height:2px;border-radius:99px;background:currentColor;opacity:.75}
+.cb-tv-set.tb{font-size:11px}
+.cb-tv-set.empty{opacity:.18}
+.cb-tv-game{font-size:15px;background:rgba(255,255,255,.035)}
+.cb-tv-point{font-size:18px;font-weight:950;background:rgba(255,255,255,.065)}
+.cb-match-context{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:7px 0 10px}
+.cb-match-context>span{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border-radius:8px;background:rgba(255,255,255,.045);font-size:8px;opacity:.78}
+.cb-match-context>span:first-child{opacity:1}
+.cb-match-context>span.warn{background:rgba(235,163,91,.1);border:1px solid rgba(235,163,91,.2)}
+.cb-context-ball{width:7px;height:7px;border-radius:50%;background:#f5df57;box-shadow:0 0 8px rgba(245,223,87,.45)}
+.cb-court{border-radius:18px;border:1px solid rgba(255,255,255,.12);box-shadow:inset 0 0 0 2px rgba(255,255,255,.035),inset 0 -40px 70px rgba(0,0,0,.11),0 16px 34px rgba(0,0,0,.16)}
+.cb-court .fm-player-dot{box-shadow:0 5px 14px rgba(0,0,0,.3),0 0 0 2px rgba(255,255,255,.22)}
+.cb-court .fm-player-dot.user{outline:2px solid rgba(93,219,151,.35)}
+.cb-court .fm-player-dot.opponent{outline:2px solid rgba(235,132,132,.3)}
+.cb-live-controls{position:sticky;bottom:8px;z-index:30;margin:12px -4px 0;padding:8px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(5,14,11,.88);backdrop-filter:blur(14px);box-shadow:0 12px 28px rgba(0,0,0,.22)}
+.cb-live-controls button{min-height:38px}
+.cb-env-card{opacity:.94}
+@media(min-width:900px){
+  .cb-live-card{padding:16px}
+  .cb-court{min-height:500px}
+  .cb-match-story{grid-template-columns:minmax(0,.8fr) minmax(0,1.4fr)}
+}
+@media(max-width:700px){
+  .cb-live-card{padding:10px}
+  .cb-broadcast-head{align-items:flex-start}
+  .cb-broadcast-brand b{max-width:210px;font-size:13px}
+  .cb-broadcast-brand em{max-width:210px}
+  .cb-broadcast-status span{max-width:92px;text-align:right}
+  .cb-tv-score-row{grid-template-columns:minmax(145px,1.6fr) repeat(var(--cb-set-count),34px) 42px 50px}
+  .cb-tv-player{padding:5px 9px}
+  .cb-tv-player b{font-size:11px}
+  .cb-tv-player em{font-size:7px}
+  .cb-match-context{margin-bottom:8px}
+  .cb-match-context>span{font-size:7px}
+  .cb-court{min-height:390px;border-radius:15px}
+  .cb-live-controls{bottom:4px;border-radius:12px}
+  .cb-speed-row,.cb-step-row,.cb-save-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+  .cb-save-row{grid-template-columns:1fr 1fr}
+  .cb-live-controls button{min-width:0!important;padding-left:6px;padding-right:6px;font-size:9px}
+}

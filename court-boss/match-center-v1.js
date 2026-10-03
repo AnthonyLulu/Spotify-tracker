@@ -159,6 +159,7 @@
     const pA=tiebreakActive?String(up):(typeof pointLabel==='function'?pointLabel(up,op,'A'):String(up));
     const pB=tiebreakActive?String(op):(typeof pointLabel==='function'?pointLabel(up,op,'B'):String(op));
     const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(tiebreakActive?'tiebreak':visual.phase||lp.phase);
+    const serviceCourtLabel=String(lp.service_court||'')==='ad'?'Avantage':String(lp.service_court||'')==='deuce'?'Égalité':'';
     const target=String(visual.target_zone||lp.zone||'Zone neutre'),setScore=score(s);
     const userWonLast=String(lp.winner||'')==='user',oppWonLast=String(lp.winner||'')==='opponent';
     const eventRows=(Array.isArray(st._visual_events)?st._visual_events:[]).slice(-6).reverse();

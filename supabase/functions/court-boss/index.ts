@@ -10829,7 +10829,6 @@ Deno.serve(async(req:Request)=>{
       serve_number:firstServeIn?1:2,
       first_serve_in:firstServeIn,
       serve_direction:serveDirection,
-      service_court:serviceCourt,
       ace,
       double_fault:doubleFault,
       unreturned_serve:unreturned,

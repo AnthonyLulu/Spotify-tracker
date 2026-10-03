@@ -124,3 +124,42 @@
   .cb-double-court-v13 .p{width:22px;height:22px}
   .cb-double-court-v13 .p small{max-width:56px;font-size:5px}
 }
+
+
+/* Dynamic player token colours V22.1 */
+.cb-court .fm-player-dot{
+  background:var(--cb-dot-fill)!important;
+  color:var(--cb-dot-ink)!important;
+  outline-color:var(--cb-dot-ring)!important;
+  box-shadow:
+    0 5px 14px rgba(0,0,0,.30),
+    0 0 0 2px color-mix(in srgb,var(--cb-dot-ring) 72%,white 8%)!important;
+}
+.cb-court .fm-player-dot>span{color:var(--cb-dot-ink)!important}
+.cb-court .fm-player-dot.cb-point-winner,
+.cb-court .fm-player-dot.cb-point-winner-v14{
+  box-shadow:
+    0 5px 14px rgba(0,0,0,.30),
+    0 0 0 2px var(--cb-dot-ring),
+    0 0 16px color-mix(in srgb,var(--cb-dot-ring) 68%,transparent)!important;
+}
+.cb-court .fm-player-dot.is-server{
+  box-shadow:
+    0 5px 14px rgba(0,0,0,.30),
+    0 0 0 3px color-mix(in srgb,var(--cb-dot-ring) 88%,white 10%),
+    0 0 13px color-mix(in srgb,var(--cb-dot-ring) 45%,transparent)!important;
+}
+.cb-court .fm-player-dot.cb-dot-wimbledon{
+  background:#f4f1e8!important;
+  color:#173b2b!important;
+}
+.cb-court .fm-player-dot.cb-dot-wimbledon>span{color:#173b2b!important}
+.cb-court[data-cb-tournament-skin="wimbledon"] .fm-player-dot.cb-dot-wimbledon{
+  border:1px solid rgba(255,255,255,.8)
+}
+.cb-court[data-cb-tournament-skin="wimbledon"] .fm-player-dot.cb-dot-wimbledon.user{
+  --cb-dot-ring:#1f5a3d!important
+}
+.cb-court[data-cb-tournament-skin="wimbledon"] .fm-player-dot.cb-dot-wimbledon.opponent{
+  --cb-dot-ring:#6f4a8e!important
+}

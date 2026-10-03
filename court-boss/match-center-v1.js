@@ -53,6 +53,49 @@
     }
     return out;
   };
+  const cbLerp=(a,b,t)=>Number(a||0)+(Number(b||0)-Number(a||0))*t;
+  const cbSmoothstep=t=>{const x=Math.max(0,Math.min(1,Number(t||0)));return x*x*(3-2*x)};
+  const cbLerpPoint=(a,b,t)=>({x:cbLerp(a?.x,b?.x,t),y:cbLerp(a?.y,b?.y,t)});
+  const cbSurname=name=>String(name||'JOUEUR').trim().split(/\s+/).slice(-1)[0].toUpperCase();
+  const cbDenseMotionFrames=(frames,visual={})=>{
+    const src=(Array.isArray(frames)?frames:[]).filter(f=>f?.user&&f?.opponent&&f?.ball);
+    if(src.length<2)return src;
+    const out=[{...src[0],frame_ms:Math.max(90,Number(src[0].frame_ms||120))}];
+    for(let i=1;i<src.length;i++){
+      const prev=src[i-1],next=src[i],segment=Math.max(90,Number(next.frame_ms||180));
+      const steps=Math.max(2,Math.min(4,Math.round(segment/115)));
+      for(let s=1;s<=steps;s++){
+        const t=s/steps,e=cbSmoothstep(t);
+        out.push({
+          ...next,
+          stage:s===steps?next.stage:'transition',
+          user:cbLerpPoint(prev.user,next.user,e),
+          opponent:cbLerpPoint(prev.opponent,next.opponent,e),
+          ball:cbLerpPoint(prev.ball,next.ball,t),
+          ball_scale:cbLerp(prev.ball_scale??1,next.ball_scale??1,t),
+          frame_ms:Math.max(55,Math.round(segment/steps))
+        });
+      }
+    }
+    const last=out[out.length-1];
+    if(last&&String(last.stage||'')!=='recover'){
+      const recover=(p,homeY,weight)=>({
+        x:cbLerp(p.x,50,weight),
+        y:cbLerp(p.y,homeY,weight)
+      });
+      const userReact=String(visual.user_reaction||'reset'),oppReact=String(visual.opponent_reaction||'reset');
+      const userW=userReact==='celebrate'?.16:.28,oppW=oppReact==='celebrate'?.16:.28;
+      out.push({
+        ...last,stage:'recover',
+        user:recover(last.user,82,userW),
+        opponent:recover(last.opponent,18,oppW),
+        ball:{...last.ball},
+        frame_ms:360
+      });
+    }
+    return out;
+  };
+
   const ballKeyframes=(name,frames)=>'@keyframes '+name+'{'+physicsTimeline(frames).map(k=>{const p=k.ball,pct=Math.max(0,Math.min(100,Number(k.pct||0))).toFixed(2),scale=cap(Number(k.scale||1),.68,1.65),lift=cap(Number(k.lift||0),0,22),blur=k.physics?.skid?.2:0;return pct+'%{left:'+p.x+'%;top:'+p.y+'%;transform:translate(-50%,-50%) translateY(-'+lift+'px) scale('+scale+');filter:drop-shadow(0 '+Math.max(1,Math.round(lift*.34))+'px '+Math.max(3,Math.round(4+lift*.22))+'px rgba(0,0,0,.34)) blur('+blur+'px)}'}).join('')+'}';
   const courtStyle=(meta,surface)=>{
     const name=String(meta?.tournament?.name||'').toLowerCase(),clay=/terre|clay/i.test(surface),grass=/gazon|grass/i.test(surface);
@@ -165,11 +208,12 @@
     const userStart=orientPoint(pos(visual.user_start,{x:48,y:86})),userEnd=orientPoint(pos(visual.user_end,{x:ux,y:uy}));
     const oppStart=orientPoint(pos(visual.opponent_start,{x:52,y:14})),oppEnd=orientPoint(pos(visual.opponent_end,{x:ox,y:oy}));
     const rawFrames=Array.isArray(visual.frames)?visual.frames:[],rawPath=Array.isArray(visual.ball_path)?visual.ball_path:[];
-    const motionFrames=rawFrames.length?rawFrames.map(f=>({
+    const baseMotionFrames=rawFrames.length?rawFrames.map(f=>({
       ...f,user:orientPoint(pos(f.user,userEnd)),opponent:orientPoint(pos(f.opponent,oppEnd)),
       ball:orientPoint(ballPos(f.ball,{x:bx,y:by}))
-    })):[{user:userStart,opponent:oppStart,ball:orientPoint(ballPos(rawPath[0],{x:bx,y:by})),ball_scale:.9},
-         {user:userEnd,opponent:oppEnd,ball:orientPoint(ballPos(rawPath[rawPath.length-1],{x:bx,y:by})),ball_scale:1}];
+    })):[{stage:'ready',user:userStart,opponent:oppStart,ball:orientPoint(ballPos(rawPath[0],{x:bx,y:by})),ball_scale:.9,frame_ms:130},
+         {stage:'finish',user:userEnd,opponent:oppEnd,ball:orientPoint(ballPos(rawPath[rawPath.length-1],{x:bx,y:by})),ball_scale:1,frame_ms:420}];
+    const motionFrames=cbDenseMotionFrames(baseMotionFrames,visual);
     const ballPath=motionFrames.map(f=>f.ball),hasFlight=motionFrames.length>=2,ballEnd=ballPath[ballPath.length-1]||{x:bx,y:by};
     const surface=String(s.surface||'Dur'),courtClass=/terre|clay/i.test(surface)?'clay':/gazon|grass/i.test(surface)?'grass':'hard',indoor=/intérieur|indoor/i.test(surface);
     const condition=String(weather.condition||'').toLowerCase(),weatherClass=Number(weather.wind_kph||0)>=18?'windy':condition.includes('humide')?'humid':Number(weather.temperature_c||0)>=29?'hot':condition.includes('nuage')?'cloudy':'clear';
@@ -199,7 +243,8 @@
     const specialClass=retirement?'cb-special-medical':lp.ace?'cb-special-ace':stake==='match_point'?'cb-special-match':stake==='set_point'?'cb-special-set':stake==='break_point'?'cb-special-break':'';
     const slideUser=Boolean(visual.user_slide)&&courtClass==='clay',slideOpp=Boolean(visual.opponent_slide)&&courtClass==='clay';
     const visualRate=typeof liveAutoSpeed==='number'?liveAutoSpeed:1;
-    const visualMs=Math.round(cap(Number(visual.duration_ms||Math.max(820,shotRows.length*190)),650,12000)/Math.max(1,visualRate));
+    const recoveryMs=motionFrames.some(f=>String(f.stage||'')==='recover')?320:0;
+    const visualMs=Math.round((cap(Number(visual.duration_ms||Math.max(820,shotRows.length*190)),650,12000)+recoveryMs)/Math.max(1,visualRate));
     const motionId='cbm'+Number(s.id||0)+'p'+Number(visual.point_no||lp.point_no||s.rally_no||0);
     const userAnim=motionId+'u',oppAnim=motionId+'o',ballAnim=motionId+'b';
     const motionStyle=hasFlight?'<style>'+moveKeyframes(userAnim,motionFrames,'user')+moveKeyframes(oppAnim,motionFrames,'opponent')+ballKeyframes(ballAnim,motionFrames)+'</style>':'';
@@ -258,6 +303,14 @@
     const oppFormValue=Math.round(Number(meta?.form?.opponent||70));
     const weatherDifficulty=Math.round(Number(weather?.weather_difficulty||0));
     const serverName=s.serving_user?userName:oppName;
+    const userSurname=cbSurname(userName),oppSurname=cbSurname(oppName);
+    const winnerReaction=lp.ace?'ACE':stake==='match_point'?'MATCH':stake==='set_point'?'SET':stake==='break_point'?'BREAK':'POINT';
+    const uiTactics=typeof local!=='undefined'?(local.tactics||{}):{};
+    const tacticReturn=String(uiTactics.returnPos||'Neutre');
+    const tacticTarget=String(uiTactics.targetWing||'Mixte');
+    const tacticTempo=String(uiTactics.tempo||'Neutre');
+    const tacticNet=Math.round(Number(uiTactics.net||28));
+    const serverOrigin=s.serving_user?userStart:oppStart;
 
     const roundText=String(meta?.round||'').toUpperCase();
     const bestRank=Math.min(Number(c?.singles_rank||c?.ranking||9999),Number(opp?.ranking||9999));
@@ -321,8 +374,11 @@
           ${lp.changeover?'<div class="cb-changeover">↔ Changement de côté · fenêtre coaching</div>':''}
           ${meta?.tournament?.logo_url?`<img class="cb-court-watermark" src="${safe(meta.tournament.logo_url)}" alt="" onerror="this.style.display='none'">`:''}
           ${hasFlight?`<i class="cb-target-zone" style="left:${ballEnd.x}%;top:${ballEnd.y}%"></i>`:''}
-          <div class="fm-player-dot opponent cb-dot cb-dot-motion ${slideOpp?'cb-clay-slide':''} ${oppWonLast?'cb-point-winner':userWonLast?'cb-point-loser':''}" style="left:${oppEnd.x}%;top:${oppEnd.y}%;animation:${oppAnim} ${visualMs}ms cubic-bezier(.18,.72,.22,1) both"><span>${oInit}</span><small>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</small>${oppWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
-          <div class="fm-player-dot user cb-dot cb-dot-motion ${slideUser?'cb-clay-slide':''} ${userWonLast?'cb-point-winner':oppWonLast?'cb-point-loser':''}" style="left:${userEnd.x}%;top:${userEnd.y}%;animation:${userAnim} ${visualMs}ms cubic-bezier(.18,.72,.22,1) both"><span>${uInit}</span><small>${safe(userName.split(' ').slice(-1)[0]||'MOI')}</small>${userWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
+          <i class="cb-serve-origin" style="left:${serverOrigin.x}%;top:${serverOrigin.y}%"></i>
+          <div class="cb-tactic-hud"><span>Retour <b>${safe(tacticReturn)}</b></span><span>Cible <b>${safe(tacticTarget)}</b></span><span>Filet <b>${tacticNet}%</b></span><span>Tempo <b>${safe(tacticTempo)}</b></span></div>
+          <div class="fm-player-dot opponent cb-dot cb-dot-motion ${slideOpp?'cb-clay-slide':''} ${oppWonLast?'cb-point-winner':userWonLast?'cb-point-loser':''}" style="left:${oppEnd.x}%;top:${oppEnd.y}%;animation:${oppAnim} ${visualMs}ms cubic-bezier(.18,.72,.22,1) both"><span>${oInit}</span><small class="cb-dot-name">${safe(oppSurname)}</small>${oppWonLast?`<em class="cb-reaction">${safe(winnerReaction)}</em>`:''}</div>
+          <div class="fm-player-dot user cb-dot cb-dot-motion ${slideUser?'cb-clay-slide':''} ${userWonLast?'cb-point-winner':oppWonLast?'cb-point-loser':''}" style="left:${userEnd.x}%;top:${userEnd.y}%;animation:${userAnim} ${visualMs}ms cubic-bezier(.18,.72,.22,1) both"><span>${uInit}</span><small class="cb-dot-name">${safe(userSurname)}</small>${userWonLast?`<em class="cb-reaction">${safe(winnerReaction)}</em>`:''}</div>
+          <i class="cb-ball-shadow" style="left:${ballEnd.x}%;top:${ballEnd.y}%;animation:${ballAnim} ${visualMs}ms linear both"></i>
           <i class="fm-ball cb-ball ${hasFlight?'cb-ball-flight':''}" style="left:${ballEnd.x}%;top:${ballEnd.y}%;animation:${ballAnim} ${visualMs}ms linear both"></i>
           ${lp.winner?`<div class="fm-rally-call cb-rally"><span>${phase}</span><b>${safe(call)}</b> · ${Number(lp.rally||0)} coups · ${safe(target)}</div>`:''}
         </div>

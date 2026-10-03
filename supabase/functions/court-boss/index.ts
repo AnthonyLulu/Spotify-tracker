@@ -2259,9 +2259,9 @@ async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
     if(!roster.data)throw new Error("Ce joueur ne fait pas partie du groupe géré.");
   }
   const [managed,partnership]=await Promise.all([
-    db.from("players").select("id,name,country,ranking,doubles_ranking,career_focus").eq("id",playerId).maybeSingle(),
+    db.from("players").select("id,name,country,ranking,doubles_ranking,itf_ranking,career_focus").eq("id",playerId).maybeSingle(),
     db.from("doubles_partnerships")
-      .select("id,player_a_id,player_b_id,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,ranking,doubles_ranking),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking)")
+      .select("id,player_a_id,player_b_id,player_a:players!doubles_partnerships_player_a_id_fkey(id,name,country,ranking,doubles_ranking,itf_ranking),player_b:players!doubles_partnerships_player_b_id_fkey(id,name,country,ranking,doubles_ranking,itf_ranking)")
       .or("player_a_id.eq."+playerId+",player_b_id.eq."+playerId)
       .order("id",{ascending:false}).limit(1).maybeSingle()
   ]);
@@ -2284,6 +2284,19 @@ async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
   if(["NCAA","Federation"].includes(String(t?.circuit)))return {can_schedule:false,projected_acceptance:false,label:"Par sélection",phase:"selection",composition};
   if(!partner)return {can_schedule:false,projected_acceptance:false,label:"Partenaire requis",phase:"partner",composition};
 
+  const entryRankDate=String(
+    String(t?.circuit)==="ITF"
+      ?(t?.start_date||now)
+      :(t?.doubles_entry_deadline||t?.main_entry_deadline||t?.start_date||now)
+  );
+  const [mineMeritRes,partnerMeritRes]=await Promise.all([
+    db.rpc("doubles_player_entry_merit_v20",{p_player_id:Number(managed.data?.id||0),p_date:entryRankDate}),
+    db.rpc("doubles_player_entry_merit_v20",{p_player_id:Number(partner.id||0),p_date:entryRankDate})
+  ]);
+  if(mineMeritRes.error||partnerMeritRes.error)throw (mineMeritRes.error||partnerMeritRes.error);
+  const mineMerit:any=mineMeritRes.data||{};
+  const partnerMerit:any=partnerMeritRes.data||{};
+
   const protectedDoubleRes=await db.rpc("player_entry_protection_status",{
     p_player_id:Number(managed.data?.id||0),p_event_type:"doubles",p_tournament_id:Number(t?.id||0)
   });
@@ -2291,14 +2304,22 @@ async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
   const protectedDoubleInfo:any=protectedDoubleRes.data||null;
 
   const mine:any=managed.data;
-  const mineBest=bestDoublesEntryRank(mine),partnerBest=bestDoublesEntryRank(partner);
-  const mineDouble=validEntryRank(mine?.doubles_ranking),partnerDouble=validEntryRank(partner?.doubles_ranking);
+  const mineBest=validEntryRank(mineMerit?.rank),partnerBest=validEntryRank(partnerMerit?.rank);
+  const mineDouble=validEntryRank(mineMerit?.doubles_rank),partnerDouble=validEntryRank(partnerMerit?.doubles_rank);
+  const mineProtectedRank=validEntryRank(mineMerit?.protected_rank);
+  const partnerProtectedRank=validEntryRank(partnerMerit?.protected_rank);
   const protectedDoubleRank=protectedDoubleInfo?.available?validEntryRank(protectedDoubleInfo.protected_rank):null;
-  const mineProtectedBest=protectedDoubleRank==null?mineBest:Math.min(validEntryRank(mine?.ranking)??protectedDoubleRank,protectedDoubleRank);
   const bestCombined=mineBest!=null&&partnerBest!=null?mineBest+partnerBest:null;
   const doublesCombined=mineDouble!=null&&partnerDouble!=null?mineDouble+partnerDouble:null;
-  const protectedBestCombined=mineProtectedBest!=null&&partnerBest!=null?mineProtectedBest+partnerBest:null;
-  const protectedDoublesCombined=protectedDoubleRank!=null&&partnerDouble!=null?protectedDoubleRank+partnerDouble:null;
+  const protectedBestCombined=
+    (mineProtectedRank!=null||partnerProtectedRank!=null)
+      ?(Math.min(mineBest??999999,mineProtectedRank??999999)+Math.min(partnerBest??999999,partnerProtectedRank??999999))
+      :null;
+  const protectedDoublesCombined=
+    (protectedDoubleRank!=null||String(mineMerit?.source||"")==="doubles_protected")
+      && partnerDouble!=null
+      ?Math.min(mineDouble??999999,protectedDoubleRank??mineProtectedRank??999999)+partnerDouble
+      :null;
   const advance=String(t?.doubles_entry_deadline||"");
   const onsite=String(t?.doubles_onsite_deadline||"");
   const ruleCode=String(t?.entry_rule_code||"");
@@ -2306,7 +2327,8 @@ async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
   const method=String(t?.doubles_entry_method||(
     String(t?.circuit)==="ITF"&&(/M15/i.test(category)||ruleCode==="ITF_M15")?"onsite_only":
     String(t?.circuit)==="ITF"&&(/M25/i.test(category)||ruleCode==="ITF_M25")?"limited_advance_then_onsite":
-    ["ATP","Challenger"].includes(String(t?.circuit))?"advance_then_onsite":""
+    String(t?.circuit)==="Challenger"?"advance_then_onsite":
+    String(t?.circuit)==="ATP"?"advance_only":""
   ));
 
   if(onsite&&now>onsite)return {
@@ -2316,15 +2338,21 @@ async function managedDoublesEntryStatus(t:any,requestedPlayerId?:number){
 
   let phase="advance",slots=composition.advance,rankMode:"best"|"doubles_only"="best";
   if(method==="onsite_only"){
-    phase="onsite";slots=composition.direct;
+    phase="onsite";slots=composition.onsite||composition.direct;
   }else if(method==="limited_advance_then_onsite"){
     if(advance&&now<=advance&&doublesCombined!=null){
       phase="advance";slots=Math.max(1,composition.advance);rankMode="doubles_only";
     }else{
-      phase="onsite";slots=composition.direct;rankMode="best";
+      phase="onsite";slots=Math.max(1,composition.onsite);rankMode="best";
     }
-  }else if(advance&&now>advance){
-    phase="onsite";slots=composition.direct;
+  }else if(method==="advance_then_onsite"&&advance&&now>advance){
+    phase="onsite";slots=Math.max(1,composition.onsite);rankMode="best";
+  }else if(method==="advance_only"&&advance&&now>advance){
+    return {
+      can_schedule:false,projected_acceptance:false,label:"Advance entry double close",phase:"closed",
+      best_combined_rank:bestCombined,doubles_combined_rank:doublesCombined,composition,
+      advance_deadline:advance||null,onsite_deadline:null,method
+    };
   }
   if(/Finals/i.test(category)){
     return {

@@ -10938,19 +10938,18 @@ Deno.serve(async(req:Request)=>{
         const tbServerUser=liveTiebreakServer(startServerUser,pointIndex);
         const pointTm:any=tbServerUser?userServeTm:oppServeTm;
         const pointKernel:any=tbServerUser?userServeKernel:oppServeKernel;
-        const userPointP=tbServerUser?pointKernel.serverWinProb:1-pointKernel.serverWinProb;
-        const userPointWon=Math.random()<userPointP;
-        if(userPointWon)tup++;else top++;
-        gamePoints++;
-        lastServerWinProbability=pointKernel.serverWinProb;
-        lastConditionEdge=pointKernel.conditionEdge;
-
         const serverFormLift=tbServerUser?userFormLift:oppFormLift;
         const firstInPct=Math.max(.42,Math.min(.82,Number(pointTm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
         const firstIn=Math.random()<firstInPct;
         const dfPct=Math.max(.004,Number(pointTm.double_fault_pct||4)/100*(1-serverFormLift*.035));
         const doubleFault=!firstIn&&Math.random()<dfPct;
-        const serverWonPoint=tbServerUser?userPointWon:!userPointWon;
+        const serverWonPoint=!doubleFault&&Math.random()<pointKernel.serverWinProb;
+        const userPointWon=tbServerUser?serverWonPoint:!serverWonPoint;
+        if(userPointWon)tup++;else top++;
+        gamePoints++;
+        lastServerWinProbability=pointKernel.serverWinProb;
+        lastConditionEdge=pointKernel.conditionEdge;
+
         const acePct=Math.max(.002,Number(pointTm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
         const ace=firstIn&&serverWonPoint&&Math.random()<acePct;
         const unret=!ace&&!doubleFault&&serverWonPoint&&Math.random()<Math.max(.01,Number(pointTm.unreturned_serve_pct||22)/100*(firstIn?1:.52));

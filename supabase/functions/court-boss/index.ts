@@ -10368,7 +10368,12 @@ Deno.serve(async(req:Request)=>{
       /ATP 250/i.test(String(t?.category||""))?64:
       /Challenger/i.test(String(t?.circuit||t?.category||""))?48:34
     ))));
-    const crowdIntensity=Math.max(15,Math.min(100,Math.round(prestige*.72+(homeUser||homeOpp?12:0)+(unit(29)-.5)*12)));
+    const crowdProfile=/Laver Cup/i.test(tournamentName)?"Laver Cup":
+      /Davis Cup/i.test(tournamentName)?"Davis Cup":
+      /Grand Chelem|Grand Slam/i.test(String(t?.category||""))?"Grand Slam":
+      /Masters|1000/i.test(String(t?.category||""))?"Masters 1000":"Tour";
+    const teamEventBoost=crowdProfile==="Laver Cup"||crowdProfile==="Davis Cup"?12:0;
+    const crowdIntensity=Math.max(15,Math.min(100,Math.round(prestige*.72+(homeUser||homeOpp?12:0)+teamEventBoost+(unit(29)-.5)*12)));
     return {
       engine:"CB-MATCH-ENGINE-v6",
       surface,indoor,match_phase:phase,sets_to_win:setsToWin,best_of:setsToWin*2-1,
@@ -10378,7 +10383,7 @@ Deno.serve(async(req:Request)=>{
       match_tiebreak_decider:itfQualifying,match_tiebreak_points:itfQualifying?10:null,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1)),rain_risk_pct:rainRisk},
-      ambience:{session_of_day:sessionOfDay,crowd_intensity:crowdIntensity,home_user:homeUser,home_opponent:homeOpp},
+      ambience:{session_of_day:sessionOfDay,crowd_intensity:crowdIntensity,crowd_profile:crowdProfile,home_user:homeUser,home_opponent:homeOpp},
       event_schedule:eventSchedule,
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
       form:{user:userForm,opponent:oppForm,user_bonus:liveFormBonus(userForm),opponent_bonus:liveFormBonus(oppForm),user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_multiplier_runtime_only",persists_to_player_attributes:false,min_multiplier:.94,max_multiplier:1.06,source_bonus_step_min:-3,source_bonus_step_max:3},

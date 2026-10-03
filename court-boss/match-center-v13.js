@@ -100,7 +100,7 @@
     const parts=String(p.name||'JOUEUR').trim().split(/\s+/),last=parts.slice(-1)[0]||'Joueur';
     const initials=parts.map(x=>x[0]||'').join('').slice(0,2).toUpperCase();
     let sp=dot.querySelector('span');if(!sp){sp=el('span');dot.appendChild(sp)}if(sp.textContent!==(initials||'P'))sp.textContent=initials||'P';
-    let sm=dot.querySelector('small');if(!sm){sm=el('small');dot.appendChild(sm)}if(sm.textContent!==last)sm.textContent=last;
+    let sm=dot.querySelector('small');if(!sm){sm=el('small');dot.appendChild(sm)}const label=String(last||'Joueur').toUpperCase();if(sm.textContent!==label)sm.textContent=label;sm.classList.add('cb-dot-name');
   };
   const addLiveDoublesDots=()=>{
     const court=document.querySelector('.cb-live-card .cb-court'),sess=live(),m=meta(),v=visual();
@@ -137,6 +137,10 @@
     if(mainU&&u[0]){const pid=Number(u[0].id||0),lp=sess?.last_point||{};mainU.classList.toggle('is-server',pid===Number(lp.server_player_id||0));mainU.classList.toggle('is-returner',pid===Number(lp.returner_player_id||0))}
     if(mainO&&o[0]){const pid=Number(o[0].id||0),lp=sess?.last_point||{};mainO.classList.toggle('is-server',pid===Number(lp.server_player_id||0));mainO.classList.toggle('is-returner',pid===Number(lp.returner_player_id||0))}
     court.classList.add('cb-live-doubles-court-v13');
+    const plan=String(local?.tactics?.doublesPlan||sess?.tactics?.doublesPlan||v?.manager_plan||'balanced');
+    const formation=String(v?.formation||v?.doubles?.formation||'standard');
+    court.dataset.cbDoublesPlan=plan;
+    court.dataset.cbDoublesFormation=formation.toLowerCase().replace(/[^a-z0-9]+/g,'-');
   };
 
   const heatStore=()=>{
@@ -259,15 +263,16 @@
     return '<div class="cb-double-replays-v13"><div class="cb-subhead-v13">Double · replay tactique 4 joueurs</div>'+rows.map((m,idx)=>{
       const v=m.visual,fr=v.frames||[],id='cbd'+idx+'_'+Math.abs(String(m.round_name||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0));
       const names=[...(v.user_players||[]),...(v.opponent_players||[])];
-      const init=n=>esc(String(n||'?').split(/\s+/).slice(-1)[0].slice(0,3).toUpperCase());
+      const lastName=n=>String(n||'?').trim().split(/\s+/).slice(-1)[0].toUpperCase();
+      const init=n=>esc(lastName(n).slice(0,3));
       const last=fr[fr.length-1]||{};
       const style='<style>'+doublesAnim(id+'ua',fr,'user_a')+doublesAnim(id+'ub',fr,'user_b')+doublesAnim(id+'oa',fr,'opp_a')+doublesAnim(id+'ob',fr,'opp_b')+doublesAnim(id+'ball',fr,'ball')+'</style>';
       return '<div class="cb-double-replay-v13">'+style+'<div class="cb-double-head-v13"><b>'+esc(m.round_name)+' · '+esc(m.score)+'</b><span>'+esc(v.formation)+' · '+esc(v.manager_plan||'balanced')+' · poach '+Number(v.poach_intent||0)+'% · com '+Number(v.communication||0)+'%</span></div>'+
         '<div class="cb-double-court-v13"><i class="line net"></i><i class="line base a"></i><i class="line base b"></i>'+
-          '<div class="p user a" style="left:'+cap(last.user_a?.x,0,100)+'%;top:'+cap(last.user_a?.y,0,100)+'%;animation:'+id+'ua 3.8s ease-in-out infinite alternate">'+init(names[0]?.name)+'</div>'+
-          '<div class="p user b" style="left:'+cap(last.user_b?.x,0,100)+'%;top:'+cap(last.user_b?.y,0,100)+'%;animation:'+id+'ub 3.8s ease-in-out infinite alternate">'+init(names[1]?.name)+'</div>'+
-          '<div class="p opp a" style="left:'+cap(last.opp_a?.x,0,100)+'%;top:'+cap(last.opp_a?.y,0,100)+'%;animation:'+id+'oa 3.8s ease-in-out infinite alternate">'+init(names[2]?.name)+'</div>'+
-          '<div class="p opp b" style="left:'+cap(last.opp_b?.x,0,100)+'%;top:'+cap(last.opp_b?.y,0,100)+'%;animation:'+id+'ob 3.8s ease-in-out infinite alternate">'+init(names[3]?.name)+'</div>'+
+          '<div class="p user a" style="left:'+cap(last.user_a?.x,0,100)+'%;top:'+cap(last.user_a?.y,0,100)+'%;animation:'+id+'ua 3.8s ease-in-out infinite alternate"><span>'+init(names[0]?.name)+'</span><small>'+esc(lastName(names[0]?.name))+'</small></div>'+
+          '<div class="p user b" style="left:'+cap(last.user_b?.x,0,100)+'%;top:'+cap(last.user_b?.y,0,100)+'%;animation:'+id+'ub 3.8s ease-in-out infinite alternate"><span>'+init(names[1]?.name)+'</span><small>'+esc(lastName(names[1]?.name))+'</small></div>'+
+          '<div class="p opp a" style="left:'+cap(last.opp_a?.x,0,100)+'%;top:'+cap(last.opp_a?.y,0,100)+'%;animation:'+id+'oa 3.8s ease-in-out infinite alternate"><span>'+init(names[2]?.name)+'</span><small>'+esc(lastName(names[2]?.name))+'</small></div>'+
+          '<div class="p opp b" style="left:'+cap(last.opp_b?.x,0,100)+'%;top:'+cap(last.opp_b?.y,0,100)+'%;animation:'+id+'ob 3.8s ease-in-out infinite alternate"><span>'+init(names[3]?.name)+'</span><small>'+esc(lastName(names[3]?.name))+'</small></div>'+
           '<i class="ball" style="left:'+cap(last.ball?.x,0,100)+'%;top:'+cap(last.ball?.y,0,100)+'%;animation:'+id+'ball 3.8s ease-in-out infinite alternate"></i>'+
         '</div><p>Cible prioritaire : <b>'+esc(v.target_player_name||'—')+'</b> · '+esc(v.target_reason||'')+'</p></div>';
     }).join('')+'</div>';

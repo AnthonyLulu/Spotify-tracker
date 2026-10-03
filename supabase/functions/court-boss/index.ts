@@ -9628,10 +9628,12 @@ Deno.serve(async(req:Request)=>{
     const grandSlam=Boolean(t&&String(t.circuit||"")==="ATP"&&/Grand Chelem|Grand Slam/i.test(String(t.category||"")));
     const grandSlamMain=grandSlam&&phase!=="qualifying";
     const itfQualifying=Boolean(t&&String(t.circuit||"")==="ITF"&&phase==="qualifying");
-    const setsToWin=grandSlamMain?3:2;
+    const nextGen=Boolean(t&&String(t.circuit||"")==="ATP"&&/Next Gen Finals/i.test(String(t.category||t.level||"")));
+    const setsToWin=nextGen?3:grandSlamMain?3:2;
     return {
       engine:"CB-MATCH-ENGINE-v6",
       surface,indoor,match_phase:phase,sets_to_win:setsToWin,best_of:setsToWin*2-1,
+      set_games_to_win:nextGen?4:6,tiebreak_at_games:nextGen?3:6,no_ad:nextGen,next_gen_format:nextGen,
       match_tiebreak_decider:itfQualifying,match_tiebreak_points:itfQualifying?10:null,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
       weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
@@ -9647,6 +9649,9 @@ Deno.serve(async(req:Request)=>{
     };
   };
 
+  const liveSetGamesToWin=(meta:any)=>Math.max(1,Math.min(12,Number(meta?.set_games_to_win||6)));
+  const liveTiebreakAtGames=(meta:any)=>Math.max(1,Math.min(12,Number(meta?.tiebreak_at_games||6)));
+  const liveNoAd=(meta:any)=>Boolean(meta?.no_ad);
   const liveMatchTiebreakActive=(meta:any,userSets:number,opponentSets:number,setNo:number)=>{
     const setsToWin=Math.max(2,Math.min(3,Number(meta?.sets_to_win||2)));
     const bestOf=setsToWin*2-1;
@@ -9675,17 +9680,18 @@ Deno.serve(async(req:Request)=>{
     const us=Math.max(0,Number(state?.user_sets||0)),os=Math.max(0,Number(state?.opponent_sets||0));
     const setNo=Math.max(1,Number(state?.set_no||1));
     const setsToWin=Math.max(2,Math.min(3,Number(meta?.sets_to_win||2)));
+    const setGamesToWin=liveSetGamesToWin(meta),tiebreakAtGames=liveTiebreakAtGames(meta),noAd=liveNoAd(meta);
     const matchTiebreak=liveMatchTiebreakActive(meta,us,os,setNo);
-    const tiebreak=matchTiebreak||(ug===6&&og===6);
+    const tiebreak=matchTiebreak||(ug===tiebreakAtGames&&og===tiebreakAtGames);
     const target=tiebreak?liveTiebreakTarget(meta,setNo,matchTiebreak):0;
-    const userGamePoint=!tiebreak&&up>=3&&up-op>=1;
-    const oppGamePoint=!tiebreak&&op>=3&&op-up>=1;
+    const userGamePoint=!tiebreak&&up>=3&&(noAd||up-op>=1);
+    const oppGamePoint=!tiebreak&&op>=3&&(noAd||op-up>=1);
     const userSetPoint=tiebreak
       ?(up+1>=target&&(up+1)-op>=2)
-      :(userGamePoint&&(ug+1>=6)&&(ug+1)-og>=2);
+      :(userGamePoint&&(ug+1>=setGamesToWin)&&(ug+1)-og>=2);
     const oppSetPoint=tiebreak
       ?(op+1>=target&&(op+1)-up>=2)
-      :(oppGamePoint&&(og+1>=6)&&(og+1)-ug>=2);
+      :(oppGamePoint&&(og+1>=setGamesToWin)&&(og+1)-ug>=2);
     const userMatchPoint=userSetPoint&&us+1>=setsToWin;
     const oppMatchPoint=oppSetPoint&&os+1>=setsToWin;
     const breakPoint=!tiebreak&&(serverIsUser?oppGamePoint:userGamePoint);
@@ -10188,7 +10194,8 @@ Deno.serve(async(req:Request)=>{
     const preMatchTiebreakActive=liveMatchTiebreakActive(
       meta,Number(session.data.user_sets||0),Number(session.data.opponent_sets||0),Number(session.data.set_no||1)
     );
-    const preTiebreakActive=preMatchTiebreakActive||(preScoreUserGames===6&&preScoreOppGames===6);
+    const preTiebreakAtGames=liveTiebreakAtGames(meta);
+    const preTiebreakActive=preMatchTiebreakActive||(preScoreUserGames===preTiebreakAtGames&&preScoreOppGames===preTiebreakAtGames);
     const preTiebreakTarget=preTiebreakActive?liveTiebreakTarget(meta,Number(session.data.set_no||1),preMatchTiebreakActive):0;
     const preStats:any=session.data.stats||{};
     const preTbStartServerUser=typeof preStats._tiebreak_start_server_user==="boolean"
@@ -10306,20 +10313,21 @@ Deno.serve(async(req:Request)=>{
     const preUserGames=Number(session.data.user_games||0),preOppGames=Number(session.data.opponent_games||0);
     const preUserSets=Number(session.data.user_sets||0),preOppSets=Number(session.data.opponent_sets||0);
     const setsToWinPreview=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
+    const setGamesToWinPreview=liveSetGamesToWin(meta),tiebreakAtGamesPreview=liveTiebreakAtGames(meta),noAdPreview=liveNoAd(meta);
     const matchTiebreakActivePreview=liveMatchTiebreakActive(
       meta,preUserSets,preOppSets,Number(session.data.set_no||1)
     );
-    const tiebreakActivePreview=matchTiebreakActivePreview||(preUserGames===6&&preOppGames===6);
+    const tiebreakActivePreview=matchTiebreakActivePreview||(preUserGames===tiebreakAtGamesPreview&&preOppGames===tiebreakAtGamesPreview);
     const tiebreakTargetPreview=tiebreakActivePreview
       ?liveTiebreakTarget(meta,Number(session.data.set_no||1),matchTiebreakActivePreview):0;
-    const userGamePoint=!tiebreakActivePreview&&preUserPoints>=3&&preUserPoints-preOppPoints>=1;
-    const oppGamePoint=!tiebreakActivePreview&&preOppPoints>=3&&preOppPoints-preUserPoints>=1;
+    const userGamePoint=!tiebreakActivePreview&&preUserPoints>=3&&(noAdPreview||preUserPoints-preOppPoints>=1);
+    const oppGamePoint=!tiebreakActivePreview&&preOppPoints>=3&&(noAdPreview||preOppPoints-preUserPoints>=1);
     const userSetPoint=tiebreakActivePreview
       ?(preUserPoints+1>=tiebreakTargetPreview&&(preUserPoints+1)-preOppPoints>=2)
-      :(userGamePoint&&((preUserGames+1>=6||preOppGames>=6)&&Math.abs((preUserGames+1)-preOppGames)>=2));
+      :(userGamePoint&&(preUserGames+1>=setGamesToWinPreview)&&(preUserGames+1)-preOppGames>=2);
     const oppSetPoint=tiebreakActivePreview
       ?(preOppPoints+1>=tiebreakTargetPreview&&(preOppPoints+1)-preUserPoints>=2)
-      :(oppGamePoint&&((preOppGames+1>=6||preUserGames>=6)&&Math.abs((preOppGames+1)-preUserGames)>=2));
+      :(oppGamePoint&&(preOppGames+1>=setGamesToWinPreview)&&(preOppGames+1)-preUserGames>=2);
     const userMatchPoint=userSetPoint&&preUserSets+1>=setsToWinPreview;
     const oppMatchPoint=oppSetPoint&&preOppSets+1>=setsToWinPreview;
     const breakPoint=!tiebreakActivePreview&&(serverIsUser?oppGamePoint:userGamePoint);
@@ -10328,7 +10336,13 @@ Deno.serve(async(req:Request)=>{
     ));
     const pointNo=Number(session.data.rally_no||0)+1;
     const pointInCurrentGame=preUserPoints+preOppPoints;
-    const serviceCourt=pointInCurrentGame%2===0?"deuce":"ad";
+    const noAdDecidingPoint=!tiebreakActivePreview&&noAdPreview&&preUserPoints===3&&preOppPoints===3;
+    const receiverChoice=String(tactics.decidingSide||"Mixte");
+    const serviceCourt=noAdDecidingPoint
+      ?(!serverIsUser&&["Deuce","Avantage"].includes(receiverChoice)
+          ?(receiverChoice==="Deuce"?"deuce":"ad")
+          :(liveMatchHash([id,session.data.set_no,preUserGames,preOppGames,returnerId,"no-ad"].join("|"))%2===0?"deuce":"ad"))
+      :(pointInCurrentGame%2===0?"deuce":"ad");
     const courtClamp=(value:number,min=10,max=90)=>Math.max(min,Math.min(max,value));
     const side=serviceCourt==="deuce"?1:-1;
     const serverStartX=courtClamp(50+side*11,24,76);
@@ -10796,7 +10810,7 @@ Deno.serve(async(req:Request)=>{
     else stats["opp_"+bandKey+"_rallies_won"]=(stats["opp_"+bandKey+"_rallies_won"]||0)+1;
     const visualEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
     visualEvents.push({
-      kind:"point",point_no:pointNo,phase:visualPhase,label:visualLabel,
+      kind:"point",point_no:pointNo,phase:matchTiebreakActivePreview?"match_tiebreak":tiebreakActivePreview?"tiebreak":visualPhase,label:visualLabel,
       winner:userWon?"user":"opponent",rally,serve_direction:serveDirection,
       return_depth:returnDepth,target_zone:visualTarget,stake,service_court:serviceCourt,
       stroke:finalShot?.stroke||null,spin:finalShot?.spin||null,
@@ -10812,7 +10826,8 @@ Deno.serve(async(req:Request)=>{
     let setNo=Number(session.data.set_no||1),gameFinished=false,setFinished=false,setWinner="";
     const userName=String(managed.data.name||"Joueur");
     const matchTiebreakActive=liveMatchTiebreakActive(meta,us,os,setNo);
-    const tiebreakActive=matchTiebreakActive||(ug===6&&og===6);
+    const setGamesToWin=liveSetGamesToWin(meta),tiebreakAtGames=liveTiebreakAtGames(meta),noAd=liveNoAd(meta);
+    const tiebreakActive=matchTiebreakActive||(ug===tiebreakAtGames&&og===tiebreakAtGames);
     const tiebreakTarget=tiebreakActive?liveTiebreakTarget(meta,setNo,matchTiebreakActive):0;
     const tiebreakStartServerUser=tiebreakActive
       ?(typeof stats._tiebreak_start_server_user==="boolean"?Boolean(stats._tiebreak_start_server_user):Boolean(session.data.serving_user))
@@ -10829,17 +10844,18 @@ Deno.serve(async(req:Request)=>{
         if(matchTiebreakActive){
           if(up>op){ug=1;og=0;us++;setWinner=userName}else{ug=0;og=1;os++;setWinner=String(opp.name)}
         }else{
-          if(up>op){ug=7;us++;setWinner=userName}else{og=7;os++;setWinner=String(opp.name)}
+          if(up>op){ug=tiebreakAtGames+1;og=tiebreakAtGames;us++;setWinner=userName}
+          else{ug=tiebreakAtGames;og=tiebreakAtGames+1;os++;setWinner=String(opp.name)}
         }
         up=0;op=0;
         stats._tiebreak_start_server_user=null;
         stats._tiebreak_target=null;
       }
-    }else if((up>=4||op>=4)&&Math.abs(up-op)>=2){
+    }else if(noAd?(up>=4||op>=4):((up>=4||op>=4)&&Math.abs(up-op)>=2)){
       gameFinished=true;
       if(up>op)ug++;else og++;
       up=0;op=0;
-      if((ug>=6||og>=6)&&Math.abs(ug-og)>=2){
+      if((ug>=setGamesToWin||og>=setGamesToWin)&&Math.abs(ug-og)>=2){
         setFinished=true;
         setWinner=ug>og?userName:String(opp.name);
         if(ug>og)us++;else os++;
@@ -10870,14 +10886,28 @@ Deno.serve(async(req:Request)=>{
     const tiebreakPointsAfter=tiebreakActive
       ?(tiebreakFinished?Number(finishedTiebreakScore?.user||0)+Number(finishedTiebreakScore?.opponent||0):up+op)
       :0;
-    const normalEndsFlipped=Boolean(log.length%2===1);
     const tbChangeovers=tiebreakActive&&!tiebreakFinished?Math.floor(tiebreakPointsAfter/6):0;
-    lastPoint.ends_flipped=tiebreakActive&&!tiebreakFinished
-      ?(normalEndsFlipped!==Boolean(tbChangeovers%2))
-      :normalEndsFlipped;
-    lastPoint.changeover=tiebreakActive&&!tiebreakFinished
-      ?Boolean(tiebreakPointsAfter>0&&tiebreakPointsAfter%6===0)
-      :Boolean(gameFinished&&log.length%2===1);
+    if(Boolean(meta?.next_gen_format)){
+      const currentSetNo=Number(session.data.set_no||1);
+      const completedBefore=log.filter((row:any)=>row?.set_finished&&Number(row.set)<currentSetNo).length;
+      const gamesInCurrentSet=log.filter((row:any)=>Number(row.set)===currentSetNo).length;
+      const withinSetFlip=(gamesInCurrentSet>=3?1:0)^(gamesInCurrentSet>=5?1:0);
+      const completedIncluding=log.filter((row:any)=>row?.set_finished).length;
+      lastPoint.ends_flipped=setFinished
+        ?Boolean(completedIncluding%2)
+        :Boolean((completedBefore+withinSetFlip+tbChangeovers)%2);
+      lastPoint.changeover=tiebreakActive&&!tiebreakFinished
+        ?Boolean(tiebreakPointsAfter>0&&tiebreakPointsAfter%6===0)
+        :Boolean(setFinished||(gameFinished&&(gamesInCurrentSet===3||gamesInCurrentSet===5)));
+    }else{
+      const normalEndsFlipped=Boolean(log.length%2===1);
+      lastPoint.ends_flipped=tiebreakActive&&!tiebreakFinished
+        ?(normalEndsFlipped!==Boolean(tbChangeovers%2))
+        :normalEndsFlipped;
+      lastPoint.changeover=tiebreakActive&&!tiebreakFinished
+        ?Boolean(tiebreakPointsAfter>0&&tiebreakPointsAfter%6===0)
+        :Boolean(gameFinished&&log.length%2===1);
+    }
     lastPoint.stake=stake;
     lastPoint.tiebreak=tiebreakActive;
     lastPoint.match_tiebreak=matchTiebreakActive;
@@ -10989,7 +11019,8 @@ Deno.serve(async(req:Request)=>{
     let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
     let setNo=Number(session.data.set_no||1);
     const matchTiebreakActive=liveMatchTiebreakActive(meta,us,os,setNo);
-    const tiebreakActive=matchTiebreakActive||(ug===6&&og===6);
+    const setGamesToWin=liveSetGamesToWin(meta),tiebreakAtGames=liveTiebreakAtGames(meta),noAd=liveNoAd(meta);
+    const tiebreakActive=matchTiebreakActive||(ug===tiebreakAtGames&&og===tiebreakAtGames);
     const stats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
       user_double_faults:0,opp_double_faults:0,
@@ -11091,8 +11122,8 @@ Deno.serve(async(req:Request)=>{
         if(userWon){ug=1;og=0;us++;setWinner=String(managed.data.name||"Joueur")}
         else{ug=0;og=1;os++;setWinner=String(opp.name)}
       }else{
-        if(userWon){ug=7;us++;setWinner=String(managed.data.name||"Joueur")}
-        else{og=7;os++;setWinner=String(opp.name)}
+        if(userWon){ug=tiebreakAtGames+1;og=tiebreakAtGames;us++;setWinner=String(managed.data.name||"Joueur")}
+        else{ug=tiebreakAtGames;og=tiebreakAtGames+1;os++;setWinner=String(opp.name)}
       }
       setFinished=true;
       log.push({
@@ -11137,8 +11168,9 @@ Deno.serve(async(req:Request)=>{
       const qUser=1-initialUserPointP;
       const deuceUserWin=(initialUserPointP*initialUserPointP)/(initialUserPointP*initialUserPointP+qUser*qUser);
       const gameWinFromScore=(a:number,b:number):number=>{
-        if((a>=4||b>=4)&&Math.abs(a-b)>=2)return a>b?1:0;
-        if(a>=3&&b>=3){
+        if(noAd&&(a>=4||b>=4))return a>b?1:0;
+        if(!noAd&&(a>=4||b>=4)&&Math.abs(a-b)>=2)return a>b?1:0;
+        if(!noAd&&a>=3&&b>=3){
           if(a===b)return deuceUserWin;
           if(a===b+1)return initialUserPointP+qUser*deuceUserWin;
           if(b===a+1)return initialUserPointP*deuceUserWin;
@@ -11160,7 +11192,7 @@ Deno.serve(async(req:Request)=>{
         *(1+serverFormLift*.018)));
       const srvPrefix=serverIsUser?"user":"opp";
       let gameSafety=0;
-      while(!((simUp>=4||simOp>=4)&&Math.abs(simUp-simOp)>=2)){
+      while(!(noAd?(simUp>=4||simOp>=4):((simUp>=4||simOp>=4)&&Math.abs(simUp-simOp)>=2))){
         if(++gameSafety>120)return h({error:"Jeu interrompu par la garde de sécurité.",score:{user:simUp,opponent:simOp}},500);
         const firstIn=Math.random()<firstInPct;
         const doubleFault=!firstIn&&Math.random()<dfPct;
@@ -11200,7 +11232,7 @@ Deno.serve(async(req:Request)=>{
       userWon=simUp>simOp;
       if(userWon)ug++;else og++;
 
-      if((ug>=6||og>=6)&&Math.abs(ug-og)>=2){
+      if((ug>=setGamesToWin||og>=setGamesToWin)&&Math.abs(ug-og)>=2){
         setFinished=true;
         setWinner=ug>og?String(managed.data.name||"Joueur"):String(opp.name);
         if(ug>og)us++;else os++;

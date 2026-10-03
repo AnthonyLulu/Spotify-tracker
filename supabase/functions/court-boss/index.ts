@@ -10329,6 +10329,11 @@ Deno.serve(async(req:Request)=>{
     if(!indoor&&temperature>=34)eventSchedule.push({
       id:"heat-1",type:"heat_break",trigger_point:18+(seed%19),label:"Pause chaleur",duration_min:10
     });
+    const fatiguePeak=Math.max(Number(managed?.fatigue||0),Number(opp?.fatigue||0));
+    if(fatiguePeak>=48&&seed%5===0)eventSchedule.push({
+      id:"warning-1",type:"time_violation",trigger_point:28+(seed%21),
+      label:"Avertissement · dépassement de temps",duration_min:1
+    });
     const sessionOfDay=indoor?"indoor":unit(26)>.58?"night":"day";
     const prestige=Math.max(20,Math.min(100,Number(t?.prestige||(
       /Grand Chelem|Grand Slam/i.test(String(t?.category||""))?100:
@@ -10839,6 +10844,17 @@ Deno.serve(async(req:Request)=>{
     if(/^Q\d+$/i.test(String(tournamentRoundOverride||"")))livePhase="qualifying";
     const environment=buildLiveMatchEnvironment(tournament.data,managed.data,opp.data,String(career.data.career_date||AGE_REFERENCE_DATE),surface,livePhase);
     environment.medical={user:medicalFor(playerId),opponent:medicalFor(opponentId)};
+    const medicalRisk=Math.max(
+      Number(environment.medical.user?.injury_proneness||0)+Number(environment.medical.user?.recurrence_risk||0)*.10,
+      Number(environment.medical.opponent?.injury_proneness||0)+Number(environment.medical.opponent?.recurrence_risk||0)*.10
+    );
+    if(medicalRisk>=17){
+      const medSeed=liveMatchHash(String(playerId)+"|"+String(opponentId)+"|"+String(career.data.career_date||AGE_REFERENCE_DATE)+"|medical");
+      if(medSeed%4===0)(environment.event_schedule=Array.isArray(environment.event_schedule)?environment.event_schedule:[]).push({
+        id:"medical-1",type:"medical_timeout",trigger_point:20+(medSeed%27),
+        label:"Medical timeout",duration_min:3
+      });
+    }
     const {player_attributes:_rollbackAttrs,...opponentPlayerBefore}=opp.data as any;
     environment.rollback_opponent={
       player:opponentPlayerBefore,
@@ -11610,6 +11626,19 @@ Deno.serve(async(req:Request)=>{
       },
       at:new Date().toISOString()
     };
+    const reviewEligible=new Set(["line_winner","out_error","forced_error","winner"]).has(String(ending||""))
+      &&Number(pressure||0)>=.38
+      &&liveMatchHash(String(id)+"|"+String(pointNo)+"|line-review")%100<24;
+    if(reviewEligible){
+      const review={
+        type:"electronic_review",system:"Electronic Line Calling",
+        requested_by:userWon?"opponent":"user",decision:"confirmed",
+        original_winner:userWon?"user":"opponent",point_no:pointNo,
+        label:"Review électronique · décision confirmée"
+      };
+      (lastPoint as any).line_review=review;
+      (lastPoint as any).visual_label=String((lastPoint as any).visual_label||"Point")+" · review confirmée";
+    }
 
     const stats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
@@ -11635,6 +11664,11 @@ Deno.serve(async(req:Request)=>{
     if(lastPoint.environment_effects&&typeof lastPoint.environment_effects==="object"){
       lastPoint.environment_effects.tactical_memory=liveTacticalMemoryPublic(stats._tactical_memory);
       lastPoint.environment_effects.tactical_memory_model="CB-TACTICAL-MEMORY-v4";
+    }
+    if((lastPoint as any).line_review){
+      const reviewEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
+      reviewEvents.push({kind:"review",phase:"review",...(lastPoint as any).line_review,at:new Date().toISOString()});
+      stats._visual_events=reviewEvents.slice(-10);
     }
     if(serverIsUser){
       stats.user_first_serves++;

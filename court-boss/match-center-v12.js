@@ -65,6 +65,35 @@
       const grid=panel.querySelector('.cb-coach-grid');if(grid)panel.insertBefore(strip,grid);else panel.appendChild(strip);
     });
   };
+  const addAIRead=()=>{
+    const live=document.querySelector('.cb-live-card'),court=live?.querySelector('.cb-court');
+    if(!live||!court||live.querySelector('.cb-ai-read-v12'))return;
+    const s=sessionOf(),fx=s?.last_point?.environment_effects||{},plan=fx.opponent_plan||{},read=plan.memory_read||fx.opponent_memory_read||{};
+    const confidence=Math.round(Number(read.confidence||0)*100),edge=Number(fx.opponent_memory_edge||0);
+    const state=edge>.004?'Lecture juste':edge<-.004?'IA piégée':'Lecture incertaine';
+    const cls=edge>.004?'reading':edge<-.004?'fooled':'neutral';
+    const card=el('div','cb-ai-read-v12 '+cls);
+    const head=el('div','cb-ai-read-head-v12');
+    const left=el('div');left.append(el('small','',"LECTURE IA"),el('b','',state));head.append(left,el('strong','',confidence+'%'));
+    card.appendChild(head);
+    const grid=el('div','cb-ai-read-grid-v12');
+    const item=(label,value)=>{const d=el('div');d.append(el('span','',label),el('b','',value||'—'));return d};
+    grid.append(
+      item('Service attendu',read.serve_direction?.value),
+      item('Cible attendue',read.target_wing?.value),
+      item('Tempo attendu',read.tempo?.value),
+      item('Plan de contre',plan.counterMode||plan.adaptation)
+    );
+    card.appendChild(grid);
+    const note=edge<-.004
+      ?'Tu as cassé un pattern que l’IA pensait fiable. Son anticipation devient un handicap sur ce point.'
+      :edge>.004
+        ?'Tu répètes un schéma qu’elle a identifié. Elle bénéficie de son anticipation.'
+        :'Elle n’a pas encore assez de données fiables ou tu varies suffisamment.';
+    card.appendChild(el('p','',note));
+    court.insertAdjacentElement('afterend',card);
+  };
+
   const addChangeoverCoach=()=>{
     const change=document.querySelector('.cb-changeover'),live=document.querySelector('.cb-live-card');
     if(!change||!live||live.querySelector('.cb-changeover-coach-v12'))return;
@@ -84,7 +113,7 @@
     const court=live.querySelector('.cb-court');if(court)court.insertAdjacentElement('afterend',box);
   };
   let queued=false;
-  const enhance=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;addArena();addPlans();addChangeoverCoach()})};
+  const enhance=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;addArena();addPlans();addAIRead();addChangeoverCoach()})};
   const root=document.getElementById('app')||document.body;new MutationObserver(enhance).observe(root,{childList:true,subtree:true});enhance();
   console.info('Court Boss Match Center V12 Living Arena active');
 })();

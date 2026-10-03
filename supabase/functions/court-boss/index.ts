@@ -1698,6 +1698,20 @@ async function restoreManagedSaveSnapshot(snapshot:any){
         const eloRestore=await db.from("player_elo_ratings").upsert(rb.elo,{onConflict:"player_id"});
         if(eloRestore.error)throw new Error("opponent rollback Elo: "+eloRestore.error.message);
       }
+      const doublesRollback:Array<any>=Array.isArray(meta?.rollback_doubles_players)?meta.rollback_doubles_players:[];
+      for(const item of doublesRollback){
+        const did=Number(item?.player?.id||0);
+        if(!did||restored.has(did)||!item?.player)continue;
+        restored.add(did);
+        const playerRestore=await db.from("players").upsert(item.player,{onConflict:"id"});
+        if(playerRestore.error)throw new Error("doubles rollback player: "+playerRestore.error.message);
+        const eloClear=await db.from("player_elo_ratings").delete().eq("player_id",did);
+        if(eloClear.error)throw new Error("doubles rollback Elo cleanup: "+eloClear.error.message);
+        if(item.elo){
+          const eloRestore=await db.from("player_elo_ratings").upsert(item.elo,{onConflict:"player_id"});
+          if(eloRestore.error)throw new Error("doubles rollback Elo: "+eloRestore.error.message);
+        }
+      }
     }
   };
 
@@ -10862,6 +10876,11 @@ Deno.serve(async(req:Request)=>{
     environment.no_ad=true;environment.no_ad_rule="atp_doubles";
     environment.match_tiebreak_decider=true;environment.match_tiebreak_points=10;
     environment.sets_to_win=2;environment.best_of=3;
+    environment.rollback_doubles_players=allIds.map((pid:number)=>{
+      const p:any=byId.get(pid)||{};
+      const {player_attributes:_attrs,...player}=p;
+      return {player,elo:eloById.get(pid)||null};
+    });
     environment.doubles={
       model:"CB-LIVE-DOUBLES-v1",
       managed_partnership_id:Number(partnership.data.id),

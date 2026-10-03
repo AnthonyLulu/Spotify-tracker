@@ -6113,6 +6113,20 @@ Deno.serve(async(req:Request)=>{
       });
       developmentSupply=supply.error?{error:supply.error.message}:supply.data;
 
+      if(Number(date.slice(0,4))>2025){
+        const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
+        const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
+        if(careerLifecycle.error)return h({error:careerLifecycle.error.message},500);
+
+        const repair=await db.rpc("repair_living_world_integrity_v16",{p_date:date});
+        worldRepairV16=repair.error?{error:repair.error.message}:repair.data;
+
+        // Lifecycle must run before the market: retirements close cleanly, user staff
+        // keep their notice season, then the pool refills from the post-retirement state.
+        const staffLife=await db.rpc("refresh_staff_lifecycle_v14",{p_date:date});
+        staffLifecycleV14=staffLife.error?{error:staffLife.error.message}:staffLife.data;
+      }
+
       const staffMarket=await db.rpc("refresh_staff_market",{p_date:date});
       staffMarketRefresh=staffMarket.error?{error:staffMarket.error.message}:staffMarket.data;
       const managedAgentSync=await db.rpc("sync_managed_agent_representation",{p_date:date});
@@ -6122,18 +6136,8 @@ Deno.serve(async(req:Request)=>{
       };
 
       if(Number(date.slice(0,4))>2025){
-        const careerFocus=await db.rpc("refresh_player_career_focus",{p_date:date});
-        const careerLifecycle=await db.rpc("refresh_player_career_lifecycle",{p_date:date});
-        if(careerLifecycle.error)return h({error:careerLifecycle.error.message},500);
-
-        const repair=await db.rpc("repair_living_world_integrity_v16",{p_date:date});
-        worldRepairV16=repair.error?{error:repair.error.message}:repair.data;
-
         const month=Number(date.slice(5,7));
         const quarterly=month===1||month===4||month===7||month===10;
-
-        const staffLife=await db.rpc("refresh_staff_lifecycle_v14",{p_date:date});
-        staffLifecycleV14=staffLife.error?{error:staffLife.error.message}:staffLife.data;
         const prevention=await db.rpc("apply_injury_prevention_cycle_v14",{p_date:date});
         injuryPreventionV14=prevention.error?{error:prevention.error.message}:prevention.data;
 

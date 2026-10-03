@@ -9538,7 +9538,8 @@ Deno.serve(async(req:Request)=>{
     const serverProfile=liveStyleProfile(sAttr,sFormMultiplier);
     const returnerProfile=liveStyleProfile(rAttr,rFormMultiplier);
     const profilePressure=(p:any,o:any,isServing:boolean)=>{
-      const fastCourt=Math.max(-1,Math.min(1,(courtSpeed-1)*2.4+(grass||indoor?.24:clay?-.20:0)));
+      const fastSurfaceBias=(grass||indoor)?0.24:clay?-0.20:0;
+      const fastCourt=Math.max(-1,Math.min(1,(courtSpeed-1)*2.4+fastSurfaceBias));
       const slowCourt=-fastCourt;
       if(p.archetype==="Attaquant filet"){
         const counter=(o.passing*1.15+o.lob*.70+o.mobility*.45)/2.30;
@@ -9549,7 +9550,6 @@ Deno.serve(async(req:Request)=>{
         return (p.power-counter)*1.02+(isServing?.72:.18)+fastCourt*.72;
       }
       if(p.archetype==="Créatif"){
-        const counter=(o.mobility*.90+o.anticipation??0);
         const defenseCounter=(o.defense*1.05+o.mobility*.95)/2;
         return (p.touch-defenseCounter)*.96+slowCourt*.62+(isServing?.18:.28);
       }

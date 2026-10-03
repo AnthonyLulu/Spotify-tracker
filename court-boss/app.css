@@ -1469,3 +1469,38 @@ body{background:
 .fm-result-controls{grid-template-columns:1.25fr 1.1fr 1fr 1fr}
 @media(max-width:720px){.fm-result-controls{grid-template-columns:1fr 1fr}}
 @media(max-width:430px){.fm-result-controls{grid-template-columns:1fr}}
+
+
+/* Daily Career & Training V22 */
+.daily-training-planner{overflow:hidden}
+.training-presets{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}
+.daily-training-grid{display:grid;gap:8px}
+.daily-training-row{
+ display:grid;
+ grid-template-columns:minmax(140px,.8fr) repeat(3,minmax(130px,1fr));
+ gap:8px;
+ align-items:end;
+ padding:10px;
+ border:1px solid var(--border);
+ border-radius:12px;
+ background:rgba(255,255,255,.018)
+}
+.daily-training-row.today{
+ border-color:rgba(74,222,128,.42);
+ background:rgba(74,222,128,.055)
+}
+.daily-training-day{display:flex;flex-direction:column;gap:5px;align-self:center}
+.daily-training-row label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.daily-training-row label small{color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.daily-training-row .select{width:100%;min-width:0}
+.manager-cell small{display:block;margin-top:2px}
+@media(max-width:860px){
+ .daily-training-row{grid-template-columns:1fr 1fr}
+ .daily-training-day{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between}
+}
+@media(max-width:560px){
+ .daily-training-row{grid-template-columns:1fr}
+ .daily-training-day{grid-column:auto}
+ .training-presets{display:grid;grid-template-columns:1fr 1fr}
+ .training-presets .soft-btn{width:100%}
+}

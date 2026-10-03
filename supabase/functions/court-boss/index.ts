@@ -6010,6 +6010,8 @@ Deno.serve(async(req:Request)=>{
     let staffMarketRefresh:any=null;
     let staffLifecycleV14:any=null;
     let injuryPreventionV14:any=null;
+    let hallOfFameV15:any=null;
+    let careerLongHealthV15:any=null;
     if(week%4===0 || previousDate.slice(0,7)!==date.slice(0,7)){
       const supply=await db.rpc("maintain_development_circuit_supply",{
         p_date:date,
@@ -6037,6 +6039,11 @@ Deno.serve(async(req:Request)=>{
         staffLifecycleV14=staffLife.error?{error:staffLife.error.message}:staffLife.data;
         const prevention=await db.rpc("apply_injury_prevention_cycle_v14",{p_date:date});
         injuryPreventionV14=prevention.error?{error:prevention.error.message}:prevention.data;
+
+        const hall=await db.rpc("refresh_hall_of_fame_dynamic_v15",{p_date:date});
+        hallOfFameV15=hall.error?{error:hall.error.message}:hall.data;
+        const longHealth=await db.rpc("career_long_term_health_v15",{p_date:date});
+        careerLongHealthV15=longHealth.error?{error:longHealth.error.message}:longHealth.data;
 
         const physicalMaturation=await db.rpc("progress_player_physical_maturation",{p_date:date});
         const coachingEnvironmentRefresh=await db.rpc("refresh_player_coaching_environment",{p_date:date});
@@ -6458,6 +6465,9 @@ Deno.serve(async(req:Request)=>{
       {transaction_key:"week:"+date+":academy",game_date:date,week,category:"academy_payroll",amount:-playerWeekly,source_type:"weekly_cycle",description:"Contrats joueurs académie"},
       {transaction_key:"week:"+date+":medical",game_date:date,week,category:"medical",amount:-medicalCost,source_type:"weekly_cycle",description:"Suivi médical du groupe géré",metadata:{players:managedMedical}}
     ]);
+    const careerOpsV15=await db.rpc("process_career_operating_costs_v15",{p_date:date,p_week:week});
+    if(careerOpsV15.error)return h({error:careerOpsV15.error.message},500);
+    const careerOpsCharged=Number((careerOpsV15.data as any)?.charged||0);
     const scouts=await db.from("scouting_assignments")
       .select("id,region,focus,progress,status,staff_profile_id,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,scouting_rating,reputation,regions,professionalism,workload,burnout,travel_fatigue,operational_status,rest_until)");
     if(!scouts.error){
@@ -6523,11 +6533,11 @@ Deno.serve(async(req:Request)=>{
     const weeklyDigest=await db.rpc("career_publish_weekly_digest",{p_date:date,p_week:week});
     if(weeklyDigest.error)return h({error:weeklyDigest.error.message},500);
     const actionableInbox=careerInboxSync.data;
-    const mediaEvent=await db.rpc("career_generate_media_event",{p_date:date});
+    const mediaEvent=await db.rpc("career_generate_media_event_v15",{p_date:date});
     if(mediaEvent.error)return h({error:mediaEvent.error.message},500);
     const careerHealth=await db.rpc("career_system_health",{p_date:date});
     if(careerHealth.error)return h({error:careerHealth.error.message},500);
-    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,staffLifecycleV14,injuryPreventionV14,userRanking:userRank.data,managedPlayerRankings:managedRankingRows,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medicalPrimary,managedMedical,medicalRecoveryEffects:medicalRecoveryEffects.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:medicalCost,net:weeklyNet-medicalCost,expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
+    return h({ok:true,date,week,circuitEngine:{model:circuit.model||'CB-UNIFIED-CIRCUIT-v1',ok:circuit.ok!==false,integrity:circuit.integrity??null},world:sim.data,worldPsychology:psychology.data,hiddenTraitEvolution:hiddenTraitEvolution.data,davisWorldTies:davisWorldEvents.data,unitedCupEvents:unitedCupEvents.data,juniorDavisCup:juniorDavisEvents.data,laverCupPreparation:laverCupPreparation.data,laverCup:laverCupEvents.data,ncaaTeamPreparation:ncaaTeamPreparation.data,ncaaTeamEvents:ncaaTeamEvents.data,ncaaPriorityEntries:ncaaPriorityEntries.data,ncaaIndividualEvents:ncaaIndividualEvents.data,ncaaWorldDuals:ncaaWorldEvents.data,worldAcceptance:worldAcceptanceEvents.data,worldAcceptanceReconcile:worldAcceptanceReconcile.data,worldQualifying:worldQualifyingEvents.data,worldDoublesQualifying:worldDoublesQualifyingEvents.data,progressiveWorldTournaments:progressiveWorldEvents.data,worldTournaments:worldEvents.data,atpFinalsDoublesPreparation:atpFinalsDoublesPreparation.data,atpFinalsDoubles:atpFinalsDoublesEvents.data,juniorQualifyingEvents:juniorQualifyingEvents.data,juniorDoublesPreparation:juniorDoublesPreparation.data,juniorWorldTournaments:juniorWorldEvents.data,worldDoublesTournaments:worldDoublesEvents.data,developmentSupply,doublesPairRefresh,staffMarketRefresh,staffLifecycleV14,injuryPreventionV14,hallOfFameV15,careerLongHealthV15,userRanking:userRank.data,managedPlayerRankings:managedRankingRows,userDoublesRanking:userDoubleRank.data,sponsorEligibility:sponsorEligibility.data,training:trainingResult,academyPlayerTraining,academyDevelopment:academyDev.data,academyIntake:academyIntake.data,academyStorylines:academyStorylines.data,managedSeasonPlan:managedSeasonPlan.data,careerInboxSync:careerInboxSync.data,operationalInbox:operationalInbox.data,weeklyDigest:weeklyDigest.data,actionableInbox,mediaEvent:mediaEvent.data,careerHealth:careerHealth.data,injuries:injurySim.data,forfeits:forfeitSim.data,recovery:recoverySim.data,managedConditionSync:managedConditionSync.data,medical:medicalPrimary,managedMedical,medicalRecoveryEffects:medicalRecoveryEffects.data,board:board.data,weeklyFinance:{staff:staffWeekly,players:playerWeekly,sponsors:sponsorWeekly,sponsor_cycle:sponsorCycle.data,medical:medicalCost,career_ops:careerOpsV15.data,net:weeklyNet-medicalCost-careerOpsCharged,expired_contracts:expiredRoster.length,ledger:weeklyLedger}});
   }
 
   if(path.endsWith("/api/staff-world")&&req.method==="GET"){

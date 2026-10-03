@@ -134,7 +134,7 @@
     const netUser=pct(st.user_net_points_won,st.user_net_points),netOpp=pct(st.opp_net_points_won,st.opp_net_points);
     const u=profiles.user||{},o=profiles.opponent||{};
     lab.innerHTML=
-      '<div class="cb-lab-head-v13"><div><small>TACTICAL LAB V13</small><b>Match vivant · lecture + identité</b></div><div class="cb-lab-actions-v13"><span>'+esc(String(m.ambience?.session_of_day||'live'))+' · public '+Math.round(Number(m.ambience?.crowd_intensity||0))+'%</span><button onclick="cbToggleMatchAudioV13()">'+(audioOn?'🔊':'🔇')+'</button></div></div>'+
+      '<div class="cb-lab-head-v13"><div><small>TACTICAL LAB V13</small><b>Match vivant · lecture + identité</b></div><div class="cb-lab-actions-v13"><span>'+esc(String(m.ambience?.crowd_profile||'Tour'))+' · '+esc(String(m.ambience?.session_of_day||'live'))+' · public '+Math.round(Number(m.ambience?.crowd_intensity||0))+'%</span><button onclick="cbToggleMatchAudioV13()">'+(audioOn?'🔊':'🔇')+'</button></div></div>'+
       (event?'<div class="cb-event-v13"><b>'+esc(event.label||'Événement match')+'</b><span>'+esc(event.type||event.event_type||'')+(event.duration_min?' · '+Number(event.duration_min)+' min':'')+'</span></div>':'')+
       (review?'<div class="cb-event-v13 review"><b>'+esc(review.label||'Review électronique')+'</b><span>'+esc(review.system||'Electronic Line Calling')+' · '+esc(review.decision||'confirmé')+'</span></div>':'')+
       '<div class="cb-lab-grid-v13">'+

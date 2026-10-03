@@ -85,10 +85,12 @@
       });
       const userReact=String(visual.user_reaction||'reset'),oppReact=String(visual.opponent_reaction||'reset');
       const userW=userReact==='celebrate'?.16:.28,oppW=oppReact==='celebrate'?.16:.28;
+      const userHomeY=Number(src[0]?.user?.y||82)>=50?82:18;
+      const oppHomeY=Number(src[0]?.opponent?.y||18)>=50?82:18;
       out.push({
         ...last,stage:'recover',
-        user:recover(last.user,82,userW),
-        opponent:recover(last.opponent,18,oppW),
+        user:recover(last.user,userHomeY,userW),
+        opponent:recover(last.opponent,oppHomeY,oppW),
         ball:{...last.ball},
         frame_ms:360
       });

@@ -5856,17 +5856,48 @@ Deno.serve(async(req:Request)=>{
     });
   }
 
+  if(path.endsWith("/api/advance-day")&&req.method==="POST"){
+    let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
+    const plan=body?.today_plan&&typeof body.today_plan==="object"?body.today_plan:{};
+    const difficulty=["discovery","normal","manager","hardcore"].includes(String(body?.difficulty||"normal"))
+      ?String(body?.difficulty||"normal")
+      :"normal";
+    const tick=await db.rpc("advance_career_day_v22",{p_today_plan:plan,p_difficulty:difficulty});
+    if(tick.error)return h({error:tick.error.message},500);
+    const data:any=tick.data||{};
+    if(data?.requires_rollover)return h(data);
+    const fresh=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
+    if(fresh.error||!fresh.data)return h({error:fresh.error?.message||"Career missing after daily tick"},500);
+    return h({
+      ...data,
+      career:fresh.data,
+      daily:true,
+      engine:"CB-DAILY-CLOCK-v22"
+    });
+  }
+
   if(path.endsWith("/api/simulate")&&req.method==="POST"){
     let body:any; try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const requestedDate=String(body?.date||"").slice(0,10);
     if(requestedDate&&!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return h({error:"Invalid date"},400);
     const current=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
-    const previousDate=String(current.data.career_date||AGE_REFERENCE_DATE);
-    const serverNext=new Date(previousDate+"T12:00:00Z");
-    serverNext.setUTCDate(serverNext.getUTCDate()+7);
-    const date=serverNext.toISOString().slice(0,10);
-    const week=Math.max(1,Number(current.data.week||0)+1);
+    const checkpointOnly=String(body?.clock_mode||"")==="checkpoint";
+    const currentCareerDate=String(current.data.career_date||AGE_REFERENCE_DATE);
+    const checkpointFrom=(()=>{
+      const d=new Date(currentCareerDate+"T12:00:00Z");
+      d.setUTCDate(d.getUTCDate()-7);
+      return d.toISOString().slice(0,10);
+    })();
+    const previousDate=checkpointOnly
+      ?String(body?.from_date||checkpointFrom).slice(0,10)
+      :currentCareerDate;
+    const serverNext=new Date(currentCareerDate+"T12:00:00Z");
+    if(!checkpointOnly)serverNext.setUTCDate(serverNext.getUTCDate()+7);
+    const date=checkpointOnly?currentCareerDate:serverNext.toISOString().slice(0,10);
+    const week=checkpointOnly
+      ?Math.max(1,Number(current.data.week||1))
+      :Math.max(1,Number(current.data.week||0)+1);
     await db.from("staff_profiles")
       .update({operational_status:"active",rest_until:null})
       .eq("operational_status","rest")
@@ -5924,7 +5955,7 @@ Deno.serve(async(req:Request)=>{
 
     const difficultyKey=["discovery","normal","manager","hardcore"].includes(String(body?.difficulty||"normal"))?String(body?.difficulty||"normal"):"normal";
     const difficultyTrainingMult=({discovery:1.12,normal:1,manager:.94,hardcore:.88} as any)[difficultyKey]||1;
-    let trainingSessions=Array.isArray(body?.training)?body.training.slice(0,7):[];
+    let trainingSessions=checkpointOnly?[]:(Array.isArray(body?.training)?body.training.slice(0,7):[]);
     const careerFocus=String(current.data.career_focus||"mixed");
     if(careerFocus==="doubles_only"&&!trainingSessions.length){
       trainingSessions=["Double","Service","Retour","Double","Match play","Récupération","Repos"];
@@ -6337,7 +6368,7 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const academyPlans=body?.player_training&&typeof body.player_training==="object"?body.player_training:{};
+    const academyPlans=checkpointOnly?{}:(body?.player_training&&typeof body.player_training==="object"?body.player_training:{});
     const academyPlayerTraining:any={processed:0,attribute_improvements:0,players:[]};
     const secondaryRoster=await db.from("academy_roster")
       .select("id,player_id,development_focus,squad_role,source_youth_id")

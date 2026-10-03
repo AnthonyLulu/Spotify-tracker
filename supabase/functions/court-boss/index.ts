@@ -5619,7 +5619,14 @@ Deno.serve(async(req:Request)=>{
       wcSlots?db.rpc("tournament_detail_candidate_player_ids_v21_2",{p_tournament_id:id,p_entry_method:"wildcard",p_limit:Math.max(80,wcSlots*20)}):Promise.resolve({data:[],error:null} as any),
       qDraw?db.rpc("tournament_detail_candidate_player_ids_v21_2",{p_tournament_id:id,p_entry_method:"qualifying",p_limit:Math.max(96,qDraw+80)}):Promise.resolve({data:[],error:null} as any)
     ]);
-    if(directIds.error||wildcardIds.error||qualIds.error)return h({error:(directIds.error||wildcardIds.error||qualIds.error)?.message},500);
+    if(directIds.error||wildcardIds.error||qualIds.error){
+      console.warn("Tournament detail projection degraded",{
+        tournament_id:id,
+        direct:directIds.error?.message||null,
+        wildcard:wildcardIds.error?.message||null,
+        qualifying:qualIds.error?.message||null
+      });
+    }
 
     const rankMap=new Map<number,number>();
     const orderedDirect=(directIds.data??[]).map((x:any)=>{rankMap.set(Number(x.player_id),Number(x.effective_rank||999999));return Number(x.player_id)}).filter(Boolean);

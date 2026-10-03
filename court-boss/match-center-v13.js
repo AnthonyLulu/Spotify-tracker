@@ -122,7 +122,7 @@
     if(audioKey!==lastAudioKey){
       lastAudioKey=audioKey;
       const stake=String(s?.last_point?.visual?.stake||s?.last_point?.stake||'normal');
-      const strength=stake==='match_point'?1:stake==='set_point'?.78:stake==='break_point'?.62:s?.last_point?.ace?.68:.32;
+      const strength=stake==='match_point'?1:stake==='set_point' ? .78 : stake==='break_point' ? .62 : s?.last_point?.ace ? .68 : .32;
       if(Number(s?.last_point?.point_no||0)>0||s?.last_point?.environment_event)crowdCue(strength,strength>.7?.72:.42);
     }
     let lab=card.querySelector('.cb-tactical-lab-v13');

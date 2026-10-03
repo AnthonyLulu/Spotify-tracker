@@ -6456,6 +6456,22 @@ Deno.serve(async(req:Request)=>{
       managedMedical.push(mr.data);
     }
     const medicalCost=managedMedical.reduce((sum:number,x:any)=>sum+Number(x?.weekly_cost||0),0);
+    if(medicalCost>0){
+      const medicalLedgerKey="week:"+date+":medical";
+      const priorMedicalCharge=await db.from("finance_transactions").select("id").eq("transaction_key",medicalLedgerKey).maybeSingle();
+      if(priorMedicalCharge.error)return h({error:priorMedicalCharge.error.message},500);
+      if(!priorMedicalCharge.data){
+        const latestBudget=await db.from("career_state").select("budget").eq("id","demo").maybeSingle();
+        if(latestBudget.error)return h({error:latestBudget.error.message},500);
+        const chargedBudget=Number(latestBudget.data?.budget||0)-medicalCost;
+        const budgetCharge=await db.from("career_state").update({budget:chargedBudget,updated_at:new Date().toISOString()}).eq("id","demo");
+        if(budgetCharge.error)return h({error:budgetCharge.error.message},500);
+        const finMedical=await db.from("finances").select("medical_cost").eq("id","demo").maybeSingle();
+        if(finMedical.error)return h({error:finMedical.error.message},500);
+        const medicalAggregate=await db.from("finances").update({medical_cost:Number(finMedical.data?.medical_cost||0)+medicalCost}).eq("id","demo");
+        if(medicalAggregate.error)return h({error:medicalAggregate.error.message},500);
+      }
+    }
     const medicalPrimary=managedMedical.find((x:any)=>Number(x?.player_id||0)===primaryMedicalId)||managedMedical[0]||null;
     const medicalRecoveryEffects=await db.rpc("process_recovered_injury_effects",{p_date:date});
     if(medicalRecoveryEffects.error)return h({error:medicalRecoveryEffects.error.message},500);
@@ -6742,7 +6758,7 @@ Deno.serve(async(req:Request)=>{
       squadRole=String(roster.data.squad_role||"Joueur académie");
     }
     const season=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
-    const [player,entries,doublesEntries,seasonPlan,injury,loadProfile,medicalPlan]=await Promise.all([
+    const [player,entries,doublesEntries,seasonPlan,injury,loadProfile,medicalPlan,injuryHistory,vulnerabilities,recoveryEffects]=await Promise.all([
       db.from("players").select("id,name,country,ranking,points,doubles_ranking,doubles_points,nextgen_ranking,nextgen_points,nextgen_snapshot_date,nextgen_source,age,birth_date,current_ability,potential,form,fitness,morale,fatigue,style,injury_status,career_focus,photo_url").eq("id",requestedId).maybeSingle(),
       db.from("entries")
         .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at,tournaments(id,name,country,circuit,category,start_date,end_date,qualifying_start_date,qualifying_end_date,main_draw_start_date,qualifying_entry_deadline,main_entry_deadline,singles_entry_deadline,late_entry_deadline)")
@@ -6753,9 +6769,12 @@ Deno.serve(async(req:Request)=>{
       db.from("player_season_plans").select("*").eq("player_id",requestedId).eq("season",season).maybeSingle(),
       db.from("injuries").select("*").eq("player_id",requestedId).eq("status","Active").order("started_at",{ascending:false}).limit(1).maybeSingle(),
       db.from("player_training_load_profiles").select("*").eq("player_id",requestedId).order("as_of_date",{ascending:false}).limit(1).maybeSingle(),
-      db.from("player_medical_plans").select("*").eq("player_id",requestedId).maybeSingle()
+      db.from("player_medical_plans").select("*").eq("player_id",requestedId).maybeSingle(),
+      db.from("injuries").select("*").eq("player_id",requestedId).order("started_at",{ascending:false}).limit(50),
+      db.from("player_injury_vulnerabilities").select("*").eq("player_id",requestedId).order("recurrence_risk",{ascending:false}),
+      db.from("player_injury_recovery_effects").select("*").eq("player_id",requestedId).order("processed_at",{ascending:false}).limit(30)
     ]);
-    const err=player.error||entries.error||doublesEntries.error||seasonPlan.error||injury.error||loadProfile.error||medicalPlan.error;
+    const err=player.error||entries.error||doublesEntries.error||seasonPlan.error||injury.error||loadProfile.error||medicalPlan.error||injuryHistory.error||vulnerabilities.error||recoveryEffects.error;
     if(err)return h({error:err.message},500);
     if(!player.data)return h({error:"Joueur introuvable"},404);
     let nextgenFinalsStatus:any=null;
@@ -6784,6 +6803,9 @@ Deno.serve(async(req:Request)=>{
       injury:injury.data??null,
       training_load:loadProfile.data??null,
       medical_plan:medicalPlan.data??null,
+      injury_history:injuryHistory.data??[],
+      injury_vulnerabilities:vulnerabilities.data??[],
+      recovery_effects:recoveryEffects.data??[],
       nextgen_finals_status:nextgenFinalsStatus
     });
   }
@@ -7004,7 +7026,7 @@ Deno.serve(async(req:Request)=>{
         .eq("id",managedId).maybeSingle(),
       db.from("tournament_runs").select("id,managed_player_id").eq("tournament_id",tid).eq("managed_player_id",managedId).order("played_at",{ascending:false}).limit(1).maybeSingle(),
       db.from("wildcard_requests").select("*").eq("tournament_id",tid).eq("player_id",managedId).maybeSingle(),
-      db.from("injuries").select("id,injury_type,severity,started_at,expected_return,status").eq("player_id",managedId).in("status",["active","Active"]).order("started_at",{ascending:false}).limit(1).maybeSingle()
+      db.from("injuries").select("id,injury_type,severity,started_at,expected_return,aggravation_risk,status").eq("player_id",managedId).in("status",["active","Active"]).order("started_at",{ascending:false}).limit(1).maybeSingle()
     ]);
     if(managedPlayer.error||oldRun.error||wc.error||activeInjury.error)return h({error:(managedPlayer.error||oldRun.error||wc.error||activeInjury.error)?.message},500);
     if(!managedPlayer.data)return h({error:"Joueur géré introuvable"},404);
@@ -7051,13 +7073,34 @@ Deno.serve(async(req:Request)=>{
       },409);
     }
     const managedGameDate=String(c.career_date||AGE_REFERENCE_DATE);
+    let playingHurt:any=null;
     if(activeInjury.data&&(activeInjury.data.expected_return==null||String(activeInjury.data.expected_return)>=managedGameDate)){
-      return h({
-        error:"Ce joueur est indisponible pour blessure.",
-        player_id:managedId,
-        injury:activeInjury.data,
-        injury_status:String(managedPlayer.data.injury_status||"Blessé")
-      },409);
+      const medicalDecision=String(body?.medical_decision||"").toLowerCase();
+      const severity=String(activeInjury.data.severity||"").toLowerCase();
+      const aggravationRisk=Math.max(0,Math.min(100,Number(activeInjury.data.aggravation_risk||35)));
+      const canPlayHurt=!/sévère|severe|grave|élevée|elevee/.test(severity)&&aggravationRisk<78;
+      if(medicalDecision!=="play_hurt"){
+        return h({
+          error:"Ce joueur est indisponible pour blessure.",
+          player_id:managedId,injured:true,can_play_hurt:canPlayHurt,medical_veto:!canPlayHurt,
+          injury:activeInjury.data,injury_status:String(managedPlayer.data.injury_status||"Blessé")
+        },409);
+      }
+      if(!canPlayHurt){
+        return h({
+          error:"Le staff médical refuse de laisser jouer cette blessure : risque d’aggravation trop élevé.",
+          player_id:managedId,injured:true,can_play_hurt:false,medical_veto:true,injury:activeInjury.data
+        },409);
+      }
+      c.current_ability=Math.max(1,Number(c.current_ability||55)-4);
+      c.fitness=Math.max(35,Number(c.fitness||90)-12);
+      c.form=Math.max(35,Number(c.form||70)-7);
+      c.fatigue=Math.min(100,Number(c.fatigue||15)+10);
+      playingHurt={
+        active:true,injury_id:Number(activeInjury.data.id),injury_type:String(activeInjury.data.injury_type||"Blessure"),
+        severity:String(activeInjury.data.severity||"Faible"),base_aggravation_risk:aggravationRisk,
+        performance_penalty:{current_ability:-4,fitness:-12,form:-7,fatigue:+10}
+      };
     }
     const frozenCircuit=["ATP","Challenger","ITF"].includes(String(t.circuit||""))
       &&String(t.registration_mode||"")!=="nextgen_selection"
@@ -8613,10 +8656,35 @@ Deno.serve(async(req:Request)=>{
     const homeCountry=String(c.country||"FRA"),dest=String(t.country||"");
     const travelFatigue=dest===homeCountry?2:(european.includes(homeCountry)&&european.includes(dest)?4:8);
     const matchFatigue=userMatches.length*5;
-    const totalFatigue=travelFatigue+matchFatigue;
+    const hurtFatigue=playingHurt?Math.max(5,Math.round(Number(playingHurt.base_aggravation_risk||35)*.12)):0;
+    const totalFatigue=travelFatigue+matchFatigue+hurtFatigue;
     const newFatigue=Math.min(100,Number(c.fatigue||18)+totalFatigue);
-    const newFitness=Math.max(35,Number(c.fitness||91)-Math.ceil(totalFatigue*.45));
-    const newForm=Math.max(35,Math.min(100,Number(c.form||72)+(userRound==="Champion"?6:userRound==="F"?4:userRound==="SF"?2:userMatches.length?1:-1)));
+    let newFitness=Math.max(25,Number(c.fitness||91)-Math.ceil(totalFatigue*.45));
+    const newForm=Math.max(30,Math.min(100,Number(c.form||72)+(userRound==="Champion"?6:userRound==="F"?4:userRound==="SF"?2:userMatches.length?1:-1)));
+    if(playingHurt){
+      const risk=Math.min(92,Number(playingHurt.base_aggravation_risk||35)+userMatches.length*5+Math.max(0,newFatigue-55)*.22);
+      const unit=liveMatchHash("play-hurt|"+String(runId)+"|"+String(playingHurt.injury_id))/4294967295;
+      playingHurt.final_aggravation_risk=Math.round(risk);
+      playingHurt.aggravated=unit<(risk/100);
+      if(playingHurt.aggravated){
+        const injuryBase=String(activeInjury.data?.expected_return||t.end_date||t.start_date||managedGameDate);
+        const returnDate=new Date(injuryBase+"T12:00:00Z");
+        const extraDays=7+(liveMatchHash("play-hurt-days|"+String(runId))%15);
+        returnDate.setUTCDate(returnDate.getUTCDate()+extraDays);
+        const newSeverity=extraDays>=17?"Élevée":"Modérée";
+        const injuryUpdate=await db.from("injuries").update({
+          expected_return:returnDate.toISOString().slice(0,10),
+          aggravation_risk:Math.min(95,Math.round(risk+12)),
+          severity:newSeverity,
+          treatment:"Repos après aggravation en compétition"
+        }).eq("id",Number(playingHurt.injury_id));
+        if(injuryUpdate.error)return h({error:injuryUpdate.error.message},500);
+        playingHurt.extra_days=extraDays;
+        playingHurt.new_expected_return=returnDate.toISOString().slice(0,10);
+        playingHurt.new_severity=newSeverity;
+        newFitness=Math.max(20,newFitness-8);
+      }
+    }
     const travelCost=dest===homeCountry?120:(european.includes(dest)?380:850);
     const agentRep=await db.from("player_agency_representation").select("commission_pct").eq("player_id",managedId).eq("active",true).maybeSingle();
     const agentCommission=Math.max(0,Math.round(userPrizeEur*Math.min(20,Number(agentRep.data?.commission_pct||0))/100));
@@ -8746,7 +8814,7 @@ Deno.serve(async(req:Request)=>{
     }
 
     const board=await db.rpc("update_board_state");
-    return h({ok:true,run_id:runId,managed_player_id:managedId,managed_player_name:String(managedPlayer.data.name||c.player_name||"Joueur"),is_primary_managed:isPrimaryManaged,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,world_result_sync:worldResultSync,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,lucky_loser_qualifying_loss_round:userQualifyingLossRound,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
+    return h({ok:true,run_id:runId,managed_player_id:managedId,managed_player_name:String(managedPlayer.data.name||c.player_name||"Joueur"),is_primary_managed:isPrimaryManaged,playing_hurt:playingHurt,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,world_result_sync:worldResultSync,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,lucky_loser_qualifying_loss_round:userQualifyingLossRound,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
 
@@ -11101,11 +11169,33 @@ Deno.serve(async(req:Request)=>{
     if(!managed.data)return h({error:"Joueur géré introuvable"},404);
     if(tournamentId&&!tournament.data)return h({error:"Tournoi introuvable"},404);
 
+    let playingHurt:any=null;
     if(activeInjury.data){
-      return h({
-        error:String(managed.data.name||"Ce joueur")+" est indisponible : "+String(activeInjury.data.injury_type||"blessure active")+".",
-        injured:true,player_id:playerId,injury:activeInjury.data
-      },409);
+      const medicalDecision=String(body?.medical_decision||"").toLowerCase();
+      const severity=String(activeInjury.data.severity||"").toLowerCase();
+      const aggravationRisk=Math.max(0,Math.min(100,Number(activeInjury.data.aggravation_risk||35)));
+      const canPlayHurt=!/sévère|severe|grave|élevée|elevee/.test(severity)&&aggravationRisk<78;
+      if(medicalDecision!=="play_hurt"){
+        return h({
+          error:String(managed.data.name||"Ce joueur")+" est indisponible : "+String(activeInjury.data.injury_type||"blessure active")+".",
+          injured:true,player_id:playerId,injury:activeInjury.data,can_play_hurt:canPlayHurt,medical_veto:!canPlayHurt
+        },409);
+      }
+      if(!canPlayHurt){
+        return h({
+          error:"Le staff médical refuse de laisser jouer : risque d’aggravation trop élevé.",
+          injured:true,player_id:playerId,injury:activeInjury.data,can_play_hurt:false,medical_veto:true
+        },409);
+      }
+      managed.data.current_ability=Math.max(1,Number(managed.data.current_ability||55)-4);
+      managed.data.fitness=Math.max(30,Number(managed.data.fitness||90)-12);
+      managed.data.form=Math.max(30,Number(managed.data.form||70)-7);
+      managed.data.fatigue=Math.min(100,Number(managed.data.fatigue||15)+10);
+      playingHurt={
+        active:true,injury_id:Number(activeInjury.data.id),injury_type:String(activeInjury.data.injury_type||"Blessure"),
+        severity:String(activeInjury.data.severity||"Faible"),base_aggravation_risk:aggravationRisk,
+        performance_penalty:{current_ability:-4,fitness:-12,form:-7,fatigue:+10}
+      };
     }
 
     const playerFocus=String(managed.data.career_focus||(playerId===primaryId?career.data.career_focus:"mixed")||"mixed");
@@ -11254,6 +11344,15 @@ Deno.serve(async(req:Request)=>{
     if(/^Q\d+$/i.test(String(tournamentRoundOverride||"")))livePhase="qualifying";
     const environment=buildLiveMatchEnvironment(tournament.data,managed.data,opp.data,String(career.data.career_date||AGE_REFERENCE_DATE),surface,livePhase);
     environment.medical={user:medicalFor(playerId),opponent:medicalFor(opponentId)};
+    if(playingHurt){
+      environment.medical.user={
+        ...environment.medical.user,
+        playing_hurt:true,
+        active_injury:playingHurt,
+        recurrence_risk:Math.max(Number(environment.medical.user?.recurrence_risk||0),Math.min(95,Number(playingHurt.base_aggravation_risk||35)+28))
+      };
+      environment.playing_hurt=playingHurt;
+    }
     const medicalRisk=Math.max(
       Number(environment.medical.user?.injury_proneness||0)+Number(environment.medical.user?.recurrence_risk||0)*.10,
       Number(environment.medical.opponent?.injury_proneness||0)+Number(environment.medical.opponent?.recurrence_risk||0)*.10

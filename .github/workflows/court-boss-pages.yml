@@ -32,7 +32,10 @@ jobs:
           node --check court-boss/match-center-v1.js
 
       - name: Run tournament integrity tests
-        run: node --test tests/tournament-integrity.test.mjs
+        run: |
+          node --test tests/tournament-integrity.test.mjs
+          node --test tests/tournament-entry-rules-v19.test.mjs
+          node --test tests/tournament-doubles-entry-rules-v20.test.mjs
 
       - name: Wait for Render static deploy
         env:

@@ -6165,6 +6165,9 @@ Deno.serve(async(req:Request)=>{
         const doublesStaff=await db.rpc("refresh_doubles_staff_assignments",{p_date:date});
         const achievements=await db.rpc("refresh_staff_achievements",{p_date:date});
         const achievementReputation=await db.rpc("apply_staff_achievement_reputation",{p_date:date});
+        const staffReputationV17=await db.rpc("refresh_staff_reputation_dynamics_v17",{p_date:date});
+        const staffJobMarketV17=await db.rpc("refresh_staff_job_market_v17",{p_date:date});
+        const staffEmployerHistoryV17=await db.rpc("sync_staff_employer_history_v17",{p_date:date});
         const staffWorldNews=await db.rpc("publish_staff_world_news",{p_date:date});
         staffMarketRefresh={
           ...(staffMarketRefresh||{}),
@@ -6185,6 +6188,9 @@ Deno.serve(async(req:Request)=>{
           doublesStaff:doublesStaff.error?{error:doublesStaff.error.message}:doublesStaff.data,
           achievements:achievements.error?{error:achievements.error.message}:achievements.data,
           achievementReputation:achievementReputation.error?{error:achievementReputation.error.message}:achievementReputation.data,
+          reputationV17:staffReputationV17.error?{error:staffReputationV17.error.message}:staffReputationV17.data,
+          employerMarketV17:staffJobMarketV17.error?{error:staffJobMarketV17.error.message}:staffJobMarketV17.data,
+          employerHistoryV17:staffEmployerHistoryV17.error?{error:staffEmployerHistoryV17.error.message}:staffEmployerHistoryV17.data,
           staffWorldNews:staffWorldNews.error?{error:staffWorldNews.error.message}:staffWorldNews.data,
           careerFocus:careerFocus.error?{error:careerFocus.error.message}:careerFocus.data,
           careerLifecycle:careerLifecycle.error?{error:careerLifecycle.error.message}:careerLifecycle.data

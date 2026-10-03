@@ -5160,12 +5160,18 @@ Deno.serve(async(req:Request)=>{
 
     const specialTeamEvent=specialTeamEventMeta(t.data);
     if(specialTeamEvent){
+      let captainContext:any=null;
+      if(String(specialTeamEvent.code||"")==="laver_cup"){
+        const season=Number(String(t.data.start_date||"").slice(0,4))||2026;
+        const captainRes=await db.rpc("laver_cup_captain_context",{p_season:season});
+        if(!captainRes.error)captainContext=captainRes.data??null;
+      }
       return h({
         tournament:t.data,main:[],qualifying:[],wildcard:null,forfeits:forfeits.data??[],
         run:run.data??null,doubles_run:doublesRun.data??null,doubles_main:[],doubles_completed_draw:[],completed_draw:completedDraw,
         tournament_history:tournamentHistory,tournament_doubles_history:tournamentDoublesHistory,tournament_history_records:tournamentHistoryRecords,
         format_rule:null,entry_rules:null,doubles_entry_status:null,
-        ranking_kind:"team",special_team_event:specialTeamEvent,entry_preview_model:"team_selection_v1"
+        ranking_kind:"team",special_team_event:{...specialTeamEvent,captain_context:captainContext},entry_preview_model:"team_selection_v2_captains"
       });
     }
 

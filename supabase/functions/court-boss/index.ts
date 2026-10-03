@@ -10289,6 +10289,26 @@ Deno.serve(async(req:Request)=>{
     const nextGen=Boolean(t&&String(t.circuit||"")==="ATP"&&/Next Gen Finals/i.test(String(t.category||t.level||"")));
     const ncaa=Boolean(t&&String(t.circuit||"")==="NCAA");
     const setsToWin=nextGen?3:grandSlamMain?3:2;
+    const tournamentName=String(t?.name||"");
+    const majorRoof=/Australian Open|Wimbledon|Roland Garros|French Open|US Open/i.test(tournamentName);
+    const rainRisk=indoor?0:Math.max(0,Math.min(95,Math.round(Math.max(0,humidity-54)*1.15+unit(21)*34)));
+    const eventSchedule:any[]=[];
+    if(!indoor&&rainRisk>=62)eventSchedule.push({
+      id:"weather-1",type:majorRoof?"roof_close":"rain_delay",trigger_point:7+(seed%17),
+      label:majorRoof?"Pluie · fermeture du toit":"Interruption pluie",duration_min:majorRoof?6:18+(seed%29)
+    });
+    if(!indoor&&temperature>=34)eventSchedule.push({
+      id:"heat-1",type:"heat_break",trigger_point:18+(seed%19),label:"Pause chaleur",duration_min:10
+    });
+    const sessionOfDay=indoor?"indoor":unit(26)>.58?"night":"day";
+    const prestige=Math.max(20,Math.min(100,Number(t?.prestige||(
+      /Grand Chelem|Grand Slam/i.test(String(t?.category||""))?100:
+      /Masters|1000/i.test(String(t?.category||""))?88:
+      /ATP 500/i.test(String(t?.category||""))?76:
+      /ATP 250/i.test(String(t?.category||""))?64:
+      /Challenger/i.test(String(t?.circuit||t?.category||""))?48:34
+    ))));
+    const crowdIntensity=Math.max(15,Math.min(100,Math.round(prestige*.72+(homeUser||homeOpp?12:0)+(unit(29)-.5)*12)));
     return {
       engine:"CB-MATCH-ENGINE-v6",
       surface,indoor,match_phase:phase,sets_to_win:setsToWin,best_of:setsToWin*2-1,
@@ -10297,7 +10317,9 @@ Deno.serve(async(req:Request)=>{
       next_gen_format:nextGen,ncaa_format:ncaa,
       match_tiebreak_decider:itfQualifying,match_tiebreak_points:itfQualifying?10:null,
       court_speed:Number(baseSpeed.toFixed(3)),altitude_m:altitude,
-      weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1))},
+      weather:{condition,temperature_c:temperature,humidity_pct:humidity,wind_kph:windKph,weather_difficulty:Number(weatherDifficulty.toFixed(1)),rain_risk_pct:rainRisk},
+      ambience:{session_of_day:sessionOfDay,crowd_intensity:crowdIntensity,home_user:homeUser,home_opponent:homeOpp},
+      event_schedule:eventSchedule,
       mood:{user:mood(managed,homeUser),opponent:mood(opp,homeOpp),home_user:homeUser,home_opponent:homeOpp},
       form:{user:userForm,opponent:oppForm,user_bonus:liveFormBonus(userForm),opponent_bonus:liveFormBonus(oppForm),user_multiplier:userFormMultiplier,opponent_multiplier:oppFormMultiplier,user_bonus_pct:Math.round((userFormMultiplier-1)*100),opponent_bonus_pct:Math.round((oppFormMultiplier-1)*100),scale:"runtime_match_attributes",mode:"temporary_multiplier_runtime_only",persists_to_player_attributes:false,min_multiplier:.94,max_multiplier:1.06,source_bonus_step_min:-3,source_bonus_step_max:3},
       tournament:t?{
@@ -10795,6 +10817,34 @@ Deno.serve(async(req:Request)=>{
       injuries:opponentInjuriesBefore.data??[],
       captured_at:new Date().toISOString()
     };
+    const priorH2H=await db.from("match_history")
+      .select("id,match_date,score,winner,match_data")
+      .eq("managed_player_id",playerId)
+      .eq("player_b",String(opp.data.name||""))
+      .order("match_date",{ascending:false}).order("id",{ascending:false}).limit(5);
+    if(priorH2H.error)return h({error:priorH2H.error.message},500);
+    const priorH2HRows=priorH2H.data??[];
+    const carryRows:any[]=[];
+    for(const row of priorH2HRows.slice().reverse()){
+      const mem:any=(row as any)?.match_data?.stats?._tactical_memory;
+      const recent=Array.isArray(mem?.recent)?mem.recent.slice(-6):[];
+      for(const r of recent)carryRows.push({...r,synthetic:true,h2h_carryover:true});
+    }
+    const carry=carryRows.slice(-16).map((r:any,idx:number)=>({...r,point_no:idx+1,at:null}));
+    let h2hSeed:any=null;
+    if(carry.length){
+      h2hSeed={
+        version:"CB-TACTICAL-MEMORY-v4",recent:carry,total_points:Math.min(14,carry.length),
+        switches:0,last_signature:carry[carry.length-1]?.signature||null,last_switch_point:0,
+        signature_started_point:Math.max(1,carry.length-3),h2h_carryover:true
+      };
+      h2hSeed.summary=liveTacticalMemorySummary(h2hSeed);
+    }
+    environment.h2h_memory={
+      encounters:priorH2HRows.length,carryover_points:carry.length,
+      last_match_date:priorH2HRows[0]?.match_date||null,last_score:priorH2HRows[0]?.score||null,
+      last_winner:priorH2HRows[0]?.winner||null
+    };
     let round=tournamentRoundOverride||"Exhibition";
     const baseStats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
@@ -10806,6 +10856,7 @@ Deno.serve(async(req:Request)=>{
       user_return_points:0,user_return_points_won:0,opp_return_points:0,opp_return_points_won:0,
       user_break_points:0,user_break_points_converted:0,user_break_points_faced:0,user_break_points_saved:0,
       opp_break_points:0,opp_break_points_converted:0,opp_break_points_faced:0,opp_break_points_saved:0,
+      _tactical_memory:h2hSeed,
       _meta:{...environment,round,career_date:String(career.data.career_date||AGE_REFERENCE_DATE),
         tournament_live:Boolean(tournamentId),entry_method:liveEntryMethod,tournament_wins:tournamentWins,
         qualifying_rounds:qualifyingRounds,opponent_source:opponentSource,world_match_id:worldMatchId}
@@ -10885,6 +10936,31 @@ Deno.serve(async(req:Request)=>{
     const humidity=Math.max(0,Number(weather.humidity_pct||50));
     const temperature=Number(weather.temperature_c||21);
     const moodUser=Number(mood.user||70),moodOpp=Number(mood.opponent||70);
+
+    const scheduledEvents:Array<any>=Array.isArray(meta.event_schedule)?meta.event_schedule:[];
+    const handledEvents:Array<string>=Array.isArray(session.data.stats?._environment_events_handled)?session.data.stats._environment_events_handled:[];
+    const dueEvent=scheduledEvents.find((e:any)=>Number(session.data.rally_no||0)>=Number(e?.trigger_point||999999)&&!handledEvents.includes(String(e?.id||"")));
+    if(dueEvent){
+      const statsEvent:any={...(session.data.stats||{})};
+      statsEvent._environment_events_handled=[...handledEvents,String(dueEvent.id||dueEvent.type||"event")];
+      const metaEvent:any={...(statsEvent._meta||{})};
+      if(String(dueEvent.type)==="roof_close"){
+        metaEvent.indoor=true;
+        metaEvent.weather={...(metaEvent.weather||{}),condition:"Toit fermé",wind_kph:0,weather_difficulty:Math.max(0,Number(metaEvent.weather?.weather_difficulty||0)-4)};
+      }else if(String(dueEvent.type)==="rain_delay"){
+        metaEvent.weather={...(metaEvent.weather||{}),condition:"Reprise après pluie",weather_difficulty:Math.max(0,Number(metaEvent.weather?.weather_difficulty||0)-2)};
+      }
+      statsEvent._meta=metaEvent;
+      const envEvents:any[]=Array.isArray(statsEvent._visual_events)?statsEvent._visual_events:[];
+      envEvents.push({kind:"environment",phase:"environment",label:String(dueEvent.label||"Interruption"),event_type:dueEvent.type,duration_min:Number(dueEvent.duration_min||0),at:new Date().toISOString()});
+      statsEvent._visual_events=envEvents.slice(-10);
+      const eventUpdate=await db.from("live_match_sessions").update({
+        stats:statsEvent,last_point:{winner:null,phase:"environment",visual_label:String(dueEvent.label||"Interruption"),environment_event:dueEvent,environment_effects:{ambient_event:dueEvent},at:new Date().toISOString()},
+        updated_at:new Date().toISOString()
+      }).eq("id",id).select("*").single();
+      if(eventUpdate.error)return h({error:eventUpdate.error.message},500);
+      return h({ok:true,session:eventUpdate.data,opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},environment_event:dueEvent,engine:"CB-MATCH-ENGINE-v6"});
+    }
 
     const preScoreUserGames=Number(session.data.user_games||0),preScoreOppGames=Number(session.data.opponent_games||0);
     const preScoreUserPoints=Number(session.data.user_points||0),preScoreOppPoints=Number(session.data.opponent_points||0);

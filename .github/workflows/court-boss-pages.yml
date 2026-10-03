@@ -251,7 +251,7 @@ jobs:
                 win_probability:54,last_point:{winner:'user',rally:6,shot:'winner',user_x:62,opp_x:31,ball_x:28,ball_y:24}
               })
             }));
-            const play=page.getByRole('button',{name:'Lancer un match libre',exact:true});
+            const play=page.getByRole('button',{name:/Jouer en live/});
             await play.click();
             await page.locator('.cb-court').waitFor();
             if(await page.locator('.fm-player-dot').count()!==2)throw new Error('match viewer needs two player circles');

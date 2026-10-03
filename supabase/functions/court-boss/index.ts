@@ -8977,6 +8977,13 @@ Deno.serve(async(req:Request)=>{
       Number(anthony.id),Number(partner.id),
       ...pool.map((p:any)=>Number(p.id)).filter(Boolean)
     ])];
+    const doublesEloRows=doublesStaffIds.length
+      ?await db.from("player_elo_ratings")
+        .select("player_id,overall_elo,hard_elo,clay_elo,grass_elo,indoor_elo,doubles_elo")
+        .in("player_id",doublesStaffIds)
+      :{data:[],error:null};
+    if(doublesEloRows.error)return h({error:doublesEloRows.error.message},500);
+    const doublesEloByPlayer=new Map<number,any>((doublesEloRows.data??[]).map((x:any)=>[Number(x.player_id),x]));
     const doublesStaffRows=doublesStaffIds.length
       ?await db.from("player_staff_assignments")
         .select("player_id,staff:staff_profiles(doubles_coaching_rating,serve_coaching_rating,return_coaching_rating,communication_rating,professionalism,workload,burnout,travel_fatigue)")
@@ -9019,6 +9026,16 @@ Deno.serve(async(req:Request)=>{
       return Math.max(0,Math.min(2.2,((qa+qb)/2-10)*.16));
     };
     const pairStrength=(a:any,b:any,chem=70)=>playerStrength(a)+playerStrength(b)+chem*.18+pairCoachBonus(a,b);
+    const playerDoubleSurfaceElo=(p:any)=>{
+      const e:any=doublesEloByPlayer.get(Number(p?.id||0))||{};
+      const surfaceElo=/terre|clay/i.test(surface)?Number(e.clay_elo||e.overall_elo||1500)
+        :/gazon|grass/i.test(surface)?Number(e.grass_elo||e.overall_elo||1500)
+        :/intérieur|indoor/i.test(surface)?Number(e.indoor_elo||e.hard_elo||e.overall_elo||1500)
+        :Number(e.hard_elo||e.overall_elo||1500);
+      const doublesElo=Number(e.doubles_elo||e.overall_elo||1500);
+      return doublesElo*.72+surfaceElo*.28;
+    };
+    const pairDoubleElo=(pair:any)=>(playerDoubleSurfaceElo(pair?.a)+playerDoubleSurfaceElo(pair?.b))/2;
 
     const ownRaceRow=finalsPairRows.find((x:any)=>
       (Number(x.player_one_id)===Number(anthony.id)&&Number(x.player_two_id)===Number(partner.id))
@@ -9155,11 +9172,19 @@ Deno.serve(async(req:Request)=>{
     const playPair=(A:any,B:any)=>{
       const aBonus=userPlanBonus(A,B),bBonus=userPlanBonus(B,A);
       const aStrength=Number(A.strength||0)+aBonus,bStrength=Number(B.strength||0)+bBonus;
-      const prob=1/(1+Math.exp(-(aStrength-bStrength)/8));
+      const attrProb=1/(1+Math.exp(-(aStrength-bStrength)/8));
+      const aElo=pairDoubleElo(A),bElo=pairDoubleElo(B);
+      const eloProb=1/(1+Math.pow(10,-(aElo-bElo)/400));
+      const prob=Math.max(.04,Math.min(.96,attrProb*.72+eloProb*.28));
       const Aw=Math.random()<prob,w=Aw?A:B,l=Aw?B:A;
-      const close=Math.abs(aStrength-bStrength)<8;
+      const close=Math.abs(prob-.5)<.13;
       const score=close?(Math.random()<.5?"7-6 4-6 10-8":"6-4 3-6 10-7"):(Aw?"6-3 6-4":"4-6 3-6");
-      return {winner:w,loser:l,score,plan_bonus_a:Number(aBonus.toFixed(2)),plan_bonus_b:Number(bBonus.toFixed(2))};
+      return {
+        winner:w,loser:l,score,plan_bonus_a:Number(aBonus.toFixed(2)),plan_bonus_b:Number(bBonus.toFixed(2)),
+        model:"CB-DOUBLES-QUICK-v3",probability_a:Number(prob.toFixed(4)),
+        attribute_probability_a:Number(attrProb.toFixed(4)),elo_probability_a:Number(eloProb.toFixed(4)),
+        pair_elo_a:Math.round(aElo),pair_elo_b:Math.round(bElo)
+      };
     };
     const doublesVisual=(round:string,A:any,B:any,res:any)=>{
       if(!A.isUser&&!B.isUser)return null;
@@ -9199,7 +9224,10 @@ Deno.serve(async(req:Request)=>{
         round_name:round,
         user_pair:involvesUser?userPair.name:null,
         opponent_pair:A.isUser?B.name:B.isUser?A.name:A.name+" vs "+B.name,
-        winner_pair:res.winner.name,score:res.score,visual:doublesVisual(round,A,B,res)
+        winner_pair:res.winner.name,score:res.score,visual:doublesVisual(round,A,B,res),
+        model:res.model||"CB-DOUBLES-QUICK-v3",probability_a:res.probability_a??null,
+        attribute_probability_a:res.attribute_probability_a??null,elo_probability_a:res.elo_probability_a??null,
+        pair_elo_a:res.pair_elo_a??null,pair_elo_b:res.pair_elo_b??null
       });
     };
 

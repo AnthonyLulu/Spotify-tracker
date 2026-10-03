@@ -70,7 +70,7 @@
     if(!live||!court)return;
     const s=sessionOf(),fx=s?.last_point?.environment_effects||{},plan=fx.opponent_plan||{},read=plan.memory_read||fx.opponent_memory_read||{};
     const confidence=Math.round(Number(read.confidence||0)*100),edge=Number(fx.opponent_memory_edge||0),deception=Number(fx.user_deception_edge||0);
-    const deceptionWindow=Math.max(0,Math.round(Number(fx.opponent_deception_window_points??read.deception_window_points||0)));
+    const deceptionWindow=Math.max(0,Math.round(Number((fx.opponent_deception_window_points ?? read.deception_window_points) || 0)));
     const patternAge=Math.max(0,Math.round(Number(read.pattern_age_points||0)));
     const switchAge=read.last_switch_age_points==null?null:Math.max(0,Math.round(Number(read.last_switch_age_points||0)));
     const state=String(fx.opponent_memory_state||(edge>.004?"IA t'a lu":edge<-.004?"Piège tactique réussi":"Lecture contestée"));

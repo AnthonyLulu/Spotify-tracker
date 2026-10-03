@@ -187,8 +187,8 @@ jobs:
             await page.getByText('Jakub Mensik').first().waitFor();
 
             await page.getByRole('button',{name:'ITF Juniors'}).click();
-            await page.getByText('Ivan Ivanov').first().waitFor();
             const firstPlayer=page.locator('tbody tr.click').first();
+            await firstPlayer.waitFor();
             await firstPlayer.click();
             await page.getByText('Dossier joueur').waitFor();
             await page.getByRole('button',{name:'Attributs'}).click();

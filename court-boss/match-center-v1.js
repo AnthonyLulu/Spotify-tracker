@@ -91,7 +91,7 @@
         <div><small>Humidité</small><b>${Math.round(Number(w.humidity_pct||50))}%</b></div>
         <div><small>Court</small><b>${speed(meta?.court_speed)} · ${Number(meta?.court_speed||1).toFixed(2)}</b></div>
         <div><small>Altitude</small><b>${Math.round(Number(meta?.altitude_m||0))} m</b></div>
-        <div><small>Format</small><b>${meta?.next_gen_format?'BO5 · sets à 4 · TB 3-3 · No-Ad':meta?.match_tiebreak_decider?'2 sets + Match TB '+Number(meta?.match_tiebreak_points||10):'Best of '+Number(meta?.best_of||3)}</b></div>
+        <div><small>Format</small><b>${meta?.next_gen_format?'BO5 · sets à 4 · TB 3-3 · No-Ad':meta?.ncaa_format?'BO3 · TB 6-6 · No-Ad':meta?.match_tiebreak_decider?'2 sets + Match TB '+Number(meta?.match_tiebreak_points||10):'Best of '+Number(meta?.best_of||3)}</b></div>
       </div>
       <div class="cb-mood-grid">
         <div><span>${safe(userName)}</span><b>${Math.round(Number(m.user||70))}/100 · ${mood(m.user)}</b></div>

@@ -9604,18 +9604,19 @@ Deno.serve(async(req:Request)=>{
   const liveTacticalMemorySummary=(memory:any={})=>{
     const rows=(Array.isArray(memory?.recent)?memory.recent:[]).slice(-48);
     const cat=(key:string,predicate:(row:any)=>boolean=()=>true)=>{
-      const weights:any={};let total=0,samples=0;
+      const weights:any={},winWeights:any={};let total=0,samples=0;
       rows.forEach((row:any,idx:number)=>{
         if(!predicate(row))return;
         const raw=liveTacticalMemoryNormalize(row?.[key]);
         if(!raw||raw==="Mixte")return;
         const age=Math.max(0,rows.length-1-idx);
         const w=Math.pow(.935,age)*(Number(row?.pressure||0)>=.70?1.45:1);
-        weights[raw]=(weights[raw]||0)+w;total+=w;samples++;
+        weights[raw]=(weights[raw]||0)+w;winWeights[raw]=(winWeights[raw]||0)+(row?.user_won?w:0);total+=w;samples++;
       });
       const entries=Object.entries(weights).sort((a:any,b:any)=>Number(b[1])-Number(a[1]));
-      const best:any=entries[0]||null;
-      return {value:best?String(best[0]):null,share:best&&total>0?Number(best[1])/total:0,samples,weights};
+      const best:any=entries[0]||null,bestWeight=best?Number(best[1]):0;
+      return {value:best?String(best[0]):null,share:best&&total>0?bestWeight/total:0,samples,
+        success:bestWeight>0?Number(winWeights[String(best[0])]||0)/bestWeight:.5,weights};
     };
     const weightedAvg=(key:string,predicate:(row:any)=>boolean=()=>true)=>{
       let total=0,weight=0,samples=0;
@@ -9632,7 +9633,7 @@ Deno.serve(async(req:Request)=>{
     const target=cat("target_wing"),tempo=cat("tempo"),spin=cat("spin");
     const returnPos=cat("return_pos",(r:any)=>r?.server==="opponent");
     const risk=weightedAvg("risk"),aggression=weightedAvg("aggression"),netIntent=weightedAvg("net_intent");
-    const userNet=weightedAvg("user_at_net");
+    const userNet=weightedAvg("user_at_net"),recentWin=weightedAvg("user_won");
     const switches=rows.slice(-14).filter((r:any)=>Boolean(r?.switched)).length;
     const switchRate=rows.length?switches/Math.min(14,rows.length):0;
     const totalPoints=Math.max(Number(memory?.total_points||0),rows.length);
@@ -9642,15 +9643,16 @@ Deno.serve(async(req:Request)=>{
     return {
       total_points:totalPoints,recent_points:rows.length,switch_rate:Number(switchRate.toFixed(3)),
       stability:Number(stability.toFixed(3)),
-      serve_direction:{value:serve.value,share:Number(serve.share.toFixed(3)),samples:serve.samples},
-      pressure_serve_direction:{value:pressureServe.value,share:Number(pressureServe.share.toFixed(3)),samples:pressureServe.samples},
-      serve_plan:{value:servePlan.value,share:Number(servePlan.share.toFixed(3)),samples:servePlan.samples},
-      target_wing:{value:target.value,share:Number(target.share.toFixed(3)),samples:target.samples},
-      tempo:{value:tempo.value,share:Number(tempo.share.toFixed(3)),samples:tempo.samples},
-      spin:{value:spin.value,share:Number(spin.share.toFixed(3)),samples:spin.samples},
-      return_pos:{value:returnPos.value,share:Number(returnPos.share.toFixed(3)),samples:returnPos.samples},
+      serve_direction:{value:serve.value,share:Number(serve.share.toFixed(3)),samples:serve.samples,success:Number(serve.success.toFixed(3))},
+      pressure_serve_direction:{value:pressureServe.value,share:Number(pressureServe.share.toFixed(3)),samples:pressureServe.samples,success:Number(pressureServe.success.toFixed(3))},
+      serve_plan:{value:servePlan.value,share:Number(servePlan.share.toFixed(3)),samples:servePlan.samples,success:Number(servePlan.success.toFixed(3))},
+      target_wing:{value:target.value,share:Number(target.share.toFixed(3)),samples:target.samples,success:Number(target.success.toFixed(3))},
+      tempo:{value:tempo.value,share:Number(tempo.share.toFixed(3)),samples:tempo.samples,success:Number(tempo.success.toFixed(3))},
+      spin:{value:spin.value,share:Number(spin.share.toFixed(3)),samples:spin.samples,success:Number(spin.success.toFixed(3))},
+      return_pos:{value:returnPos.value,share:Number(returnPos.share.toFixed(3)),samples:returnPos.samples,success:Number(returnPos.success.toFixed(3))},
       avg_risk:Number(risk.value.toFixed(1)),avg_aggression:Number(aggression.value.toFixed(1)),
       avg_net_intent:Number(netIntent.value.toFixed(1)),user_net_rate:Number(userNet.value.toFixed(3)),
+      user_recent_win_rate:Number(recentWin.value.toFixed(3)),
       last_signature:memory?.last_signature||null,last_switch_point:Number(memory?.last_switch_point||0)
     };
   };
@@ -9708,7 +9710,8 @@ Deno.serve(async(req:Request)=>{
     return {
       confidence:Number(confidence.toFixed(3)),maturity:Number(maturity.toFixed(3)),stability:Number(stability.toFixed(3)),
       serve_direction:serveRead,serve_plan:s.serve_plan,target_wing:s.target_wing,tempo:s.tempo,spin:s.spin,return_pos:s.return_pos,
-      risk_mode:riskMode,net_mode:netMode,switch_rate:Number(s.switch_rate||0),total_points:Number(s.total_points||0)
+      risk_mode:riskMode,net_mode:netMode,user_recent_win_rate:Number(s.user_recent_win_rate||0),
+      switch_rate:Number(s.switch_rate||0),total_points:Number(s.total_points||0)
     };
   };
 
@@ -9755,10 +9758,10 @@ Deno.serve(async(req:Request)=>{
     if(readConfidence>=.32){
       if(memoryRead.return_pos?.value==="Avancée")servePattern="Corps";
       else if(memoryRead.return_pos?.value==="Reculée")servePattern="Large";
-      if(memoryRead.net_mode==="Filet"){counterMode="Passing + lob";net=Math.max(8,net-7);tempo="Patient"}
-      else if(memoryRead.risk_mode==="Agressif"){counterMode="Absorber puis contrer";risk=Math.max(28,risk-5);tempo="Patient"}
-      else if(memoryRead.target_wing?.value){counterMode="Protéger "+String(memoryRead.target_wing.value)}
-      if(memoryRead.serve_direction?.value&&Number(memoryRead.serve_direction.share||0)>=.62)counterMode="Lecture service "+String(memoryRead.serve_direction.value);
+      if(memoryRead.net_mode==="Filet"&&Number(memoryRead.user_recent_win_rate||0)>=.50){counterMode="Passing + lob";net=Math.max(8,net-7);tempo="Patient"}
+      else if(memoryRead.risk_mode==="Agressif"&&Number(memoryRead.user_recent_win_rate||0)>=.50){counterMode="Absorber puis contrer";risk=Math.max(28,risk-5);tempo="Patient"}
+      else if(memoryRead.target_wing?.value&&Number(memoryRead.target_wing.success||0)>=.50){counterMode="Protéger "+String(memoryRead.target_wing.value)}
+      if(memoryRead.serve_direction?.value&&Number(memoryRead.serve_direction.share||0)>=.62&&Number(memoryRead.serve_direction.success||0)>=.50)counterMode="Lecture service "+String(memoryRead.serve_direction.value);
     }
     const baseAdaptation=chase>.35?"Accélère pour revenir":chase<-.35?"Gère l’avantage":pressure>=.7?"Serrage sur point clé":"Plan naturel";
     const adaptation=readConfidence>=.32?("Lecture "+Math.round(readConfidence*100)+"% · "+counterMode):baseAdaptation;
@@ -9824,16 +9827,17 @@ Deno.serve(async(req:Request)=>{
     const memoryRead:any=opponentPlan.memory_read||{};
     const readConfidence=Math.max(0,Math.min(.94,Number(memoryRead.confidence||0)));
     const catRead=(expected:any,current:any,weight:number)=>{
-      const e=liveTacticalMemoryNormalize(expected),c=liveTacticalMemoryNormalize(current);
+      const e=liveTacticalMemoryNormalize(expected?.value??expected),c=liveTacticalMemoryNormalize(current);
       if(!e||!c||e==="Mixte"||c==="Mixte")return 0;
-      return e===c?weight:-weight*.88;
+      const threat=Math.max(.72,Math.min(1.28,.72+Number(expected?.success??.5)*.56));
+      return (e===c?weight:-weight*.88)*threat;
     };
     let memoryReadScore=0;
-    if(serverIsUser)memoryReadScore+=catRead(memoryRead.serve_direction?.value,servePattern,.54);
-    else memoryReadScore+=catRead(memoryRead.return_pos?.value,ret,.32);
-    memoryReadScore+=catRead(memoryRead.target_wing?.value,targetWing,.30);
-    memoryReadScore+=catRead(memoryRead.tempo?.value,tempo,.22);
-    memoryReadScore+=catRead(memoryRead.spin?.value,spinPlan,.18);
+    if(serverIsUser)memoryReadScore+=catRead(memoryRead.serve_direction,servePattern,.54);
+    else memoryReadScore+=catRead(memoryRead.return_pos,ret,.32);
+    memoryReadScore+=catRead(memoryRead.target_wing,targetWing,.30);
+    memoryReadScore+=catRead(memoryRead.tempo,tempo,.22);
+    memoryReadScore+=catRead(memoryRead.spin,spinPlan,.18);
     const currentRiskMode=risk>=62?"Agressif":risk<=42?"Prudent":"Neutre";
     if(memoryRead.risk_mode&&memoryRead.risk_mode!=="Neutre")memoryReadScore+=memoryRead.risk_mode===currentRiskMode?.22:-.18;
     const currentNetMode=net>=55?"Filet":net<=22?"Fond":"Mixte";

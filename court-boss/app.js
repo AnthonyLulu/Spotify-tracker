@@ -1496,6 +1496,14 @@ function singlesEligibility(t){
   return {label,cls:nr>0&&nr<=7?'good':'info',can:false,phase:'nextgen_selection',nextgen:true};
  }
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
+ if(String(t.registration_mode||"")==="nextgen_selection"||String(t.category||"")==="Next Gen Finals"){
+  return {
+   label:"Sélection Race Next Gen · 7 Race + 1 WC ATP",
+   cls:"info",can:false,phase:"nextgen_selection",
+   nextgen_selection:true
+  };
+ }
+
  if(String(t.circuit)==="NCAA"){
   const mode=String(t.registration_mode||"");
   const label=mode==="ncaa_individual_selection"?"Qualifié NCAA/ITA"

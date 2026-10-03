@@ -10077,9 +10077,9 @@ Deno.serve(async(req:Request)=>{
       +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],sFormMultiplier)
         -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],rFormMultiplier))*.035
     ));
-    const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(80,
-      2+Math.floor(-Math.log(Math.max(.001,1-Math.random()))*Math.max(1,rallyMean-2))
-    ));
+    const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,
+      2+Math.floor(-Math.log(Math.max(Number.EPSILON,1-Math.random()))*Math.max(1,rallyMean-2))
+    );
     const rallyBand=rally<=4?"0-4":rally<=8?"5-8":"9+";
 
     const winnerMetric=serverWon?Number(tm.server_winner_rate_pct||14):Number(tm.returner_winner_rate_pct||14);
@@ -10188,17 +10188,20 @@ Deno.serve(async(req:Request)=>{
     const profileOf=(attrs:any,mult:number)=>{
       const forehand=avgAttr(attrs,["forehand","forehand_power","forehand_accuracy"],mult);
       const backhand=avgAttr(attrs,["backhand","backhand_power","backhand_accuracy"],mult);
-      const mobility=avgAttr(attrs,["movement","speed","agility","court_positioning","anticipation"],mult);
-      const defense=avgAttr(attrs,["defensive_skill","rally_tolerance","stamina","court_positioning","anticipation"],mult);
-      const touch=avgAttr(attrs,["touch","drop_shot","slice","half_volley"],mult);
+      const mobility=avgAttr(attrs,["movement","speed","acceleration","agility","balance","footwork","court_positioning","anticipation"],mult);
+      const defense=avgAttr(attrs,["defensive_skill","rally_tolerance","stamina","court_positioning","anticipation","reaction","defense_to_attack"],mult);
+      const touch=avgAttr(attrs,["touch","drop_shot","slice","half_volley","shot_selection"],mult);
+      const passing=avgAttr(attrs,["passing_shot","forehand_accuracy","backhand_accuracy","timing","shot_control"],mult);
+      const lob=avgAttr(attrs,["lob","touch","shot_control","anticipation"],mult);
       const netGame=avgAttr(attrs,["volley","net_positioning","transition_game","half_volley","touch"],mult);
       const power=avgAttr(attrs,["forehand_power","backhand_power","serve_power"],mult);
-      const positioning=avgAttr(attrs,["court_positioning","anticipation","decision_making","movement"],mult);
+      const positioning=avgAttr(attrs,["court_positioning","anticipation","decision_making","movement","footwork"],mult);
+      const recovery=avgAttr(attrs,["recovery","stamina","natural_fitness","balance","footwork"],mult);
       const archetype=netGame>=14&&netGame>defense+1?"Attaquant filet":
         defense>=14&&defense>power+1?"Contreur":
         power>=14&&power>touch+1?"Puncheur":
         touch>=14?"Créatif":"All-court";
-      return {forehand,backhand,mobility,defense,touch,net:netGame,power,positioning,archetype};
+      return {forehand,backhand,mobility,defense,touch,passing,lob,net:netGame,power,positioning,recovery,archetype};
     };
     const userProfile=profileOf(ua,userFormMultiplier),oppProfile=profileOf(oa,oppFormMultiplier);
     const visualSeed=Number(id||0)*131+pointNo*977+Math.round(courtSpeed*100)*17;
@@ -10220,7 +10223,7 @@ Deno.serve(async(req:Request)=>{
       const desiredFinalHitterUser=winnerEnding?userWon:!userWon;
       const finalHitterUser=serverIsUser?((shotCount-1)%2===0):((shotCount-1)%2===1);
       if(finalHitterUser!==desiredFinalHitterUser)shotCount++;
-      shotCount=Math.min(81,shotCount);
+      // Keep the full rally. No fixed visual shot ceiling.
     }
     let userPos=playerClamp({...userStart}),oppPos=playerClamp({...opponentStart});
     let ballCurrent=ballClamp({x:serverStartX,y:serverIsUser?82:18});
@@ -10247,7 +10250,10 @@ Deno.serve(async(req:Request)=>{
         const canApproach=shortIncoming&&hitterProfile.net>=11;
         const insideChance=stroke==="coup_droit"&&Math.abs(hitterPos.x-50)>=12;
         if(hitterAtNet)pattern="volley";
-        else if(receiverAtNet)pattern=roll<(0.32+(hitterProfile.touch-10)*.018)?"lob":"passing";
+        else if(receiverAtNet){
+          const lobBias=Math.max(.12,Math.min(.72,.34+(hitterProfile.lob-hitterProfile.passing)*.035+(hitterProfile.touch-10)*.01));
+          pattern=roll<lobBias?"lob":"passing";
+        }
         else if(canDrop&&roll<Math.max(.05,Math.min(.22,.07+(hitterProfile.touch-10)*.012)))pattern="drop_shot";
         else if(canApproach&&roll<Math.max(.10,Math.min(.38,.16+(hitterProfile.net-10)*.018)))pattern="approach";
         else if(insideChance&&roll<.22+(hitterProfile.forehand-hitterProfile.backhand)*.015)pattern=roll2<.72?"inside_out":"inside_in";
@@ -10305,14 +10311,14 @@ Deno.serve(async(req:Request)=>{
       });
       const dx=desiredReceiver.x-receiverPos.x,dy=desiredReceiver.y-receiverPos.y,distance=Math.sqrt(dx*dx+dy*dy);
       const reactionFactor=Math.max(.55,Math.min(1.18,1.1-(visualSpeedKph-105)/260));
-      const moveCapacity=(5.5+receiverProfile.mobility*.72+receiverProfile.defense*.20)*reactionFactor;
+      const moveCapacity=(4.8+receiverProfile.mobility*.70+receiverProfile.defense*.18+receiverProfile.recovery*.10)*reactionFactor;
       const stretched=distance>moveCapacity*1.08;
       const receiverNext=playerClamp(moveToward(receiverPos,desiredReceiver,moveCapacity));
       const recoveryTarget=playerClamp({
         x:(pattern==="inside_out"||pattern==="inside_in")?courtClamp(50+(hitterPos.x-50)*.28,34,66):50,
         y:hitterUser?(pattern==="approach"||pattern==="volley"?58:82):(pattern==="approach"||pattern==="volley"?42:18)
       });
-      const recoveryCapacity=3.5+hitterProfile.positioning*.42+(pattern==="approach"?5:0);
+      const recoveryCapacity=2.8+hitterProfile.positioning*.31+hitterProfile.recovery*.18+(pattern==="approach"?5:0);
       const hitterNext=playerClamp(moveToward(hitterPos,recoveryTarget,recoveryCapacity));
       if(hitterUser){userPos=hitterNext;oppPos=receiverNext}else{oppPos=hitterNext;userPos=receiverNext}
       ballCurrent={...target};
@@ -10349,10 +10355,15 @@ Deno.serve(async(req:Request)=>{
     ballPath=detailedPath;
     const visualFinalUser=playerClamp(userPos),visualFinalOpponent=playerClamp(oppPos);
     const maxVisualSpeed=visualShots.reduce((mx:any,x:any)=>Math.max(mx,Number(x.speed_kph||0)),0);
-    const durationMs=Math.max(650,Math.min(12000,Math.round(520+shotCount*(clayVisual?235:grassVisual?175:205))));
+    const frameMs=shotCount<=8?(clayVisual?235:grassVisual?175:205):
+      shotCount<=16?(clayVisual?185:145):
+      shotCount<=28?(clayVisual?145:112):
+      shotCount<=45?(clayVisual?112:88):
+      (clayVisual?88:68);
+    const durationMs=Math.max(650,Math.min(12000,Math.round(520+shotCount*frameMs)));
     const styleSummary={
-      user:{archetype:userProfile.archetype,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,net:Math.round(userProfile.net*10)/10},
-      opponent:{archetype:oppProfile.archetype,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,net:Math.round(oppProfile.net*10)/10}
+      user:{archetype:userProfile.archetype,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,passing:Math.round(userProfile.passing*10)/10,lob:Math.round(userProfile.lob*10)/10,net:Math.round(userProfile.net*10)/10},
+      opponent:{archetype:oppProfile.archetype,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10}
     };
 
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);

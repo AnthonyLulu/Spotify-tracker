@@ -1,4 +1,4 @@
-/* Court Boss Match Center V7 · Spatial Rally */
+/* Court Boss Match Center V7.1 · Unlimited Spatial Rally */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -169,7 +169,7 @@
           <i class="fm-ball cb-ball ${hasFlight?'cb-ball-flight':''}" style="left:${ballEnd.x}%;top:${ballEnd.y}%;animation:${ballAnim} ${visualMs}ms linear both"></i>
           ${lp.winner?`<div class="fm-rally-call cb-rally"><span>${phase}</span><b>${safe(call)}</b> · ${Number(lp.rally||0)} coups · ${safe(target)}</div>`:''}
         </div>
-        ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)}</b><em>${safe(sh.spin||'Mixte')} · ${safe(patternLabel(sh.pattern))} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.stretched_receiver?' · débordé':''}</em></span>`).join('')}</div>`:''}
+        ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)}</b><em>${safe(sh.spin||'Mixte')} · ${safe(patternLabel(sh.pattern))} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.stretched_receiver?' · débordé':''}</em></span>`).join('')}</div>`:''}
         <div class="cb-match-story">
           <div class="cb-point-story">
             <span class="badge">${phase}</span>
@@ -260,5 +260,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V7 Spatial Rally active');
+  console.info('Court Boss Match Center V7.1 Unlimited Spatial Rally active');
 })();

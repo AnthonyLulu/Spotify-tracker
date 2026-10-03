@@ -1476,15 +1476,17 @@ function singlesEligibility(t){
  if(isNextGenFinals){
   const ng=t?.nextgen_finals_status||c.nextgen_finals_status||null;
   if(ng?.selected===true&&String(ng.status||'')==='accepted'){
-   return {label:'Sélectionné Next Gen · ATP #'+fmt(ng.atp_rank||rank),method:'selection',cls:'good',can:true,phase:'finals',finals:true};
+   return {label:'Sélectionné Next Gen · Race #'+fmt(ng.nextgen_rank||c.nextgen_rank||'?')+' · '+fmt(ng.nextgen_points??c.nextgen_points??0)+' pts',method:'selection',cls:'good',can:true,phase:'finals',finals:true};
   }
   if(ng?.selected===true&&String(ng.status||'')==='pending'){
    return {label:'Invitation Next Gen · réponse attendue',method:'selection',cls:'warn',can:false,phase:'finals_selection',canWildcard:false,finals:true};
   }
   if(ng&&ng.eligible_age===false){
-   return {label:'Non éligible U21',method:'selection',cls:'bad',can:false,phase:'finals_selection',canWildcard:false,finals:true};
+   return {label:'Non éligible Next Gen · 20 ans max toute l’année',method:'selection',cls:'bad',can:false,phase:'finals_selection',canWildcard:false,finals:true};
   }
-  return {label:'Sélection Next Gen · Top 8 U21 ATP',method:'selection',cls:'info',can:false,phase:'finals_selection',canWildcard:false,finals:true};
+  const raceRank=Number(ng?.nextgen_rank??c.nextgen_rank??c.nextgen_ranking??0);
+  const racePts=Number(ng?.nextgen_points??c.nextgen_points??0);
+  return {label:raceRank?'Race Next Gen #'+fmt(raceRank)+' · '+fmt(racePts)+' pts · 7 places + 1 WC ATP':'Race Next Gen · 7 places + 1 WC ATP',method:'selection',cls:'info',can:false,phase:'finals_selection',canWildcard:false,finals:true};
  }
  if(String(t.circuit)==="Federation")return {label:"Sélection nationale",cls:"info",can:false};
  if(String(t.circuit)==="NCAA"){

@@ -10368,6 +10368,30 @@ Deno.serve(async(req:Request)=>{
           else{targetX=roll2<.5?3:97;targetY=hitterUser?Math.max(8,deepY-6):Math.min(92,deepY+6)}
         }
       }
+      const physicsArc=pattern==="lob"?"very_high":pattern==="drop_shot"?"drop":spin==="Lift"||clayVisual?"high":spin==="Slice"||grassVisual?"low":"medium";
+      const surfaceBounce=clayVisual?1.14:grassVisual?.76:.96;
+      const surfaceRetention=clayVisual?.76:grassVisual?.90:.84;
+      const spinBounce=spin==="Lift"?1.18:spin==="Slice"?.72:1;
+      const spinRetention=spin==="Slice"?1.05:spin==="Lift"?.94:1;
+      const patternBounce=pattern==="drop_shot"?.58:pattern==="lob"?1.08:pattern==="volley"?.82:1;
+      const bounceHeightFactor=Math.max(.42,Math.min(1.55,surfaceBounce*spinBounce*patternBounce));
+      const speedRetention=Math.max(.50,Math.min(.96,surfaceRetention*spinRetention*(pattern==="drop_shot"?.72:1)));
+      const postBounceSpeedKph=Math.max(28,Math.round(visualSpeedKph*speedRetention));
+      const apexScale=physicsArc==="very_high"?1.58:physicsArc==="high"?1.34:physicsArc==="drop"?1.11:physicsArc==="low"?1.07:1.20;
+      const apexLiftPx=physicsArc==="very_high"?18:physicsArc==="high"?11:physicsArc==="drop"?5:physicsArc==="low"?3:7;
+      const bounceScale=Math.max(.74,Math.min(1.18,.76+bounceHeightFactor*.24));
+      const skid=grassVisual||spin==="Slice";
+      const kick=clayVisual&&spin==="Lift";
+      const baseFlightMs=Math.max(105,Math.min(430,Math.round(330-visualSpeedKph*.72)));
+      const hangtimeMs=Math.round(baseFlightMs*(physicsArc==="very_high"?1.75:physicsArc==="high"?1.30:physicsArc==="drop"?.76:physicsArc==="low"?.88:1));
+      const physics={
+        surface:clayVisual?"clay":grassVisual?"grass":"hard",arc:physicsArc,
+        bounce_height_factor:Math.round(bounceHeightFactor*100)/100,
+        speed_retention:Math.round(speedRetention*100)/100,
+        pre_bounce_speed_kph:visualSpeedKph,post_bounce_speed_kph:postBounceSpeedKph,
+        apex_scale:apexScale,apex_lift_px:apexLiftPx,bounce_scale:bounceScale,
+        skid,kick,hangtime_ms:hangtimeMs
+      };
       const target=ballClamp({x:targetX,y:targetY});
       const desiredReceiver=playerClamp({
         x:courtClamp(target.x+(receiverPos.x<target.x?-2:2),10,90),
@@ -10399,10 +10423,10 @@ Deno.serve(async(req:Request)=>{
       const hitterNext=playerClamp(moveToward(hitterPos,recoveryTarget,recoveryCapacity));
       if(hitterUser){userPos=hitterNext;oppPos=receiverNext}else{oppPos=hitterNext;userPos=receiverNext}
       ballCurrent={...target};
-      const ballScale=arc==="very_high"?1.34:arc==="high"?1.18:arc==="low"?.86:1;
+      const ballScale=physicsArc==="very_high"?1.34:physicsArc==="high"?1.18:physicsArc==="drop"?.94:physicsArc==="low"?.86:1;
       visualShots.push({
         index:shotIndex+1,hitter:hitterUser?"user":"opponent",stroke,spin,pattern,intent,
-        speed_kph:visualSpeedKph,arc,stretched_receiver:stretched,
+        speed_kph:visualSpeedKph,post_bounce_speed_kph:postBounceSpeedKph,arc:physicsArc,physics,stretched_receiver:stretched,
         receiver_coverage_pct:Math.round(Math.min(1,moveCapacity/Math.max(1,distance))*100),
         hitter_archetype:hitterProfile.archetype,receiver_archetype:receiverProfile.archetype,
         receiver:hitterUser?"opponent":"user",target_x:Math.round(target.x*10)/10,target_y:Math.round(target.y*10)/10
@@ -10411,12 +10435,13 @@ Deno.serve(async(req:Request)=>{
         index:shotIndex+1,stage:isServeVisual?"serve":isFinal?"finish":"rally",
         ball:{...ballCurrent},user:{...userPos},opponent:{...oppPos},
         ball_scale:ballScale,stroke,spin,pattern,intent,hitter:hitterUser?"user":"opponent",
-        stretched_receiver:stretched,speed_kph:visualSpeedKph
+        stretched_receiver:stretched,speed_kph:visualSpeedKph,physics,frame_ms:hangtimeMs
       });
     }
     const detailedPath:any[]=rallyFrames.map((frame:any)=>({
       x:frame.ball.x,y:frame.ball.y,stage:frame.stage,stroke:frame.stroke||null,spin:frame.spin||null,
-      speed_kph:frame.speed_kph||null,pattern:frame.pattern||null,hitter:frame.hitter||null
+      speed_kph:frame.speed_kph||null,post_bounce_speed_kph:frame.physics?.post_bounce_speed_kph||null,
+      pattern:frame.pattern||null,hitter:frame.hitter||null,physics:frame.physics||null
     }));
     if(doubleFault){
       detailedPath.splice(0,detailedPath.length,
@@ -10456,6 +10481,14 @@ Deno.serve(async(req:Request)=>{
     const styleSummary={
       user:{...userIdentity,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,passing:Math.round(userProfile.passing*10)/10,lob:Math.round(userProfile.lob*10)/10,net:Math.round(userProfile.net*10)/10,tendencies:userProfile.tendencies},
       opponent:{...oppIdentity,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,passing:Math.round(oppProfile.passing*10)/10,lob:Math.round(oppProfile.lob*10)/10,net:Math.round(oppProfile.net*10)/10,tendencies:oppProfile.tendencies}
+    };
+    const physicsSummary={
+      surface:clayVisual?"clay":grassVisual?"grass":"hard",
+      avg_pre_bounce_kph:visualShots.length?Math.round(visualShots.reduce((sum:any,x:any)=>sum+Number(x.speed_kph||0),0)/visualShots.length):0,
+      avg_post_bounce_kph:visualShots.length?Math.round(visualShots.reduce((sum:any,x:any)=>sum+Number(x.post_bounce_speed_kph||0),0)/visualShots.length):0,
+      kick_shots:visualShots.filter((x:any)=>Boolean(x.physics?.kick)).length,
+      skid_shots:visualShots.filter((x:any)=>Boolean(x.physics?.skid)).length,
+      high_bounces:visualShots.filter((x:any)=>Number(x.physics?.bounce_height_factor||0)>=1.12).length
     };
 
     // The kernel keeps authority over the point winner.
@@ -10534,7 +10567,7 @@ Deno.serve(async(req:Request)=>{
         user_slide:clayVisual&&rally>=4&&rallyFrames.some((f:any)=>f.stretched_receiver&&f.hitter==="opponent"),
         opponent_slide:clayVisual&&rally>=4&&rallyFrames.some((f:any)=>f.stretched_receiver&&f.hitter==="user"),
         surface_motion:clayVisual?"slide":grassVisual?"short_steps":"neutral",
-        duration_ms:durationMs,max_speed_kph:maxVisualSpeed,profiles:styleSummary,pattern_mix:patternMix,
+        duration_ms:durationMs,max_speed_kph:maxVisualSpeed,profiles:styleSummary,pattern_mix:patternMix,physics_summary:physicsSummary,
         resolution:{ending,pattern:finalPattern,pressure_score:spatialPressureScore,source:spatialResolution,recent_stretch:recentStretch,total_stretch:totalStretch},
         shots:visualShots,frames:rallyFrames,ball_path:ballPath
       },

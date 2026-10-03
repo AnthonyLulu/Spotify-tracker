@@ -116,3 +116,13 @@
 .cb-resolution-card small,.cb-resolution-card b{display:block}.cb-resolution-card small{font-size:8px;opacity:.55;text-transform:uppercase;letter-spacing:.08em}.cb-resolution-card b{margin-top:2px;font-size:11px}
 .cb-pressure span{display:block;margin-bottom:4px;font-size:8px;opacity:.65;text-align:right}.cb-pressure>i{display:block;height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.cb-pressure>i>b{display:block;height:100%;border-radius:999px;background:currentColor}
 @media(max-width:700px){.cb-resolution-card{grid-template-columns:1fr}.cb-pressure span{text-align:left}}
+
+
+/* Court Boss Surface Physics V9 */
+.cb-physics-card{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:9px;padding:9px 11px;border-radius:12px;background:linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.025));border:1px solid rgba(255,255,255,.075)}
+.cb-physics-card small,.cb-physics-card b{display:block}.cb-physics-card small{font-size:8px;opacity:.55;text-transform:uppercase;letter-spacing:.08em}.cb-physics-card b{margin-top:2px;font-size:11px}
+.cb-physics-metrics{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.cb-physics-metrics span{font-size:8px;padding:4px 6px;border-radius:7px;background:rgba(255,255,255,.055);white-space:nowrap}
+.cb-ball{will-change:left,top,transform,filter}.cb-court.clay .cb-rally-trace{opacity:.24}.cb-court.grass .cb-rally-trace{opacity:.16}
+.cb-shot-chip.lift{border-bottom-color:rgba(239,183,92,.32)}.cb-shot-chip.slice{border-bottom-color:rgba(132,202,235,.34)}.cb-shot-chip.plat{border-bottom-color:rgba(255,255,255,.16)}
+@media(max-width:700px){.cb-physics-card{align-items:flex-start;flex-direction:column}.cb-physics-metrics{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.cb-ball{filter:none!important}}

@@ -26,9 +26,29 @@
   const strokeLabel=v=>String(v||'').toLowerCase()==='coup_droit'?'CD':String(v||'').toLowerCase()==='revers'?'REV':String(v||'').toLowerCase()==='service'?'SERV':'FRAPPE';
   const patternLabel=v=>({crosscourt:'Croisé',down_the_line:'Long de ligne',inside_out:'Inside-out',inside_in:'Inside-in',drop_shot:'Amortie',lob:'Lob',passing:'Passing',approach:'Montée',volley:'Volée',wide:'Extérieur',body:'Corps',t:'T',net_error:'Filet',out:'Dehors'}[String(v||'')]||String(v||''));
   const intentLabel=v=>({construction:'Construction',acceleration:'Accélération',variation:'Variation',contre:'Contre',transition_filet:'Transition filet',finition_filet:'Finition filet',service:'Service'}[String(v||'')]||'');
+  const physicsLabel=p=>!p?'':p.kick?'Kick haut':p.skid?'Rebond fusant':Number(p.bounce_height_factor||0)>=1.12?'Rebond haut':Number(p.bounce_height_factor||0)<=.76?'Rebond bas':'Rebond neutre';
   const stakeLabel=v=>({break_point:'BALLE DE BREAK',set_point:'BALLE DE SET',match_point:'BALLE DE MATCH',game_point:'BALLE DE JEU'}[String(v||'')]||'');
-  const moveKeyframes=(name,frames,key)=>'@keyframes '+name+'{'+frames.map((f,i)=>{const p=f[key],pct=Math.round(i*100/Math.max(1,frames.length-1));return pct+'%{left:'+p.x+'%;top:'+p.y+'%}'}).join('')+'}';
-  const ballKeyframes=(name,frames)=>'@keyframes '+name+'{'+frames.map((f,i)=>{const p=f.ball,pct=Math.round(i*100/Math.max(1,frames.length-1)),scale=cap(Number(f.ball_scale||1),.72,1.4);return pct+'%{left:'+p.x+'%;top:'+p.y+'%;transform:translate(-50%,-50%) scale('+scale+')}'}).join('')+'}';
+  const moveKeyframes=(name,frames,key)=>{
+    const src=Array.isArray(frames)&&frames.length?frames:[],weights=src.slice(1).map(f=>Math.max(70,Number(f.frame_ms||f.physics?.hangtime_ms||180)));
+    const total=weights.reduce((a,b)=>a+b,0)||1;let elapsed=0;
+    return '@keyframes '+name+'{'+src.map((f,i)=>{if(i>0)elapsed+=weights[i-1]||0;const p=f[key],pct=i===src.length-1?100:Math.round(elapsed/total*10000)/100;return pct+'%{left:'+p.x+'%;top:'+p.y+'%}'}).join('')+'}';
+  };
+  const physicsTimeline=frames=>{
+    const src=Array.isArray(frames)&&frames.length?frames:[];
+    if(src.length<=1)return src.map((f,i)=>({pct:i?100:0,ball:f.ball||{x:50,y:50},scale:Number(f.ball_scale||1),lift:0,physics:f.physics||{}}));
+    const weights=src.slice(1).map(f=>Math.max(70,Number(f.frame_ms||f.physics?.hangtime_ms||180))),total=weights.reduce((a,b)=>a+b,0)||1;
+    let elapsed=0,out=[{pct:0,ball:src[0].ball||{x:50,y:50},scale:Number(src[0].ball_scale||.84),lift:0,physics:src[0].physics||{}}];
+    for(let i=1;i<src.length;i++){
+      const from=src[i-1].ball||{x:50,y:50},to=src[i].ball||from,p=src[i].physics||{},w=weights[i-1],start=elapsed/total*100,end=(elapsed+w)/total*100;
+      const lerp=(a,b,t)=>Number(a)+(Number(b)-Number(a))*t;
+      out.push({pct:start+(end-start)*.52,ball:{x:lerp(from.x,to.x,.55),y:lerp(from.y,to.y,.55)},scale:Number(p.apex_scale||1.2),lift:Number(p.apex_lift_px||7),physics:p});
+      out.push({pct:start+(end-start)*.88,ball:{x:lerp(from.x,to.x,.93),y:lerp(from.y,to.y,.93)},scale:Number(p.bounce_scale||.94),lift:1,physics:p});
+      out.push({pct:end,ball:to,scale:Number(src[i].ball_scale||1),lift:0,physics:p});
+      elapsed+=w;
+    }
+    return out;
+  };
+  const ballKeyframes=(name,frames)=>'@keyframes '+name+'{'+physicsTimeline(frames).map(k=>{const p=k.ball,pct=Math.max(0,Math.min(100,Number(k.pct||0))).toFixed(2),scale=cap(Number(k.scale||1),.68,1.65),lift=cap(Number(k.lift||0),0,22),blur=k.physics?.skid?.2:0;return pct+'%{left:'+p.x+'%;top:'+p.y+'%;transform:translate(-50%,-50%) translateY(-'+lift+'px) scale('+scale+');filter:drop-shadow(0 '+Math.max(1,Math.round(lift*.34))+'px '+Math.max(3,Math.round(4+lift*.22))+'px rgba(0,0,0,.34)) blur('+blur+'px)}'}).join('')+'}';
   const courtStyle=(meta,surface)=>{
     const name=String(meta?.tournament?.name||'').toLowerCase(),clay=/terre|clay/i.test(surface),grass=/gazon|grass/i.test(surface);
     let a=clay?'#c06f47':grass?'#5f8d4e':'#3477ad',b=clay?'#a85634':grass?'#3e7037':'#255681';
@@ -151,6 +171,7 @@
     const styles=visual.profiles||{},styleText=(styles.user?.archetype&&styles.opponent?.archetype)?(styles.user.archetype+' vs '+styles.opponent.archetype):'';
     const resolution=visual.resolution||{},pressureScore=cap(Number(resolution.pressure_score||0),0,100);
     const resolutionText=resolution.pattern?patternLabel(resolution.pattern):'';
+    const physicsSummary=visual.physics_summary||{};
     const mix=visual.pattern_mix||{};
     const patternSummary=Object.entries(mix).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,4).map(([k,v])=>patternLabel(k)+' ×'+Number(v)).join(' · ');
     const styleTags=p=>Array.isArray(p?.tags)?p.tags:[];
@@ -181,7 +202,7 @@
         </div>
         ${(styles.user?.archetype||styles.opponent?.archetype)?`<div class="cb-style-duel">${profileCard(userName,styles.user,'user')}${profileCard(oppName,styles.opponent,'opponent')}</div>`:''}
         ${resolution.source&&resolution.source!=='kernel'?`<div class="cb-resolution-card"><div><small>Résolution spatiale</small><b>${safe(endingLabel(lp.ending||lp.shot))}${resolutionText?' · '+safe(resolutionText):''}</b></div><div class="cb-pressure"><span>Pression ${Math.round(pressureScore)}/100</span><i><b style="width:${pressureScore}%"></b></i></div></div>`:''}
-        ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)} · ${safe(patternLabel(sh.pattern))}</b><em>${safe(sh.spin||'Mixte')} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.intent?' · '+safe(intentLabel(sh.intent)):''}${sh.stretched_receiver?' · débordé':''}${shotRows.length>=16&&sh.hitter_archetype?' · '+safe(sh.hitter_archetype):''}</em></span>`).join('')}</div>`:''}
+        ${shotRows.length?`<div class="cb-physics-card"><div><small>Physique du rallye</small><b>${courtClass==='clay'?'Terre · rebond haut':courtClass==='grass'?'Gazon · rebond bas / fusant':'Dur · rebond intermédiaire'}</b></div><div class="cb-physics-metrics"><span>${Number(physicsSummary.avg_pre_bounce_kph||0)} km/h avant</span><span>${Number(physicsSummary.avg_post_bounce_kph||0)} km/h après</span><span>${Number(physicsSummary.kick_shots||0)} kick · ${Number(physicsSummary.skid_shots||0)} fusants</span></div></div><div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)} · ${safe(patternLabel(sh.pattern))}</b><em>${safe(sh.spin||'Mixte')} · ${Math.round(Number(sh.speed_kph||0))}→${Math.round(Number(sh.post_bounce_speed_kph||sh.speed_kph||0))} km/h${sh.physics?' · '+safe(physicsLabel(sh.physics)):''}${sh.intent?' · '+safe(intentLabel(sh.intent)):''}${sh.stretched_receiver?' · débordé':''}${shotRows.length>=16&&sh.hitter_archetype?' · '+safe(sh.hitter_archetype):''}</em></span>`).join('')}</div>`:''}
         <div class="cb-match-story">
           <div class="cb-point-story">
             <span class="badge">${phase}</span>
@@ -272,5 +293,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V7.1 Unlimited Spatial Rally active');
+  console.info('Court Boss Match Center V9 Surface Physics active');
 })();

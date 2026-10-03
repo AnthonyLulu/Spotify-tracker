@@ -64,7 +64,7 @@
     else if(/miami open/.test(name)){a='#4c98b5';b='#2b718e'}
     return 'background:linear-gradient(180deg,'+a+','+b+');';
   };
-  const tact=()=>({aggression:58,risk:52,net:28,returnPos:'Neutre',servePattern:'Mixte',targetWing:'Mixte',tempo:'Neutre',spin:'Mixte',effort:60,...(local.tactics||{})});
+  const tact=()=>({aggression:58,risk:52,net:28,returnPos:'Neutre',servePattern:'Mixte',targetWing:'Mixte',tempo:'Neutre',spin:'Mixte',effort:60,decidingSide:'Mixte',...(local.tactics||{})});
 
   window.cbSetMatchTactic=(k,v)=>{
     local.tactics=local.tactics||{};
@@ -91,7 +91,7 @@
         <div><small>Humidité</small><b>${Math.round(Number(w.humidity_pct||50))}%</b></div>
         <div><small>Court</small><b>${speed(meta?.court_speed)} · ${Number(meta?.court_speed||1).toFixed(2)}</b></div>
         <div><small>Altitude</small><b>${Math.round(Number(meta?.altitude_m||0))} m</b></div>
-        <div><small>Format</small><b>${meta?.match_tiebreak_decider?'2 sets + Match TB '+Number(meta?.match_tiebreak_points||10):'Best of '+Number(meta?.best_of||3)}</b></div>
+        <div><small>Format</small><b>${meta?.next_gen_format?'BO5 · sets à 4 · TB 3-3 · No-Ad':meta?.match_tiebreak_decider?'2 sets + Match TB '+Number(meta?.match_tiebreak_points||10):'Best of '+Number(meta?.best_of||3)}</b></div>
       </div>
       <div class="cb-mood-grid">
         <div><span>${safe(userName)}</span><b>${Math.round(Number(m.user||70))}/100 · ${mood(m.user)}</b></div>
@@ -105,7 +105,7 @@
     </div>`;
   }
 
-  function coaching(){
+  function coaching(meta={}){
     const t=tact();
     return `<div class="cb-coach-grid">
       <div class="cb-coach-slider"><div><span>Agressivité</span><b>${t.aggression}%</b></div><input type="range" min="1" max="100" value="${t.aggression}" oninput="cbSetMatchTactic('aggression',this.value)"></div>
@@ -117,6 +117,7 @@
       <label>Côté ciblé<select onchange="cbSetMatchTactic('targetWing',this.value)"><option ${t.targetWing==='Mixte'?'selected':''}>Mixte</option><option ${t.targetWing==='Revers'?'selected':''}>Revers</option><option ${t.targetWing==='Coup droit'?'selected':''}>Coup droit</option></select></label>
       <label>Tempo<select onchange="cbSetMatchTactic('tempo',this.value)"><option ${t.tempo==='Patient'?'selected':''}>Patient</option><option ${t.tempo==='Neutre'?'selected':''}>Neutre</option><option ${t.tempo==='Rapide'?'selected':''}>Rapide</option></select></label>
       <label>Effet / variation<select onchange="cbSetMatchTactic('spin',this.value)"><option ${t.spin==='Mixte'?'selected':''}>Mixte</option><option ${t.spin==='Lift'?'selected':''}>Lift</option><option ${t.spin==='Slice'?'selected':''}>Slice</option><option ${t.spin==='Plat'?'selected':''}>Plat</option></select></label>
+      ${meta?.no_ad?`<label>Côté point décisif<select onchange="cbSetMatchTactic('decidingSide',this.value)"><option ${t.decidingSide==='Mixte'?'selected':''}>Mixte</option><option ${t.decidingSide==='Deuce'?'selected':''}>Deuce</option><option ${t.decidingSide==='Avantage'?'selected':''}>Avantage</option></select></label>`:''}
     </div>`;
   }
 
@@ -159,17 +160,20 @@
     const matchTiebreakActive=Boolean(meta?.match_tiebreak_decider)
       &&Number(s.set_no||1)===Number(meta?.best_of||3)
       &&us===setsToWin-1&&os===setsToWin-1&&!done;
-    const tiebreakActive=(matchTiebreakActive||(ug===6&&og===6))&&!done;
+    const tiebreakAtGames=Math.max(1,Number(meta?.tiebreak_at_games||6));
+    const tiebreakActive=(matchTiebreakActive||(ug===tiebreakAtGames&&og===tiebreakAtGames))&&!done;
     const tiebreakTarget=Number(st._tiebreak_target||lp.tiebreak_target||(matchTiebreakActive?meta?.match_tiebreak_points:0)||((/grand chelem|grand slam/i.test(String(meta?.tournament?.category||''))&&Number(s.set_no||1)===Number(meta.best_of||3))?10:7));
     const pA=tiebreakActive?String(up):(typeof pointLabel==='function'?pointLabel(up,op,'A'):String(up));
     const pB=tiebreakActive?String(op):(typeof pointLabel==='function'?pointLabel(up,op,'B'):String(op));
-    const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(tiebreakActive?'tiebreak':visual.phase||lp.phase);
+    const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(matchTiebreakActive?'match_tiebreak':tiebreakActive?'tiebreak':visual.phase||lp.phase);
     const serviceCourtLabel=String(lp.service_court||'')==='ad'?'Avantage':String(lp.service_court||'')==='deuce'?'Égalité':'';
     const target=String(visual.target_zone||lp.zone||'Zone neutre'),setScore=score(s);
     const userWonLast=String(lp.winner||'')==='user',oppWonLast=String(lp.winner||'')==='opponent';
     const eventRows=(Array.isArray(st._visual_events)?st._visual_events:[]).slice(-6).reverse();
     const shotRows=Array.isArray(visual.shots)?visual.shots:[];
-    const stake=String(visual.stake||lp.stake||'normal'),stakeText=stakeLabel(stake);
+    const stake=String(visual.stake||lp.stake||'normal');
+    const noAdDeciding=Boolean(meta?.no_ad)&&!tiebreakActive&&up===3&&op===3;
+    const stakeText=noAdDeciding?'POINT DÉCISIF':stakeLabel(stake);
     const category=String(meta?.tournament?.category||'').toLowerCase(),circuit=String(meta?.tournament?.circuit||'').toLowerCase();
     const eventTier=/grand chelem|grand slam/.test(category)?'grand-slam':/masters|1000/.test(category)?'masters':/challenger/.test(category)||circuit.includes('challenger')?'challenger':/itf/.test(category)||circuit.includes('itf')?'itf':'tour';
     const ambienceLabel=eventTier==='grand-slam'?'Grand Chelem · grande arène':eventTier==='masters'?'Masters 1000 · grande affluence':eventTier==='challenger'?'Challenger · court compact':eventTier==='itf'?'ITF · court annexe':'Circuit ATP';
@@ -194,7 +198,7 @@
 
     return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
       <div class="card fm-live-match cb-live-card">
-        <div class="fm-match-top"><div><div class="eyebrow">${safe(meta.round||'Match live')} · ${safe(surface)}</div><h2>${safe(userName)} vs ${safe(oppName)}</h2></div><span class="badge ${isCommitted?'good':done?'warn':''}">${isCommitted?'Validé':done?'À valider':matchTiebreakActive?'Match TB · '+tiebreakTarget+' pts':tiebreakActive?'Tie-break · '+tiebreakTarget+' pts':'Set '+Number(s.set_no||1)}</span></div>
+        <div class="fm-match-top"><div><div class="eyebrow">${safe(meta.round||'Match live')} · ${safe(surface)}</div><h2>${safe(userName)} vs ${safe(oppName)}</h2></div><span class="badge ${isCommitted?'good':done?'warn':''}">${isCommitted?'Validé':done?'À valider':matchTiebreakActive?'Match TB · '+tiebreakTarget+' pts':tiebreakActive?'Tie-break · '+tiebreakTarget+' pts':meta?.next_gen_format?'Set '+Number(s.set_no||1)+' · 4 jeux':'Set '+Number(s.set_no||1)}</span></div>
         <div class="fm-scoreboard cb-scoreboard">
           <div class="fm-score-name">${s.serving_user?'● ':''}${safe(userName)} <small>${flags?.[c.country]||''}</small></div><b>${us}</b><b>${ug}</b><strong>${pA}</strong>
           <div class="fm-score-name">${!s.serving_user?'● ':''}${safe(oppName)} <small>${flags?.[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pB}</strong>
@@ -237,7 +241,7 @@
           <div class="cb-speed-row"><button class="${liveAutoTimer?'danger-btn':'primary'}" onclick="toggleLiveAuto()">${liveAutoTimer?'Pause':'▶ Live'}</button><button class="soft-btn" onclick="setLiveSpeed(1)">1x</button><button class="soft-btn" onclick="setLiveSpeed(2)">2x</button><button class="soft-btn" onclick="setLiveSpeed(4)">4x</button></div>
           <div class="cb-step-row"><button class="primary" onclick="playLivePoint()">Point</button><button class="soft-btn" onclick="simulateLiveGame()">Jeu</button><button class="soft-btn" onclick="simulateLiveSet()">Set</button><button class="soft-btn" onclick="simulateLiveMatch()">Match</button></div>
           <div class="cb-save-row"><button class="soft-btn" onclick="quickSaveLiveV1()">💾 Sauvegarder le score</button><button class="danger-btn" onclick="discardLiveMatchV1()">Quitter sans sauvegarder</button></div>
-        </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching()}</details>`
+        </div><details class="cb-coach-panel" open><summary>Coaching tactique</summary>${coaching(meta)}</details>`
         :isCommitted?(()=>{
           const r=local.lastCommittedMatchResult||{},out=r.tournament_outcome||{},tid=Number(s.tournament_id||0);
           const next=r.next_match_available&&tid?'<button class="primary" onclick="nextTournamentLiveMatchV1()">Match suivant</button>':'';

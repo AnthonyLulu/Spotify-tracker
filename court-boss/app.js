@@ -223,7 +223,7 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 
-const get=async(path,opts={},retried=false)=>{const key=courtBossAccessKey();const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':key,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){localStorage.removeItem('courtBossAccessKey');accessKey='';return get(path,opts,true)}if(r.status===401)throw new Error('Code d’accès Court Boss incorrect.');if(!r.ok)throw new Error(body.error||'Erreur serveur '+r.status);if(key)localStorage.setItem('courtBossAccessKey',key);return body;};
+const get=async(path,opts={},retried=false)=>{const key=courtBossAccessKey();const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':key,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){localStorage.removeItem('courtBossAccessKey');accessKey='';return get(path,opts,true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}if(key)localStorage.setItem('courtBossAccessKey',key);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 let competitionRows=[],competitionCount=0,competitionOffset=0,competitionLoading=false,competitionFilters={q:'',circuit:'Tous',category:'Toutes',surface:'Toutes',country:'',source:'Tous',prestige:'Tous',history:'Tous',holder:'Tous'};
 let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
@@ -2801,7 +2801,7 @@ function applyLiveMatchResponse(d){
  }
 }
 window.hasManagedLiveMatches=()=>liveMatchSessionsByPlayer.size>0;
-window.startLiveMatch=async()=>{
+window.startLiveMatch=async(medicalDecision=null)=>{
  const livePlayer=activePlayerCareerView();
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  if(String(livePlayer.career_focus||'mixed')==='doubles_only'){alert('Orientation Double exclusivement : le Match Center simple est désactivé pour ce joueur.');return}
@@ -2813,11 +2813,14 @@ window.startLiveMatch=async()=>{
  try{
   await ensureLivePreMatchCheckpoint();
   const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
-  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{}})});
+  const d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{},medical_decision:medicalDecision||undefined})});
   applyLiveMatchResponse(d);persist();render();
- }catch(e){alert(e.message)}
+ }catch(e){
+   if(e?.data?.injured&&e.data.can_play_hurt&&!medicalDecision&&typeof openMedicalPlayDecisionV15==='function')return openMedicalPlayDecisionV15('free',0,false,e.data);
+   alert(e.message)
+ }
 }
-window.startTournamentLiveMatch=async(id,quick=false)=>{
+window.startTournamentLiveMatch=async(id,quick=false,medicalDecision=null)=>{
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  if(!playerId)return alert('Joueur géré introuvable.');
  if(liveMatchSessionsByPlayer.has(playerId))return alert('Ce joueur a déjà un match en attente. Termine, valide ou annule-le d’abord.');
@@ -2825,13 +2828,16 @@ window.startTournamentLiveMatch=async(id,quick=false)=>{
   await ensureLivePreMatchCheckpoint();
   const d=await get('/api/live-match/start',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{}})
+   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{},medical_decision:medicalDecision||undefined})
   });
   applyLiveMatchResponse(d);
   closeOverlay();
   route='match';persist();render();
   if(quick)await simulateLiveMatch();
- }catch(e){alert(e.message)}
+ }catch(e){
+   if(e?.data?.injured&&e.data.can_play_hurt&&!medicalDecision&&typeof openMedicalPlayDecisionV15==='function')return openMedicalPlayDecisionV15('live-tournament',Number(id),quick,e.data);
+   alert(e.message)
+ }
 };
 window.startTournamentLiveDoubles=async(id,quick=false)=>{
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
@@ -4929,12 +4935,12 @@ window.saveTournamentSimulation=async()=>{
  clearPendingLiveRollback();closeOverlay();alert('Simulation validée et sauvegardée.');
 };
 
-window.playTournament=async id=>{
+window.playTournament=async(id,medicalDecision=null)=>{
   overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Création du checkpoint puis simulation du tournoi…</div></div></div>';
   try{
     await ensureLivePreMatchCheckpoint();
     const playPlayerId=activeManagedId()||primaryManagedPlayerId()||0;
-    const d=await get('/api/play-tournament',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,tactics:local.tactics||{}})});
+    const d=await get('/api/play-tournament',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,tactics:local.tactics||{},medical_decision:medicalDecision||undefined})});
     local.playedTournaments=local.playedTournaments||{};local.playedTournaments[String(playPlayerId)+':'+String(id)]=d;
     boot=await get('/api/bootstrap');
     if(boot.career){
@@ -4956,7 +4962,10 @@ window.playTournament=async id=>{
       <div class="fm-result-controls"><button class="primary" onclick="saveTournamentSimulation()">Valider & sauvegarder</button><button class="danger-btn" onclick="rollbackTournamentSimulation()">Annuler la simulation</button></div>
       <div class="card" style="margin-top:12px"><h2>Parcours de ${esc(playedName)}</h2>${(d.matches||[]).map(m=>`<div class="list-item"><div class="row between"><b>${esc(m.round_name)}</b><span class="badge ${m.winner_name===playedName?'good':'bad'}">${m.winner_name===playedName?'Victoire':'Défaite'}</span></div><div>${esc(m.player_a_name)} vs ${esc(m.player_b_name)}</div><div class="muted mini">${esc(m.score)}</div>${m.stats?`<div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted mini">1res balles</span><b>${m.stats.first_serve_pct}%</b></div><div class="kpi"><span class="muted mini">Winners</span><b>${m.stats.winners}</b></div><div class="kpi"><span class="muted mini">Fautes</span><b>${m.stats.unforced_errors}</b></div><div class="kpi"><span class="muted mini">Filet</span><b>${m.stats.net_points_won_pct}%</b></div></div>`:''}</div>`).join('')||'<div class="empty">Aucun match utilisateur.</div>'}</div>
     </div></div>`;
-  }catch(e){overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Tournoi impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`}
+  }catch(e){
+    if(e?.data?.injured&&e.data.can_play_hurt&&!medicalDecision&&typeof openMedicalPlayDecisionV15==='function')return openMedicalPlayDecisionV15('tournament',Number(id),false,e.data);
+    overlay.innerHTML=`<div class="modal" onclick="closeOverlay()"><div class="sheet"><h2>Tournoi impossible</h2><p class="muted">${esc(e.message)}</p><button class="primary" onclick="closeOverlay()">OK</button></div></div>`
+  }
 }
 window.playDoublesTournament=async id=>{
  overlay.innerHTML='<div class="modal"><div class="sheet"><div class="loader">Simulation du tableau double…</div></div></div>';

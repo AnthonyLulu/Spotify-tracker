@@ -10648,11 +10648,25 @@ Deno.serve(async(req:Request)=>{
     const doubleFault=!firstServeIn&&Math.random()<Math.max(.006,Math.min(.12,
       dfBase*(serverIsUser?(1+Math.max(-20,risk-50)*.005):1)
     ));
+    const preNoAd=liveNoAd(meta),preNoAdDecision=!preTiebreakActive&&preNoAd&&preScoreUserPoints===3&&preScoreOppPoints===3;
+    const preReceiverChoice=String(tactics.decidingSide||"Mixte");
+    const prePointInGame=preScoreUserPoints+preScoreOppPoints;
+    const preServiceCourt=preNoAdDecision
+      ?(!serverIsUser&&["Deuce","Avantage"].includes(preReceiverChoice)
+          ?(preReceiverChoice==="Deuce"?"deuce":"ad")
+          :(liveMatchHash([id,session.data.set_no,preScoreUserGames,preScoreOppGames,returnerId,"no-ad"].join("|"))%2===0?"deuce":"ad"))
+      :(prePointInGame%2===0?"deuce":"ad");
+    let serveDirection="";
+    if(serverIsUser){
+      const dirRoll=Math.random()*100,wide=Number(tm.serve_wide_pct||38),bodyPct=Number(tm.serve_body_pct||14);
+      serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
+      if(servePattern!=="Mixte"&&Math.random()<.68)serveDirection=servePattern==="Large"?"large":servePattern==="Corps"?"corps":"T";
+    }
     const kernel=livePointKernel({
       tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure,
       managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
-      momentum:Number(session.data.momentum||50),surface,firstServeIn,
-      tacticalMemory:preStats._tactical_memory
+      momentum:Number(session.data.momentum||50),surface,firstServeIn,serviceCourt:preServiceCourt,
+      actualServeDirection:serverIsUser?serveDirection:null,tacticalMemory:preStats._tactical_memory
     });
     const serverWinProb=kernel.serverWinProb;
     const pointAttrEdge=kernel.pointAttrEdge;
@@ -10660,16 +10674,15 @@ Deno.serve(async(req:Request)=>{
     const serverWon=!doubleFault&&Math.random()<serverWinProb;
     const userWon=serverIsUser?serverWon:!serverWon;
 
-    const dirRoll=Math.random()*100;
-    const wide=Number(tm.serve_wide_pct||38),bodyPct=Number(tm.serve_body_pct||14);
-    let serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
-    if(serverIsUser&&servePattern!=="Mixte"&&Math.random()<.68){
-      serveDirection=servePattern==="Large"?"large":servePattern==="Corps"?"corps":"T";
-    }else if(!serverIsUser&&kernel.opponentPlan?.servePattern&&kernel.opponentPlan.servePattern!=="Mixte"){
-      const aiRead=Math.max(0,Math.min(.94,Number(kernel.opponentPlan?.memory_read?.confidence||0)));
-      if(Math.random()<.52+aiRead*.28){
-        const aiServe=String(kernel.opponentPlan.servePattern);
-        serveDirection=aiServe==="Large"?"large":aiServe==="Corps"?"corps":"T";
+    if(!serverIsUser){
+      const dirRoll=Math.random()*100,wide=Number(tm.serve_wide_pct||38),bodyPct=Number(tm.serve_body_pct||14);
+      serveDirection=dirRoll<wide?"large":dirRoll<wide+bodyPct?"corps":"T";
+      if(kernel.opponentPlan?.servePattern&&kernel.opponentPlan.servePattern!=="Mixte"){
+        const aiRead=Math.max(0,Math.min(.94,Number(kernel.opponentPlan?.memory_read?.confidence||0)));
+        if(Math.random()<.52+aiRead*.28){
+          const aiServe=String(kernel.opponentPlan.servePattern);
+          serveDirection=aiServe==="Large"?"large":aiServe==="Corps"?"corps":"T";
+        }
       }
     }
     const aceSurface=grass?1.18:indoor?1.13:clay?.78:1;
@@ -10759,11 +10772,7 @@ Deno.serve(async(req:Request)=>{
     const pointInCurrentGame=preUserPoints+preOppPoints;
     const noAdDecidingPoint=!tiebreakActivePreview&&noAdPreview&&preUserPoints===3&&preOppPoints===3;
     const receiverChoice=String(tactics.decidingSide||"Mixte");
-    const serviceCourt=noAdDecidingPoint
-      ?(!serverIsUser&&["Deuce","Avantage"].includes(receiverChoice)
-          ?(receiverChoice==="Deuce"?"deuce":"ad")
-          :(liveMatchHash([id,session.data.set_no,preUserGames,preOppGames,returnerId,"no-ad"].join("|"))%2===0?"deuce":"ad"))
-      :(pointInCurrentGame%2===0?"deuce":"ad");
+    const serviceCourt=preServiceCourt;
     const courtClamp=(value:number,min=10,max=90)=>Math.max(min,Math.min(max,value));
     const side=serviceCourt==="deuce"?1:-1;
     const serverStartX=courtClamp(50+side*11,24,76);
@@ -11170,6 +11179,8 @@ Deno.serve(async(req:Request)=>{
         opponent_style_fit_edge:Math.round(Number(kernel.opponentStyleFitEdge||0)*10000)/10000,
         opponent_plan:kernel.opponentPlan||null,
         opponent_memory_edge:Math.round(Number(kernel.opponentMemoryEdge||0)*10000)/10000,
+        opponent_memory_state:kernel.opponentMemoryState||"IA en observation",
+        user_deception_edge:Math.round(Number(kernel.userDeceptionEdge||0)*10000)/10000,
         opponent_memory_read:kernel.opponentMemoryRead||null,
         opponent_ai_model:"CB-OPPONENT-AI-v2-memory",
         server_archetype:kernel.serverArchetype,
@@ -11216,7 +11227,7 @@ Deno.serve(async(req:Request)=>{
       ...(session.data.stats||{})
     };
     stats._tactical_memory=liveTacticalMemoryObserve(stats._tactical_memory,{
-      point_no:pointNo,server:serverIsUser?"user":"opponent",pressure,
+      point_no:pointNo,server:serverIsUser?"user":"opponent",pressure,service_court:serviceCourt,
       serve_direction:serveDirection,serve_pattern:servePattern,target_wing:targetWing,tempo,spin:spinPlan,return_pos:ret,
       aggression:ag,risk,net_intent:net,user_at_net:atNet&&Number(netPlayerId)===Number(managed.data.id),
       user_won:userWon,stake

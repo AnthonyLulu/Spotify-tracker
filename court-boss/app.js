@@ -2824,28 +2824,39 @@ window.simulateLiveGame=async()=>{
   applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
+function liveSimulationProgressKey(session=local.liveMatch){
+ if(!session)return 'none';
+ return [
+  session.status,session.user_sets,session.opponent_sets,session.set_no,
+  session.user_games,session.opponent_games,session.user_points,session.opponent_points,
+  session.serving_user,session.rally_no
+ ].join('|');
+}
+async function simulateLiveGamesUntil(stopWhen){
+ while(local.liveMatch&&local.liveMatch.status==='active'&&!stopWhen(local.liveMatch)){
+  const before=liveSimulationProgressKey(local.liveMatch);
+  const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
+  applyLiveMatchResponse(d);
+  const after=liveSimulationProgressKey(local.liveMatch);
+  if(local.liveMatch?.status==='active'&&after===before)throw new Error('Simulation bloquée : le score n’a pas progressé.');
+ }
+ return local.liveMatch;
+}
 window.simulateLiveSet=async()=>{
  if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return;
  const startSets=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
  try{
-  for(let i=0;i<20;i++){
-   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-   applyLiveMatchResponse(d);
-   if(local.liveMatch.status!=='active'||Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0)!==startSets)break;
-  }
+  await simulateLiveGamesUntil(s=>Number(s.user_sets||0)+Number(s.opponent_sets||0)!==startSets);
   persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveMatch=async()=>{
- if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return;
+ if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return local.liveMatch;
  try{
-  for(let i=0;i<60;i++){
-   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-   applyLiveMatchResponse(d);
-   if(local.liveMatch.status!=='active')break;
-  }
+  await simulateLiveGamesUntil(()=>false);
   persist();render();
- }catch(e){alert(e.message)}
+  return local.liveMatch;
+ }catch(e){alert(e.message);return local.liveMatch}
 }
 window.setLiveSpeed=speed=>{
  liveAutoSpeed=[1,2,4].includes(Number(speed))?Number(speed):1;

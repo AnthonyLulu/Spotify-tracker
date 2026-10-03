@@ -282,10 +282,10 @@
       const surface=(local.matchSurface||'Dur')==='Dur'&&local.matchIndoor?'Dur intérieur':(local.matchSurface||'Dur');
       let d=await get('/api/live-match/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({surface,player_id:playerId,tactics:tact()})});
       applyLiveMatchResponse(d);
-      for(let i=0;i<80&&String(local.liveMatch?.status||'')==='active';i++){
-        d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:tact()})});
-        applyLiveMatchResponse(d);
-      }
+      if(typeof window.simulateLiveMatch!=='function')throw new Error('Simulateur de match indisponible.');
+      await window.simulateLiveMatch();
+      d={session:local.liveMatch};
+      if(String(local.liveMatch?.status||'')==='active')throw new Error('Simulation interrompue avant la fin du match.');
       persist();render();
       const ss=local.liveMatch,sc=score(ss);
       overlay.innerHTML=`<div class="modal"><div class="sheet cb-quick-result"><div class="eyebrow">Simulation rapide</div><h1>${safe(activePlayerCareerView().player_name||'Joueur')} · ${safe(sc)}</h1><p class="muted">Même moteur que le live. Résultat encore provisoire.</p><div class="cb-result-actions"><button class="primary" onclick="closeOverlay();commitLiveMatchV1()">💾 Sauvegarder ce résultat</button><button class="soft-btn" onclick="closeOverlay();quickSaveLiveV1()">Figer comme brouillon</button><button class="danger-btn" onclick="closeOverlay();discardLiveMatchV1()">Ne pas sauvegarder / rejouer</button></div></div></div>`;

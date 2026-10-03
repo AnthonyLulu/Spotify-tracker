@@ -76,3 +76,185 @@
 
 @keyframes cbMedicalInV14{from{opacity:0;transform:scale(1.03)}to{opacity:1;transform:none}}
 @media(max-width:700px){.cb-weather-v14{top:auto;bottom:5px}.cb-venue-board-v14{max-width:54%}.cb-cinema-grid-v14{grid-template-columns:1fr 1fr}.cb-stands-v14 i{width:5px;height:5px}.cb-cinema-head-v14{align-items:flex-start}}
+
+/* Court Boss Tournament Identity V22.0 */
+.cb-live-card[data-cb-tournament-skin]{
+  --cb-theme-court-a:#356f91;
+  --cb-theme-court-b:#254f6d;
+  --cb-theme-board:#182c3b;
+  --cb-theme-accent:#8bd4e5;
+}
+.cb-live-card .cb-court[data-cb-tournament-skin]{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.025),rgba(0,0,0,.04)),
+    linear-gradient(180deg,var(--cb-theme-court-a),var(--cb-theme-court-b))!important;
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 22%,rgba(255,255,255,.10));
+}
+.cb-live-card[data-cb-tournament-skin] .cb-broadcast-head{
+  border:1px solid color-mix(in srgb,var(--cb-theme-accent) 20%,rgba(255,255,255,.07));
+  background:
+    linear-gradient(90deg,color-mix(in srgb,var(--cb-theme-board) 84%,#09110e),rgba(6,14,12,.90));
+  box-shadow:inset 3px 0 0 color-mix(in srgb,var(--cb-theme-accent) 70%,transparent);
+}
+.cb-live-card[data-cb-tournament-skin] .cb-broadcast-status b{
+  color:color-mix(in srgb,var(--cb-theme-accent) 78%,white)
+}
+.cb-live-card[data-cb-tournament-skin] .cb-tv-score{
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 18%,rgba(255,255,255,.08));
+  background:linear-gradient(180deg,rgba(6,13,12,.91),color-mix(in srgb,var(--cb-theme-board) 18%,rgba(4,10,9,.95)))
+}
+.cb-live-card[data-cb-tournament-skin] .cb-tv-score-head{
+  background:color-mix(in srgb,var(--cb-theme-board) 52%,rgba(3,9,8,.82))
+}
+.cb-live-card[data-cb-tournament-skin] .cb-tv-player i.serving{
+  background:var(--cb-theme-accent);
+  box-shadow:0 0 10px color-mix(in srgb,var(--cb-theme-accent) 62%,transparent)
+}
+.cb-live-card[data-cb-tournament-skin] .cb-live-controls{
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 17%,rgba(255,255,255,.08))
+}
+.cb-live-card[data-cb-tournament-skin] .cb-live-controls .primary,
+.cb-live-card[data-cb-tournament-skin] .cb-live-controls .active{
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cb-theme-accent) 36%,transparent)
+}
+
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-venue-board-v14{
+  background:color-mix(in srgb,var(--cb-theme-board) 88%,rgba(4,10,12,.84));
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 26%,rgba(255,255,255,.08));
+  box-shadow:0 5px 14px rgba(0,0,0,.18)
+}
+.cb-venue-board-v14 em{
+  display:block;margin-top:2px;font-size:5px;font-style:normal;opacity:.46;
+  letter-spacing:.06em;text-transform:uppercase
+}
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-ad-board,
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-score-tower{
+  background:color-mix(in srgb,var(--cb-theme-board) 78%,rgba(5,11,10,.82));
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 22%,rgba(255,255,255,.09))
+}
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-ad-board{
+  color:color-mix(in srgb,var(--cb-theme-accent) 32%,white)
+}
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-score-tower b{
+  color:color-mix(in srgb,var(--cb-theme-accent) 48%,white)
+}
+.cb-live-card .cb-court[data-cb-tournament-skin] .cb-stand{
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 12%,rgba(255,255,255,.06))
+}
+
+.cb-theme-ribbon-v14{
+  position:absolute;left:7px;top:7px;z-index:4;
+  display:flex;align-items:center;gap:5px;max-width:38%;
+  padding:4px 6px;border-radius:8px;
+  background:color-mix(in srgb,var(--cb-theme-board) 74%,rgba(4,10,10,.62));
+  border:1px solid color-mix(in srgb,var(--cb-theme-accent) 20%,rgba(255,255,255,.08));
+  backdrop-filter:blur(5px)
+}
+.cb-theme-ribbon-v14 span,.cb-theme-ribbon-v14 b{
+  font-size:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.cb-theme-ribbon-v14 span{opacity:.58}.cb-theme-ribbon-v14 b{font-weight:900}
+.cb-theme-ribbon-v14 i{width:4px;height:4px;border-radius:50%;background:var(--cb-theme-accent);box-shadow:0 0 7px color-mix(in srgb,var(--cb-theme-accent) 68%,transparent)}
+
+.cb-atmosphere-v14:before,.cb-atmosphere-v14:after{
+  content:"";position:absolute;pointer-events:none;z-index:0
+}
+.cb-court[data-cb-scene="desert"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="desert-night"] .cb-atmosphere-v14:before{
+  left:0;right:0;top:0;height:24%;
+  background:
+    radial-gradient(circle at 78% 55%,color-mix(in srgb,var(--cb-theme-accent) 35%,rgba(255,212,130,.6)) 0 5%,transparent 6%),
+    linear-gradient(180deg,rgba(226,179,105,.18),transparent 80%)
+}
+.cb-court[data-cb-scene="desert-night"] .cb-atmosphere-v14:before{opacity:.35;filter:saturate(.7) brightness(.7)}
+.cb-court[data-cb-scene="coast"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="coast-night"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="tropical"] .cb-atmosphere-v14:before{
+  left:0;right:0;top:0;height:21%;
+  background:
+    linear-gradient(180deg,rgba(120,205,225,.14),rgba(58,133,163,.05) 58%,transparent 60%),
+    repeating-linear-gradient(90deg,transparent 0 11%,rgba(255,255,255,.035) 11.2% 11.7%,transparent 12% 23%)
+}
+.cb-court[data-cb-scene="tropical"] .cb-atmosphere-v14:after{
+  left:3%;top:5%;width:16%;height:15%;
+  background:
+    radial-gradient(ellipse at 15% 20%,rgba(30,74,50,.34) 0 13%,transparent 14%),
+    radial-gradient(ellipse at 45% 5%,rgba(30,74,50,.28) 0 14%,transparent 15%),
+    linear-gradient(75deg,transparent 46%,rgba(42,74,50,.34) 47% 53%,transparent 54%);
+  transform:rotate(-8deg)
+}
+.cb-court[data-cb-scene="alpine"] .cb-atmosphere-v14:before{
+  left:0;right:0;top:0;height:20%;
+  background:
+    linear-gradient(135deg,transparent 0 42%,rgba(225,233,224,.10) 43% 56%,transparent 57%) 0 0/22% 100% repeat-x,
+    linear-gradient(180deg,rgba(178,203,214,.10),transparent)
+}
+.cb-court[data-cb-scene="heritage"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="club"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="club-clay"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="grass-arena"] .cb-atmosphere-v14:before{
+  left:0;right:0;top:0;height:17%;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px 16px);
+  border-bottom:1px solid rgba(255,255,255,.04)
+}
+.cb-court[data-cb-scene="city"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="ny-night"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="summer-city"] .cb-atmosphere-v14:before{
+  left:0;right:0;top:0;height:20%;
+  background:
+    repeating-linear-gradient(90deg,rgba(6,14,18,.18) 0 7%,rgba(255,255,255,.035) 7.2% 8%,rgba(6,14,18,.13) 8.2% 14%),
+    linear-gradient(180deg,rgba(30,52,67,.13),transparent)
+}
+.cb-court[data-cb-scene="ny-night"] .cb-atmosphere-v14:before{filter:brightness(.75)}
+.cb-court[data-cb-scene="indoor"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="neon-indoor"] .cb-atmosphere-v14:before,
+.cb-court[data-cb-scene="arena"] .cb-atmosphere-v14:before{
+  left:8%;right:8%;top:0;height:15%;
+  background:
+    radial-gradient(ellipse at 12% 0,color-mix(in srgb,var(--cb-theme-accent) 40%,white) 0 1%,transparent 7%),
+    radial-gradient(ellipse at 38% 0,color-mix(in srgb,var(--cb-theme-accent) 32%,white) 0 1%,transparent 7%),
+    radial-gradient(ellipse at 62% 0,color-mix(in srgb,var(--cb-theme-accent) 32%,white) 0 1%,transparent 7%),
+    radial-gradient(ellipse at 88% 0,color-mix(in srgb,var(--cb-theme-accent) 40%,white) 0 1%,transparent 7%)
+}
+.cb-court[data-cb-scene="neon-indoor"] .cb-atmosphere-v14:after{
+  left:18%;right:18%;top:2%;height:2px;background:var(--cb-theme-accent);
+  box-shadow:0 0 10px var(--cb-theme-accent);opacity:.5
+}
+
+.cb-live-card .cb-court.cb-arena-center[data-cb-tournament-skin]{
+  box-shadow:
+    0 20px 48px rgba(0,0,0,.34),
+    inset 0 0 0 3px color-mix(in srgb,var(--cb-theme-accent) 10%,rgba(255,255,255,.06))
+}
+.cb-live-card .cb-court.cb-arena-center[data-cb-tournament-skin] .cb-stands-v14.back{height:19%}
+.cb-live-card .cb-court.cb-arena-center[data-cb-tournament-skin] .cb-stands-v14.front{height:13%}
+.cb-live-card .cb-court.cb-arena-center[data-cb-tournament-skin] .cb-crowd-wave-v14{opacity:calc(.23 + var(--cb-v14-crowd,.45)*.34)}
+.cb-live-card .cb-court.cb-arena-show[data-cb-tournament-skin] .cb-stands-v14.back{height:15%}
+.cb-live-card .cb-court.cb-arena-outer[data-cb-tournament-skin] .cb-stands-v14{opacity:calc(.08 + var(--cb-v14-crowd,.45)*.20)}
+.cb-live-card .cb-court.cb-arena-outer[data-cb-tournament-skin] .cb-venue-board-v14{transform:translateX(-50%) scale(.9);opacity:.86}
+
+.cb-live-card .cb-court[data-cb-venue-tier="challenger"] .cb-theme-ribbon-v14{opacity:.82}
+.cb-live-card .cb-court[data-cb-venue-tier="challenger"] .cb-stands-v14.back{height:11%}
+.cb-live-card .cb-court[data-cb-venue-tier="itf"] .cb-theme-ribbon-v14{opacity:.66}
+.cb-live-card .cb-court[data-cb-venue-tier="itf"] .cb-venue-board-v14{min-width:24%;opacity:.78}
+.cb-live-card .cb-court[data-cb-venue-tier="itf"] .cb-crowd-wave-v14{display:none}
+
+.cb-live-card .cb-court.cb-night[data-cb-tournament-skin]{
+  box-shadow:inset 0 0 42px rgba(0,0,0,.18),0 16px 36px rgba(0,0,0,.28)
+}
+.cb-live-card .cb-court.cb-night[data-cb-tournament-skin] .cb-venue-board-v14{
+  box-shadow:0 0 16px color-mix(in srgb,var(--cb-theme-accent) 18%,transparent)
+}
+
+@media(max-width:700px){
+  .cb-theme-ribbon-v14{max-width:34%;padding:3px 5px}
+  .cb-theme-ribbon-v14 span,.cb-theme-ribbon-v14 b{font-size:4.5px}
+  .cb-weather-v14{max-width:33%}
+  .cb-venue-board-v14{max-width:45%;min-width:28%}
+  .cb-venue-board-v14 em{display:none}
+}
+@media(max-width:390px){
+  .cb-theme-ribbon-v14{display:none}
+  .cb-weather-v14 em{display:none}
+  .cb-venue-board-v14{max-width:54%}
+}

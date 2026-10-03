@@ -9496,6 +9496,9 @@ Deno.serve(async(req:Request)=>{
       -liveRuntimeAvgAttr(rAttr,["movement","speed","acceleration","agility","balance","stamina","strength","natural_fitness","recovery","flexibility","footwork","athleticism","work_rate"],rFormMultiplier);
     const mentalEdge=liveRuntimeAvgAttr(sAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],sFormMultiplier)
       -liveRuntimeAvgAttr(rAttr,["concentration","tactics","decision_making","shot_selection","patience","killer_instinct","determination","fighting_spirit","big_points"],rFormMultiplier);
+    const serverPressureMental=liveRuntimeAvgAttr(sAttr,["big_points","composure","concentration","confidence","determination","tenacity","killer_instinct"],sFormMultiplier);
+    const returnerPressureMental=liveRuntimeAvgAttr(rAttr,["big_points","composure","concentration","confidence","determination","tenacity","killer_instinct"],rFormMultiplier);
+    const mentalPressureEdge=Math.max(-.024,Math.min(.024,(serverPressureMental-returnerPressureMental)*pressure*.00115));
     const netEdge=liveRuntimeAvgAttr(sAttr,["volley","touch","half_volley","smash","net_positioning","transition_game","reaction"],sFormMultiplier)
       -liveRuntimeAvgAttr(rAttr,["passing_shot","lob","reaction","movement","defensive_skill","court_positioning","speed"],rFormMultiplier);
     const touchEdge=liveRuntimeAvgAttr(sAttr,["drop_shot","touch","slice","lob","patience","tactics"],sFormMultiplier)
@@ -9517,7 +9520,7 @@ Deno.serve(async(req:Request)=>{
     const effortEdge=(effort-60)*.00032;
     const userTacticEdge=targetEdge+spinEdge+tempoEdge+effortEdge;
     const pointAttrEdge=Math.max(-.06,Math.min(.06,
-      groundEdge*.00135+movementEdge*.00085+mentalEdge*(pressure?.00145:.00070)+
+      groundEdge*.00135+movementEdge*.00085+mentalEdge*(.00070+pressure*.00075)+
       netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+
       (serverIsUser?userTacticEdge:-userTacticEdge)
     ));
@@ -9587,11 +9590,12 @@ Deno.serve(async(req:Request)=>{
     if(serverIsUser)serverWinProb+=(ag-58)*.0008+(risk-52)*.00035+Math.min(70,net)*.00007+userMomentum;
     else serverWinProb+=(ret==="Avancée"?-.012:ret==="Reculée"?.006:0)-userMomentum;
     serverWinProb+=(serverMood-returnerMood)*.00055+(courtSpeed-1)*.045+(altitude/1000)*.018-wind*.00018+formEdge*.0018+conditionEdge;
-    serverWinProb+=styleMatchupEdge+(serverIsUser?userStyleFitEdge:-userStyleFitEdge);
+    serverWinProb+=styleMatchupEdge+(serverIsUser?userStyleFitEdge:-userStyleFitEdge)+mentalPressureEdge;
     serverWinProb=Math.max(.25,Math.min(.92,serverWinProb));
     return {
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
-      styleMatchupEdge,userStyleFitEdge,
+      styleMatchupEdge,userStyleFitEdge,mentalPressureEdge,pressureLevel:pressure,
+      serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };
   };
@@ -9664,6 +9668,39 @@ Deno.serve(async(req:Request)=>{
     const idx=Math.max(0,Math.floor(Number(pointIndex)||0));
     if(idx===0)return Boolean(startServerUser);
     return Math.floor((idx-1)/2)%2===0?!Boolean(startServerUser):Boolean(startServerUser);
+  };
+  const livePointPressure=(meta:any,state:any,serverIsUser:boolean)=>{
+    const up=Math.max(0,Number(state?.user_points||0)),op=Math.max(0,Number(state?.opponent_points||0));
+    const ug=Math.max(0,Number(state?.user_games||0)),og=Math.max(0,Number(state?.opponent_games||0));
+    const us=Math.max(0,Number(state?.user_sets||0)),os=Math.max(0,Number(state?.opponent_sets||0));
+    const setNo=Math.max(1,Number(state?.set_no||1));
+    const setsToWin=Math.max(2,Math.min(3,Number(meta?.sets_to_win||2)));
+    const tiebreak=ug===6&&og===6;
+    const target=tiebreak?liveTiebreakTarget(meta,setNo):0;
+    const userGamePoint=!tiebreak&&up>=3&&up-op>=1;
+    const oppGamePoint=!tiebreak&&op>=3&&op-up>=1;
+    const userSetPoint=tiebreak
+      ?(up+1>=target&&(up+1)-op>=2)
+      :(userGamePoint&&(ug+1>=6)&&(ug+1)-og>=2);
+    const oppSetPoint=tiebreak
+      ?(op+1>=target&&(op+1)-up>=2)
+      :(oppGamePoint&&(og+1>=6)&&(og+1)-ug>=2);
+    const userMatchPoint=userSetPoint&&us+1>=setsToWin;
+    const oppMatchPoint=oppSetPoint&&os+1>=setsToWin;
+    const breakPoint=!tiebreak&&(serverIsUser?oppGamePoint:userGamePoint);
+    const anyGamePoint=userGamePoint||oppGamePoint;
+    let level=0,stake="normal";
+    if(userMatchPoint||oppMatchPoint){level=1;stake="match_point"}
+    else if(userSetPoint||oppSetPoint){level=.84;stake="set_point"}
+    else if(tiebreak){
+      const nearTarget=Math.max(up,op)>=Math.max(3,target-2);
+      const late=Math.max(up,op)>=Math.max(2,target-4)||up+op>=6;
+      level=nearTarget?.76:late?.60:.48;stake="tiebreak";
+    }else if(breakPoint){level=.64;stake="break_point"}
+    else if(anyGamePoint){level=.38;stake="game_point"}
+    else if(up>=3&&op>=3){level=.44;stake="deuce"}
+    else if(ug>=4&&og>=4&&Math.abs(ug-og)<=1){level=.22;stake="late_set"}
+    return {level:Math.max(0,Math.min(1,level)),stake,tiebreak,target,user_match_point:userMatchPoint,opponent_match_point:oppMatchPoint};
   };
 
   const liveIsoAddDays=(iso:string,days:number)=>{
@@ -10138,14 +10175,16 @@ Deno.serve(async(req:Request)=>{
     const preStats:any=session.data.stats||{};
     const preTbStartServerUser=typeof preStats._tiebreak_start_server_user==="boolean"
       ?Boolean(preStats._tiebreak_start_server_user):Boolean(session.data.serving_user);
-    const pressure=preTiebreakActive
-      ?((Math.max(preScoreUserPoints,preScoreOppPoints)>=Math.max(3,preTiebreakTarget-2)
-        &&Math.abs(preScoreUserPoints-preScoreOppPoints)<=2)?1:0)
-      :((Math.max(preScoreUserPoints,preScoreOppPoints)>=3
-        &&Math.abs(preScoreUserPoints-preScoreOppPoints)<=1)?1:0);
     const serverIsUser=preTiebreakActive
       ?liveTiebreakServer(preTbStartServerUser,preScoreUserPoints+preScoreOppPoints)
       :Boolean(session.data.serving_user);
+    const pressureContext=livePointPressure(meta,{
+      user_points:preScoreUserPoints,opponent_points:preScoreOppPoints,
+      user_games:preScoreUserGames,opponent_games:preScoreOppGames,
+      user_sets:Number(session.data.user_sets||0),opponent_sets:Number(session.data.opponent_sets||0),
+      set_no:Number(session.data.set_no||1)
+    },serverIsUser);
+    const pressure=Number(pressureContext.level||0);
     const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
     const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
     const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
@@ -10266,7 +10305,9 @@ Deno.serve(async(req:Request)=>{
     const userMatchPoint=userSetPoint&&preUserSets+1>=setsToWinPreview;
     const oppMatchPoint=oppSetPoint&&preOppSets+1>=setsToWinPreview;
     const breakPoint=!tiebreakActivePreview&&(serverIsUser?oppGamePoint:userGamePoint);
-    const stake=userMatchPoint||oppMatchPoint?"match_point":userSetPoint||oppSetPoint?"set_point":breakPoint?"break_point":userGamePoint||oppGamePoint?"game_point":"normal";
+    const stake=String(pressureContext.stake||(
+      userMatchPoint||oppMatchPoint?"match_point":userSetPoint||oppSetPoint?"set_point":breakPoint?"break_point":userGamePoint||oppGamePoint?"game_point":"normal"
+    ));
     const pointNo=Number(session.data.rally_no||0)+1;
     const pointInCurrentGame=preUserPoints+preOppPoints;
     const serviceCourt=pointInCurrentGame%2===0?"deuce":"ad";
@@ -10666,6 +10707,11 @@ Deno.serve(async(req:Request)=>{
         runtime_condition_edge:Math.round(kernel.conditionEdge*10000)/10000,
         style_matchup_edge:Math.round(kernel.styleMatchupEdge*10000)/10000,
         user_style_tactic_fit_edge:Math.round(kernel.userStyleFitEdge*10000)/10000,
+        pressure_level:Math.round(Number(kernel.pressureLevel||0)*100),
+        mental_pressure_edge:Math.round(Number(kernel.mentalPressureEdge||0)*10000)/10000,
+        server_pressure_mental:Math.round(Number(kernel.serverPressureMental||0)*10)/10,
+        returner_pressure_mental:Math.round(Number(kernel.returnerPressureMental||0)*10)/10,
+        pressure_model:"CB-PRESSURE-v2",
         server_archetype:kernel.serverArchetype,
         returner_archetype:kernel.returnerArchetype,
         user_runtime_condition:Math.round(kernel.userCondition*1000)/1000,
@@ -10738,7 +10784,7 @@ Deno.serve(async(req:Request)=>{
       stroke:finalShot?.stroke||null,spin:finalShot?.spin||null,
       pattern:finalPattern,intent:finalShot?.intent||null,
       hitter_archetype:finalShot?.hitter_archetype||null,
-      ending,pressure_score:spatialPressureScore,resolution_source:spatialResolution,
+      ending,pressure_score:spatialPressureScore,match_pressure:Math.round(pressure*100),resolution_source:spatialResolution,
       speed_kph:maxVisualSpeed,at:new Date().toISOString()
     });
     stats._visual_events=visualEvents.slice(-8);
@@ -10857,7 +10903,7 @@ Deno.serve(async(req:Request)=>{
       returner_id:returnerId,
       winner_id:userWon?Number(managed.data.id):Number(opp.id),
       surface,
-      pressure:Boolean(pressure),
+      pressure:Boolean(pressure>=.5),
       serve_number:firstServeIn?1:2,
       first_serve_in:firstServeIn,
       serve_direction:serveDirection,
@@ -11033,35 +11079,46 @@ Deno.serve(async(req:Request)=>{
         p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:0
       });
       const tm:any=matchup.error?{}:(matchup.data||{});
-      const kernel=livePointKernel({
-        tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:0,
+      const serverFormLift=serverIsUser?userFormLift:oppFormLift;
+      let simUp=Number(session.data.user_points||0),simOp=Number(session.data.opponent_points||0);
+      const initialPressure=livePointPressure(meta,{
+        user_points:simUp,opponent_points:simOp,user_games:ug,opponent_games:og,user_sets:us,opponent_sets:os,set_no:setNo
+      },serverIsUser);
+      const initialKernel=livePointKernel({
+        tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:Number(initialPressure.level||0),
         managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
         momentum:Number(session.data.momentum||50),surface,firstServeIn:null
       });
-      const serverPointP=kernel.serverWinProb;
-      lastServerWinProbability=serverPointP;
-      lastConditionEdge=kernel.conditionEdge;
-      const serverFormLift=serverIsUser?userFormLift:oppFormLift;
-      const userPointP=serverIsUser?serverPointP:1-serverPointP;
-      const qUser=1-userPointP;
-      const deuceUserWin=(userPointP*userPointP)/(userPointP*userPointP+qUser*qUser);
+      const initialUserPointP=serverIsUser?initialKernel.serverWinProb:1-initialKernel.serverWinProb;
+      const qUser=1-initialUserPointP;
+      const deuceUserWin=(initialUserPointP*initialUserPointP)/(initialUserPointP*initialUserPointP+qUser*qUser);
       const gameWinFromScore=(a:number,b:number):number=>{
         if((a>=4||b>=4)&&Math.abs(a-b)>=2)return a>b?1:0;
         if(a>=3&&b>=3){
           if(a===b)return deuceUserWin;
-          if(a===b+1)return userPointP+qUser*deuceUserWin;
-          if(b===a+1)return userPointP*deuceUserWin;
+          if(a===b+1)return initialUserPointP+qUser*deuceUserWin;
+          if(b===a+1)return initialUserPointP*deuceUserWin;
         }
-        return userPointP*gameWinFromScore(a+1,b)+qUser*gameWinFromScore(a,b+1);
+        return initialUserPointP*gameWinFromScore(a+1,b)+qUser*gameWinFromScore(a,b+1);
       };
-      let simUp=Number(session.data.user_points||0),simOp=Number(session.data.opponent_points||0);
       const prob=Math.max(.001,Math.min(.999,gameWinFromScore(simUp,simOp)));
       responseWinProbability=Math.round(prob*100);
       let gameSafety=0;
       while(!((simUp>=4||simOp>=4)&&Math.abs(simUp-simOp)>=2)){
         if(++gameSafety>120)return h({error:"Jeu interrompu par la garde de sécurité.",score:{user:simUp,opponent:simOp}},500);
+        const pointPressure=livePointPressure(meta,{
+          user_points:simUp,opponent_points:simOp,user_games:ug,opponent_games:og,user_sets:us,opponent_sets:os,set_no:setNo
+        },serverIsUser);
+        const pointKernel=livePointKernel({
+          tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:Number(pointPressure.level||0),
+          managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0)+gamePoints,
+          momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+        });
+        const userPointP=serverIsUser?pointKernel.serverWinProb:1-pointKernel.serverWinProb;
         if(Math.random()<userPointP)simUp++;else simOp++;
         gamePoints++;
+        lastServerWinProbability=pointKernel.serverWinProb;
+        lastConditionEdge=pointKernel.conditionEdge;
       }
       userWon=simUp>simOp;
       if(userWon)ug++;else og++;

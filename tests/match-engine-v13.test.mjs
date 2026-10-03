@@ -103,3 +103,13 @@ test('double live scoring keeps no-ad and deciding match tie-break',()=>{
   assert.match(backend,/gameFinished=up>=4\|\|op>=4/);
   assert.match(backend,/tbTarget/);
 });
+
+
+test('TM live presentation uses names, dense motion and automatic flow',()=>{
+  assert.match(v1,/cbDenseMotionFrames/);
+  assert.match(v1,/cb-dot-name/);
+  assert.match(v1,/cb-tactic-hud/);
+  assert.match(v1,/cb-ball-shadow/);
+  assert.match(app,/startLiveAutoFlow/);
+  assert.doesNotMatch(v1,/simulateLiveGame\(\)">Jeu<\/button>/);
+});

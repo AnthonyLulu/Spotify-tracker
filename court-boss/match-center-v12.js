@@ -1,4 +1,4 @@
-/* Court Boss Match Center V12 · Living Arena */
+/* Court Boss Match Center V12.3 · Living Arena + Tactical AI */
 (function(){
   const plans={
     balanced:{label:'Équilibré',aggression:56,risk:50,net:28,effort:60,returnPos:'Neutre',servePattern:'Mixte',targetWing:'Mixte',tempo:'Neutre',spin:'Mixte'},
@@ -69,27 +69,46 @@
     const live=document.querySelector('.cb-live-card'),court=live?.querySelector('.cb-court');
     if(!live||!court||live.querySelector('.cb-ai-read-v12'))return;
     const s=sessionOf(),fx=s?.last_point?.environment_effects||{},plan=fx.opponent_plan||{},read=plan.memory_read||fx.opponent_memory_read||{};
-    const confidence=Math.round(Number(read.confidence||0)*100),edge=Number(fx.opponent_memory_edge||0);
-    const state=edge>.004?'Lecture juste':edge<-.004?'IA piégée':'Lecture incertaine';
+    const confidence=Math.round(Number(read.confidence||0)*100),edge=Number(fx.opponent_memory_edge||0),deception=Number(fx.user_deception_edge||0);
+    const state=String(fx.opponent_memory_state||(edge>.004?"IA t'a lu":edge<-.004?"Piège tactique réussi":"Lecture contestée"));
     const cls=edge>.004?'reading':edge<-.004?'fooled':'neutral';
+    const pct=x=>Math.round(Number(x||0)*100);
+    const readValue=x=>x?.value?String(x.value)+' · '+pct(x.share)+'%':'—';
     const card=el('div','cb-ai-read-v12 '+cls);
     const head=el('div','cb-ai-read-head-v12');
-    const left=el('div');left.append(el('small','',"LECTURE IA"),el('b','',state));head.append(left,el('strong','',confidence+'%'));
+    const left=el('div');left.append(el('small','',"ANALYSTE IA · MÉMOIRE V3"),el('b','',state));head.append(left,el('strong','',confidence+'%'));
     card.appendChild(head);
+    const meta=el('div','cb-ai-read-meta-v12');
+    meta.append(
+      el('span','',Math.round(Number(read.total_points||0))+' pts observés'),
+      el('span','',read.serve_read_source?'lecture '+read.serve_read_source:'lecture globale'),
+      el('span','',Math.round(Number(read.switch_rate||0)*100)+'% changements'),
+      el('span','',deception>0?'feinte +'+(deception*100).toFixed(1)+' pt':'contre '+(Math.max(0,edge)*100).toFixed(1)+' pt')
+    );
+    card.appendChild(meta);
     const grid=el('div','cb-ai-read-grid-v12');
     const item=(label,value)=>{const d=el('div');d.append(el('span','',label),el('b','',value||'—'));return d};
+    const seq=read.serve_sequence?.next
+      ?'Après '+(read.serve_sequence.previous||'service')+' → '+read.serve_sequence.next+' · '+pct(read.serve_sequence.share)+'%'
+      :'—';
     grid.append(
-      item('Service attendu',read.serve_direction?.value),
-      item('Cible attendue',read.target_wing?.value),
-      item('Tempo attendu',read.tempo?.value),
+      item('Service attendu',readValue(read.serve_direction)),
+      item('Séquence lue',seq),
+      item('Cible attendue',readValue(read.target_wing)),
+      item('Tempo / effet',(read.tempo?.value||'—')+' · '+(read.spin?.value||'—')),
+      item('Risque lu',read.risk_mode||'—'),
+      item('Jeu au filet',read.net_mode||'—'),
+      item('Position retour',read.return_pos?.value||'—'),
       item('Plan de contre',plan.counterMode||plan.adaptation)
     );
     card.appendChild(grid);
     const note=edge<-.004
-      ?'Tu as cassé un pattern que l’IA pensait fiable. Son anticipation devient un handicap sur ce point.'
+      ?'Tu viens de casser sa lecture. Elle s’est préparée au mauvais schéma et son anticipation te donne un petit avantage sur ce point.'
       :edge>.004
-        ?'Tu répètes un schéma qu’elle a identifié. Elle bénéficie de son anticipation.'
-        :'Elle n’a pas encore assez de données fiables ou tu varies suffisamment.';
+        ?'Ton schéma est devenu lisible. Si tu le répètes encore, son contre-plan continuera à gagner en valeur.'
+        :confidence<35
+          ?'Elle collecte encore les habitudes. Les points sous pression comptent davantage dans sa lecture.'
+          :'La lecture existe, mais tu varies assez pour empêcher un contre net.';
     card.appendChild(el('p','',note));
     court.insertAdjacentElement('afterend',card);
   };

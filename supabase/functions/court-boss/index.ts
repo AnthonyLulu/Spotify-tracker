@@ -11085,6 +11085,38 @@ Deno.serve(async(req:Request)=>{
       stats._visual_events=visualEvents.slice(-8);
     }
 
+    let retirement:any=null;
+    if(gameFinished&&!completed&&!stats._retirement){
+      const med:any=meta?.medical||{};
+      const candidates=[
+        liveMedicalRetirementCandidate("user",managed.data,ua,med.user,meta,Number(session.data.rally_no||0)+1,effort),
+        liveMedicalRetirementCandidate("opponent",opp,oa,med.opponent,meta,Number(session.data.rally_no||0)+1,60)
+      ].filter(Boolean).sort((a:any,b:any)=>Number(b.probability||0)-Number(a.probability||0));
+      if(candidates.length){
+        const hit:any=candidates[0];
+        retirement={...hit,winner:hit.side==="user"?"opponent":"user",occurred_at:new Date().toISOString()};
+        stats._retirement=retirement;
+        status="finished";completed=true;
+        if(log.length)Object.assign(log[log.length-1],{
+          retirement:true,retired_side:retirement.side,retired_player_id:retirement.player_id,
+          retirement_injury:retirement.injury_type
+        });
+        lastPoint.phase="medical";lastPoint.match_winner=retirement.winner;lastPoint.medical=retirement;
+        lastPoint.visual_label="Abandon médical · "+String(retirement.player_name||"Joueur");
+        if(lastPoint.visual&&typeof lastPoint.visual==="object"){
+          lastPoint.visual.phase="medical";
+          lastPoint.visual.label=lastPoint.visual_label;
+          lastPoint.visual.medical=retirement;
+        }
+        visualEvents.push({
+          kind:"medical",phase:"medical",label:lastPoint.visual_label,winner:retirement.winner,
+          player_id:retirement.player_id,injury_type:retirement.injury_type,severity:retirement.severity,
+          at:retirement.occurred_at
+        });
+        stats._visual_events=visualEvents.slice(-8);
+      }
+    }
+
     const momentumNew=Math.max(10,Math.min(90,
       Number(session.data.momentum||50)+(userWon?1:-1)+(gameFinished?(lastPoint.winner==="user"?3:-3):0)+(setFinished?(setWinner===userName?7:-7):0)
     ));
@@ -11418,6 +11450,32 @@ Deno.serve(async(req:Request)=>{
       stats._visual_events=gameVisualEvents.slice(-8);
     }
 
+    let retirement:any=null;
+    if(!completed&&!stats._retirement){
+      const med:any=meta?.medical||{};
+      const candidates=[
+        liveMedicalRetirementCandidate("user",managed.data,ua,med.user,meta,Number(session.data.rally_no||0)+gamePoints,effort),
+        liveMedicalRetirementCandidate("opponent",opp,oa,med.opponent,meta,Number(session.data.rally_no||0)+gamePoints,60)
+      ].filter(Boolean).sort((a:any,b:any)=>Number(b.probability||0)-Number(a.probability||0));
+      if(candidates.length){
+        const hit:any=candidates[0];
+        retirement={...hit,winner:hit.side==="user"?"opponent":"user",occurred_at:new Date().toISOString()};
+        stats._retirement=retirement;
+        status="finished";completed=true;
+        if(log.length)Object.assign(log[log.length-1],{
+          retirement:true,retired_side:retirement.side,retired_player_id:retirement.player_id,
+          retirement_injury:retirement.injury_type
+        });
+        const medicalEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
+        medicalEvents.push({
+          kind:"medical",phase:"medical",label:"Abandon médical · "+String(retirement.player_name||"Joueur"),
+          winner:retirement.winner,player_id:retirement.player_id,injury_type:retirement.injury_type,
+          severity:retirement.severity,at:retirement.occurred_at
+        });
+        stats._visual_events=medicalEvents.slice(-8);
+      }
+    }
+
     const userName=String(managed.data.name||"Joueur");
     const momentumNew=Math.max(10,Math.min(90,
       Number(session.data.momentum||50)+(userWon?4:-4)+(setFinished?(setWinner===userName?8:-8):0)
@@ -11430,11 +11488,14 @@ Deno.serve(async(req:Request)=>{
       serving_user:nextServingUser,momentum:momentumNew,tactics,stats,score_log:log,
       last_point:{
         winner:userWon?"user":"opponent",
+        match_winner:retirement?.winner||null,medical:retirement,
         server:tiebreakActive?"mixed":(Boolean(session.data.serving_user)?"user":"opponent"),
-        phase:matchTiebreakActive?"match_tiebreak":tiebreakActive?"tiebreak":setFinished?"set":"game",
-        visual_label:tiebreakActive
-          ?((matchTiebreakActive?"Match tie-break ":"Tie-break ")+String(lastLog.tiebreak_user_points||0)+"-"+String(lastLog.tiebreak_opponent_points||0))
-          :setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
+        phase:retirement?"medical":matchTiebreakActive?"match_tiebreak":tiebreakActive?"tiebreak":setFinished?"set":"game",
+        visual_label:retirement
+          ?("Abandon médical · "+String(retirement.player_name||"Joueur"))
+          :tiebreakActive
+            ?((matchTiebreakActive?"Match tie-break ":"Tie-break ")+String(lastLog.tiebreak_user_points||0)+"-"+String(lastLog.tiebreak_opponent_points||0))
+            :setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
         tiebreak:tiebreakActive,match_tiebreak:matchTiebreakActive,tiebreak_target:tiebreakActive?Number(lastLog.tiebreak_target||0):null,
         tiebreak_score:tiebreakActive?{user:Number(lastLog.tiebreak_user_points||0),opponent:Number(lastLog.tiebreak_opponent_points||0)}:null,
         model:"CB-MATCH-ENGINE-v6 · canonical game kernel",
@@ -11486,19 +11547,21 @@ Deno.serve(async(req:Request)=>{
     const stats:any=session.data.stats||{};
     const meta:any=stats._meta||{};
     const weather:any=meta.weather||{};
-    const won=Number(session.data.user_sets||0)>Number(session.data.opponent_sets||0);
+    const retirement:any=stats._retirement||null;
+    const won=retirement?String(retirement.winner)==="user":Number(session.data.user_sets||0)>Number(session.data.opponent_sets||0);
     const setRows=(Array.isArray(session.data.score_log)?session.data.score_log:[]).filter((x:any)=>x?.set_finished);
-    const score=setRows.map((x:any)=>{
+    const scoreBase=setRows.map((x:any)=>{
       const base=String(x.user_games)+"-"+String(x.opponent_games);
       if(x.match_tiebreak)return "["+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+"]";
       return x.tiebreak?base+" ("+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+")":base;
     }).join(" ")||("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
+    const score=scoreBase+(retirement?" RET":"");
     const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
     const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;
     const matchLoad=Math.min(8,Math.max(3,Math.ceil((Number(session.data.rally_no||0)+setRows.length*18)/55)));
     const effortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.065;
     const fatigueAdd=Math.max(5,Math.min(18,Math.round(5+matchLoad+heatLoad+windLoad+effortLoad)));
-    const nextCondition={
+    const nextCondition:any={
       fatigue:Math.min(100,Number(managed.data.fatigue||18)+fatigueAdd),
       fitness:Math.max(35,Number(managed.data.fitness||91)-Math.max(2,Math.ceil(fatigueAdd*.36))),
       form:Math.max(35,Math.min(100,Number(managed.data.form||72)+(won?2:-1))),
@@ -11525,6 +11588,46 @@ Deno.serve(async(req:Request)=>{
       }
     }).select("id").single();
     if(history.error)return h({error:history.error.message},500);
+
+    let medicalWrite:any=null;
+    if(retirement?.player_id&&retirement?.injury_type){
+      const injuredId=Number(retirement.player_id);
+      const existing=await db.from("injuries").select("id,injury_type,status")
+        .eq("player_id",injuredId).in("status",["active","Active"])
+        .order("started_at",{ascending:false}).limit(1).maybeSingle();
+      if(existing.error){
+        medicalWrite={ok:false,error:existing.error.message};
+      }else if(existing.data){
+        medicalWrite={ok:true,existing:true,injury_id:existing.data.id,injury_type:existing.data.injury_type};
+      }else{
+        const expected=new Date(matchDate+"T12:00:00Z");
+        expected.setUTCDate(expected.getUTCDate()+Math.max(2,Number(retirement.days_out||5)));
+        const injuryInsert=await db.from("injuries").insert({
+          player_id:injuredId,injury_type:String(retirement.injury_type),
+          severity:String(retirement.severity||"Faible"),started_at:matchDate,
+          expected_return:expected.toISOString().slice(0,10),
+          aggravation_risk:Math.max(0,Math.min(100,Number(retirement.aggravation_risk||20))),
+          treatment:"Évaluation post-match + soins",status:"active"
+        }).select("id").single();
+        if(injuryInsert.error){
+          medicalWrite={ok:false,error:injuryInsert.error.message};
+        }else{
+          medicalWrite={ok:true,existing:false,injury_id:injuryInsert.data.id,injury_type:retirement.injury_type,expected_return:expected.toISOString().slice(0,10)};
+          const injuredBase=injuredId===playerId?managed.data:opp;
+          const fitnessLoss=Number(retirement.days_out||0)>=28?20:Number(retirement.days_out||0)>=12?14:8;
+          if(injuredId===playerId){
+            nextCondition.injury_status=String(retirement.injury_type);
+            nextCondition.fitness=Math.max(20,Math.min(Number(nextCondition.fitness||90),Number(managed.data.fitness||90)-fitnessLoss));
+          }else{
+            await db.from("players").update({
+              injury_status:String(retirement.injury_type),
+              fitness:Math.max(20,Number(injuredBase?.fitness||90)-fitnessLoss),
+              fatigue:Math.max(0,Number(injuredBase?.fatigue||18)-5)
+            }).eq("id",injuredId);
+          }
+        }
+      }
+    }
 
     const playerUpdate=await db.from("players").update(nextCondition).eq("id",playerId);
     if(playerUpdate.error)return h({error:playerUpdate.error.message},500);
@@ -11685,7 +11788,7 @@ Deno.serve(async(req:Request)=>{
     return h({
       ok:true,committed:true,session:committed.data,history_id:history.data.id,
       result:{won,score,tournament_name:tournamentName,round},
-      condition:nextCondition,fatigue_added:fatigueAdd,
+      condition:nextCondition,fatigue_added:fatigueAdd,medical:medicalWrite,retirement,
       tournament_live:tournamentLive,tournament_terminal:tournamentTerminal,next_match_available:nextTournamentMatch,
       tournament_outcome:tournamentOutcome,world_progress:worldProgress,
       elo:elo.error?{error:elo.error.message}:elo.data,

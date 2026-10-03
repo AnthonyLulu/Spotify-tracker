@@ -23,6 +23,26 @@
     const t=meta().tournament||{};
     return String(t.name||t.category||t.circuit||'Court Boss');
   };
+  const venueLabel=()=>{
+    const t=meta().tournament||{};
+    if(t.venue)return String(t.venue);
+    const k=String(t.competition_key||'').toLowerCase(),n=String(t.name||'').toLowerCase();
+    if(k==='grand-slam:australian-open'||/australian open/.test(n))return 'Rod Laver Arena';
+    if(k==='grand-slam:roland-garros'||/roland/.test(n))return 'Court Philippe-Chatrier';
+    if(k==='grand-slam:wimbledon'||/wimbledon/.test(n))return 'Centre Court';
+    if(k==='grand-slam:us-open'||/us open/.test(n))return 'Arthur Ashe Stadium';
+    if(k==='masters:indian-wells'||/indian wells|bnp paribas/.test(n))return 'Stadium 1';
+    if(k==='masters:miami'||/miami open/.test(n))return 'Hard Rock Stadium';
+    if(k==='masters:monte-carlo'||/monte-carlo/.test(n))return 'Court Rainier III';
+    if(k==='masters:madrid'||/madrid open/.test(n))return 'Manolo Santana Stadium';
+    if(k==='masters:rome'||/internazionali|rome/.test(n))return 'Campo Centrale';
+    if(k==='masters:canada')return String(t.city||'Canada')+' · Centre Court';
+    if(k==='masters:cincinnati'||/cincinnati/.test(n))return 'Center Court';
+    if(k==='masters:shanghai'||/shanghai/.test(n))return 'Stadium Court';
+    if(k==='masters:paris'||/paris masters/.test(n))return 'Paris La Défense Arena';
+    if(k==='atp:finals'||/atp finals|nitto/.test(n))return 'Inalpi Arena';
+    return venueTier()==='slam'?'Centre Court':venueTier()==='premium'?'Show Court':venueTier()==='challenger'?'Challenger Arena':venueTier()==='itf'?'ITF Court':'Tour Court';
+  };
   const weatherIcon=w=>{
     const c=String(w?.condition||'').toLowerCase();
     if(/pluie|rain/.test(c))return '☔';
@@ -57,7 +77,7 @@
     shell.innerHTML=
       '<div class="cb-stands-v14 back"><i></i><i></i><i></i><i></i><i></i><i></i></div>'+
       '<div class="cb-stands-v14 front"><i></i><i></i><i></i><i></i></div>'+
-      '<div class="cb-venue-board-v14"><span>'+esc(tournamentLabel())+'</span><b>'+esc(tier==='slam'?'CENTRE COURT':tier==='premium'?'SHOW COURT':tier==='challenger'?'CHALLENGER ARENA':tier==='itf'?'ITF COURT':'TOUR COURT')+'</b></div>'+
+      '<div class="cb-venue-board-v14"><span>'+esc(tournamentLabel())+'</span><b>'+esc(venueLabel())+'</b></div>'+
       '<div class="cb-weather-v14"><span>'+weatherIcon(w)+'</span><b>'+esc(w.condition||'Stable')+'</b><em>'+Math.round(Number(w.temperature_c||21))+'° · vent '+Math.round(Number(w.wind_kph||0))+' km/h · '+Math.round(Number(w.humidity_pct||50))+'%</em></div>'+
       (rain?'<div class="cb-rain-v14">'+Array.from({length:18},(_,i)=>'<i style="--i:'+i+'"></i>').join('')+'</div>':'')+
       (indoor?'<div class="cb-roof-v14"></div>':'')+

@@ -151,6 +151,27 @@
       (pending.length?'<div class="cb-pending-events-v13">Événements possibles : '+pending.map(e=>esc(e.label||e.type)).join(' · ')+'</div>':'');
   };
 
+
+  const rawPlayDoubles=typeof window.playDoublesTournament==='function'?window.playDoublesTournament:null;
+  window.cbRunDoublesPlanV13=(id,plan)=>{
+    if(typeof local!=='undefined'){
+      local.doublesTactics={plan:String(plan||'balanced')};
+      if(typeof persist==='function')persist();
+    }
+    if(rawPlayDoubles)rawPlayDoubles(Number(id));
+  };
+  if(rawPlayDoubles)window.playDoublesTournament=(id)=>{
+    const host=document.getElementById('overlay');if(!host)return rawPlayDoubles(Number(id));
+    const plans=[
+      ['balanced','Équilibré','Pas de biais forcé, la paire joue selon ses qualités.'],
+      ['poach','Poach agressif','Le joueur au filet coupe davantage. Fort si volée/réaction/communication suivent.'],
+      ['australian','Formation australienne','Décalage au service + filet pour casser les angles de retour.'],
+      ['target_weak','Cibler le plus faible','Insiste sur le retour/volée adverse les plus attaquables.'],
+      ['safe','Sécuriser','Plus de discipline, moins de prise de risque, priorité à la communication.']
+    ];
+    host.innerHTML='<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet cb-double-plan-sheet-v13"><div class="sheet-head"><div><div class="eyebrow">Plan de double</div><h1>Choisis comment ta paire va jouer</h1><div class="muted">Le plan modifie réellement la force de la paire selon ses attributs. Pas de bonus gratuit.</div></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="cb-double-plan-grid-v13">'+plans.map(p=>'<button onclick="cbRunDoublesPlanV13('+Number(id)+',\''+p[0]+'\')"><b>'+p[1]+'</b><span>'+p[2]+'</span></button>').join('')+'</div></div></div>';
+  };
+
   const doublesAnim=(id,frames,key)=>{
     const pts=frames.map((f,i)=>{const p=f[key]||{};return (i/(Math.max(1,frames.length-1))*100).toFixed(1)+'%{left:'+cap(p.x,0,100)+'%;top:'+cap(p.y,0,100)+'%}'}).join('');
     return '@keyframes '+id+'{'+pts+'}';
@@ -164,7 +185,7 @@
       const init=n=>esc(String(n||'?').split(/\s+/).slice(-1)[0].slice(0,3).toUpperCase());
       const last=fr[fr.length-1]||{};
       const style='<style>'+doublesAnim(id+'ua',fr,'user_a')+doublesAnim(id+'ub',fr,'user_b')+doublesAnim(id+'oa',fr,'opp_a')+doublesAnim(id+'ob',fr,'opp_b')+doublesAnim(id+'ball',fr,'ball')+'</style>';
-      return '<div class="cb-double-replay-v13">'+style+'<div class="cb-double-head-v13"><b>'+esc(m.round_name)+' · '+esc(m.score)+'</b><span>'+esc(v.formation)+' · poach '+Number(v.poach_intent||0)+'% · com '+Number(v.communication||0)+'%</span></div>'+
+      return '<div class="cb-double-replay-v13">'+style+'<div class="cb-double-head-v13"><b>'+esc(m.round_name)+' · '+esc(m.score)+'</b><span>'+esc(v.formation)+' · '+esc(v.manager_plan||'balanced')+' · poach '+Number(v.poach_intent||0)+'% · com '+Number(v.communication||0)+'%</span></div>'+
         '<div class="cb-double-court-v13"><i class="line net"></i><i class="line base a"></i><i class="line base b"></i>'+
           '<div class="p user a" style="left:'+cap(last.user_a?.x,0,100)+'%;top:'+cap(last.user_a?.y,0,100)+'%;animation:'+id+'ua 3.8s ease-in-out infinite alternate">'+init(names[0]?.name)+'</div>'+
           '<div class="p user b" style="left:'+cap(last.user_b?.x,0,100)+'%;top:'+cap(last.user_b?.y,0,100)+'%;animation:'+id+'ub 3.8s ease-in-out infinite alternate">'+init(names[1]?.name)+'</div>'+

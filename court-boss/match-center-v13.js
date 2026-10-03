@@ -9,6 +9,33 @@
   const visual=()=>live()?.last_point?.visual||{};
   const opp=()=>typeof local!=='undefined'?(local.liveOpponent||{}):{};
   const slug=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-');
+  let audioOn=localStorage.getItem('cbMatchAudioV13')!=='0',audioCtx=null,lastAudioKey='';
+  window.cbToggleMatchAudioV13=()=>{
+    audioOn=!audioOn;localStorage.setItem('cbMatchAudioV13',audioOn?'1':'0');
+    if(audioOn)ensureAudio();if(typeof render==='function')render();
+  };
+  const ensureAudio=()=>{
+    if(!audioOn)return null;
+    try{
+      const C=window.AudioContext||window.webkitAudioContext;
+      if(!C)return null;
+      audioCtx=audioCtx||new C();
+      if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
+      return audioCtx;
+    }catch{return null}
+  };
+  const crowdCue=(strength=.35,duration=.45)=>{
+    const ctx=ensureAudio();if(!ctx||ctx.state!=='running')return;
+    const len=Math.max(1,Math.floor(ctx.sampleRate*duration)),buf=ctx.createBuffer(1,len,ctx.sampleRate),d=buf.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);
+    const src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();
+    filter.type='bandpass';filter.frequency.value=750;filter.Q.value=.45;
+    gain.gain.setValueAtTime(.0001,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.003,Math.min(.045,.012+strength*.025)),ctx.currentTime+.04);
+    gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+duration);
+    src.buffer=buf;src.connect(filter);filter.connect(gain);gain.connect(ctx.destination);src.start();
+  };
+  document.addEventListener('pointerdown',()=>{if(audioOn)ensureAudio()},{passive:true});
 
   window.cbToggleAutoRuleV13=(key)=>{
     if(typeof local==='undefined')return;
@@ -90,6 +117,14 @@
   const addTacticalLab=()=>{
     const card=document.querySelector('.cb-live-card');const court=card?.querySelector('.cb-court');if(!card||!court)return;
     const s=live(),st=s?.stats||{},m=meta(),p=fx().opponent_plan||{},h2h=m.h2h_memory||{},profiles=visual().profiles||{};
+    const review=s?.last_point?.line_review||null;
+    const audioKey=[s?.id||0,s?.last_point?.point_no||0,s?.last_point?.environment_event?.id||'',review?.point_no||''].join('|');
+    if(audioKey!==lastAudioKey){
+      lastAudioKey=audioKey;
+      const stake=String(s?.last_point?.visual?.stake||s?.last_point?.stake||'normal');
+      const strength=stake==='match_point'?1:stake==='set_point'?.78:stake==='break_point'?.62:s?.last_point?.ace?.68:.32;
+      if(Number(s?.last_point?.point_no||0)>0||s?.last_point?.environment_event)crowdCue(strength,strength>.7?.72:.42);
+    }
     let lab=card.querySelector('.cb-tactical-lab-v13');
     if(!lab){lab=el('section','cb-tactical-lab-v13');const ai=card.querySelector('.cb-ai-read-v12');(ai||court).insertAdjacentElement('afterend',lab)}
     const applied=Array.isArray(fx().situational_rules_applied)?fx().situational_rules_applied:[];
@@ -99,8 +134,9 @@
     const netUser=pct(st.user_net_points_won,st.user_net_points),netOpp=pct(st.opp_net_points_won,st.opp_net_points);
     const u=profiles.user||{},o=profiles.opponent||{};
     lab.innerHTML=
-      '<div class="cb-lab-head-v13"><div><small>TACTICAL LAB V13</small><b>Match vivant · lecture + identité</b></div><span>'+esc(String(m.ambience?.session_of_day||'live'))+' · public '+Math.round(Number(m.ambience?.crowd_intensity||0))+'%</span></div>'+
+      '<div class="cb-lab-head-v13"><div><small>TACTICAL LAB V13</small><b>Match vivant · lecture + identité</b></div><div class="cb-lab-actions-v13"><span>'+esc(String(m.ambience?.session_of_day||'live'))+' · public '+Math.round(Number(m.ambience?.crowd_intensity||0))+'%</span><button onclick="cbToggleMatchAudioV13()">'+(audioOn?'🔊':'🔇')+'</button></div></div>'+
       (event?'<div class="cb-event-v13"><b>'+esc(event.label||'Événement match')+'</b><span>'+esc(event.type||event.event_type||'')+(event.duration_min?' · '+Number(event.duration_min)+' min':'')+'</span></div>':'')+
+      (review?'<div class="cb-event-v13 review"><b>'+esc(review.label||'Review électronique')+'</b><span>'+esc(review.system||'Electronic Line Calling')+' · '+esc(review.decision||'confirmé')+'</span></div>':'')+
       '<div class="cb-lab-grid-v13">'+
         '<div class="cb-lab-block-v13"><span>Identité de ton joueur</span><b>'+esc(u.archetype||'All-court')+' · '+esc(u.handedness||'')+'</b><em>'+esc(u.movement_signature||'')+' · '+esc(u.baseline_depth||'')+'</em></div>'+
         '<div class="cb-lab-block-v13"><span>Identité adverse</span><b>'+esc(o.archetype||p.archetype||'All-court')+' · '+esc(o.handedness||'')+'</b><em>'+esc(o.movement_signature||'')+' · retour '+esc(o.return_position||p.returnPos||'Neutre')+'</em></div>'+

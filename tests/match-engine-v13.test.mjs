@@ -17,11 +17,11 @@ test('all Match Center browser scripts parse',()=>{
 });
 
 test('V13 production page loads the live doubles stack with fresh cache keys',()=>{
-  assert.match(play,/app\.js\?v=20261003-live-doubles-v1/);
-  assert.match(play,/match-center-v1\.js\?v=20261003-living-arena-v13/);
+  assert.match(play,/app\.js\?v=20261004-match-center-v21-9/);
+  assert.match(play,/match-center-v1\.js\?v=20261004-match-center-v21-9/);
   assert.match(play,/match-center-v12\.js\?v=20261003-tactical-ai-v5/);
-  assert.match(play,/match-center-v13\.js\?v=20261003-live-doubles-v1/);
-  assert.match(play,/match-center-v13\.css\?v=20261003-live-doubles-v1/);
+  assert.match(play,/match-center-v13\.js\?v=20261004-match-center-v21-9/);
+  assert.match(play,/match-center-v13\.css\?v=20261004-match-center-v21-9/);
 });
 
 test('match kernel advertises and contains the new causal layers',()=>{

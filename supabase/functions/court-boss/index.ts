@@ -9481,12 +9481,17 @@ Deno.serve(async(req:Request)=>{
       Math.max(0,load-70)*.0000012;
     probability*=Math.max(.62,Math.min(1.30,1.08-(recovery-10)*.025));
     probability=Math.max(.00002,Math.min(.0038,probability));
-    if(Math.random()>=probability)return null;
+    const seedBase=[
+      "medical-v2",String(meta?.career_date||""),String(meta?.tournament?.id||0),
+      String(meta?.round||""),String(player?.id||0),side,String(pointsPlayed||0)
+    ].join("|");
+    const deterministicUnit=(salt:string)=>liveMatchHash(seedBase+"|"+salt)/4294967295;
+    if(deterministicUnit("trigger")>=probability)return null;
 
     const vulnerable=String(medical?.body_area||"").toLowerCase();
-    const hotEvent=heat>=3&&fatigue>=62&&Math.random()<.48;
+    const hotEvent=heat>=3&&fatigue>=62&&deterministicUnit("heat")<.48;
     const fallbackAreas=["ischio","épaule","cheville","poignet","dos","genou","coude","mollet"];
-    const area=vulnerable||fallbackAreas[liveMatchHash(String(player?.id||0)+"|"+String(pointsPlayed||0)+"|"+side)%fallbackAreas.length];
+    const area=vulnerable||fallbackAreas[liveMatchHash(seedBase+"|area")%fallbackAreas.length];
     const labels:Record<string,string>={
       "ischio":"Élongation ischio-jambiers","épaule":"Douleur épaule","cheville":"Entorse cheville",
       "poignet":"Inflammation poignet","dos":"Surcharge lombaire","genou":"Douleur genou",
@@ -9494,8 +9499,8 @@ Deno.serve(async(req:Request)=>{
     };
     const injuryType=hotEvent?"Crampes et surcharge liées à la chaleur":(labels[area]||"Surcharge musculaire");
     const rawDays=hotEvent
-      ?2+Math.floor(Math.random()*4)
-      :5+Math.round(proneness*.42+recurrence*.10+Math.max(0,fatigue-55)*.12+Math.random()*8-Math.max(0,recovery-10)*.20);
+      ?2+Math.floor(deterministicUnit("days-hot")*4)
+      :5+Math.round(proneness*.42+recurrence*.10+Math.max(0,fatigue-55)*.12+deterministicUnit("days")*8-Math.max(0,recovery-10)*.20);
     const daysOut=Math.max(2,Math.min(42,rawDays));
     const severity=daysOut>=28?"Élevée":daysOut>=12?"Modérée":"Faible";
     const aggravationRisk=Math.max(10,Math.min(95,Math.round(12+proneness*2.1+recurrence*.35+Math.max(0,fatigue-50)*.45)));
@@ -9504,7 +9509,7 @@ Deno.serve(async(req:Request)=>{
       injury_type:injuryType,severity,days_out:daysOut,aggravation_risk:aggravationRisk,
       body_area:hotEvent?"systemic":area,
       probability:Math.round(probability*100000)/1000,
-      trigger:"post_game",points_played:load
+      trigger:"post_game",points_played:load,deterministic:true,seed_key:seedBase
     };
   };
   const liveStyleProfile=(attrs:any,formMultiplier=1)=>{

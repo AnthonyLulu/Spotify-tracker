@@ -92,3 +92,11 @@
 .cb-ends-flipped .cb-court-hud::after{content:"CÔTÉS INVERSÉS";margin-left:5px;font-size:7px;opacity:.48;letter-spacing:.06em}
 @media(max-width:700px){.cb-crowd{height:15px}.cb-event-grand-slam .cb-crowd{height:22px}.cb-shot-chip{min-width:112px}.cb-stake-banner{font-size:9px}.cb-court-hud b{max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 @media(prefers-reduced-motion:reduce){.cb-stake-banner,.cb-changeover,.cb-clay-slide::after{animation:none!important}}
+
+
+/* Court Boss Spatial Rally V7 */
+.cb-rally-trace{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;opacity:.2}.cb-rally-trace polyline{fill:none;stroke:rgba(255,255,255,.88);stroke-width:.48;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1.5 1.8}
+.cb-shot-count{flex:0 0 auto;align-self:center;padding:6px 8px;border-radius:9px;background:rgba(255,255,255,.07);font-size:9px;font-weight:900;white-space:nowrap}
+.cb-shot-chip.stretched{border-top-color:rgba(255,190,94,.55)}.cb-shot-chip.stretched i{background:rgba(255,190,94,.16)}
+.cb-ball-flight{z-index:7}.cb-court .cb-dot[style*="animation:"]{transition:none}.cb-court .cb-ball[style*="animation:"]{transition:none}
+@media(prefers-reduced-motion:reduce){.cb-court .cb-dot[style*="animation:"],.cb-court .cb-ball[style*="animation:"]{animation:none!important}}

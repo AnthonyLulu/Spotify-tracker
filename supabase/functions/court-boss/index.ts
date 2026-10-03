@@ -10077,7 +10077,7 @@ Deno.serve(async(req:Request)=>{
       +(avgAttr(sAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],sFormMultiplier)
         -avgAttr(rAttr,["patience","rally_tolerance","stamina","defensive_skill","court_positioning"],rFormMultiplier))*.035
     ));
-    const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(18,
+    const rally=(ace||doubleFault||unreturned)?(doubleFault?0:1):Math.max(2,Math.min(80,
       2+Math.floor(-Math.log(Math.max(.001,1-Math.random()))*Math.max(1,rallyMean-2))
     ));
     const rallyBand=rally<=4?"0-4":rally<=8?"5-8":"9+";
@@ -10185,33 +10185,175 @@ Deno.serve(async(req:Request)=>{
     const clayVisual=/terre|clay/i.test(surface),grassVisual=/gazon|grass/i.test(surface);
     const baseRallySpin=clayVisual?"Lift":grassVisual?"Slice":"Plat";
     const explicitUserSpin=["Lift","Slice","Plat"].includes(spinPlan)?spinPlan:null;
-    const shotCount=doubleFault?1:(ace||unreturned?1:Math.max(3,Math.min(8,rally+1)));
-    const detailedPath:any[]=[{x:serverStartX,y:serverIsUser?82:18,stage:"contact"}];
+    const profileOf=(attrs:any,mult:number)=>{
+      const forehand=avgAttr(attrs,["forehand","forehand_power","forehand_accuracy"],mult);
+      const backhand=avgAttr(attrs,["backhand","backhand_power","backhand_accuracy"],mult);
+      const mobility=avgAttr(attrs,["movement","speed","agility","court_positioning","anticipation"],mult);
+      const defense=avgAttr(attrs,["defensive_skill","rally_tolerance","stamina","court_positioning","anticipation"],mult);
+      const touch=avgAttr(attrs,["touch","drop_shot","slice","half_volley"],mult);
+      const netGame=avgAttr(attrs,["volley","net_positioning","transition_game","half_volley","touch"],mult);
+      const power=avgAttr(attrs,["forehand_power","backhand_power","serve_power"],mult);
+      const positioning=avgAttr(attrs,["court_positioning","anticipation","decision_making","movement"],mult);
+      const archetype=netGame>=14&&netGame>defense+1?"Attaquant filet":
+        defense>=14&&defense>power+1?"Contreur":
+        power>=14&&power>touch+1?"Puncheur":
+        touch>=14?"Créatif":"All-court";
+      return {forehand,backhand,mobility,defense,touch,net:netGame,power,positioning,archetype};
+    };
+    const userProfile=profileOf(ua,userFormMultiplier),oppProfile=profileOf(oa,oppFormMultiplier);
+    const visualSeed=Number(id||0)*131+pointNo*977+Math.round(courtSpeed*100)*17;
+    const visualRand=(salt:number)=>{
+      const z=Math.sin(visualSeed+salt*12.9898)*43758.5453123;
+      return z-Math.floor(z);
+    };
+    const moveToward=(from:any,to:any,maxDist:number)=>{
+      const dx=Number(to.x)-Number(from.x),dy=Number(to.y)-Number(from.y),dist=Math.sqrt(dx*dx+dy*dy);
+      if(!Number.isFinite(dist)||dist<=maxDist||dist===0)return {x:Number(to.x),y:Number(to.y)};
+      const k=maxDist/dist;
+      return {x:Number(from.x)+dx*k,y:Number(from.y)+dy*k};
+    };
+    const playerClamp=(p:any)=>({x:courtClamp(Number(p.x),10,90),y:courtClamp(Number(p.y),10,90)});
+    const ballClamp=(p:any)=>({x:courtClamp(Number(p.x),3,97),y:courtClamp(Number(p.y),3,97)});
+    let shotCount=doubleFault?1:(ace||unreturned?1:Math.max(3,rally+1));
+    if(!doubleFault&&!ace&&!unreturned){
+      const winnerEnding=ending==="winner"||ending==="return_winner"||ending==="rally_winner";
+      const desiredFinalHitterUser=winnerEnding?userWon:!userWon;
+      const finalHitterUser=serverIsUser?((shotCount-1)%2===0):((shotCount-1)%2===1);
+      if(finalHitterUser!==desiredFinalHitterUser)shotCount++;
+      shotCount=Math.min(81,shotCount);
+    }
+    let userPos=playerClamp({...userStart}),oppPos=playerClamp({...opponentStart});
+    let ballCurrent=ballClamp({x:serverStartX,y:serverIsUser?82:18});
+    const rallyFrames:any[]=[{
+      index:0,stage:"ready",ball:{...ballCurrent},user:{...userPos},opponent:{...oppPos},
+      ball_scale:.84
+    }];
     const visualShots:any[]=[];
     for(let shotIndex=0;shotIndex<shotCount;shotIndex++){
       const hitterUser=serverIsUser?shotIndex%2===0:shotIndex%2===1;
       const isServeVisual=shotIndex===0;
-      const stroke=isServeVisual?"service":((pointNo+shotIndex+(hitterUser?0:1))%3===0?"revers":"coup_droit");
-      const spin=isServeVisual?(serveDirection==="large"?"Slice":"Plat"):(hitterUser?(explicitUserSpin||baseRallySpin):(clayVisual?"Lift":grassVisual?(shotIndex%2?"Slice":"Plat"):(shotIndex%3===0?"Lift":"Plat")));
+      const hitterProfile=hitterUser?userProfile:oppProfile,receiverProfile=hitterUser?oppProfile:userProfile;
+      const hitterPos=hitterUser?userPos:oppPos,receiverPos=hitterUser?oppPos:userPos;
+      const hitterAtNet=hitterUser?hitterPos.y<=63:hitterPos.y>=37;
+      const receiverAtNet=hitterUser?receiverPos.y>=37:receiverPos.y<=63;
+      const shortIncoming=hitterUser?ballCurrent.y<70:ballCurrent.y>30;
+      const naturalForehand=((ballCurrent.x-hitterPos.x)*(hitterUser?1:-1))>=0;
+      const stroke=isServeVisual?"service":(naturalForehand||hitterProfile.forehand>=hitterProfile.backhand+2?"coup_droit":"revers");
+      const roll=visualRand(shotIndex*19+3),roll2=visualRand(shotIndex*19+7),roll3=visualRand(shotIndex*19+11);
+      let pattern=isServeVisual?(serveDirection==="large"?"wide":serveDirection==="corps"?"body":"t"):"crosscourt";
+      if(!isServeVisual){
+        const receiverDeep=hitterUser?receiverPos.y<25:receiverPos.y>75;
+        const canDrop=hitterProfile.touch>=11&&receiverDeep;
+        const canApproach=shortIncoming&&hitterProfile.net>=11;
+        const insideChance=stroke==="coup_droit"&&Math.abs(hitterPos.x-50)>=12;
+        if(hitterAtNet)pattern="volley";
+        else if(receiverAtNet)pattern=roll<(0.32+(hitterProfile.touch-10)*.018)?"lob":"passing";
+        else if(canDrop&&roll<Math.max(.05,Math.min(.22,.07+(hitterProfile.touch-10)*.012)))pattern="drop_shot";
+        else if(canApproach&&roll<Math.max(.10,Math.min(.38,.16+(hitterProfile.net-10)*.018)))pattern="approach";
+        else if(insideChance&&roll<.22+(hitterProfile.forehand-hitterProfile.backhand)*.015)pattern=roll2<.72?"inside_out":"inside_in";
+        else pattern=roll<(.68-Math.max(0,risk-50)*.002)?"crosscourt":"down_the_line";
+      }
+      let spin=isServeVisual?(serveDirection==="large"?"Slice":"Plat"):
+        hitterUser?(explicitUserSpin||baseRallySpin):
+        clayVisual?"Lift":grassVisual?(roll2<.58?"Slice":"Plat"):(roll2<.26?"Lift":roll2<.42?"Slice":"Plat");
+      if(pattern==="drop_shot"||pattern==="volley")spin="Slice";
+      if(pattern==="lob")spin="Lift";
       const surfaceSpeed=grassVisual?12:clayVisual?-10:0;
       const spinSpeed=spin==="Plat"?8:spin==="Slice"?1:-5;
-      const visualSpeedKph=Math.max(78,Math.min(232,Math.round(
+      const strokePower=stroke==="coup_droit"?hitterProfile.forehand:stroke==="revers"?hitterProfile.backhand:hitterProfile.power;
+      const visualSpeedKph=Math.max(58,Math.min(238,Math.round(
         isServeVisual
-          ?172+(courtSpeed-1)*42+Math.min(16,altitude/150)+Math.max(0,ag-50)*.28
-          :112+(courtSpeed-1)*30+surfaceSpeed+spinSpeed+Math.max(0,effort-60)*.16
+          ?166+hitterProfile.power*2.1+(courtSpeed-1)*42+Math.min(16,altitude/150)
+          :90+strokePower*3.0+(courtSpeed-1)*30+surfaceSpeed+spinSpeed+(pattern==="drop_shot"?-42:pattern==="volley"?-22:0)
       )));
-      const arc=spin==="Lift"||clayVisual?"high":spin==="Slice"||grassVisual?"low":"medium";
-      const lane=((pointNo+shotIndex*3)%5)-2;
-      const pathX=isServeVisual?serviceTargetX:courtClamp(50+lane*12+(targetWing==="Revers"?8:targetWing==="Coup droit"?-8:0),16,84);
-      const pathY=isServeVisual?bounceY:(hitterUser?24+(shotIndex%3)*3:76-(shotIndex%3)*3);
-      detailedPath.push({x:pathX,y:pathY,stage:isServeVisual?"serve":"rally",stroke,spin,speed_kph:visualSpeedKph,arc,hitter:hitterUser?"user":"opponent"});
-      visualShots.push({index:shotIndex+1,hitter:hitterUser?"user":"opponent",stroke,spin,speed_kph:visualSpeedKph,arc});
+      const arc=pattern==="lob"?"very_high":spin==="Lift"||clayVisual?"high":spin==="Slice"||grassVisual?"low":"medium";
+      const isFinal=shotIndex===shotCount-1;
+      let targetX=50,targetY=hitterUser?22:78;
+      if(isServeVisual){targetX=serviceTargetX;targetY=bounceY}
+      else{
+        const deepY=hitterUser?18+roll3*12:82-roll3*12;
+        const shortY=hitterUser?38+roll3*6:62-roll3*6;
+        const sameLane=courtClamp(hitterPos.x+(roll2-.5)*8,13,87);
+        const oppositeLane=courtClamp(100-hitterPos.x+(roll2-.5)*10,13,87);
+        if(pattern==="crosscourt"){targetX=oppositeLane;targetY=deepY}
+        else if(pattern==="down_the_line"){targetX=sameLane;targetY=deepY}
+        else if(pattern==="inside_out"){targetX=hitterPos.x<50?82:18;targetY=deepY}
+        else if(pattern==="inside_in"){targetX=hitterPos.x<50?22:78;targetY=deepY}
+        else if(pattern==="drop_shot"){targetX=roll2<.5?38:62;targetY=shortY}
+        else if(pattern==="lob"){targetX=courtClamp(50+(roll2-.5)*24,24,76);targetY=hitterUser?12:88}
+        else if(pattern==="passing"){targetX=receiverPos.x<50?82:18;targetY=deepY}
+        else if(pattern==="approach"){targetX=oppositeLane;targetY=deepY}
+        else if(pattern==="volley"){targetX=receiverPos.x<50?74:26;targetY=shortY}
+      }
+      if(isFinal&&!isServeVisual){
+        const winnerEnding=ending==="winner"||ending==="return_winner"||ending==="rally_winner";
+        if(winnerEnding){
+          if(receiverAtNet)pattern=roll<.45?"passing":"lob";
+          targetX=receiverPos.x<50?82:18;
+          targetY=pattern==="drop_shot"?(hitterUser?40:60):(hitterUser?16:84);
+        }else{
+          const netError=roll<.34;
+          pattern=netError?"net_error":"out";
+          if(netError){targetX=courtClamp(50+(roll2-.5)*34,20,80);targetY=hitterUser?49:51}
+          else{targetX=roll2<.5?3:97;targetY=hitterUser?Math.max(8,deepY-6):Math.min(92,deepY+6)}
+        }
+      }
+      const target=ballClamp({x:targetX,y:targetY});
+      const desiredReceiver=playerClamp({
+        x:courtClamp(target.x+(receiverPos.x<target.x?-2:2),10,90),
+        y:hitterUser?Math.max(12,Math.min(43,target.y+7)):Math.min(88,Math.max(57,target.y-7))
+      });
+      const dx=desiredReceiver.x-receiverPos.x,dy=desiredReceiver.y-receiverPos.y,distance=Math.sqrt(dx*dx+dy*dy);
+      const reactionFactor=Math.max(.55,Math.min(1.18,1.1-(visualSpeedKph-105)/260));
+      const moveCapacity=(5.5+receiverProfile.mobility*.72+receiverProfile.defense*.20)*reactionFactor;
+      const stretched=distance>moveCapacity*1.08;
+      const receiverNext=playerClamp(moveToward(receiverPos,desiredReceiver,moveCapacity));
+      const recoveryTarget=playerClamp({
+        x:(pattern==="inside_out"||pattern==="inside_in")?courtClamp(50+(hitterPos.x-50)*.28,34,66):50,
+        y:hitterUser?(pattern==="approach"||pattern==="volley"?58:82):(pattern==="approach"||pattern==="volley"?42:18)
+      });
+      const recoveryCapacity=3.5+hitterProfile.positioning*.42+(pattern==="approach"?5:0);
+      const hitterNext=playerClamp(moveToward(hitterPos,recoveryTarget,recoveryCapacity));
+      if(hitterUser){userPos=hitterNext;oppPos=receiverNext}else{oppPos=hitterNext;userPos=receiverNext}
+      ballCurrent={...target};
+      const ballScale=arc==="very_high"?1.34:arc==="high"?1.18:arc==="low"?.86:1;
+      visualShots.push({
+        index:shotIndex+1,hitter:hitterUser?"user":"opponent",stroke,spin,pattern,
+        speed_kph:visualSpeedKph,arc,stretched_receiver:stretched,
+        receiver:hitterUser?"opponent":"user",target_x:Math.round(target.x*10)/10,target_y:Math.round(target.y*10)/10
+      });
+      rallyFrames.push({
+        index:shotIndex+1,stage:isServeVisual?"serve":isFinal?"finish":"rally",
+        ball:{...ballCurrent},user:{...userPos},opponent:{...oppPos},
+        ball_scale:ballScale,stroke,spin,pattern,hitter:hitterUser?"user":"opponent",
+        stretched_receiver:stretched,speed_kph:visualSpeedKph
+      });
     }
-    if(!doubleFault&&!ace&&!unreturned&&detailedPath.length>=4){
-      detailedPath[detailedPath.length-1]={...detailedPath[detailedPath.length-1],x:finishX,y:finishY,stage:"finish"};
-      ballPath=detailedPath;
+    const detailedPath:any[]=rallyFrames.map((frame:any)=>({
+      x:frame.ball.x,y:frame.ball.y,stage:frame.stage,stroke:frame.stroke||null,spin:frame.spin||null,
+      speed_kph:frame.speed_kph||null,pattern:frame.pattern||null,hitter:frame.hitter||null
+    }));
+    if(doubleFault){
+      detailedPath.splice(0,detailedPath.length,
+        {x:serverStartX,y:serverIsUser?82:18,stage:"serve"},
+        {x:serviceTargetX,y:bounceY,stage:"fault"},
+        {x:courtClamp(serviceTargetX+side*8,3,97),y:serverIsUser?48:52,stage:"out"}
+      );
+    }else if(ace||unreturned){
+      detailedPath.splice(0,detailedPath.length,
+        {x:serverStartX,y:serverIsUser?82:18,stage:"serve"},
+        {x:serviceTargetX,y:bounceY,stage:"bounce"},
+        {x:returnerStartX,y:serverIsUser?20:80,stage:ace?"ace":"unreturned"}
+      );
     }
+    ballPath=detailedPath;
+    const visualFinalUser=playerClamp(userPos),visualFinalOpponent=playerClamp(oppPos);
     const maxVisualSpeed=visualShots.reduce((mx:any,x:any)=>Math.max(mx,Number(x.speed_kph||0)),0);
+    const durationMs=Math.max(650,Math.min(12000,Math.round(520+shotCount*(clayVisual?235:grassVisual?175:205))));
+    const styleSummary={
+      user:{archetype:userProfile.archetype,mobility:Math.round(userProfile.mobility*10)/10,defense:Math.round(userProfile.defense*10)/10,touch:Math.round(userProfile.touch*10)/10,net:Math.round(userProfile.net*10)/10},
+      opponent:{archetype:oppProfile.archetype,mobility:Math.round(oppProfile.mobility*10)/10,defense:Math.round(oppProfile.defense*10)/10,touch:Math.round(oppProfile.touch*10)/10,net:Math.round(oppProfile.net*10)/10}
+    };
 
     let up=Number(session.data.user_points||0),op=Number(session.data.opponent_points||0);
     if(userWon)up++;else op++;
@@ -10236,19 +10378,20 @@ Deno.serve(async(req:Request)=>{
         opponent_runtime_condition:Math.round(kernel.oppCondition*1000)/1000,
         form_modifier_runtime_only:true
       },
-      phase:visualPhase,visual_label:visualLabel,
-      user_x:userEnd.x,user_y:userEnd.y,opp_x:opponentEnd.x,opp_y:opponentEnd.y,
+      point_no:pointNo,phase:visualPhase,visual_label:visualLabel,
+      user_x:visualFinalUser.x,user_y:visualFinalUser.y,opp_x:visualFinalOpponent.x,opp_y:visualFinalOpponent.y,
       ball_x:ballPath[ballPath.length-1].x,ball_y:ballPath[ballPath.length-1].y,
       zone:atNet?"Filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
       visual:{
-        phase:visualPhase,label:visualLabel,target_zone:visualTarget,stake,
-        user_start:userStart,user_end:userEnd,opponent_start:opponentStart,opponent_end:opponentEnd,
+        point_no:pointNo,phase:visualPhase,label:visualLabel,target_zone:visualTarget,stake,
+        user_start:userStart,user_end:visualFinalUser,opponent_start:opponentStart,opponent_end:visualFinalOpponent,
         user_reaction:userWon?"celebrate":ending==="unforced_error"?"frustrated":"reset",
         opponent_reaction:userWon?(ending==="unforced_error"?"frustrated":"reset"):"celebrate",
-        user_slide:clayVisual&&rally>=4&&Math.abs(userEnd.x-userStart.x)>=5,
-        opponent_slide:clayVisual&&rally>=4&&Math.abs(opponentEnd.x-opponentStart.x)>=5,
+        user_slide:clayVisual&&rally>=4&&rallyFrames.some((f:any)=>f.stretched_receiver&&f.hitter==="opponent"),
+        opponent_slide:clayVisual&&rally>=4&&rallyFrames.some((f:any)=>f.stretched_receiver&&f.hitter==="user"),
         surface_motion:clayVisual?"slide":grassVisual?"short_steps":"neutral",
-        max_speed_kph:maxVisualSpeed,shots:visualShots,ball_path:ballPath
+        duration_ms:durationMs,max_speed_kph:maxVisualSpeed,profiles:styleSummary,
+        shots:visualShots,frames:rallyFrames,ball_path:ballPath
       },
       at:new Date().toISOString()
     };

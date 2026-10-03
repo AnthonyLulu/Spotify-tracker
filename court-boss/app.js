@@ -2802,22 +2802,30 @@ window.commitLiveMatch=async(saveAfter=true)=>{
  }catch(e){alert(e.message)}
 };
 
+function liveVisualDelayMs(session=local.liveMatch){
+ const raw=Number(session?.last_point?.visual?.duration_ms||900);
+ return Math.max(220,Math.min(12500,Math.round(raw/Math.max(1,liveAutoSpeed)+140)));
+}
+const liveSleep=ms=>new Promise(resolve=>setTimeout(resolve,Math.max(0,ms)));
 window.playLivePoint=async()=>{
- if(!local.liveMatch)return;
+ if(!local.liveMatch||liveAutoBusy)return;
+ liveAutoBusy=true;
  try{
   const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
-  applyLiveMatchResponse(d);if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}persist();render();
+  applyLiveMatchResponse(d);if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null}persist();render();
+  await liveSleep(liveVisualDelayMs());
  }catch(e){alert(e.message)}
+ finally{liveAutoBusy=false}
 }
 window.simulateLiveGame=async()=>{
- if(!local.liveMatch||local.liveMatch.status!=='active')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return;
  try{
   const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
   applyLiveMatchResponse(d);persist();render();
  }catch(e){alert(e.message)}
 }
 window.simulateLiveSet=async()=>{
- if(!local.liveMatch||local.liveMatch.status!=='active')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return;
  const startSets=Number(local.liveMatch.user_sets||0)+Number(local.liveMatch.opponent_sets||0);
  try{
   for(let i=0;i<20;i++){
@@ -2829,7 +2837,7 @@ window.simulateLiveSet=async()=>{
  }catch(e){alert(e.message)}
 }
 window.simulateLiveMatch=async()=>{
- if(!local.liveMatch||local.liveMatch.status!=='active')return;
+ if(!local.liveMatch||local.liveMatch.status!=='active'||liveAutoBusy)return;
  try{
   for(let i=0;i<60;i++){
    const d=await get('/api/live-match/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
@@ -2841,29 +2849,32 @@ window.simulateLiveMatch=async()=>{
 }
 window.setLiveSpeed=speed=>{
  liveAutoSpeed=[1,2,4].includes(Number(speed))?Number(speed):1;
- if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;toggleLiveAuto()}
+ if(liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=setTimeout(liveAutoTick,80)}
  render();
 }
 async function liveAutoTick(){
  if(liveAutoBusy||!local.liveMatch||local.liveMatch.status!=='active'){
-   if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
+   if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null;render()}
    return;
  }
  liveAutoBusy=true;
  try{
    const d=await get('/api/live-match/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:local.liveMatch.id,tactics:local.tactics||{}})});
    applyLiveMatchResponse(d);persist();render();
-   if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render()}
+   if(local.liveMatch?.status!=='active'&&liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null;render()}
  }catch(e){
-   if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null}
+   if(liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null}
    alert(e.message);
- }finally{liveAutoBusy=false}
+ }finally{
+   liveAutoBusy=false;
+   if(liveAutoTimer&&local.liveMatch?.status==='active')liveAutoTimer=setTimeout(liveAutoTick,liveVisualDelayMs());
+ }
 }
 window.toggleLiveAuto=()=>{
- if(liveAutoTimer){clearInterval(liveAutoTimer);liveAutoTimer=null;render();return}
+ if(liveAutoTimer){clearTimeout(liveAutoTimer);liveAutoTimer=null;render();return}
  if(!local.liveMatch||local.liveMatch.status!=='active')return;
- liveAutoTimer=setInterval(liveAutoTick,Math.max(180,900/liveAutoSpeed));
- liveAutoTick();render();
+ liveAutoTimer=setTimeout(liveAutoTick,0);
+ render();
 }
 window.clearLiveMatch=()=>{
  const playerId=liveMatchOwnerId();

@@ -1,4 +1,4 @@
-/* Court Boss Match Center V6 · Rally Cinema */
+/* Court Boss Match Center V7 · Spatial Rally */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
@@ -19,12 +19,12 @@
     unforced_error:'Faute directe',rally_winner:'Point construit'
   }[String(v||'').toLowerCase()]||String(v||'Point').replaceAll('_',' '));
   const pos=(p,f)=>({x:cap(Number(p?.x??f.x),8,92),y:cap(Number(p?.y??f.y),7,93)});
-  const samplePath=(path,count,fallback)=>{
-    const src=Array.isArray(path)&&path.length?path:[fallback];
-    return Array.from({length:count},(_,i)=>pos(src[Math.round(i*(src.length-1)/Math.max(1,count-1))]||fallback,fallback));
-  };
+  const ballPos=(p,f)=>({x:cap(Number(p?.x??f.x),3,97),y:cap(Number(p?.y??f.y),3,97)});
   const strokeLabel=v=>String(v||'').toLowerCase()==='coup_droit'?'CD':String(v||'').toLowerCase()==='revers'?'REV':String(v||'').toLowerCase()==='service'?'SERV':'FRAPPE';
+  const patternLabel=v=>({crosscourt:'Croisé',down_the_line:'Long de ligne',inside_out:'Inside-out',inside_in:'Inside-in',drop_shot:'Amortie',lob:'Lob',passing:'Passing',approach:'Montée',volley:'Volée',wide:'Extérieur',body:'Corps',t:'T',net_error:'Filet',out:'Dehors'}[String(v||'')]||String(v||''));
   const stakeLabel=v=>({break_point:'BALLE DE BREAK',set_point:'BALLE DE SET',match_point:'BALLE DE MATCH',game_point:'BALLE DE JEU'}[String(v||'')]||'');
+  const moveKeyframes=(name,frames,key)=>'@keyframes '+name+'{'+frames.map((f,i)=>{const p=f[key],pct=Math.round(i*100/Math.max(1,frames.length-1));return pct+'%{left:'+p.x+'%;top:'+p.y+'%}'}).join('')+'}';
+  const ballKeyframes=(name,frames)=>'@keyframes '+name+'{'+frames.map((f,i)=>{const p=f.ball,pct=Math.round(i*100/Math.max(1,frames.length-1)),scale=cap(Number(f.ball_scale||1),.72,1.4);return pct+'%{left:'+p.x+'%;top:'+p.y+'%;transform:translate(-50%,-50%) scale('+scale+')}'}).join('')+'}';
   const courtStyle=(meta,surface)=>{
     const name=String(meta?.tournament?.name||'').toLowerCase(),clay=/terre|clay/i.test(surface),grass=/gazon|grass/i.test(surface);
     let a=clay?'#c06f47':grass?'#5f8d4e':'#3477ad',b=clay?'#a85634':grass?'#3e7037':'#255681';
@@ -116,9 +116,13 @@
     const orientPoint=p=>endsFlipped?{x:p.x,y:100-p.y}:p;
     const userStart=orientPoint(pos(visual.user_start,{x:48,y:86})),userEnd=orientPoint(pos(visual.user_end,{x:ux,y:uy}));
     const oppStart=orientPoint(pos(visual.opponent_start,{x:52,y:14})),oppEnd=orientPoint(pos(visual.opponent_end,{x:ox,y:oy}));
-    const rawPath=Array.isArray(visual.ball_path)?visual.ball_path:[],fallbackBall=orientPoint({x:bx,y:by});
-    const ballPath=samplePath(rawPath,8,{x:bx,y:by}).map(orientPoint);
-    const hasFlight=rawPath.length>=2;
+    const rawFrames=Array.isArray(visual.frames)?visual.frames:[],rawPath=Array.isArray(visual.ball_path)?visual.ball_path:[];
+    const motionFrames=rawFrames.length?rawFrames.map(f=>({
+      ...f,user:orientPoint(pos(f.user,userEnd)),opponent:orientPoint(pos(f.opponent,oppEnd)),
+      ball:orientPoint(ballPos(f.ball,{x:bx,y:by}))
+    })):[{user:userStart,opponent:oppStart,ball:orientPoint(ballPos(rawPath[0],{x:bx,y:by})),ball_scale:.9},
+         {user:userEnd,opponent:oppEnd,ball:orientPoint(ballPos(rawPath[rawPath.length-1],{x:bx,y:by})),ball_scale:1}];
+    const ballPath=motionFrames.map(f=>f.ball),hasFlight=motionFrames.length>=2,ballEnd=ballPath[ballPath.length-1]||{x:bx,y:by};
     const surface=String(s.surface||'Dur'),courtClass=/terre|clay/i.test(surface)?'clay':/gazon|grass/i.test(surface)?'grass':'hard',indoor=/intérieur|indoor/i.test(surface);
     const condition=String(weather.condition||'').toLowerCase(),weatherClass=Number(weather.wind_kph||0)>=18?'windy':condition.includes('humide')?'humid':Number(weather.temperature_c||0)>=29?'hot':condition.includes('nuage')?'cloudy':'clear';
     const uInit=safe(userName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase()),oInit=safe(oppName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
@@ -127,14 +131,20 @@
     const target=String(visual.target_zone||lp.zone||'Zone neutre'),setScore=score(s);
     const userWonLast=String(lp.winner||'')==='user',oppWonLast=String(lp.winner||'')==='opponent';
     const eventRows=(Array.isArray(st._visual_events)?st._visual_events:[]).slice(-6).reverse();
-    const shotRows=(Array.isArray(visual.shots)?visual.shots:[]).slice(0,8);
+    const shotRows=Array.isArray(visual.shots)?visual.shots:[];
     const stake=String(visual.stake||lp.stake||'normal'),stakeText=stakeLabel(stake);
     const category=String(meta?.tournament?.category||'').toLowerCase(),circuit=String(meta?.tournament?.circuit||'').toLowerCase();
     const eventTier=/grand chelem|grand slam/.test(category)?'grand-slam':/masters|1000/.test(category)?'masters':/challenger/.test(category)||circuit.includes('challenger')?'challenger':/itf/.test(category)||circuit.includes('itf')?'itf':'tour';
     const ambienceLabel=eventTier==='grand-slam'?'Grand Chelem · grande arène':eventTier==='masters'?'Masters 1000 · grande affluence':eventTier==='challenger'?'Challenger · court compact':eventTier==='itf'?'ITF · court annexe':'Circuit ATP';
     const specialClass=lp.ace?'cb-special-ace':stake==='match_point'?'cb-special-match':stake==='set_point'?'cb-special-set':stake==='break_point'?'cb-special-break':'';
     const slideUser=Boolean(visual.user_slide)&&courtClass==='clay',slideOpp=Boolean(visual.opponent_slide)&&courtClass==='clay';
-    const visualRate=typeof liveAutoSpeed==='number'?liveAutoSpeed:1,visualMs=visualRate>=4?190:visualRate>=2?410:820;
+    const visualRate=typeof liveAutoSpeed==='number'?liveAutoSpeed:1;
+    const visualMs=Math.round(cap(Number(visual.duration_ms||Math.max(820,shotRows.length*190)),650,12000)/Math.max(1,visualRate));
+    const motionId='cbm'+Number(s.id||0)+'p'+Number(visual.point_no||lp.point_no||s.rally_no||0);
+    const userAnim=motionId+'u',oppAnim=motionId+'o',ballAnim=motionId+'b';
+    const motionStyle=hasFlight?'<style>'+moveKeyframes(userAnim,motionFrames,'user')+moveKeyframes(oppAnim,motionFrames,'opponent')+ballKeyframes(ballAnim,motionFrames)+'</style>':'';
+    const tracePoints=ballPath.map(p=>p.x+','+p.y).join(' ');
+    const styles=visual.profiles||{},styleText=(styles.user?.archetype&&styles.opponent?.archetype)?(styles.user.archetype+' vs '+styles.opponent.archetype):'';
 
     return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
       <div class="card fm-live-match cb-live-card">
@@ -144,6 +154,8 @@
           <div class="fm-score-name">${!s.serving_user?'● ':''}${safe(oppName)} <small>${flags?.[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pB}</strong>
         </div>
         <div class="fm-court ${courtClass} ${indoor?'indoor':''} cb-court cb-weather-${weatherClass} cb-event-${eventTier} ${specialClass} ${endsFlipped?'cb-ends-flipped':''}" style="${courtStyle(meta,surface)};--cb-visual-ms:${visualMs}ms">
+          ${motionStyle}
+          ${tracePoints?`<svg class="cb-rally-trace" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${tracePoints}"></polyline></svg>`:''}
           <i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-court-line service vertical"></i><i class="fm-net"></i>
           <div class="cb-weather-fx" aria-hidden="true"></div>
           <div class="cb-crowd cb-crowd-top" aria-hidden="true"></div><div class="cb-crowd cb-crowd-bottom" aria-hidden="true"></div>
@@ -151,17 +163,17 @@
           ${stakeText?`<div class="cb-stake-banner cb-stake-${safe(stake)}">${safe(stakeText)}</div>`:''}
           ${lp.changeover?'<div class="cb-changeover">↔ Changement de côté</div>':''}
           ${meta?.tournament?.logo_url?`<img class="cb-court-watermark" src="${safe(meta.tournament.logo_url)}" alt="" onerror="this.style.display='none'">`:''}
-          ${hasFlight?`<i class="cb-target-zone" style="left:${ballPath[7].x}%;top:${ballPath[7].y}%"></i>`:''}
-          <div class="fm-player-dot opponent cb-dot cb-dot-motion ${slideOpp?'cb-clay-slide':''} ${oppWonLast?'cb-point-winner':userWonLast?'cb-point-loser':''}" style="--sx:${oppStart.x}%;--sy:${oppStart.y}%;--ex:${oppEnd.x}%;--ey:${oppEnd.y}%;left:${oppEnd.x}%;top:${oppEnd.y}%"><span>${oInit}</span><small>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</small>${oppWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
-          <div class="fm-player-dot user cb-dot cb-dot-motion ${slideUser?'cb-clay-slide':''} ${userWonLast?'cb-point-winner':oppWonLast?'cb-point-loser':''}" style="--sx:${userStart.x}%;--sy:${userStart.y}%;--ex:${userEnd.x}%;--ey:${userEnd.y}%;left:${userEnd.x}%;top:${userEnd.y}%"><span>${uInit}</span><small>${safe(userName.split(' ').slice(-1)[0]||'MOI')}</small>${userWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
-          <i class="fm-ball cb-ball ${hasFlight?'cb-ball-flight':''}" style="--b0x:${ballPath[0].x}%;--b0y:${ballPath[0].y}%;--b1x:${ballPath[1].x}%;--b1y:${ballPath[1].y}%;--b2x:${ballPath[2].x}%;--b2y:${ballPath[2].y}%;--b3x:${ballPath[3].x}%;--b3y:${ballPath[3].y}%;--b4x:${ballPath[4].x}%;--b4y:${ballPath[4].y}%;--b5x:${ballPath[5].x}%;--b5y:${ballPath[5].y}%;--b6x:${ballPath[6].x}%;--b6y:${ballPath[6].y}%;--b7x:${ballPath[7].x}%;--b7y:${ballPath[7].y}%;left:${ballPath[7].x}%;top:${ballPath[7].y}%"></i>
+          ${hasFlight?`<i class="cb-target-zone" style="left:${ballEnd.x}%;top:${ballEnd.y}%"></i>`:''}
+          <div class="fm-player-dot opponent cb-dot cb-dot-motion ${slideOpp?'cb-clay-slide':''} ${oppWonLast?'cb-point-winner':userWonLast?'cb-point-loser':''}" style="left:${oppEnd.x}%;top:${oppEnd.y}%;animation:${oppAnim} ${visualMs}ms linear both"><span>${oInit}</span><small>${safe(oppName.split(' ').slice(-1)[0]||'ADV')}</small>${oppWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
+          <div class="fm-player-dot user cb-dot cb-dot-motion ${slideUser?'cb-clay-slide':''} ${userWonLast?'cb-point-winner':oppWonLast?'cb-point-loser':''}" style="left:${userEnd.x}%;top:${userEnd.y}%;animation:${userAnim} ${visualMs}ms linear both"><span>${uInit}</span><small>${safe(userName.split(' ').slice(-1)[0]||'MOI')}</small>${userWonLast?'<em class="cb-reaction">POINT</em>':''}</div>
+          <i class="fm-ball cb-ball ${hasFlight?'cb-ball-flight':''}" style="left:${ballEnd.x}%;top:${ballEnd.y}%;animation:${ballAnim} ${visualMs}ms linear both"></i>
           ${lp.winner?`<div class="fm-rally-call cb-rally"><span>${phase}</span><b>${safe(call)}</b> · ${Number(lp.rally||0)} coups · ${safe(target)}</div>`:''}
         </div>
-        ${shotRows.length?`<div class="cb-shot-strip">${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)}</b><em>${safe(sh.spin||'Mixte')} · ${Math.round(Number(sh.speed_kph||0))} km/h</em></span>`).join('')}</div>`:''}
+        ${shotRows.length?`<div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)}</b><em>${safe(sh.spin||'Mixte')} · ${safe(patternLabel(sh.pattern))} · ${Math.round(Number(sh.speed_kph||0))} km/h${sh.stretched_receiver?' · débordé':''}</em></span>`).join('')}</div>`:''}
         <div class="cb-match-story">
           <div class="cb-point-story">
             <span class="badge">${phase}</span>
-            <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+' · retour '+safe(lp.return_depth||'—')+' · '+Number(lp.rally||0)+' coups'):'Le prochain point utilisera le moteur v5.'}</small></div>
+            <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+' · retour '+safe(lp.return_depth||'—')+' · '+shotRows.length+' frappes'+(styleText?' · '+safe(styleText):'')):'Le prochain point utilisera le moteur v5.'}</small></div>
           </div>
           <div class="cb-event-feed">
             ${eventRows.length?eventRows.map(e=>`<div class="cb-event-line ${e.winner==='user'?'user':e.winner==='opponent'?'opponent':''}"><span>${safe(phaseLabel(e.phase||e.kind))}</span><b>${safe(e.label||'Point')}</b><small>${e.kind==='point'?((Number(e.rally||0)+' coups')+(e.speed_kph?' · '+Math.round(Number(e.speed_kph))+' km/h':'')):(e.score||'')}</small></div>`).join(''):'<div class="cb-event-empty">Les événements du match apparaîtront ici.</div>'}
@@ -248,5 +260,5 @@
   };
 
   window.setTactic=(k,v)=>window.cbSetMatchTactic(k,v);
-  console.info('Court Boss Match Center V6 Rally Cinema active');
+  console.info('Court Boss Match Center V7 Spatial Rally active');
 })();

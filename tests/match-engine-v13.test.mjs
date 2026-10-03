@@ -16,12 +16,12 @@ test('all Match Center browser scripts parse',()=>{
   }
 });
 
-test('V13 production page loads the full stack with fresh cache keys',()=>{
-  assert.match(play,/app\.js\?v=20261003-manager-match-v7\d+/);
+test('V13 production page loads the live doubles stack with fresh cache keys',()=>{
+  assert.match(play,/app\.js\?v=20261003-live-doubles-v1/);
   assert.match(play,/match-center-v1\.js\?v=20261003-living-arena-v13/);
   assert.match(play,/match-center-v12\.js\?v=20261003-tactical-ai-v5/);
-  assert.match(play,/match-center-v13\.js\?v=20261003-manager-lab-v\d+/);
-  assert.match(play,/match-center-v13\.css\?v=20261003-manager-lab-v\d+/);
+  assert.match(play,/match-center-v13\.js\?v=20261003-live-doubles-v1/);
+  assert.match(play,/match-center-v13\.css\?v=20261003-live-doubles-v1/);
 });
 
 test('match kernel advertises and contains the new causal layers',()=>{
@@ -69,4 +69,37 @@ test('player movement is eased while ball flight remains linear',()=>{
   assert.match(v1,/oppAnim\} \$\{visualMs\}ms cubic-bezier/);
   assert.match(v1,/userAnim\} \$\{visualMs\}ms cubic-bezier/);
   assert.match(v1,/ballAnim\} \$\{visualMs\}ms linear both/);
+});
+
+
+test('live doubles point-by-point uses the real match stack',()=>{
+  for(const marker of [
+    '/api/live-doubles/start','/api/live-doubles/point','/api/live-doubles/commit',
+    'CB-LIVE-DOUBLES-v1','doubles_pair_matchup_v2','tennis_abstract_matchup_model_v2',
+    'baseline_probability','user_pair_elo','opponent_pair_elo',
+    '_doubles_rotation','_doubles_player_stats','match_tiebreak_points=10',
+    'no_ad_rule="atp_doubles"'
+  ]) assert.ok(backend.includes(marker),'missing '+marker);
+  assert.ok(app.includes("liveIsDoubles(session)?'/api/live-doubles/point'"));
+  assert.ok(app.includes("liveIsDoubles(session)?'/api/live-doubles/commit'"));
+  assert.ok(app.includes('startTournamentLiveDoubles'));
+  assert.ok(v13.includes('cb-live-double-partner-v13'));
+  assert.ok(v13.includes('cbSetLiveDoublesPlanV13'));
+});
+
+test('live doubles level blends attributes, Elo, chemistry and active point matchup',()=>{
+  assert.match(backend,/attrProb\*\.72\+eloProb\*\.28/);
+  assert.match(backend,/de\*\.72\+se\*\.28/);
+  assert.match(backend,/userNetScore-oppNetScore/);
+  assert.match(backend,/dmeta\.chemistry/);
+  assert.match(backend,/kernel\.serverWinProb/);
+  assert.match(backend,/update_player_elo_after_match/);
+});
+
+test('double live scoring keeps no-ad and deciding match tie-break',()=>{
+  assert.match(backend,/environment\.no_ad=true/);
+  assert.match(backend,/environment\.match_tiebreak_decider=true/);
+  assert.match(backend,/environment\.match_tiebreak_points=10/);
+  assert.match(backend,/gameFinished=up>=4\|\|op>=4/);
+  assert.match(backend,/tbTarget/);
 });

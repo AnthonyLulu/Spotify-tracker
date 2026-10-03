@@ -9715,7 +9715,7 @@ Deno.serve(async(req:Request)=>{
     next.total_points=Math.max(Number(next?.total_points||0),Number(obs?.point_no||0)+points);
     next.summary=liveTacticalMemorySummary(next);return next;
   };
-  const liveTacticalMemoryRead=(memory:any,readSkill:number)=>{
+  const liveTacticalMemoryRead=(memory:any,readSkill:number,ctx:any={})=>{
     const s:any=memory?.summary||liveTacticalMemorySummary(memory);
     const maturity=Math.min(1,Number(s.total_points||0)/18);
     const parts=[s.pressure_serve_direction,s.serve_direction,s.target_wing,s.tempo,s.spin,s.return_pos]
@@ -9725,11 +9725,21 @@ Deno.serve(async(req:Request)=>{
     const confidence=Math.max(0,Math.min(.94,(maturity*.42+stability*.58)*skill*(1-Number(s.switch_rate||0)*.58)));
     const riskMode=Number(s.avg_risk||52)>=62?"Agressif":Number(s.avg_risk||52)<=42?"Prudent":"Neutre";
     const netMode=(Number(s.user_net_rate||0)>=.33||Number(s.avg_net_intent||0)>=55)?"Filet":(Number(s.avg_net_intent||0)<=22?"Fond":"Mixte");
-    const serveRead=Number(s.pressure_serve_direction?.samples||0)>=4?s.pressure_serve_direction
+    const courtRead=String(ctx?.serviceCourt||"")==="deuce"?s.deuce_serve_direction:String(ctx?.serviceCourt||"")==="ad"?s.ad_serve_direction:null;
+    const sequenceRead=s.serve_sequence||{};
+    let serveRead=Number(ctx?.pressure||0)>=.55&&Number(s.pressure_serve_direction?.samples||0)>=4?s.pressure_serve_direction
+      :courtRead&&Number(courtRead?.samples||0)>=3?courtRead
       :Number(s.serve_direction?.samples||0)>=3?s.serve_direction:s.serve_plan;
+    let serveReadSource=Number(ctx?.pressure||0)>=.55&&Number(s.pressure_serve_direction?.samples||0)>=4?"pression"
+      :courtRead&&Number(courtRead?.samples||0)>=3?String(ctx?.serviceCourt||"")
+      :"global";
+    if(Number(sequenceRead?.samples||0)>=3&&Number(sequenceRead?.share||0)>=.58){
+      serveRead={value:sequenceRead.next,share:sequenceRead.share,samples:sequenceRead.samples,success:sequenceRead.success};
+      serveReadSource="séquence après "+String(sequenceRead.previous||"service");
+    }
     return {
       confidence:Number(confidence.toFixed(3)),maturity:Number(maturity.toFixed(3)),stability:Number(stability.toFixed(3)),
-      serve_direction:serveRead,serve_plan:s.serve_plan,target_wing:s.target_wing,tempo:s.tempo,spin:s.spin,return_pos:s.return_pos,
+      serve_direction:serveRead,serve_read_source:serveReadSource,serve_sequence:s.serve_sequence,serve_plan:s.serve_plan,target_wing:s.target_wing,tempo:s.tempo,spin:s.spin,return_pos:s.return_pos,
       risk_mode:riskMode,net_mode:netMode,user_recent_win_rate:Number(s.user_recent_win_rate||0),
       switch_rate:Number(s.switch_rate||0),total_points:Number(s.total_points||0)
     };
@@ -9756,7 +9766,7 @@ Deno.serve(async(req:Request)=>{
     const userFh=avgUser(["forehand","forehand_power","forehand_accuracy","forehand_consistency"]);
     const userBh=avgUser(["backhand","backhand_power","backhand_accuracy","backhand_consistency"]);
     const readSkill=avgOpp(["anticipation","tactics","decision_making","shot_selection","concentration"]);
-    const memoryRead=liveTacticalMemoryRead(ctx?.memory,readSkill);
+    const memoryRead=liveTacticalMemoryRead(ctx?.memory,readSkill,{pressure,serviceCourt:ctx?.serviceCourt,serverIsUser:ctx?.serverIsUser});
     let aggression=Math.round(50+(aggressionAttr-10)*2.6+Math.max(0,chase)*7-Math.max(0,-chase)*3);
     let risk=Math.round(46+(aggressionAttr-10)*2.2+(decision-10)*.7+Math.max(0,chase)*8-Math.max(0,-chase)*5);
     let net=Math.round(18+(profile.net-10)*4.1+(profile.archetype==="Attaquant filet"?18:0)+(grass||indoor?6:0));
@@ -9823,7 +9833,7 @@ Deno.serve(async(req:Request)=>{
     const servePattern=String(tactics.servePattern||"Mixte");
     const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100),effort=n(tactics.effort,60,20,100);
     const ret=String(tactics.returnPos||"Neutre");
-    const opponentPlan=liveOpponentPlan(oa,ua,oppFormMultiplier,userFormMultiplier,{surface,pressure,momentum:ctx.momentum,memory:ctx.tacticalMemory});
+    const opponentPlan=liveOpponentPlan(oa,ua,oppFormMultiplier,userFormMultiplier,{surface,pressure,momentum:ctx.momentum,memory:ctx.tacticalMemory,serviceCourt:ctx.serviceCourt,serverIsUser});
     const opponentBh=liveRuntimeAvgAttr(oa,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],oppFormMultiplier);
     const opponentFh=liveRuntimeAvgAttr(oa,["forehand","forehand_power","forehand_accuracy","forehand_consistency"],oppFormMultiplier);
     const userBh=liveRuntimeAvgAttr(ua,["backhand","backhand_power","backhand_accuracy","backhand_consistency"],userFormMultiplier);
@@ -9853,7 +9863,7 @@ Deno.serve(async(req:Request)=>{
       return (e===c?weight:-weight*.88)*threat;
     };
     let memoryReadScore=0;
-    if(serverIsUser)memoryReadScore+=catRead(memoryRead.serve_direction,servePattern,.54);
+    if(serverIsUser)memoryReadScore+=catRead(memoryRead.serve_direction,ctx.actualServeDirection||servePattern,.54);
     else memoryReadScore+=catRead(memoryRead.return_pos,ret,.32);
     memoryReadScore+=catRead(memoryRead.target_wing,targetWing,.30);
     memoryReadScore+=catRead(memoryRead.tempo,tempo,.22);
@@ -9863,6 +9873,10 @@ Deno.serve(async(req:Request)=>{
     const currentNetMode=net>=55?"Filet":net<=22?"Fond":"Mixte";
     if(memoryRead.net_mode&&memoryRead.net_mode!=="Mixte"&&currentNetMode!=="Mixte")memoryReadScore+=memoryRead.net_mode===currentNetMode?.24:-.20;
     const opponentMemoryEdge=Math.max(-.026,Math.min(.026,memoryReadScore*readConfidence*.026));
+    const opponentMemoryState=readConfidence<.22?"IA en observation"
+      :opponentMemoryEdge>=.008?"IA t'a lu"
+      :opponentMemoryEdge<=-.007?"Piège tactique réussi"
+      :"Lecture contestée";
     const pointAttrEdge=Math.max(-.06,Math.min(.06,
       groundEdge*.00135+movementEdge*.00085+mentalEdge*(.00070+pressure*.00075)+
       netEdge*.00055+touchEdge*.00035+surfaceEdge*.0011+
@@ -9955,7 +9969,7 @@ Deno.serve(async(req:Request)=>{
     return {
       serverWinProb,pointAttrEdge,formEdge,userTacticEdge,userCondition,oppCondition,conditionEdge,
       styleMatchupEdge,userStyleFitEdge,opponentTacticEdge,opponentStyleFitEdge,opponentPlan,
-      opponentMemoryEdge,opponentMemoryRead:memoryRead,mentalPressureEdge,pressureLevel:pressure,
+      opponentMemoryEdge,opponentMemoryRead:memoryRead,opponentMemoryState,userDeceptionEdge:Math.max(0,-opponentMemoryEdge),mentalPressureEdge,pressureLevel:pressure,
       userConditionDetail,oppConditionDetail,serverPressureMental,returnerPressureMental,
       serverArchetype:serverProfile.archetype,returnerArchetype:returnerProfile.archetype
     };

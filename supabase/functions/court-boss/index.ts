@@ -1676,6 +1676,31 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   const managedId=Number(snapshot.managed_player_id||snapshot.career?.managed_player_id||0);
   const nation=String(snapshot.federation_nation||snapshot.career?.federation_nation||snapshot.career?.selected_federation_nation||snapshot.career?.country||"FRA");
 
+  const restoreUnsavedOpponentRollback=async(rows:any[])=>{
+    const restored=new Set<number>();
+    for(const row of rows??[]){
+      const meta:any=row?.stats?._meta||{};
+      const rb:any=meta?.rollback_opponent||null;
+      const pid=Number(rb?.player?.id||row?.opponent_id||0);
+      if(!pid||restored.has(pid)||!rb?.player)continue;
+      restored.add(pid);
+      const playerRestore=await db.from("players").upsert(rb.player,{onConflict:"id"});
+      if(playerRestore.error)throw new Error("opponent rollback player: "+playerRestore.error.message);
+      const injuryClear=await db.from("injuries").delete().eq("player_id",pid);
+      if(injuryClear.error)throw new Error("opponent rollback injuries cleanup: "+injuryClear.error.message);
+      if(Array.isArray(rb.injuries)&&rb.injuries.length){
+        const injuryRestore=await db.from("injuries").upsert(rb.injuries,{onConflict:"id"});
+        if(injuryRestore.error)throw new Error("opponent rollback injuries: "+injuryRestore.error.message);
+      }
+      const eloClear=await db.from("player_elo_ratings").delete().eq("player_id",pid);
+      if(eloClear.error)throw new Error("opponent rollback Elo cleanup: "+eloClear.error.message);
+      if(rb.elo){
+        const eloRestore=await db.from("player_elo_ratings").upsert(rb.elo,{onConflict:"player_id"});
+        if(eloRestore.error)throw new Error("opponent rollback Elo: "+eloRestore.error.message);
+      }
+    }
+  };
+
   let currentManagedId=0;
   let currentNation=nation;
   let currentStaffProfileIds:number[]=[];
@@ -1739,6 +1764,15 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     if(savedLiveCleanup.error)throw new Error("live checkpoint cleanup: "+savedLiveCleanup.error.message);
   }
   for(const cleanupPlayerId of managedCleanupIds){
+    if(snapshot.captured_at){
+      const unsavedRows=await db.from("live_match_sessions")
+        .select("id,opponent_id,started_at,stats,status")
+        .eq("managed_player_id",cleanupPlayerId)
+        .gt("started_at",String(snapshot.captured_at))
+        .order("started_at",{ascending:true});
+      if(unsavedRows.error)throw new Error("unsaved live session read: "+unsavedRows.error.message);
+      await restoreUnsavedOpponentRollback(unsavedRows.data??[]);
+    }
     const liveCleanup=await db.from("live_match_sessions")
       .delete().eq("managed_player_id",cleanupPlayerId).in("status",["active","finished"]);
     if(liveCleanup.error)throw new Error("live session cleanup: "+liveCleanup.error.message);
@@ -10235,15 +10269,18 @@ Deno.serve(async(req:Request)=>{
     if(opponentId===playerId)return h({error:"Le joueur ne peut pas s’affronter lui-même."},409);
 
     const opp=await db.from("players")
-      .select("id,name,country,ranking,current_ability,form,fitness,fatigue,morale,style,player_attributes(*)")
+      .select("*,player_attributes(*)")
       .eq("id",opponentId).maybeSingle();
     if(opp.error||!opp.data)return h({error:opp.error?.message||"Adversaire introuvable"},404);
 
-    const [medicalProfiles,vulnerabilities]=await Promise.all([
+    const [medicalProfiles,vulnerabilities,opponentEloBefore,opponentInjuriesBefore]=await Promise.all([
       db.from("player_development_profiles").select("player_id,injury_proneness,resilience").in("player_id",[playerId,opponentId]),
-      db.from("player_injury_vulnerabilities").select("player_id,body_area,recurrence_risk,episodes").in("player_id",[playerId,opponentId]).order("recurrence_risk",{ascending:false})
+      db.from("player_injury_vulnerabilities").select("player_id,body_area,recurrence_risk,episodes").in("player_id",[playerId,opponentId]).order("recurrence_risk",{ascending:false}),
+      db.from("player_elo_ratings").select("*").eq("player_id",opponentId).maybeSingle(),
+      db.from("injuries").select("*").eq("player_id",opponentId).order("id")
     ]);
-    if(medicalProfiles.error||vulnerabilities.error)return h({error:(medicalProfiles.error||vulnerabilities.error)?.message},500);
+    if(medicalProfiles.error||vulnerabilities.error||opponentEloBefore.error||opponentInjuriesBefore.error)
+      return h({error:(medicalProfiles.error||vulnerabilities.error||opponentEloBefore.error||opponentInjuriesBefore.error)?.message},500);
     const medicalFor=(pid:number)=>{
       const p=(medicalProfiles.data??[]).find((row:any)=>Number(row.player_id)===pid)||{};
       const v=(vulnerabilities.data??[]).find((row:any)=>Number(row.player_id)===pid)||{};
@@ -10258,6 +10295,13 @@ Deno.serve(async(req:Request)=>{
     if(/^Q\d+$/i.test(String(tournamentRoundOverride||"")))livePhase="qualifying";
     const environment=buildLiveMatchEnvironment(tournament.data,managed.data,opp.data,String(career.data.career_date||AGE_REFERENCE_DATE),surface,livePhase);
     environment.medical={user:medicalFor(playerId),opponent:medicalFor(opponentId)};
+    const {player_attributes:_rollbackAttrs,...opponentPlayerBefore}=opp.data as any;
+    environment.rollback_opponent={
+      player:opponentPlayerBefore,
+      elo:opponentEloBefore.data??null,
+      injuries:opponentInjuriesBefore.data??[],
+      captured_at:new Date().toISOString()
+    };
     let round=tournamentRoundOverride||"Exhibition";
     const baseStats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,

@@ -5726,7 +5726,8 @@ Deno.serve(async(req:Request)=>{
     return h({
       tournament:tournamentView,main:visibleMain,qualifying:visibleQualifying,wildcard:wc.data??null,forfeits:forfeits.data??[],
       world_main:worldMainRows,world_completed_draw:worldCompletedDraw,world_qualifying:worldQualifyingRows,
-      main_draw_matches:worldCompletedDraw,qualifying_draw:worldQualifyingDraw,lucky_losers:worldLuckyLosers,
+      acceptance_list:worldAcceptance,qualifying_acceptance_list:worldQualAcceptance,
+      main_draw_matches:worldCompletedDraw,main_draw_bracket:worldMainBracket,qualifying_draw:worldQualifyingDraw,lucky_losers:worldLuckyLosers,
       qualifying_state:worldQualStateRes.data??null,
       draw_timeline:drawTimeline,draw_phase:drawPhase,reference_date:referenceDate,
       projected_bye_slots:[...projectedByeSlots].sort((a,b)=>a-b),projected_bracket_size:projectedBracket,

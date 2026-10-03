@@ -10009,7 +10009,8 @@ Deno.serve(async(req:Request)=>{
     const current=await db.from("career_state").select("season_year,career_date").eq("id","demo").maybeSingle();
     if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
     if(newYear<=Number(current.data.season_year||2025))return h({error:"La nouvelle saison doit être supérieure à la saison actuelle."},409);
-    const roll=await db.rpc("rollover_season",{p_new_year:newYear});
+    const dailyMode=body?.daily_mode===true||String(body?.clock_mode||"")==="daily";
+    const roll=await db.rpc(dailyMode?"rollover_season_daily_v22":"rollover_season",{p_new_year:newYear});
     if(roll.error)return h({error:roll.error.message},500);
 
     const existing=await db.from("tournaments").select("id",{count:"exact",head:true}).eq("is_active",true).gte("start_date",String(newYear)+"-01-01").lte("start_date",String(newYear)+"-12-31");
@@ -10041,9 +10042,10 @@ Deno.serve(async(req:Request)=>{
         }
       }
     }
+    const rankingDate=String(newYear)+(dailyMode?"-01-01":"-01-05");
     const [rank,doubleRank]=await Promise.all([
-      db.rpc("recalculate_user_ranking",{p_date:String(newYear)+"-01-05"}),
-      db.rpc("recalculate_user_doubles_ranking",{p_date:String(newYear)+"-01-05"})
+      db.rpc("recalculate_user_ranking",{p_date:rankingDate}),
+      db.rpc("recalculate_user_doubles_ranking",{p_date:rankingDate})
     ]);
     if(rank.error||doubleRank.error)return h({error:(rank.error||doubleRank.error)?.message},500);
 
@@ -10055,11 +10057,11 @@ Deno.serve(async(req:Request)=>{
     for(const row of rollRoster.data??[]){
       const pid=Number((row as any).player_id||0);
       if(!pid||pid===rollPrimaryId)continue;
-      const rr=await db.rpc("recalculate_managed_player_ranking",{p_player_id:pid,p_date:String(newYear)+"-01-05",p_sync_career:false});
+      const rr=await db.rpc("recalculate_managed_player_ranking",{p_player_id:pid,p_date:rankingDate,p_sync_career:false});
       if(rr.error)return h({error:"Recalcul annuel joueur "+String(pid)+" : "+rr.error.message},500);
       rolloverManagedRankings.push(rr.data);
     }
-    return h({ok:true,rollover:roll.data,userRanking:rank.data,managedPlayerRankings:rolloverManagedRankings,userDoublesRanking:doubleRank.data});
+    return h({ok:true,rollover:roll.data,userRanking:rank.data,managedPlayerRankings:rolloverManagedRankings,userDoublesRanking:doubleRank.data,daily_mode:dailyMode,prepared_date:dailyMode?String(newYear)+"-01-01":String(newYear)+"-01-05"});
   }
 
 

@@ -214,7 +214,7 @@
         <div class="cb-match-story">
           <div class="cb-point-story">
             <span class="badge">${phase}</span>
-            <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+' · retour '+safe(lp.return_depth||'—')+' · '+shotRows.length+' frappes'+(patternSummary?' · '+safe(patternSummary):'')+(styleText?' · '+safe(styleText):'')):'Le prochain point utilisera le moteur v6.'}</small></div>
+            <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+(serviceCourtLabel?' · '+safe(serviceCourtLabel):'')+' · retour '+safe(lp.return_depth||'—')+' · '+shotRows.length+' frappes'+(patternSummary?' · '+safe(patternSummary):'')+(styleText?' · '+safe(styleText):'')):'Le prochain point utilisera le moteur v6.'}</small></div>
           </div>
           <div class="cb-event-feed">
             ${eventRows.length?eventRows.map(e=>`<div class="cb-event-line ${e.winner==='user'?'user':e.winner==='opponent'?'opponent':''}"><span>${safe(phaseLabel(e.phase||e.kind))}</span><b>${safe(e.label||'Point')}</b><small>${e.kind==='point'?((Number(e.rally||0)+' coups')+(e.pressure_score!=null?' · P'+Math.round(Number(e.pressure_score)):'')):(e.score||'')}</small></div>`).join(''):'<div class="cb-event-empty">Les événements du match apparaîtront ici.</div>'}

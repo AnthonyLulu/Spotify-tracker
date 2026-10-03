@@ -64,12 +64,48 @@
     return ['cb-id-'+a,'cb-hand-'+hand,'cb-depth-'+depth].join(' ');
   };
 
+  const dotPalette=[
+    {fill:'#2f7bdc',ink:'#ffffff',ring:'#8fc2ff'},
+    {fill:'#e06a3d',ink:'#ffffff',ring:'#ffc09f'},
+    {fill:'#16a085',ink:'#ffffff',ring:'#8ce8d4'},
+    {fill:'#8e5bd9',ink:'#ffffff',ring:'#c9a9ff'},
+    {fill:'#d4a72c',ink:'#1d1808',ring:'#ffe28a'},
+    {fill:'#d9578c',ink:'#ffffff',ring:'#ffafd0'},
+    {fill:'#4f9d46',ink:'#ffffff',ring:'#a6e39f'},
+    {fill:'#3e8d96',ink:'#ffffff',ring:'#9de4ea'},
+    {fill:'#c85c54',ink:'#ffffff',ring:'#ffaaa4'},
+    {fill:'#5d68c4',ink:'#ffffff',ring:'#b7beff'}
+  ];
+  const dotHash=s=>{
+    let h=2166136261>>>0;
+    for(const ch of String(s||'')){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0}
+    return h>>>0;
+  };
+  const wimbledonMatch=()=>{
+    const t=meta().tournament||{},n=(String(t.name||'')+' '+String(t.competition_key||'')).toLowerCase();
+    return /wimbledon/.test(n);
+  };
+  const dotTheme=(slot,player={})=>{
+    if(wimbledonMatch())return {fill:'#f4f1e8',ink:'#173b2b',ring:slot%2?'#6f4a8e':'#1f5a3d',white:true};
+    const s=live(),seed=[s?.id||'match',s?.stats?._meta?.tournament?.id||'',slot,player?.id||player?.name||''].join('|');
+    return {...dotPalette[dotHash(seed)%dotPalette.length],white:false};
+  };
+  const applyDotTheme=(dot,slot,player={})=>{
+    if(!dot)return;
+    const theme=dotTheme(slot,player);
+    dot.style.setProperty('--cb-dot-fill',theme.fill);
+    dot.style.setProperty('--cb-dot-ink',theme.ink);
+    dot.style.setProperty('--cb-dot-ring',theme.ring);
+    dot.classList.toggle('cb-dot-wimbledon',Boolean(theme.white));
+    dot.dataset.cbDotColor=theme.fill;
+  };
+
   const addIdentity=()=>{
     const court=document.querySelector('.cb-live-card .cb-court');if(!court)return;
     const v=visual(),profiles=v.profiles||{},m=meta(),t=m.tournament||{};
     const user=court.querySelector('.fm-player-dot.user'),opponent=court.querySelector('.fm-player-dot.opponent');
-    if(user){user.classList.add(...identityClass(profiles.user).split(' '));user.dataset.cbIdentity='1'}
-    if(opponent){opponent.classList.add(...identityClass(profiles.opponent).split(' '));opponent.dataset.cbIdentity='1'}
+    if(user){user.classList.add(...identityClass(profiles.user).split(' '));user.dataset.cbIdentity='1';applyDotTheme(user,0,{id:live()?.managed_player_id,name:user.querySelector('small')?.textContent||'user'})}
+    if(opponent){opponent.classList.add(...identityClass(profiles.opponent).split(' '));opponent.dataset.cbIdentity='1';applyDotTheme(opponent,1,{id:live()?.opponent_id,name:opponent.querySelector('small')?.textContent||'opponent'})}
     const skin=tournamentSkin(t.name,t.category);
     court.dataset.cbTournamentSkin=skin;
     court.classList.toggle('cb-night',String(m.ambience?.session_of_day||'')==='night');
@@ -118,13 +154,14 @@
 
     const mainU=court.querySelector('.fm-player-dot.user:not(.cb-live-double-partner-v13)');
     const mainO=court.querySelector('.fm-player-dot.opponent:not(.cb-live-double-partner-v13)');
-    if(mainU&&u[0]){dotText(mainU,u[0]);if(frames.length)mainU.style.animation=ua+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both'}
-    if(mainO&&o[0]){dotText(mainO,o[0]);if(frames.length)mainO.style.animation=oa+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both'}
+    if(mainU&&u[0]){dotText(mainU,u[0]);applyDotTheme(mainU,0,u[0]);if(frames.length)mainU.style.animation=ua+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both'}
+    if(mainO&&o[0]){dotText(mainO,o[0]);applyDotTheme(mainO,2,o[0]);if(frames.length)mainO.style.animation=oa+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both'}
 
     const ensure=(cls,team,p,end,keyframe)=>{
       let d=court.querySelector('.cb-live-double-partner-v13.'+cls);
       if(!d){d=el('div','fm-player-dot cb-dot cb-live-double-partner-v13 '+team+' '+cls);court.appendChild(d)}
       dotText(d,p);
+      applyDotTheme(d,team==='user'?1:3,p||{});
       d.style.left=cap(end?.x??50,0,100)+'%';d.style.top=cap(end?.y??50,0,100)+'%';
       if(frames.length)d.style.animation=keyframe+' '+ms+'ms cubic-bezier(.18,.72,.22,1) both';
       const pid=Number(p?.id||0),lp=sess?.last_point||{};

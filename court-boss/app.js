@@ -2755,7 +2755,7 @@ async function restoreLiveMatchForPlayer(playerId){
   }
   local.liveMatch=session;
   local.liveSessionId=sessionId;
-  local.liveOpponent=session.opponent||liveMatchOpponentsByPlayer.get(target)||null;
+  local.liveOpponent=d?.opponent||session.opponent||liveMatchOpponentsByPlayer.get(target)||null;
   if(local.liveOpponent)liveMatchOpponentsByPlayer.set(target,local.liveOpponent);
   return session;
  }catch(e){

@@ -9703,6 +9703,23 @@ Deno.serve(async(req:Request)=>{
     return {level:Math.max(0,Math.min(1,level)),stake,tiebreak,target,user_match_point:userMatchPoint,opponent_match_point:oppMatchPoint};
   };
 
+  const liveInvertTennisScore=(value:any)=>{
+    const input=String(value||"").trim();
+    if(!input)return input;
+    if(/^Sets\\s+\\d+-\\d+$/i.test(input)){
+      return input.replace(/(\\d+)-(\\d+)/,(_m,a,b)=>String(b)+"-"+String(a));
+    }
+    const parts=input.match(/\\[\\d+-\\d+\\]|\\d+-\\d+(?:\\s+\\(\\d+-\\d+\\))?/g);
+    if(!parts?.length)return input;
+    return parts.map((token:string)=>{
+      let m=token.match(/^\\[(\\d+)-(\\d+)\\]$/);
+      if(m)return "["+m[2]+"-"+m[1]+"]";
+      m=token.match(/^(\\d+)-(\\d+)(?:\\s+\\((\\d+)-(\\d+)\\))?$/);
+      if(!m)return token;
+      return m[2]+"-"+m[1]+(m[3]!=null?" ("+m[4]+"-"+m[3]+")":"");
+    }).join(" ");
+  };
+
   const liveIsoAddDays=(iso:string,days:number)=>{
     const d=new Date(String(iso||AGE_REFERENCE_DATE)+"T12:00:00Z");
     d.setUTCDate(d.getUTCDate()+Number(days||0));
@@ -11306,11 +11323,7 @@ Deno.serve(async(req:Request)=>{
       if(Number(wr.winner_id||0)>0&&Number(wr.winner_id)!==winnerId){
         return h({error:"Cette case du tableau possède déjà un autre résultat.",world_match_id:wr.id},409);
       }
-      let worldScore=score;
-      if(a!==playerId){
-        const inverted=await db.rpc("world_invert_tennis_score",{p_score:score});
-        if(!inverted.error&&inverted.data)worldScore=String(inverted.data);
-      }
+      const worldScore=a===playerId?score:liveInvertTennisScore(score);
       const worldUpdate=await db.from("world_tournament_matches").update({
         winner_id:winnerId,loser_id:loserId,score:worldScore,
         model_version:"CB-MATCH-ENGINE-v6-LIVE",

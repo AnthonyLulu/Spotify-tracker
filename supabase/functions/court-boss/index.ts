@@ -5988,7 +5988,7 @@ Deno.serve(async(req:Request)=>{
       db.from("user_training_progress").select("*")
     ]);
     let trainingResult:any={improvements:[],capped:[],xp_gains:{},current_ability:Number(current.data.current_ability||56)};
-    if(anthony.data){
+    if(anthony.data&&!checkpointOnly){
       const attrs:any=Array.isArray(anthony.data.player_attributes)?anthony.data.player_attributes[0]:anthony.data.player_attributes||{};
       const [devProfile,ceilingRow]=await Promise.all([
         db.from("player_development_profiles")
@@ -10005,7 +10005,7 @@ Deno.serve(async(req:Request)=>{
 
   if(path.endsWith("/api/rollover-season")&&req.method==="POST"){
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
-    const newYear=n(body?.new_year,new Date().getFullYear()+1,2027,9999);
+    const newYear=n(body?.new_year,new Date().getFullYear()+1,2026,9999);
     const current=await db.from("career_state").select("season_year,career_date").eq("id","demo").maybeSingle();
     if(current.error||!current.data)return h({error:current.error?.message||"Career missing"},500);
     if(newYear<=Number(current.data.season_year||2025))return h({error:"La nouvelle saison doit être supérieure à la saison actuelle."},409);

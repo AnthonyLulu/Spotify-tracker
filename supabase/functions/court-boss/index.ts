@@ -9447,6 +9447,57 @@ Deno.serve(async(req:Request)=>{
     const effectiveFatigue=Math.min(100,baseFatigue+liveLoad);
     return Math.max(-1,Math.min(1,(effectiveFitness-effectiveFatigue-20)/80));
   };
+  const liveMedicalRetirementCandidate=(side:"user"|"opponent",player:any,attrs:any,medical:any,meta:any,pointsPlayed:number,effort=60)=>{
+    const fatigue=Math.max(0,Math.min(100,Number(player?.fatigue??18)));
+    const fitness=Math.max(0,Math.min(100,Number(player?.fitness??90)));
+    const proneness=Math.max(1,Math.min(20,Number(medical?.injury_proneness??10)));
+    const recurrence=Math.max(0,Math.min(100,Number(medical?.recurrence_risk??0)));
+    const naturalFitness=liveRuntimeAvgAttr(attrs,["natural_fitness","stamina","recovery"],1);
+    const recovery=liveRuntimeAvgAttr(attrs,["recovery","flexibility","natural_fitness"],1);
+    const weather:any=meta?.weather||{};
+    const weatherDifficulty=Math.max(0,Math.min(20,Number(weather.weather_difficulty||0)));
+    const heat=Math.max(0,Number(weather.temperature_c||21)-29);
+    const load=Math.max(0,Number(pointsPlayed||0));
+    const effortOver=Math.max(0,Number(effort||60)-65);
+    let probability=
+      .00004+
+      Math.max(0,fatigue-45)*.000010+
+      Math.max(0,82-fitness)*.000012+
+      Math.max(0,proneness-10)*.000022+
+      recurrence*.000004+
+      Math.max(0,10-naturalFitness)*.000014+
+      Math.max(0,weatherDifficulty-7)*.000012+
+      heat*.000018+
+      effortOver*.000007+
+      Math.max(0,load-70)*.0000012;
+    probability*=Math.max(.62,Math.min(1.30,1.08-(recovery-10)*.025));
+    probability=Math.max(.00002,Math.min(.0038,probability));
+    if(Math.random()>=probability)return null;
+
+    const vulnerable=String(medical?.body_area||"").toLowerCase();
+    const hotEvent=heat>=3&&fatigue>=62&&Math.random()<.48;
+    const fallbackAreas=["ischio","épaule","cheville","poignet","dos","genou","coude","mollet"];
+    const area=vulnerable||fallbackAreas[liveMatchHash(String(player?.id||0)+"|"+String(pointsPlayed||0)+"|"+side)%fallbackAreas.length];
+    const labels:Record<string,string>={
+      "ischio":"Élongation ischio-jambiers","épaule":"Douleur épaule","cheville":"Entorse cheville",
+      "poignet":"Inflammation poignet","dos":"Surcharge lombaire","genou":"Douleur genou",
+      "coude":"Inflammation coude","mollet":"Élongation mollet"
+    };
+    const injuryType=hotEvent?"Crampes et surcharge liées à la chaleur":(labels[area]||"Surcharge musculaire");
+    const rawDays=hotEvent
+      ?2+Math.floor(Math.random()*4)
+      :5+Math.round(proneness*.42+recurrence*.10+Math.max(0,fatigue-55)*.12+Math.random()*8-Math.max(0,recovery-10)*.20);
+    const daysOut=Math.max(2,Math.min(42,rawDays));
+    const severity=daysOut>=28?"Élevée":daysOut>=12?"Modérée":"Faible";
+    const aggravationRisk=Math.max(10,Math.min(95,Math.round(12+proneness*2.1+recurrence*.35+Math.max(0,fatigue-50)*.45)));
+    return {
+      side,player_id:Number(player?.id||0),player_name:String(player?.name||"Joueur"),
+      injury_type:injuryType,severity,days_out:daysOut,aggravation_risk:aggravationRisk,
+      body_area:hotEvent?"systemic":area,
+      probability:Math.round(probability*100000)/1000,
+      trigger:"post_game",points_played:load
+    };
+  };
   const liveStyleProfile=(attrs:any,formMultiplier=1)=>{
     const avg=(keys:string[])=>liveRuntimeAvgAttr(attrs,keys,formMultiplier);
     const forehand=avg(["forehand","forehand_power","forehand_accuracy"]);
@@ -10167,10 +10218,25 @@ Deno.serve(async(req:Request)=>{
       .eq("id",opponentId).maybeSingle();
     if(opp.error||!opp.data)return h({error:opp.error?.message||"Adversaire introuvable"},404);
 
+    const [medicalProfiles,vulnerabilities]=await Promise.all([
+      db.from("player_development_profiles").select("player_id,injury_proneness,resilience").in("player_id",[playerId,opponentId]),
+      db.from("player_injury_vulnerabilities").select("player_id,body_area,recurrence_risk,episodes").in("player_id",[playerId,opponentId]).order("recurrence_risk",{ascending:false})
+    ]);
+    if(medicalProfiles.error||vulnerabilities.error)return h({error:(medicalProfiles.error||vulnerabilities.error)?.message},500);
+    const medicalFor=(pid:number)=>{
+      const p=(medicalProfiles.data??[]).find((row:any)=>Number(row.player_id)===pid)||{};
+      const v=(vulnerabilities.data??[]).find((row:any)=>Number(row.player_id)===pid)||{};
+      return {
+        injury_proneness:Number(p.injury_proneness??10),resilience:Number(p.resilience??10),
+        body_area:v.body_area||null,recurrence_risk:Number(v.recurrence_risk??0),episodes:Number(v.episodes??0)
+      };
+    };
+
     const surfaceRaw=String(tournament.data?.surface||body?.surface||"Dur").slice(0,30);
     const surface=surfaceRaw==="Dur"&&tournament.data?.indoor?"Dur intérieur":surfaceRaw;
     if(/^Q\d+$/i.test(String(tournamentRoundOverride||"")))livePhase="qualifying";
     const environment=buildLiveMatchEnvironment(tournament.data,managed.data,opp.data,String(career.data.career_date||AGE_REFERENCE_DATE),surface,livePhase);
+    environment.medical={user:medicalFor(playerId),opponent:medicalFor(opponentId)};
     let round=tournamentRoundOverride||"Exhibition";
     const baseStats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,

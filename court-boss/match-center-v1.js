@@ -5,18 +5,19 @@
   const pct=(n,d)=>Number(d||0)>0?Math.round(Number(n||0)*100/Number(d)):0;
   const score=s=>{
     const sets=(Array.isArray(s?.score_log)?s.score_log:[]).filter(x=>x?.set_finished);
-    return sets.length?sets.map(x=>{
-      const base=String(x.user_games)+'-'+String(x.opponent_games);
+    const base=sets.length?sets.map(x=>{
+      const setScore=String(x.user_games)+'-'+String(x.opponent_games);
       if(x.match_tiebreak)return '['+String(x.tiebreak_user_points||0)+'-'+String(x.tiebreak_opponent_points||0)+']';
-      return x.tiebreak?base+' ('+String(x.tiebreak_user_points||0)+'-'+String(x.tiebreak_opponent_points||0)+')':base;
+      return x.tiebreak?setScore+' ('+String(x.tiebreak_user_points||0)+'-'+String(x.tiebreak_opponent_points||0)+')':setScore;
     }).join(' '):'Sets '+Number(s?.user_sets||0)+'-'+Number(s?.opponent_sets||0);
+    return base+(s?.stats?._retirement?' RET':'');
   };
   const safe=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v);
   const cap=(v,a,b)=>typeof clamp==='function'?clamp(Number(v),a,b):Math.max(a,Math.min(b,Number(v)));
   const wi=c=>{const v=String(c||'').toLowerCase();if(v.includes('vent'))return '≋';if(v.includes('humide'))return '◌';if(v.includes('chaud'))return '☀';if(v.includes('nuage'))return '☁';if(v.includes('indoor'))return '⌂';return '☀'};
   const speed=v=>{const n=Number(v||1);return n<.82?'Lent':n<.96?'Moyen-lent':n<1.08?'Moyen':n<1.2?'Rapide':'Très rapide'};
   const mood=v=>{const n=Number(v||70);return n>=86?'En feu':n>=75?'Confiant':n>=62?'Stable':n>=50?'Tendu':'Fragile'};
-  const phaseLabel=v=>({service:'SERVICE',return:'RETOUR',rally:'ÉCHANGE',net:'FILET',game:'JEU',set:'SET',tiebreak:'TIE-BREAK',match_tiebreak:'MATCH TB'}[String(v||'').toLowerCase()]||'POINT');
+  const phaseLabel=v=>({service:'SERVICE',return:'RETOUR',rally:'ÉCHANGE',net:'FILET',game:'JEU',set:'SET',tiebreak:'TIE-BREAK',match_tiebreak:'MATCH TB',medical:'MÉDICAL'}[String(v||'').toLowerCase()]||'POINT');
   const endingLabel=v=>({
     ace:'Ace',double_fault:'Double faute',unreturned_serve:'Service non retourné',
     return_winner:'Retour gagnant',winner:'Coup gagnant',forced_error:'Faute provoquée',
@@ -139,7 +140,7 @@
     const c=activePlayerCareerView(),opp=local.liveOpponent||{},lp=s.last_point||{},st=s.stats||{},meta=st._meta||{};
     const userName=c.player_name||'Joueur',oppName=opp.name||'Adversaire';
     const us=Number(s.user_sets||0),os=Number(s.opponent_sets||0),ug=Number(s.user_games||0),og=Number(s.opponent_games||0),up=Number(s.user_points||0),op=Number(s.opponent_points||0);
-    const done=finished(s),isCommitted=committed(s),visual=lp.visual||{},weather=meta.weather||{};
+    const done=finished(s),isCommitted=committed(s),visual=lp.visual||{},weather=meta.weather||{},retirement=st._retirement||null;
     const ux=cap(lp.user_x??48,12,88),uy=cap(lp.user_y??78,55,90),ox=cap(lp.opp_x??52,12,88),oy=cap(lp.opp_y??22,10,45),bx=cap(lp.ball_x??50,10,90),by=cap(lp.ball_y??50,8,92);
     const endsFlipped=Boolean(lp.ends_flipped??((Array.isArray(s.score_log)?s.score_log.length:0)%2===1));
     const orientPoint=p=>endsFlipped?{x:p.x,y:100-p.y}:p;
@@ -165,7 +166,7 @@
     const tiebreakTarget=Number(st._tiebreak_target||lp.tiebreak_target||(matchTiebreakActive?meta?.match_tiebreak_points:0)||((/grand chelem|grand slam/i.test(String(meta?.tournament?.category||''))&&Number(s.set_no||1)===Number(meta.best_of||3))?10:7));
     const pA=tiebreakActive?String(up):(typeof pointLabel==='function'?pointLabel(up,op,'A'):String(up));
     const pB=tiebreakActive?String(op):(typeof pointLabel==='function'?pointLabel(up,op,'B'):String(op));
-    const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(matchTiebreakActive?'match_tiebreak':tiebreakActive?'tiebreak':visual.phase||lp.phase);
+    const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(retirement?'medical':matchTiebreakActive?'match_tiebreak':tiebreakActive?'tiebreak':visual.phase||lp.phase);
     const serviceCourtLabel=String(lp.service_court||'')==='ad'?'Avantage':String(lp.service_court||'')==='deuce'?'Égalité':'';
     const target=String(visual.target_zone||lp.zone||'Zone neutre'),setScore=score(s);
     const userWonLast=String(lp.winner||'')==='user',oppWonLast=String(lp.winner||'')==='opponent';
@@ -177,7 +178,7 @@
     const category=String(meta?.tournament?.category||'').toLowerCase(),circuit=String(meta?.tournament?.circuit||'').toLowerCase();
     const eventTier=/grand chelem|grand slam/.test(category)?'grand-slam':/masters|1000/.test(category)?'masters':/challenger/.test(category)||circuit.includes('challenger')?'challenger':/itf/.test(category)||circuit.includes('itf')?'itf':'tour';
     const ambienceLabel=eventTier==='grand-slam'?'Grand Chelem · grande arène':eventTier==='masters'?'Masters 1000 · grande affluence':eventTier==='challenger'?'Challenger · court compact':eventTier==='itf'?'ITF · court annexe':'Circuit ATP';
-    const specialClass=lp.ace?'cb-special-ace':stake==='match_point'?'cb-special-match':stake==='set_point'?'cb-special-set':stake==='break_point'?'cb-special-break':'';
+    const specialClass=retirement?'cb-special-medical':lp.ace?'cb-special-ace':stake==='match_point'?'cb-special-match':stake==='set_point'?'cb-special-set':stake==='break_point'?'cb-special-break':'';
     const slideUser=Boolean(visual.user_slide)&&courtClass==='clay',slideOpp=Boolean(visual.opponent_slide)&&courtClass==='clay';
     const visualRate=typeof liveAutoSpeed==='number'?liveAutoSpeed:1;
     const visualMs=Math.round(cap(Number(visual.duration_ms||Math.max(820,shotRows.length*190)),650,12000)/Math.max(1,visualRate));
@@ -227,6 +228,7 @@
         ${(userConditionDetail&&opponentConditionDetail)?`<div class="cb-resolution-card"><div><small>Condition live · charge physique</small><b>${safe(userName)} : forme ${Math.round(Number(userConditionDetail.effective_fitness||0))}% · fatigue ${Math.round(Number(userConditionDetail.effective_fatigue||0))}%</b></div><div class="cb-physics-metrics"><span>Effort ${Math.round(Number(userConditionDetail.effort||0))}</span><span>Charge ${Number(userConditionDetail.live_load||0).toFixed(1)}</span><span>${safe(oppName)} fatigue ${Math.round(Number(opponentConditionDetail.effective_fatigue||0))}%</span><span>Effort adv. ${Math.round(Number(opponentConditionDetail.effort||0))}</span></div></div>`:''}
         ${resolution.source&&resolution.source!=='kernel'?`<div class="cb-resolution-card"><div><small>Résolution spatiale</small><b>${safe(endingLabel(lp.ending||lp.shot))}${resolutionText?' · '+safe(resolutionText):''}</b></div><div class="cb-pressure"><span>Pression ${Math.round(pressureScore)}/100</span><i><b style="width:${pressureScore}%"></b></i></div></div>`:''}
         ${shotRows.length?`<div class="cb-physics-card"><div><small>Physique du rallye</small><b>${courtClass==='clay'?'Terre · rebond haut':courtClass==='grass'?'Gazon · rebond bas / fusant':'Dur · rebond intermédiaire'}</b></div><div class="cb-physics-metrics"><span>${Number(physicsSummary.avg_pre_bounce_kph||0)} km/h avant</span><span>${Number(physicsSummary.avg_post_bounce_kph||0)} km/h après</span><span>${Number(physicsSummary.kick_shots||0)} kick · ${Number(physicsSummary.skid_shots||0)} fusants</span></div></div><div class="cb-shot-strip"><span class="cb-shot-count">${shotRows.length} frappes${shotRows.length>=20?' · rallye long':''}</span>${shotRows.map((sh,i)=>`<span class="cb-shot-chip ${sh.hitter==='user'?'user':'opponent'} ${String(sh.spin||'').toLowerCase()} ${sh.stretched_receiver?'stretched':''}"><i>${i+1}</i><b>${sh.hitter==='user'?'MOI':'ADV'} · ${strokeLabel(sh.stroke)} · ${safe(patternLabel(sh.pattern))}</b><em>${safe(sh.spin||'Mixte')} · ${Math.round(Number(sh.speed_kph||0))}→${Math.round(Number(sh.post_bounce_speed_kph||sh.speed_kph||0))} km/h${sh.physics?' · '+safe(physicsLabel(sh.physics)):''}${sh.intent?' · '+safe(intentLabel(sh.intent)):''}${sh.stretched_receiver?' · débordé':''}${shotRows.length>=16&&sh.hitter_archetype?' · '+safe(sh.hitter_archetype):''}</em></span>`).join('')}</div>`:''}
+        ${retirement?`<div class="cb-resolution-card cb-medical-card"><div><small>Abandon médical · résultat provisoire</small><b>${safe(retirement.player_name||'Joueur')} · ${safe(retirement.injury_type||'Incident physique')}</b></div><div class="cb-physics-metrics"><span>${safe(retirement.severity||'—')}</span><span>${Number(retirement.days_out||0)} j estimés</span><span>Risque aggravation ${Math.round(Number(retirement.aggravation_risk||0))}%</span><span>${retirement.side==='user'?'Ton joueur abandonne':'Adversaire abandonne'}</span></div><small class="muted">La blessure n'entre dans la carrière que si tu valides ce résultat. Quitter sans sauvegarder restaure le checkpoint.</small></div>`:''}
         <div class="cb-match-story">
           ${lp.winner?`<div class="cb-point-story"><span class="badge ${matchPressure>=80?'bad':matchPressure>=55?'warn':''}">Pression ${Math.round(matchPressure)}%</span><div><b>${matchPressure>=90?'Point critique':matchPressure>=70?'Très haute pression':matchPressure>=45?'Pression élevée':matchPressure>=20?'Moment sensible':'Situation stable'}</b><small>Impact mental ${mentalPressureEdge>=0?'+':''}${(mentalPressureEdge*100).toFixed(1)} pt · modèle CB-PRESSURE-v2</small></div></div>`:''}
           <div class="cb-point-story">
@@ -250,12 +252,14 @@
         :isCommitted?(()=>{
           const r=local.lastCommittedMatchResult||{},out=r.tournament_outcome||{},tid=Number(s.tournament_id||0);
           const next=r.next_match_available&&tid?'<button class="primary" onclick="nextTournamentLiveMatchV1()">Match suivant</button>':'';
+          const med=r.retirement||retirement||null,medWrite=r.medical||null;
           const detail=out.terminal
             ?'<p>Parcours terminé · '+safe(out.user_round||'')+' · '+Number(out.user_points||0)+' pts · '+Number(out.user_prize_eur||0).toLocaleString('fr-FR')+' €</p>'
             :'<p>Résultat validé. '+(r.tournament_live?'Le parcours tournoi continue.':'Tu peux maintenant poursuivre ta carrière.')+'</p>';
-          return `<div class="cb-result-box committed"><div><small>Résultat officiel · sauvegardé</small><h3>${safe(setScore)}</h3>${detail}</div><div class="cb-result-actions">${next}<button class="soft-btn" onclick="clearLiveMatch()">Fermer</button></div></div>`;
+          const medicalDetail=med?'<p><b>Abandon médical enregistré</b> · '+safe(med.player_name||'Joueur')+' · '+safe(med.injury_type||'incident physique')+(medWrite?.expected_return?' · retour estimé '+safe(medWrite.expected_return):'')+'</p>':'';
+          return `<div class="cb-result-box committed"><div><small>Résultat officiel · sauvegardé</small><h3>${safe(setScore)}</h3>${medicalDetail}${detail}</div><div class="cb-result-actions">${next}<button class="soft-btn" onclick="clearLiveMatch()">Fermer</button></div></div>`;
         })()
-        :`<div class="cb-result-box"><div><small>Résultat provisoire</small><h3>${safe(setScore)}</h3><p>Rien n’est définitif tant que tu ne sauvegardes pas. Sauvegarder rend ce résultat officiel. Le brouillon fige le score sans l’intégrer à la carrière. Ne pas sauvegarder efface le match.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1()">💾 Sauvegarder le résultat</button><button class="soft-btn" onclick="quickSaveLiveV1()">Figer comme brouillon</button><button class="danger-btn" onclick="discardLiveMatchV1()">Ne pas sauvegarder / rejouer</button></div></div>`}
+        :`<div class="cb-result-box"><div><small>${retirement?'Abandon médical · résultat provisoire':'Résultat provisoire'}</small><h3>${safe(setScore)}</h3>${retirement?'<p><b>'+safe(retirement.player_name||'Joueur')+'</b> abandonne · '+safe(retirement.injury_type||'incident physique')+'. La blessure n’existe pas encore dans la carrière.</p>':''}<p>Rien n’est définitif tant que tu ne sauvegardes pas. Sauvegarder rend ce résultat officiel. Le brouillon fige le score sans l’intégrer à la carrière. Ne pas sauvegarder efface le match.</p></div><div class="cb-result-actions"><button class="primary" onclick="commitLiveMatchV1()">💾 Sauvegarder le résultat</button><button class="soft-btn" onclick="quickSaveLiveV1()">Figer comme brouillon</button><button class="danger-btn" onclick="discardLiveMatchV1()">Ne pas sauvegarder / rejouer</button></div></div>`}
       </div></div>`;
   };
 

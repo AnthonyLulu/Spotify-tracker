@@ -1,18 +1,21 @@
-/* Court Boss Match Center V7.2 · Recognizable Player Styles */
+/* Court Boss Match Center V10.1 · Real Tiebreak Scoring */
 (function(){
   const finished=s=>['finished','completed','committed'].includes(String(s?.status||''));
   const committed=s=>String(s?.status||'')==='committed';
   const pct=(n,d)=>Number(d||0)>0?Math.round(Number(n||0)*100/Number(d)):0;
   const score=s=>{
     const sets=(Array.isArray(s?.score_log)?s.score_log:[]).filter(x=>x?.set_finished);
-    return sets.length?sets.map(x=>String(x.user_games)+'-'+String(x.opponent_games)).join(' '):'Sets '+Number(s?.user_sets||0)+'-'+Number(s?.opponent_sets||0);
+    return sets.length?sets.map(x=>{
+      const base=String(x.user_games)+'-'+String(x.opponent_games);
+      return x.tiebreak?base+' ('+String(x.tiebreak_user_points||0)+'-'+String(x.tiebreak_opponent_points||0)+')':base;
+    }).join(' '):'Sets '+Number(s?.user_sets||0)+'-'+Number(s?.opponent_sets||0);
   };
   const safe=v=>typeof esc==='function'?esc(v==null?'':String(v)):String(v==null?'':v);
   const cap=(v,a,b)=>typeof clamp==='function'?clamp(Number(v),a,b):Math.max(a,Math.min(b,Number(v)));
   const wi=c=>{const v=String(c||'').toLowerCase();if(v.includes('vent'))return '≋';if(v.includes('humide'))return '◌';if(v.includes('chaud'))return '☀';if(v.includes('nuage'))return '☁';if(v.includes('indoor'))return '⌂';return '☀'};
   const speed=v=>{const n=Number(v||1);return n<.82?'Lent':n<.96?'Moyen-lent':n<1.08?'Moyen':n<1.2?'Rapide':'Très rapide'};
   const mood=v=>{const n=Number(v||70);return n>=86?'En feu':n>=75?'Confiant':n>=62?'Stable':n>=50?'Tendu':'Fragile'};
-  const phaseLabel=v=>({service:'SERVICE',return:'RETOUR',rally:'ÉCHANGE',net:'FILET',game:'JEU',set:'SET'}[String(v||'').toLowerCase()]||'POINT');
+  const phaseLabel=v=>({service:'SERVICE',return:'RETOUR',rally:'ÉCHANGE',net:'FILET',game:'JEU',set:'SET',tiebreak:'TIE-BREAK'}[String(v||'').toLowerCase()]||'POINT');
   const endingLabel=v=>({
     ace:'Ace',double_fault:'Double faute',unreturned_serve:'Service non retourné',
     return_winner:'Retour gagnant',winner:'Coup gagnant',forced_error:'Faute provoquée',
@@ -150,8 +153,12 @@
     const surface=String(s.surface||'Dur'),courtClass=/terre|clay/i.test(surface)?'clay':/gazon|grass/i.test(surface)?'grass':'hard',indoor=/intérieur|indoor/i.test(surface);
     const condition=String(weather.condition||'').toLowerCase(),weatherClass=Number(weather.wind_kph||0)>=18?'windy':condition.includes('humide')?'humid':Number(weather.temperature_c||0)>=29?'hot':condition.includes('nuage')?'cloudy':'clear';
     const uInit=safe(userName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase()),oInit=safe(oppName.split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase());
-    const momentum=cap(s.momentum||50,10,90),pA=typeof pointLabel==='function'?pointLabel(up,op,'A'):String(up),pB=typeof pointLabel==='function'?pointLabel(up,op,'B'):String(op);
-    const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(visual.phase||lp.phase);
+    const momentum=cap(s.momentum||50,10,90);
+    const tiebreakActive=ug===6&&og===6&&!done;
+    const tiebreakTarget=Number(st._tiebreak_target||lp.tiebreak_target||((/grand chelem|grand slam/i.test(String(meta?.tournament?.category||''))&&Number(s.set_no||1)===Number(meta.best_of||3))?10:7));
+    const pA=tiebreakActive?String(up):(typeof pointLabel==='function'?pointLabel(up,op,'A'):String(up));
+    const pB=tiebreakActive?String(op):(typeof pointLabel==='function'?pointLabel(up,op,'B'):String(op));
+    const call=String(visual.label||lp.visual_label||endingLabel(lp.ending||lp.shot||'')),phase=phaseLabel(tiebreakActive?'tiebreak':visual.phase||lp.phase);
     const target=String(visual.target_zone||lp.zone||'Zone neutre'),setScore=score(s);
     const userWonLast=String(lp.winner||'')==='user',oppWonLast=String(lp.winner||'')==='opponent';
     const eventRows=(Array.isArray(st._visual_events)?st._visual_events:[]).slice(-6).reverse();
@@ -179,7 +186,7 @@
 
     return `<div class="cb-match-shell">${env({...meta,surface},userName,oppName)}
       <div class="card fm-live-match cb-live-card">
-        <div class="fm-match-top"><div><div class="eyebrow">${safe(meta.round||'Match live')} · ${safe(surface)}</div><h2>${safe(userName)} vs ${safe(oppName)}</h2></div><span class="badge ${isCommitted?'good':done?'warn':''}">${isCommitted?'Validé':done?'À valider':'Set '+Number(s.set_no||1)}</span></div>
+        <div class="fm-match-top"><div><div class="eyebrow">${safe(meta.round||'Match live')} · ${safe(surface)}</div><h2>${safe(userName)} vs ${safe(oppName)}</h2></div><span class="badge ${isCommitted?'good':done?'warn':''}">${isCommitted?'Validé':done?'À valider':tiebreakActive?'Tie-break · '+tiebreakTarget+' pts':'Set '+Number(s.set_no||1)}</span></div>
         <div class="fm-scoreboard cb-scoreboard">
           <div class="fm-score-name">${s.serving_user?'● ':''}${safe(userName)} <small>${flags?.[c.country]||''}</small></div><b>${us}</b><b>${ug}</b><strong>${pA}</strong>
           <div class="fm-score-name">${!s.serving_user?'● ':''}${safe(oppName)} <small>${flags?.[opp.country]||''}</small></div><b>${os}</b><b>${og}</b><strong>${pB}</strong>
@@ -206,7 +213,7 @@
         <div class="cb-match-story">
           <div class="cb-point-story">
             <span class="badge">${phase}</span>
-            <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+' · retour '+safe(lp.return_depth||'—')+' · '+shotRows.length+' frappes'+(patternSummary?' · '+safe(patternSummary):'')+(styleText?' · '+safe(styleText):'')):'Le prochain point utilisera le moteur v5.'}</small></div>
+            <div><b>${lp.winner?safe(call):'Prêt à jouer'}</b><small>${lp.winner?(safe(lp.serve_direction||'mixte')+' · retour '+safe(lp.return_depth||'—')+' · '+shotRows.length+' frappes'+(patternSummary?' · '+safe(patternSummary):'')+(styleText?' · '+safe(styleText):'')):'Le prochain point utilisera le moteur v6.'}</small></div>
           </div>
           <div class="cb-event-feed">
             ${eventRows.length?eventRows.map(e=>`<div class="cb-event-line ${e.winner==='user'?'user':e.winner==='opponent'?'opponent':''}"><span>${safe(phaseLabel(e.phase||e.kind))}</span><b>${safe(e.label||'Point')}</b><small>${e.kind==='point'?((Number(e.rally||0)+' coups')+(e.pressure_score!=null?' · P'+Math.round(Number(e.pressure_score)):'')):(e.score||'')}</small></div>`).join(''):'<div class="cb-event-empty">Les événements du match apparaîtront ici.</div>'}

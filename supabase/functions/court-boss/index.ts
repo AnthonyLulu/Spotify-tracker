@@ -9639,6 +9639,20 @@ Deno.serve(async(req:Request)=>{
     };
   };
 
+  const liveTiebreakTarget=(meta:any,setNo:number)=>{
+    const setsToWin=Math.max(2,Math.min(3,Number(meta?.sets_to_win||2)));
+    const bestOf=setsToWin*2-1;
+    const category=String(meta?.tournament?.category||"");
+    const circuit=String(meta?.tournament?.circuit||"");
+    const grandSlam=/Grand Chelem|Grand Slam/i.test(category)&&(!circuit||circuit==="ATP");
+    return grandSlam&&Number(setNo)===bestOf?10:7;
+  };
+  const liveTiebreakServer=(startServerUser:boolean,pointIndex:number)=>{
+    const idx=Math.max(0,Math.floor(Number(pointIndex)||0));
+    if(idx===0)return Boolean(startServerUser);
+    return Math.floor((idx-1)/2)%2===0?!Boolean(startServerUser):Boolean(startServerUser);
+  };
+
   const liveIsoAddDays=(iso:string,days:number)=>{
     const d=new Date(String(iso||AGE_REFERENCE_DATE)+"T12:00:00Z");
     d.setUTCDate(d.getUTCDate()+Number(days||0));
@@ -10097,9 +10111,21 @@ Deno.serve(async(req:Request)=>{
     const temperature=Number(weather.temperature_c||21);
     const moodUser=Number(mood.user||70),moodOpp=Number(mood.opponent||70);
 
-    const pressure=(Math.max(Number(session.data.user_points||0),Number(session.data.opponent_points||0))>=3
-      &&Math.abs(Number(session.data.user_points||0)-Number(session.data.opponent_points||0))<=1)?1:0;
-    const serverIsUser=Boolean(session.data.serving_user);
+    const preScoreUserGames=Number(session.data.user_games||0),preScoreOppGames=Number(session.data.opponent_games||0);
+    const preScoreUserPoints=Number(session.data.user_points||0),preScoreOppPoints=Number(session.data.opponent_points||0);
+    const preTiebreakActive=preScoreUserGames===6&&preScoreOppGames===6;
+    const preTiebreakTarget=preTiebreakActive?liveTiebreakTarget(meta,Number(session.data.set_no||1)):0;
+    const preStats:any=session.data.stats||{};
+    const preTbStartServerUser=typeof preStats._tiebreak_start_server_user==="boolean"
+      ?Boolean(preStats._tiebreak_start_server_user):Boolean(session.data.serving_user);
+    const pressure=preTiebreakActive
+      ?((Math.max(preScoreUserPoints,preScoreOppPoints)>=Math.max(3,preTiebreakTarget-2)
+        &&Math.abs(preScoreUserPoints-preScoreOppPoints)<=2)?1:0)
+      :((Math.max(preScoreUserPoints,preScoreOppPoints)>=3
+        &&Math.abs(preScoreUserPoints-preScoreOppPoints)<=1)?1:0);
+    const serverIsUser=preTiebreakActive
+      ?liveTiebreakServer(preTbStartServerUser,preScoreUserPoints+preScoreOppPoints)
+      :Boolean(session.data.serving_user);
     const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
     const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
     const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
@@ -10203,13 +10229,19 @@ Deno.serve(async(req:Request)=>{
     const preUserGames=Number(session.data.user_games||0),preOppGames=Number(session.data.opponent_games||0);
     const preUserSets=Number(session.data.user_sets||0),preOppSets=Number(session.data.opponent_sets||0);
     const setsToWinPreview=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
-    const userGamePoint=preUserPoints>=3&&preUserPoints-preOppPoints>=1;
-    const oppGamePoint=preOppPoints>=3&&preOppPoints-preUserPoints>=1;
-    const userSetPoint=userGamePoint&&((((preUserGames+1)>=6||preOppGames>=6)&&Math.abs((preUserGames+1)-preOppGames)>=2)||(preUserGames+1)===7);
-    const oppSetPoint=oppGamePoint&&(((preOppGames+1>=6||preUserGames>=6)&&Math.abs((preOppGames+1)-preUserGames)>=2)||(preOppGames+1)===7);
+    const tiebreakActivePreview=preUserGames===6&&preOppGames===6;
+    const tiebreakTargetPreview=tiebreakActivePreview?liveTiebreakTarget(meta,Number(session.data.set_no||1)):0;
+    const userGamePoint=!tiebreakActivePreview&&preUserPoints>=3&&preUserPoints-preOppPoints>=1;
+    const oppGamePoint=!tiebreakActivePreview&&preOppPoints>=3&&preOppPoints-preUserPoints>=1;
+    const userSetPoint=tiebreakActivePreview
+      ?(preUserPoints+1>=tiebreakTargetPreview&&(preUserPoints+1)-preOppPoints>=2)
+      :(userGamePoint&&((preUserGames+1>=6||preOppGames>=6)&&Math.abs((preUserGames+1)-preOppGames)>=2));
+    const oppSetPoint=tiebreakActivePreview
+      ?(preOppPoints+1>=tiebreakTargetPreview&&(preOppPoints+1)-preUserPoints>=2)
+      :(oppGamePoint&&((preOppGames+1>=6||preUserGames>=6)&&Math.abs((preOppGames+1)-preUserGames)>=2));
     const userMatchPoint=userSetPoint&&preUserSets+1>=setsToWinPreview;
     const oppMatchPoint=oppSetPoint&&preOppSets+1>=setsToWinPreview;
-    const breakPoint=serverIsUser?oppGamePoint:userGamePoint;
+    const breakPoint=!tiebreakActivePreview&&(serverIsUser?oppGamePoint:userGamePoint);
     const stake=userMatchPoint||oppMatchPoint?"match_point":userSetPoint||oppSetPoint?"set_point":breakPoint?"break_point":userGamePoint||oppGamePoint?"game_point":"normal";
     const pointNo=Number(session.data.rally_no||0)+1;
     const courtClamp=(value:number,min=10,max=90)=>Math.max(min,Math.min(max,value));
@@ -10619,7 +10651,7 @@ Deno.serve(async(req:Request)=>{
       ball_x:ballPath[ballPath.length-1].x,ball_y:ballPath[ballPath.length-1].y,
       zone:atNet?"Filet":ret==="Avancée"?"Prise tôt":ret==="Reculée"?"Retour reculé":"Neutre",
       visual:{
-        point_no:pointNo,phase:visualPhase,label:visualLabel,target_zone:visualTarget,stake,
+        point_no:pointNo,phase:tiebreakActivePreview?"tiebreak":visualPhase,label:visualLabel,target_zone:visualTarget,stake,
         user_start:userStart,user_end:visualFinalUser,opponent_start:opponentStart,opponent_end:visualFinalOpponent,
         user_reaction:userWon?"celebrate":ending==="unforced_error"?"frustrated":"reset",
         opponent_reaction:userWon?(ending==="unforced_error"?"frustrated":"reset"):"celebrate",
@@ -10689,12 +10721,30 @@ Deno.serve(async(req:Request)=>{
     let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
     let setNo=Number(session.data.set_no||1),gameFinished=false,setFinished=false,setWinner="";
     const userName=String(managed.data.name||"Joueur");
+    const tiebreakActive=ug===6&&og===6;
+    const tiebreakTarget=tiebreakActive?liveTiebreakTarget(meta,setNo):0;
+    const tiebreakStartServerUser=tiebreakActive
+      ?(typeof stats._tiebreak_start_server_user==="boolean"?Boolean(stats._tiebreak_start_server_user):Boolean(session.data.serving_user))
+      :null;
+    let tiebreakFinished=false;
+    let finishedTiebreakScore:any=null;
 
-    if((up>=4||op>=4)&&Math.abs(up-op)>=2){
+    if(tiebreakActive){
+      stats._tiebreak_start_server_user=Boolean(tiebreakStartServerUser);
+      stats._tiebreak_target=tiebreakTarget;
+      if((up>=tiebreakTarget||op>=tiebreakTarget)&&Math.abs(up-op)>=2){
+        gameFinished=true;tiebreakFinished=true;setFinished=true;
+        finishedTiebreakScore={user:up,opponent:op};
+        if(up>op){ug=7;us++;setWinner=userName}else{og=7;os++;setWinner=String(opp.name)}
+        up=0;op=0;
+        stats._tiebreak_start_server_user=null;
+        stats._tiebreak_target=null;
+      }
+    }else if((up>=4||op>=4)&&Math.abs(up-op)>=2){
       gameFinished=true;
       if(up>op)ug++;else og++;
       up=0;op=0;
-      if(((ug>=6||og>=6)&&Math.abs(ug-og)>=2)||ug===7||og===7){
+      if((ug>=6||og>=6)&&Math.abs(ug-og)>=2){
         setFinished=true;
         setWinner=ug>og?userName:String(opp.name);
         if(ug>og)us++;else os++;
@@ -10714,14 +10764,38 @@ Deno.serve(async(req:Request)=>{
       log.push({
         set:Number(session.data.set_no||1),
         user_games:finishedSetGames?.user_games??ug,opponent_games:finishedSetGames?.opponent_games??og,
-        winner_game:lastPoint.winner==="user"?userName:opp.name,set_finished:setFinished,set_winner:setWinner
+        winner_game:lastPoint.winner==="user"?userName:opp.name,set_finished:setFinished,set_winner:setWinner,
+        tiebreak:tiebreakFinished,
+        tiebreak_target:tiebreakFinished?tiebreakTarget:null,
+        tiebreak_user_points:tiebreakFinished?Number(finishedTiebreakScore?.user||0):null,
+        tiebreak_opponent_points:tiebreakFinished?Number(finishedTiebreakScore?.opponent||0):null
       });
     }
-    lastPoint.ends_flipped=Boolean(log.length%2===1);
-    lastPoint.changeover=Boolean(gameFinished&&log.length%2===1);
+    const tiebreakPointsAfter=tiebreakActive
+      ?(tiebreakFinished?Number(finishedTiebreakScore?.user||0)+Number(finishedTiebreakScore?.opponent||0):up+op)
+      :0;
+    const normalEndsFlipped=Boolean(log.length%2===1);
+    const tbChangeovers=tiebreakActive&&!tiebreakFinished?Math.floor(tiebreakPointsAfter/6):0;
+    lastPoint.ends_flipped=tiebreakActive&&!tiebreakFinished
+      ?(normalEndsFlipped!==Boolean(tbChangeovers%2))
+      :normalEndsFlipped;
+    lastPoint.changeover=tiebreakActive&&!tiebreakFinished
+      ?Boolean(tiebreakPointsAfter>0&&tiebreakPointsAfter%6===0)
+      :Boolean(gameFinished&&log.length%2===1);
     lastPoint.stake=stake;
+    lastPoint.tiebreak=tiebreakActive;
+    lastPoint.tiebreak_target=tiebreakActive?tiebreakTarget:null;
+    lastPoint.tiebreak_score=tiebreakActive
+      ?(tiebreakFinished?finishedTiebreakScore:{user:up,opponent:op})
+      :null;
+    if(lastPoint.visual&&typeof lastPoint.visual==="object"){
+      lastPoint.visual.phase=tiebreakActive?"tiebreak":lastPoint.visual.phase;
+      lastPoint.visual.tiebreak=tiebreakActive;
+      lastPoint.visual.tiebreak_target=tiebreakActive?tiebreakTarget:null;
+      lastPoint.visual.tiebreak_score=lastPoint.tiebreak_score;
+    }
     if(lastPoint.changeover){
-      visualEvents.push({kind:"changeover",phase:"changeover",label:"Changement de côté",winner:null,rally:0,at:new Date().toISOString()});
+      visualEvents.push({kind:"changeover",phase:"changeover",label:tiebreakActive?"Changement de côté · tie-break":"Changement de côté",winner:null,rally:0,at:new Date().toISOString()});
       stats._visual_events=visualEvents.slice(-8);
     }
 
@@ -10731,7 +10805,9 @@ Deno.serve(async(req:Request)=>{
     const update:any={
       user_sets:us,opponent_sets:os,set_no:setNo,user_games:ug,opponent_games:og,
       user_points:up,opponent_points:op,rally_no:Number(session.data.rally_no||0)+1,last_point:lastPoint,
-      serving_user:gameFinished?!session.data.serving_user:session.data.serving_user,
+      serving_user:tiebreakActive
+        ?(tiebreakFinished?!Boolean(tiebreakStartServerUser):liveTiebreakServer(Boolean(tiebreakStartServerUser),up+op))
+        :(gameFinished?!Boolean(session.data.serving_user):Boolean(session.data.serving_user)),
       momentum:momentumNew,tactics,stats,score_log:log,status,updated_at:new Date().toISOString()
     };
     if(completed)update.completed_at=new Date().toISOString();
@@ -10792,17 +10868,11 @@ Deno.serve(async(req:Request)=>{
     const livePlayerId=Number(session.data.managed_player_id||career.data.managed_player_id||0);
     const managed=await db.from("players").select("id,name,country,current_ability,form,fitness,fatigue,morale,player_attributes(*)").eq("id",livePlayerId).maybeSingle();
     if(managed.error||!managed.data)return h({error:managed.error?.message||"Joueur du match introuvable"},500);
-    const isPrimaryLive=livePlayerId===Number(career.data.managed_player_id||0);
 
     const opp:any={...session.data.opponent,player_attributes:Array.isArray(session.data.opponent?.player_attributes)?session.data.opponent.player_attributes[0]:session.data.opponent?.player_attributes||{}};
     const ua:any=Array.isArray(managed.data.player_attributes)?managed.data.player_attributes[0]:managed.data.player_attributes||{};
+    const oa:any=opp.player_attributes||{};
     const tactics=body?.tactics||session.data.tactics||{};
-    const ag=n(tactics.aggression,58,1,100),risk=n(tactics.risk,52,1,100),net=n(tactics.net,28,1,100);
-    const effort=n(tactics.effort,60,20,100);
-    const ret=String(tactics.returnPos||"Neutre");
-    const tempo=String(tactics.tempo||"Neutre");
-    const targetWing=String(tactics.targetWing||"Mixte");
-    const spinPlan=String(tactics.spin||"Mixte");
     const surface=String(session.data.surface||"Dur");
     const meta:any=session.data.stats?._meta||{};
     const weather:any=meta.weather||{};
@@ -10812,39 +10882,14 @@ Deno.serve(async(req:Request)=>{
     const altitude=Math.max(0,Number(meta.altitude_m||0));
     const wind=Math.max(0,Number(weather.wind_kph||0));
     const temperature=Number(weather.temperature_c||21);
-
-    const serverIsUser=Boolean(session.data.serving_user);
-    const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
-    const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
-    const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
-      p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:0
-    });
-    const tm:any=matchup.error?{}:(matchup.data||{});
-    const oa:any=opp.player_attributes||{};
-    const kernel=livePointKernel({
-      tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:0,
-      managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
-      momentum:Number(session.data.momentum||50),surface,firstServeIn:null
-    });
-    const serverPointP=kernel.serverWinProb;
     const formCore=["serve_power","serve_precision","first_serve_quality","second_serve_quality","return_game","forehand","forehand_power","forehand_accuracy","backhand","backhand_power","backhand_accuracy","movement","speed","stamina","concentration","decision_making","big_points"];
     const userFormLift=liveRuntimeAvgAttr(ua,formCore,userFormMultiplier)-liveRuntimeAvgAttr(ua,formCore,1);
     const oppFormLift=liveRuntimeAvgAttr(oa,formCore,oppFormMultiplier)-liveRuntimeAvgAttr(oa,formCore,1);
-    const serverFormLift=serverIsUser?userFormLift:oppFormLift;
-    const q=1-serverPointP;
-    const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);
-    const serverGameP=Math.max(.02,Math.min(.98,
-      Math.pow(serverPointP,4)*(1+4*q+10*q*q)+
-      20*Math.pow(serverPointP,3)*Math.pow(q,3)*deuceWin
-    ));
-    const prob=serverIsUser?serverGameP:1-serverGameP;
-    const userWon=Math.random()<prob;
 
     let ug=Number(session.data.user_games||0),og=Number(session.data.opponent_games||0);
     let us=Number(session.data.user_sets||0),os=Number(session.data.opponent_sets||0);
     let setNo=Number(session.data.set_no||1);
-    if(userWon)ug++;else og++;
-
+    const tiebreakActive=ug===6&&og===6;
     const stats:any={
       user_winners:0,user_errors:0,user_aces:0,opp_winners:0,opp_errors:0,
       user_double_faults:0,opp_double_faults:0,
@@ -10852,83 +10897,208 @@ Deno.serve(async(req:Request)=>{
       user_unreturned_serves:0,opp_unreturned_serves:0,
       ...(session.data.stats||{})
     };
-    const gamePoints=6+Math.floor(Math.random()*5);
-    const firstInPct=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
-    const acePct=Math.max(.002,Number(tm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
-    const dfPct=Math.max(.004,Number(tm.double_fault_pct||4)/100*(1-serverFormLift*.035));
-    const unretPct=Number(tm.unreturned_serve_pct||22)/100;
-    const srvPrefix=serverIsUser?"user":"opp";
-    stats[srvPrefix+"_first_serves"]=(stats[srvPrefix+"_first_serves"]||0)+gamePoints;
-    stats[srvPrefix+"_first_serves_in"]=(stats[srvPrefix+"_first_serves_in"]||0)+Math.round(gamePoints*firstInPct);
-    stats[srvPrefix+"_aces"]=(stats[srvPrefix+"_aces"]||0)+Math.max(0,Math.round(gamePoints*acePct*(.65+Math.random()*.7)));
-    stats[srvPrefix+"_double_faults"]=(stats[srvPrefix+"_double_faults"]||0)+Math.max(0,Math.round(gamePoints*(1-firstInPct)*dfPct*(.65+Math.random()*.7)));
-    stats[srvPrefix+"_unreturned_serves"]=(stats[srvPrefix+"_unreturned_serves"]||0)+Math.max(0,Math.round(gamePoints*unretPct*(.65+Math.random()*.7)));
-    if(userWon){
-      stats.user_winners+=(Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.server_winner_rate_pct:tm.returner_winner_rate_pct||14)/100)));
-      stats.opp_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.returner_ue_pct:tm.server_ue_pct||15)/100));
-    }else{
-      stats.opp_winners+=(Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.returner_winner_rate_pct:tm.server_winner_rate_pct||14)/100)));
-      stats.user_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.server_ue_pct:tm.returner_ue_pct||15)/100));
-    }
 
-    let setFinished=false,setWinner="";
-    if(((ug>=6||og>=6)&&Math.abs(ug-og)>=2)||ug===7||og===7){
+    let userWon=false,gamePoints=0,setFinished=false,setWinner="",completed=false,status="active";
+    let nextServingUser=Boolean(session.data.serving_user);
+    let responseWinProbability=50;
+    let lastServerWinProbability=.5;
+    let lastConditionEdge=0;
+    let log:any[]=Array.isArray(session.data.score_log)?session.data.score_log:[];
+
+    if(tiebreakActive){
+      const target=liveTiebreakTarget(meta,setNo);
+      const startServerUser=typeof stats._tiebreak_start_server_user==="boolean"
+        ?Boolean(stats._tiebreak_start_server_user):Boolean(session.data.serving_user);
+      stats._tiebreak_start_server_user=startServerUser;
+      stats._tiebreak_target=target;
+      let tup=Number(session.data.user_points||0),top=Number(session.data.opponent_points||0);
+
+      const [userServeMatch,oppServeMatch]=await Promise.all([
+        db.rpc("tennis_abstract_matchup_model_v2",{p_server_id:Number(managed.data.id),p_returner_id:Number(opp.id),p_surface:surface,p_pressure:1}),
+        db.rpc("tennis_abstract_matchup_model_v2",{p_server_id:Number(opp.id),p_returner_id:Number(managed.data.id),p_surface:surface,p_pressure:1})
+      ]);
+      const userServeTm:any=userServeMatch.error?{}:(userServeMatch.data||{});
+      const oppServeTm:any=oppServeMatch.error?{}:(oppServeMatch.data||{});
+      const userServeKernel=livePointKernel({
+        tm:userServeTm,ua,oa,serverIsUser:true,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:1,
+        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+      });
+      const oppServeKernel=livePointKernel({
+        tm:oppServeTm,ua,oa,serverIsUser:false,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:1,
+        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+      });
+      const userServePointP=userServeKernel.serverWinProb;
+      const userReturnPointP=1-oppServeKernel.serverWinProb;
+      responseWinProbability=Math.round((userServePointP+userReturnPointP)*50);
+
+      let safety=0;
+      while(!((tup>=target||top>=target)&&Math.abs(tup-top)>=2)){
+        if(++safety>500)return h({error:"Tie-break interrompu par la garde de sécurité.",score:{user:tup,opponent:top}},500);
+        const pointIndex=tup+top;
+        const tbServerUser=liveTiebreakServer(startServerUser,pointIndex);
+        const pointTm:any=tbServerUser?userServeTm:oppServeTm;
+        const pointKernel:any=tbServerUser?userServeKernel:oppServeKernel;
+        const userPointP=tbServerUser?pointKernel.serverWinProb:1-pointKernel.serverWinProb;
+        const userPointWon=Math.random()<userPointP;
+        if(userPointWon)tup++;else top++;
+        gamePoints++;
+        lastServerWinProbability=pointKernel.serverWinProb;
+        lastConditionEdge=pointKernel.conditionEdge;
+
+        const serverFormLift=tbServerUser?userFormLift:oppFormLift;
+        const firstInPct=Math.max(.42,Math.min(.82,Number(pointTm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
+        const firstIn=Math.random()<firstInPct;
+        const dfPct=Math.max(.004,Number(pointTm.double_fault_pct||4)/100*(1-serverFormLift*.035));
+        const doubleFault=!firstIn&&Math.random()<dfPct;
+        const serverWonPoint=tbServerUser?userPointWon:!userPointWon;
+        const acePct=Math.max(.002,Number(pointTm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
+        const ace=firstIn&&serverWonPoint&&Math.random()<acePct;
+        const unret=!ace&&!doubleFault&&serverWonPoint&&Math.random()<Math.max(.01,Number(pointTm.unreturned_serve_pct||22)/100*(firstIn?1:.52));
+        const prefix=tbServerUser?"user":"opp";
+        stats[prefix+"_first_serves"]=(stats[prefix+"_first_serves"]||0)+1;
+        if(firstIn)stats[prefix+"_first_serves_in"]=(stats[prefix+"_first_serves_in"]||0)+1;
+        if(doubleFault)stats[prefix+"_double_faults"]=(stats[prefix+"_double_faults"]||0)+1;
+        if(ace)stats[prefix+"_aces"]=(stats[prefix+"_aces"]||0)+1;
+        if(unret)stats[prefix+"_unreturned_serves"]=(stats[prefix+"_unreturned_serves"]||0)+1;
+      }
+
+      userWon=tup>top;
+      if(userWon){ug=7;us++;setWinner=String(managed.data.name||"Joueur")}
+      else{og=7;os++;setWinner=String(opp.name)}
       setFinished=true;
-      setWinner=ug>og?String(managed.data.name||"Joueur"):String(opp.name);
-      if(ug>og)us++;else os++;
-    }
-
-    const log:any[]=Array.isArray(session.data.score_log)?session.data.score_log:[];
-    log.push({set:setNo,user_games:ug,opponent_games:og,winner_game:userWon?String(managed.data.name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner});
-
-    const setsToWin=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
-    let status="active",completed=false;
-    if(setFinished){
+      log.push({
+        set:setNo,user_games:ug,opponent_games:og,
+        winner_game:userWon?String(managed.data.name||"Joueur"):opp.name,
+        set_finished:true,set_winner:setWinner,tiebreak:true,tiebreak_target:target,
+        tiebreak_user_points:tup,tiebreak_opponent_points:top
+      });
+      stats._tiebreak_start_server_user=null;
+      stats._tiebreak_target=null;
+      nextServingUser=!startServerUser;
+      const setsToWin=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
       if(us>=setsToWin||os>=setsToWin){status="finished";completed=true}
       else{setNo++;ug=0;og=0}
+      const tbEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
+      tbEvents.push({
+        kind:"tiebreak",phase:"tiebreak",label:"Tie-break "+String(tup)+"-"+String(top),
+        winner:userWon?"user":"opponent",score:String(tup)+"-"+String(top),
+        set:Number(session.data.set_no||1),target,at:new Date().toISOString()
+      });
+      stats._visual_events=tbEvents.slice(-8);
+    }else{
+      const serverIsUser=Boolean(session.data.serving_user);
+      const serverId=serverIsUser?Number(managed.data.id):Number(opp.id);
+      const returnerId=serverIsUser?Number(opp.id):Number(managed.data.id);
+      const matchup=await db.rpc("tennis_abstract_matchup_model_v2",{
+        p_server_id:serverId,p_returner_id:returnerId,p_surface:surface,p_pressure:0
+      });
+      const tm:any=matchup.error?{}:(matchup.data||{});
+      const kernel=livePointKernel({
+        tm,ua,oa,serverIsUser,userFormMultiplier,oppFormMultiplier,tactics,meta,pressure:0,
+        managed:managed.data,opp,pointsPlayed:Number(session.data.rally_no||0),
+        momentum:Number(session.data.momentum||50),surface,firstServeIn:null
+      });
+      const serverPointP=kernel.serverWinProb;
+      lastServerWinProbability=serverPointP;
+      lastConditionEdge=kernel.conditionEdge;
+      const serverFormLift=serverIsUser?userFormLift:oppFormLift;
+      const q=1-serverPointP;
+      const deuceWin=(serverPointP*serverPointP)/(serverPointP*serverPointP+q*q);
+      const serverGameP=Math.max(.02,Math.min(.98,
+        Math.pow(serverPointP,4)*(1+4*q+10*q*q)+
+        20*Math.pow(serverPointP,3)*Math.pow(q,3)*deuceWin
+      ));
+      const prob=serverIsUser?serverGameP:1-serverGameP;
+      responseWinProbability=Math.round(prob*100);
+      userWon=Math.random()<prob;
+      if(userWon)ug++;else og++;
+
+      gamePoints=6+Math.floor(Math.random()*5);
+      const firstInPct=Math.max(.42,Math.min(.82,Number(tm.first_serve_in_pct||62)/100-wind*.00075-Math.max(0,temperature-30)*.0012+serverFormLift*.0015));
+      const acePct=Math.max(.002,Number(tm.ace_pct||6)/100*(1+(courtSpeed-1)*.34+Math.min(.16,altitude/9000)-Math.min(.18,wind*.006))*(1+serverFormLift*.018));
+      const dfPct=Math.max(.004,Number(tm.double_fault_pct||4)/100*(1-serverFormLift*.035));
+      const unretPct=Number(tm.unreturned_serve_pct||22)/100;
+      const srvPrefix=serverIsUser?"user":"opp";
+      stats[srvPrefix+"_first_serves"]=(stats[srvPrefix+"_first_serves"]||0)+gamePoints;
+      stats[srvPrefix+"_first_serves_in"]=(stats[srvPrefix+"_first_serves_in"]||0)+Math.round(gamePoints*firstInPct);
+      stats[srvPrefix+"_aces"]=(stats[srvPrefix+"_aces"]||0)+Math.max(0,Math.round(gamePoints*acePct*(.65+Math.random()*.7)));
+      stats[srvPrefix+"_double_faults"]=(stats[srvPrefix+"_double_faults"]||0)+Math.max(0,Math.round(gamePoints*(1-firstInPct)*dfPct*(.65+Math.random()*.7)));
+      stats[srvPrefix+"_unreturned_serves"]=(stats[srvPrefix+"_unreturned_serves"]||0)+Math.max(0,Math.round(gamePoints*unretPct*(.65+Math.random()*.7)));
+      if(userWon){
+        stats.user_winners+=Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.server_winner_rate_pct:tm.returner_winner_rate_pct||14)/100));
+        stats.opp_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.returner_ue_pct:tm.server_ue_pct||15)/100));
+      }else{
+        stats.opp_winners+=Math.max(1,Math.round(gamePoints*Number(serverIsUser?tm.returner_winner_rate_pct:tm.server_winner_rate_pct||14)/100));
+        stats.user_errors+=Math.max(0,Math.round(gamePoints*Number(serverIsUser?tm.server_ue_pct:tm.returner_ue_pct||15)/100));
+      }
+
+      if((ug>=6||og>=6)&&Math.abs(ug-og)>=2){
+        setFinished=true;
+        setWinner=ug>og?String(managed.data.name||"Joueur"):String(opp.name);
+        if(ug>og)us++;else os++;
+      }
+      log.push({
+        set:setNo,user_games:ug,opponent_games:og,
+        winner_game:userWon?String(managed.data.name||"Joueur"):opp.name,
+        set_finished:setFinished,set_winner:setWinner,tiebreak:false
+      });
+      const setsToWin=Math.max(2,Math.min(3,Number(meta.sets_to_win||2)));
+      if(setFinished){
+        if(us>=setsToWin||os>=setsToWin){status="finished";completed=true}
+        else{setNo++;ug=0;og=0}
+      }
+      nextServingUser=!Boolean(session.data.serving_user);
+      const gameLog:any=log[log.length-1]||{};
+      const gameVisualEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
+      gameVisualEvents.push({
+        kind:setFinished?"set":"game",phase:setFinished?"set":"game",
+        label:setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?String(managed.data.name||"Joueur"):opp.name)),
+        winner:userWon?"user":"opponent",
+        score:String(gameLog.user_games??ug)+"-"+String(gameLog.opponent_games??og),
+        set:Number(gameLog.set||session.data.set_no||1),at:new Date().toISOString()
+      });
+      stats._visual_events=gameVisualEvents.slice(-8);
     }
 
     const userName=String(managed.data.name||"Joueur");
-    const gameLog:any=log[log.length-1]||{};
-    const gameVisualEvents:any[]=Array.isArray(stats._visual_events)?stats._visual_events:[];
-    gameVisualEvents.push({
-      kind:setFinished?"set":"game",phase:setFinished?"set":"game",
-      label:setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
-      winner:userWon?"user":"opponent",
-      score:String(gameLog.user_games??ug)+"-"+String(gameLog.opponent_games??og),
-      set:setNo,at:new Date().toISOString()
-    });
-    stats._visual_events=gameVisualEvents.slice(-8);
-    const momentumNew=Math.max(10,Math.min(90,Number(session.data.momentum||50)+(userWon?4:-4)+(setFinished?(setWinner===userName?8:-8):0)));
+    const momentumNew=Math.max(10,Math.min(90,
+      Number(session.data.momentum||50)+(userWon?4:-4)+(setFinished?(setWinner===userName?8:-8):0)
+    ));
+    const lastLog:any=log[log.length-1]||{};
     const update:any={
       user_sets:us,opponent_sets:os,set_no:setNo,user_games:ug,opponent_games:og,
       user_points:0,opponent_points:0,
       rally_no:Number(session.data.rally_no||0)+gamePoints,
-      serving_user:!session.data.serving_user,momentum:momentumNew,tactics,stats,score_log:log,
+      serving_user:nextServingUser,momentum:momentumNew,tactics,stats,score_log:log,
       last_point:{
-        winner:userWon?"user":"opponent",server:serverIsUser?"user":"opponent",
-        phase:setFinished?"set":"game",visual_label:setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
+        winner:userWon?"user":"opponent",
+        server:tiebreakActive?"mixed":(Boolean(session.data.serving_user)?"user":"opponent"),
+        phase:tiebreakActive?"tiebreak":setFinished?"set":"game",
+        visual_label:tiebreakActive
+          ?("Tie-break "+String(lastLog.tiebreak_user_points||0)+"-"+String(lastLog.tiebreak_opponent_points||0))
+          :setFinished?("Set "+String(setWinner||"")):("Jeu "+String(userWon?userName:opp.name)),
+        tiebreak:tiebreakActive,tiebreak_target:tiebreakActive?Number(lastLog.tiebreak_target||0):null,
+        tiebreak_score:tiebreakActive?{user:Number(lastLog.tiebreak_user_points||0),opponent:Number(lastLog.tiebreak_opponent_points||0)}:null,
         model:"CB-MATCH-ENGINE-v6 · canonical game kernel",
-        server_win_probability:Math.round(serverPointP*1000)/10,
-        runtime_condition_edge:Math.round(kernel.conditionEdge*10000)/10000,
-        form_modifier_runtime_only:true,
-        at:new Date().toISOString()
+        server_win_probability:Math.round(lastServerWinProbability*1000)/10,
+        runtime_condition_edge:Math.round(lastConditionEdge*10000)/10000,
+        form_modifier_runtime_only:true,at:new Date().toISOString()
       },
       status,updated_at:new Date().toISOString()
     };
     if(completed)update.completed_at=new Date().toISOString();
 
-    const up=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
-    if(up.error)return h({error:up.error.message},500);
-
-    // Do not mutate career/history/Elo here. The user can still discard this result.
+    const upRow=await db.from("live_match_sessions").update(update).eq("id",id).select("*").single();
+    if(upRow.error)return h({error:upRow.error.message},500);
 
     return h({
-      ok:true,session:up.data,
+      ok:true,session:upRow.data,
       opponent:{id:opp.id,name:opp.name,country:opp.country,ranking:opp.ranking},
-      game_winner:userWon?String(managed.data.name||"Joueur"):opp.name,set_finished:setFinished,set_winner:setWinner,
-      completed,win_probability:Math.round(prob*100),
-      engine:"CB-MATCH-ENGINE-v6",simulation_granularity:"game",
+      game_winner:userWon?String(managed.data.name||"Joueur"):opp.name,
+      set_finished:setFinished,set_winner:setWinner,completed,
+      win_probability:responseWinProbability,
+      engine:"CB-MATCH-ENGINE-v6",simulation_granularity:tiebreakActive?"tiebreak":"game",
+      tiebreak:tiebreakActive,
       runtime_form_persistence:false
     });
   }
@@ -10960,8 +11130,10 @@ Deno.serve(async(req:Request)=>{
     const weather:any=meta.weather||{};
     const won=Number(session.data.user_sets||0)>Number(session.data.opponent_sets||0);
     const setRows=(Array.isArray(session.data.score_log)?session.data.score_log:[]).filter((x:any)=>x?.set_finished);
-    const score=setRows.map((x:any)=>String(x.user_games)+"-"+String(x.opponent_games)).join(" ")||
-      ("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
+    const score=setRows.map((x:any)=>{
+      const base=String(x.user_games)+"-"+String(x.opponent_games);
+      return x.tiebreak?base+" ("+String(x.tiebreak_user_points||0)+"-"+String(x.tiebreak_opponent_points||0)+")":base;
+    }).join(" ")||("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
     const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
     const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;
     const matchLoad=Math.min(8,Math.max(3,Math.ceil((Number(session.data.rally_no||0)+setRows.length*18)/55)));

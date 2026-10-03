@@ -5070,15 +5070,10 @@ window.simulatePracticeMatch=async()=>{
    body:JSON.stringify({surface,player_id:playerId,tactics:local.tactics||{}})
   });
   applyLiveMatchResponse(started);
-  for(let i=0;i<80&&local.liveMatch?.status==='active';i++){
-   const d=await get('/api/live-match/game',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({session_id:started.session.id,tactics:local.tactics||{}})
-   });
-   applyLiveMatchResponse(d);
-  }
+  if(typeof window.simulateLiveMatch!=='function')throw new Error('Simulateur de match indisponible.');
+  await window.simulateLiveMatch();
   route='match';persist();render();
-  if(local.liveMatch?.status==='active')alert('La simulation a atteint sa limite de sécurité. Termine les derniers jeux depuis le Match Center.');
+  if(local.liveMatch?.status==='active')alert('La simulation s’est interrompue avant la fin du match.');
  }catch(e){alert('Simulation rapide impossible : '+e.message)}
 }
 window.openMatch=idx=>{

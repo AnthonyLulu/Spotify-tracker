@@ -117,7 +117,7 @@ jobs:
           ]){
             if(payload.special_team_event?.code!==code||payload.special_team_event?.teams!==teams)throw new Error(label+' team format invalid');
             if((payload.main||[]).length||(payload.qualifying||[]).length)throw new Error(label+' leaked into individual draw');
-            if(payload.entry_preview_model!=='team_selection_v1')throw new Error(label+' entry mode invalid');
+            if(payload.entry_preview_model!=='team_selection_v2_captains')throw new Error(label+' entry mode invalid: '+payload.entry_preview_model);
           }
           if(fed.player?.career_status!=='retired'||fed.tournamentHistory?.length<300)throw new Error('Federer history invalid');
           if(nadal.player?.career_status!=='retired'||nadal.tournamentHistory?.length<300)throw new Error('Nadal history invalid');

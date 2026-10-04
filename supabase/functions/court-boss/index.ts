@@ -2674,7 +2674,7 @@ Deno.serve(async(req:Request)=>{
     if(locked.error)return h({error:"Une autre opération modifie déjà la carrière. Réessaie dans un instant."},423);
     writeLockToken=String(locked.data||"");
   }
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:75,write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:76,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
   if(path.endsWith("/api/access-check")&&req.method==="POST")return h({ok:true,write_access:true});
   try{
   if((

@@ -2620,7 +2620,8 @@ Deno.serve(async(req:Request)=>{
   // Read-only tournament images must be public: browser <img> requests cannot
   // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
-  if(!isHealth&&!isPublicTournamentImage&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
+  const isPublicMediaProxy=path.endsWith("/api/media-proxy")&&req.method==="GET";
+  if(!isHealth&&!isPublicTournamentImage&&!isPublicMediaProxy&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
   if(isHealth) return h({ok:true,app:"court-boss-api",version:73,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",access_protected:Boolean(accessKey)});
 
   if((
@@ -4090,6 +4091,64 @@ Deno.serve(async(req:Request)=>{
       }
     });
   }
+
+  if(path.endsWith("/api/media-proxy")&&req.method==="GET"){
+    const raw=String(u.searchParams.get("url")||"").trim();
+    if(!raw)return new Response("",{status:400,headers:{...cors,"Cache-Control":"no-store"}});
+    const allowedHosts=new Set([
+      "atptour.com","www.atptour.com",
+      "assets.stickpng.com",
+      "commons.wikimedia.org","upload.wikimedia.org","thumb.wikimedia.org","en.wikipedia.org",
+      "static.cdnlogo.com","static.hkmenstennisopen.com","trouverlogo.fr",
+      "tennis.kiwi","tennis.com.au","www.tennis.com.au",
+      "itftennis.com","www.itftennis.com"
+    ]);
+    const allowed=(value:string)=>{
+      try{
+        const x=new URL(value);
+        return x.protocol==="https:"&&allowedHosts.has(x.hostname.toLowerCase());
+      }catch{return false}
+    };
+    if(!allowed(raw))return new Response("",{status:403,headers:{...cors,"Cache-Control":"no-store"}});
+    try{
+      let target=raw;
+      let response:Response|null=null;
+      for(let i=0;i<4;i++){
+        response=await fetch(target,{
+          headers:{
+            "User-Agent":"CourtBoss/1.0 (+public-media-proxy)",
+            "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Referer":new URL(target).origin+"/"
+          },
+          redirect:"manual",
+          signal:AbortSignal.timeout(8000)
+        });
+        if(response.status>=300&&response.status<400){
+          const location=String(response.headers.get("location")||"").trim();
+          if(!location)break;
+          const next=new URL(location,target).toString();
+          if(!allowed(next))return new Response("",{status:403,headers:{...cors,"Cache-Control":"no-store"}});
+          target=next;
+          continue;
+        }
+        break;
+      }
+      if(!response)return new Response("",{status:502,headers:cors});
+      const contentType=String(response.headers.get("content-type")||"");
+      if(!response.ok||!/^image\//i.test(contentType))return new Response("",{status:502,headers:{...cors,"Cache-Control":"public, max-age=300"}});
+      return new Response(response.body,{
+        status:200,
+        headers:{
+          ...cors,
+          "Content-Type":contentType,
+          "Cache-Control":"public, max-age=86400, stale-while-revalidate=604800"
+        }
+      });
+    }catch{
+      return new Response("",{status:502,headers:{...cors,"Cache-Control":"public, max-age=300"}});
+    }
+  }
+
 
   if(path.endsWith("/api/tournament-image")&&req.method==="GET"){
     const id=n(u.searchParams.get("id"),0,1,99999999);

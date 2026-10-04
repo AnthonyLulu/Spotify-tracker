@@ -380,10 +380,32 @@
     render();
     try{
       let payload=todayPlanPayload();
-      let day=await get('/api/advance-day',{
+      let checkpoint=null;
+      const advanceOneDay=()=>get('/api/advance-day',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({today_plan:payload,difficulty:local.difficulty||'normal'})
       });
+      let day=await advanceOneDay();
+
+      if(day?.checkpoint_required){
+        const cr=career()||{};
+        checkpoint=await get('/api/simulate',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            clock_mode:'checkpoint',
+            from_date:day.from_date,
+            date:day.checkpoint_date||local.date,
+            career_state:{
+              form:cr.form,fitness:cr.fitness,morale:cr.morale,
+              fatigue:cr.fatigue,injury_status:cr.injury_status
+            },
+            training:[],player_training:{},
+            difficulty:local.difficulty||'normal'
+          })
+        });
+        weeklyFeed(checkpoint);
+        day=await advanceOneDay();
+      }
 
       if(day?.requires_rollover){
         const roll=await get('/api/rollover-season',{
@@ -393,10 +415,7 @@
         local.feed=local.feed||[];
         const ng=roll.rollover?.newgens||{};
         local.feed.unshift('Nouvelle saison '+day.new_year+' : '+Number(roll.rollover?.retired_players||0)+' retraite(s), '+Number(ng.created||0)+' newgen(s).');
-        day=await get('/api/advance-day',{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({today_plan:payload,difficulty:local.difficulty||'normal'})
-        });
+        day=await advanceOneDay();
       }
 
       if(!day?.ok)throw new Error(day?.reason||'Tick journalier impossible');
@@ -416,7 +435,6 @@
       if(day.pending_matches>0)local.feed.unshift('Match à jouer : le calendrier s’arrête sur une rencontre de ton groupe.');
       else if(day.pending_decisions>0)local.feed.unshift('Décision manager en attente : le temps s’arrête avant de poursuivre.');
 
-      let checkpoint=null;
       if(day.weekly_checkpoint_due){
         checkpoint=await get('/api/simulate',{
           method:'POST',headers:{'Content-Type':'application/json'},
@@ -441,6 +459,11 @@
       await refreshAfterDay(Boolean(checkpoint));
       const autosave=await saveCareerSlot(0,'autosave',true);
       if(!autosave?.ok)throw new Error('La journée est validée mais l’autosave a échoué.');
+
+      if(day.stop_reason==='match'||Number(day.pending_matches||0)>0)await nav('calendar');
+      else if(day.stop_reason==='decision')await nav('inbox');
+      else if(day.stop_reason==='medical')await nav('medical');
+      else if(day.stop_reason==='training_progress')await nav('training');
     }catch(e){
       try{
         boot=await get('/api/bootstrap');
@@ -484,6 +507,10 @@
 
   window.playTournament=async function(){
     alert('La simulation complète du tournoi est désactivée en mode quotidien. Joue ou simule uniquement le match du jour.');
+  };
+  window.playDoublesTournament=async function(id){
+    if(typeof startTournamentLiveDoubles==='function')return startTournamentLiveDoubles(Number(id),true);
+    alert('Le double avance lui aussi jour par jour. Ouvre le Match Center double pour la rencontre du jour.');
   };
 
   const baseContinueCareer=window.continueCareer;

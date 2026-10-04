@@ -2879,13 +2879,9 @@ Deno.serve(async(req:Request)=>{
     const managedId=Number(currentCareer.data?.managed_player_id||0);
     // Core bootstrap is intentionally small: it must paint Home before optional
     // staff/scouting/medical/history data is fetched in the background.
-    const [academy,finance,board,inbox,news,events,save,managedEntries,managedDoublesEntries]=await Promise.all([
+    const [academy,finance,save,managedEntries,managedDoublesEntries]=await Promise.all([
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
       db.from("finances").select("*").eq("id","demo").maybeSingle(),
-      db.from("board_objectives").select("*").order("priority",{ascending:true}),
-      db.from("inbox_items").select("*").order("created_at",{ascending:false}).limit(20),
-      db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
-      db.from("tournaments").select("*").eq("is_active",true).gte("start_date",currentCareer.data?.career_date||AGE_REFERENCE_DATE).order("start_date").limit(40),
       sid?db.from("game_saves").select("payload").eq("id",sid).maybeSingle():Promise.resolve({data:null,error:null}),
       managedId
         ?db.from("entries")
@@ -2900,7 +2896,7 @@ Deno.serve(async(req:Request)=>{
           .order("requested_on",{ascending:true})
         :Promise.resolve({data:[],error:null})
     ]);
-    const results=[academy,finance,board,inbox,news,events,save,managedEntries,managedDoublesEntries];
+    const results=[academy,finance,save,managedEntries,managedDoublesEntries];
     const err=results.find((x:any)=>x?.error)?.error;
     if(err)return h({error:err.message},500);
     const career=currentCareer.data;
@@ -2910,18 +2906,7 @@ Deno.serve(async(req:Request)=>{
       career,
       academy:academy.data,
       finance:finance.data,
-      board:board.data??[],
-      inbox:inbox.data??[],
-      news:news.data??[],
-      upcoming:(events.data??[])
-        .filter((x:any)=>String(x.start_date)>=String(career?.career_date||AGE_REFERENCE_DATE))
-        .filter((x:any)=>{
-          const focus=String(career?.career_focus||"mixed");
-          if(focus==="doubles_only")return Boolean(x.doubles);
-          if(focus==="singles_only")return Boolean(x.singles);
-          return true;
-        })
-        .slice(0,40),
+      // Non-critical Home panels hydrate through /api/bootstrap-secondary.
       save:save.data?.payload??null,
       entries:managedEntries.data??[],
       doublesEntries:managedDoublesEntries.data??[],
@@ -2944,7 +2929,7 @@ Deno.serve(async(req:Request)=>{
       ||"FRA"
     ).toUpperCase();
     const managedId=Number(currentCareer.data?.managed_player_id||0);
-    const [staff,facilities,scouting,scoutingReports,youth,fed,matches,top,injuries,davis,medicalPlan]=await Promise.all([
+    const [staff,facilities,scouting,scoutingReports,youth,fed,matches,top,injuries,davis,medicalPlan,board,inbox,news,events]=await Promise.all([
       db.from("staff").select("*,profile:staff_profiles(*)").order("id"),
       db.from("facilities").select("*").order("id"),
       db.from("scouting_assignments").select("*,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,primary_role,nationality,scouting_rating,reputation,regions,workload,burnout,energy,operational_status,rest_until)").order("id"),
@@ -2955,9 +2940,13 @@ Deno.serve(async(req:Request)=>{
       db.from("players").select("id,name,country,ranking,points,doubles_ranking,itf_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,is_real").eq("ranking_current",true).lte("ranking",30).order("ranking"),
       db.from("injuries").select("*,players(id,name,country,ranking)").order("started_at",{ascending:false}).limit(30),
       db.from("davis_squad").select("id,nation,role,players(id,name,country,ranking,points,doubles_ranking,form,fitness,morale,fatigue,style)").eq("nation",nation).order("id"),
-      db.from("medical_plan").select("*").eq("id","demo").maybeSingle()
+      db.from("medical_plan").select("*").eq("id","demo").maybeSingle(),
+      db.from("board_objectives").select("*").order("priority",{ascending:true}),
+      db.from("inbox_items").select("*").order("created_at",{ascending:false}).limit(20),
+      db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
+      db.from("tournaments").select("*").eq("is_active",true).gte("start_date",currentCareer.data?.career_date||AGE_REFERENCE_DATE).order("start_date").limit(40)
     ]);
-    const results=[staff,facilities,scouting,scoutingReports,youth,fed,matches,top,injuries,davis,medicalPlan];
+    const results=[staff,facilities,scouting,scoutingReports,youth,fed,matches,top,injuries,davis,medicalPlan,board,inbox,news,events];
     const err=results.find((x:any)=>x?.error)?.error;
     if(err)return h({error:err.message},500);
     return h({
@@ -2975,6 +2964,18 @@ Deno.serve(async(req:Request)=>{
       managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===managedId&&x.status==="Active")??null,
       medicalPlan:medicalPlan.data??null,
       davisSquad:davis.data??[],
+      board:board.data??[],
+      inbox:inbox.data??[],
+      news:news.data??[],
+      upcoming:(events.data??[])
+        .filter((x:any)=>String(x.start_date)>=String(currentCareer.data?.career_date||AGE_REFERENCE_DATE))
+        .filter((x:any)=>{
+          const focus=String(currentCareer.data?.career_focus||"mixed");
+          if(focus==="doubles_only")return Boolean(x.doubles);
+          if(focus==="singles_only")return Boolean(x.singles);
+          return true;
+        })
+        .slice(0,40),
       training:[]
     });
   }

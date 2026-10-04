@@ -13948,18 +13948,26 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const history=await db.from("match_history").insert({
-      managed_player_id:playerId,tournament_name:tournamentName,match_date:matchDate,
-      surface:String(session.data.surface||"Dur"),round,
-      player_a:String(managed.data.name||"Joueur"),player_b:String(opp?.name||"Adversaire"),
-      winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
-      score,user_involved:true,
-      match_data:{
+    const historyRpc=await db.rpc("ensure_live_match_history_v23",{
+      p_session_id:id,
+      p_managed_player_id:playerId,
+      p_tournament_name:tournamentName,
+      p_match_date:matchDate,
+      p_surface:String(session.data.surface||"Dur"),
+      p_round:round,
+      p_player_a:String(managed.data.name||"Joueur"),
+      p_player_b:String(opp?.name||"Adversaire"),
+      p_winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
+      p_score:score,
+      p_match_data:{
         live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
         stats,tactics:session.data.tactics||{},environment:meta
       }
-    }).select("id").single();
-    if(history.error)return h({error:history.error.message},500);
+    });
+    if(historyRpc.error||historyRpc.data?.ok===false){
+      return h({error:historyRpc.error?.message||historyRpc.data?.error||"Historique live impossible"},500);
+    }
+    const history:any={data:{id:Number(historyRpc.data?.history_id||0)},error:null};
 
     let medicalWrite:any=null;
     if(retirement?.player_id&&retirement?.injury_type){
@@ -14001,14 +14009,18 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const playerUpdate=await db.from("players").update(nextCondition).eq("id",playerId);
-    if(playerUpdate.error)return h({error:playerUpdate.error.message},500);
-    if(playerId===Number(career.data.managed_player_id||0)){
-      const careerUpdate=await db.from("career_state").update({...nextCondition,updated_at:new Date().toISOString()}).eq("id","demo");
-      if(careerUpdate.error)return h({error:careerUpdate.error.message},500);
+    const conditionCommit=await db.rpc("apply_live_match_condition_once_v23",{
+      p_session_id:id,
+      p_player_id:playerId,
+      p_condition:nextCondition,
+      p_sync_career:playerId===Number(career.data.managed_player_id||0)
+    });
+    if(conditionCommit.error||conditionCommit.data?.ok===false){
+      return h({error:conditionCommit.error?.message||conditionCommit.data?.error||"Condition post-match impossible"},500);
     }
 
-    const elo=await db.rpc("update_player_elo_after_match",{
+    const elo=await db.rpc("apply_live_match_elo_once_v23",{
+      p_session_id:id,
       p_winner_id:won?playerId:Number(opp?.id||0),
       p_loser_id:won?Number(opp?.id||0):playerId,
       p_surface:String(session.data.surface||"Dur"),

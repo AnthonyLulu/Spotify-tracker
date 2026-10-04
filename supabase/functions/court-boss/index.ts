@@ -12,6 +12,8 @@ const cors={
 };
 const h=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
 const n=(v:unknown,d:number,min=0,max=5000)=>{const value=v==null||v===""?d:Number(v);return Math.max(min,Math.min(max,Number.isFinite(value)?value:d));};
+const sha256Hex=async(value:string)=>{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,"0")).join("")};
+const secureDigestMatches=async(value:string|null,expected:string)=>{if(!value||!/^[a-f0-9]{64}$/i.test(expected))return false;const got=await sha256Hex(value);let d=0;for(let i=0;i<64;i++)d|=got.charCodeAt(i)^expected.toLowerCase().charCodeAt(i);return d===0};
 const normalizeName=(value:string)=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const AGE_REFERENCE_DATE="2025-12-01";
 const BASE_CURRENCY="EUR";
@@ -1566,8 +1568,19 @@ async function captureManagedSaveSnapshot(){
   const matchStateErr=managedEloRatings.error||managedWorldTournamentMatches.error;
   if(matchStateErr)throw new Error(matchStateErr.message||"Managed match-state snapshot failed");
 
+  const [recordOccurrences,matchStatLines,playerAwards,worldStory,hofProfiles,hofBallots,hofClasses,retirementCeremonies]=await Promise.all([
+    db.from("record_occurrences").select("*"),
+    db.from("court_boss_match_stat_lines").select("*"),
+    db.from("court_boss_player_awards").select("*"),
+    db.from("court_boss_world_story_log").select("*"),
+    db.from("court_boss_hof_profiles").select("*"),
+    db.from("court_boss_hof_ballots").select("*"),
+    db.from("court_boss_hof_classes").select("*"),
+    db.from("court_boss_retirement_ceremonies").select("*")
+  ]);
+
   return {
-    model:"CB-MANAGED-SAVE-v6",
+    model:"CB-MANAGED-SAVE-v8",
     captured_at:new Date().toISOString(),
     career_date:career.data.career_date,
     week:career.data.week,
@@ -1656,15 +1669,24 @@ async function captureManagedSaveSnapshot(){
     tournament_runs:tournamentRuns.data??[],
     tournament_draw_matches:tournamentDrawMatches.data??[],
     doubles_runs:doublesRuns.data??[],
-    doubles_match_history:doublesMatchHistory.data??[]
+    doubles_match_history:doublesMatchHistory.data??[],
+    record_occurrences:recordOccurrences.data??[],
+    court_boss_match_stat_lines:matchStatLines.data??[],
+    court_boss_player_awards:playerAwards.data??[],
+    court_boss_world_story_log:worldStory.data??[],
+    court_boss_hof_profiles:hofProfiles.data??[],
+    court_boss_hof_ballots:hofBallots.data??[],
+    court_boss_hof_classes:hofClasses.data??[],
+    court_boss_retirement_ceremonies:retirementCeremonies.data??[]
   };
 }
 
 async function restoreManagedSaveSnapshot(snapshot:any){
   const storedModel=String(snapshot?.model||"");
-  if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6","CB-MANAGED-SAVE-v7"].includes(storedModel))throw new Error("Unsupported save snapshot");
-  const liveCheckpoint=storedModel==="CB-MANAGED-SAVE-v7";
-  const model=liveCheckpoint?"CB-MANAGED-SAVE-v6":storedModel;
+  if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6","CB-MANAGED-SAVE-v7","CB-MANAGED-SAVE-v8"].includes(storedModel))throw new Error("Unsupported save snapshot");
+  const timelineCheckpoint=storedModel==="CB-MANAGED-SAVE-v8";
+  const liveCheckpoint=storedModel==="CB-MANAGED-SAVE-v7"||(timelineCheckpoint&&snapshot?.checkpoint_kind==="live");
+  const model=(storedModel==="CB-MANAGED-SAVE-v7"||timelineCheckpoint)?"CB-MANAGED-SAVE-v6":storedModel;
 
   const upsertOne=async(table:string,row:any,onConflict?:string)=>{
     if(!row)return;
@@ -2000,6 +2022,25 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model))await upsertMany("doubles_match_history",snapshot.doubles_match_history,"id");
   if(Array.isArray(snapshot.managed_elo_ratings_all))await upsertMany("player_elo_ratings",snapshot.managed_elo_ratings_all,"player_id");
   if(Array.isArray(snapshot.managed_world_tournament_matches))await upsertMany("world_tournament_matches",snapshot.managed_world_tournament_matches,"id");
+
+  if(timelineCheckpoint){
+    await deleteAll("record_occurrences","id");
+    await deleteAll("court_boss_match_stat_lines","id");
+    await deleteAll("court_boss_player_awards","id");
+    await deleteAll("court_boss_world_story_log","id");
+    await deleteAll("court_boss_hof_profiles","player_id");
+    await deleteAll("court_boss_hof_ballots","id");
+    await deleteAll("court_boss_hof_classes","induction_year");
+    await deleteAll("court_boss_retirement_ceremonies","player_id");
+    await upsertMany("record_occurrences",snapshot.record_occurrences??[],"id");
+    await upsertMany("court_boss_match_stat_lines",snapshot.court_boss_match_stat_lines??[],"id");
+    await upsertMany("court_boss_player_awards",snapshot.court_boss_player_awards??[],"id");
+    await upsertMany("court_boss_world_story_log",snapshot.court_boss_world_story_log??[],"id");
+    await upsertMany("court_boss_hof_profiles",snapshot.court_boss_hof_profiles??[],"player_id");
+    await upsertMany("court_boss_hof_ballots",snapshot.court_boss_hof_ballots??[],"id");
+    await upsertMany("court_boss_hof_classes",snapshot.court_boss_hof_classes??[],"induction_year");
+    await upsertMany("court_boss_retirement_ceremonies",snapshot.court_boss_retirement_ceremonies??[],"player_id");
+  }
 
   if(liveCheckpoint){
     await upsertMany("live_match_sessions",snapshot.live_match_sessions??[],"id");
@@ -2615,15 +2656,27 @@ async function publishActionableInbox(pDate?:string){
 Deno.serve(async(req:Request)=>{
   if(req.method==="OPTIONS") return new Response(null,{status:204,headers:cors});
   const u=new URL(req.url), path=u.pathname;
-  const accessKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
   const isHealth=path.endsWith("/api/health")||path.endsWith("/court-boss");
-  // Read-only tournament images must be public: browser <img> requests cannot
-  // attach the private Court Boss header. All other API routes stay protected.
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   const isPublicMediaProxy=path.endsWith("/api/media-proxy")&&req.method==="GET";
-  if(!isHealth&&!isPublicTournamentImage&&!isPublicMediaProxy&&accessKey&&req.headers.get("x-court-boss-key")!==accessKey)return h({error:"Unauthorized"},401);
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:73,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",access_protected:Boolean(accessKey)});
-
+  const protectedSyncGet=req.method==="GET"&&[
+    "/api/sync-career-ranking-history","/api/sync-atp-career-titles","/api/sync-junior-demographics","/api/sync-real-juniors"
+  ].some(x=>path.endsWith(x));
+  const protectedWrite=!isHealth&&!isPublicTournamentImage&&!isPublicMediaProxy&&(req.method!=="GET"||protectedSyncGet);
+  let writeLockToken:string|null=null;
+  if(protectedWrite){
+    const envKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
+    let expectedDigest=envKey?await sha256Hex(envKey):"";
+    if(!expectedDigest){const auth=await db.rpc("cb_write_access_digest_v31");if(!auth.error)expectedDigest=String(auth.data||"")}
+    if(!expectedDigest)return h({error:"Protection écriture indisponible"},503);
+    if(!await secureDigestMatches(req.headers.get("x-court-boss-key"),expectedDigest))return h({error:"Code d’accès requis"},401);
+    const locked=await db.rpc("cb_acquire_write_lock_v31");
+    if(locked.error)return h({error:"Une autre opération modifie déjà la carrière. Réessaie dans un instant."},423);
+    writeLockToken=String(locked.data||"");
+  }
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:75,write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
+  if(path.endsWith("/api/access-check")&&req.method==="POST")return h({ok:true,write_access:true});
+  try{
   if((
     path.endsWith("/api/refresh-live-rankings")
     ||path.endsWith("/api/refresh-doubles-race")
@@ -17129,14 +17182,14 @@ Deno.serve(async(req:Request)=>{
         }
       }
       snapshot={
-        ...baseSnapshot,model:"CB-MANAGED-SAVE-v7",
+        ...baseSnapshot,checkpoint_kind:"live",
         live_match_sessions:liveSessions,
         live_match_events:liveEvents,
         live_match_point_events:livePointEvents
       };
     }
-    const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"managed_squad_live_checkpoint_exact_v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"managed_squad_ledgers_exact_v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
-    const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"2026.10-career-os-v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"2026.10-career-os-v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"2026.10-career-os-v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"2026.10-career-os-v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";
+    const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v8"?(snapshot.checkpoint_kind==="live"?"managed_timeline_live_v8":"managed_timeline_v8"):String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"managed_squad_live_checkpoint_exact_v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"managed_squad_ledgers_exact_v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
+    const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v8"?"2026.10-career-os-v8":String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"2026.10-career-os-v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"2026.10-career-os-v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"2026.10-career-os-v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"2026.10-career-os-v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";
     const payload=body?.local_payload&&typeof body.local_payload==="object"?{...body.local_payload}:{};
     delete payload.liveSessionId;
     delete payload.liveMatch;
@@ -17172,7 +17225,15 @@ Deno.serve(async(req:Request)=>{
     const slot=await db.from("game_save_slots")
       .select("*").eq("browser_key",browserKey).eq("slot_no",slotNo).maybeSingle();
     if(slot.error||!slot.data)return h({error:slot.error?.message||"Sauvegarde introuvable"},404);
-    const restored=await restoreManagedSaveSnapshot(slot.data.managed_snapshot);
+    const safetySnapshot=await captureManagedSaveSnapshot();
+    let restored:any;
+    try{
+      restored=await restoreManagedSaveSnapshot(slot.data.managed_snapshot);
+    }catch(loadError){
+      let rollbackError="";
+      try{await restoreManagedSaveSnapshot(safetySnapshot)}catch(e){rollbackError=String((e as any)?.message||e)}
+      return h({error:"Chargement annulé : "+String((loadError as any)?.message||loadError),rollback_recovered:!rollbackError,rollback_error:rollbackError||null},409);
+    }
     const loadedPayload=slot.data.local_payload&&typeof slot.data.local_payload==="object"?{...slot.data.local_payload}:{};
     delete loadedPayload.liveSessionId;
     delete loadedPayload.liveMatch;
@@ -17208,5 +17269,8 @@ Deno.serve(async(req:Request)=>{
   }
 
   return h({error:"Not found"},404);
+  } finally {
+    if(writeLockToken)await db.rpc("cb_release_write_lock_v31",{p_token:writeLockToken});
+  }
 });
 

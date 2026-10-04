@@ -88,7 +88,7 @@ test('managed tournament Match Center is locked to the exact world-draw opponent
   assert.ok(backend.includes('Le match live ne correspond plus exactement à la case du tableau mondial.'));
   assert.ok(backend.includes('Number(wr.tournament_id||0)!==tournamentId'));
   assert.ok(backend.includes('(round&&worldRound&&round!==worldRound)'));
-  assert.ok(backend.includes('.eq("id",Number(meta.world_match_id||0))'));
+  assert.ok(backend.includes('.eq("id",Number(meta.world_match_id))'));
   assert.ok(backend.includes('Number(row?.stats?._meta?.world_match_id||0)===Number(worldMatchId)'));
   assert.ok(backend.includes('ok:true,resumed:true,engine:"CB-MATCH-ENGINE-v6"'));
 });

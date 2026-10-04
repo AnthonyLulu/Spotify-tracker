@@ -538,6 +538,7 @@ function cbMediaUrl(raw){
    'assets.stickpng.com',
    'commons.wikimedia.org','upload.wikimedia.org','thumb.wikimedia.org','en.wikipedia.org',
    'static.cdnlogo.com','static.hkmenstennisopen.com','trouverlogo.fr',
+   'brisbaneinternational.com.au','www.brisbaneinternational.com.au',
    'tennis.kiwi','tennis.com.au','www.tennis.com.au',
    'itftennis.com','www.itftennis.com'
   ];
@@ -1781,7 +1782,7 @@ const MAJOR_TOURNAMENT_LOGOS=[
  {re:/\bUS Open\b/i,url:"https://upload.wikimedia.org/wikipedia/commons/2/26/Usopen-header-logo.svg",label:"USO",cls:"logo-uso"}
 ];
 const CURATED_TOURNAMENT_LOGOS=[
- {re:/Brisbane International/i,url:"https://upload.wikimedia.org/wikipedia/commons/e/e5/Logo_de_Tournoi_de_tennis_de_Brisbane_%C3%A0_partir_de_2025.png",label:"BRI"},
+ {re:/Brisbane International/i,url:"https://www.brisbaneinternational.com.au/wp-content/uploads/2024/12/BI-Merchandise-Website-Assets_900x240.png",label:"BRI"},
  {re:/Millennium Estoril Open|Estoril Open/i,url:"https://assets.stickpng.com/images/635644eea54eeda751217031.png",label:"EST"},
  {re:/Mifel Tennis Open|Los Cabos/i,url:"https://assets.stickpng.com/images/63565dd1636d1187068bf55b.png",label:"LCB"},
  {re:/Winston-Salem Open/i,url:"https://assets.stickpng.com/images/626698e22c88722059d5870e.png",label:"WSO"},

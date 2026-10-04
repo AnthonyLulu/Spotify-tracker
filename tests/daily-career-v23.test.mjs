@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const daily=read('court-boss/daily-career-v22.js');
 const clock=read('supabase/migrations/20261004010328_daily_match_ticket_reserve_on_resume_v22.sql');
+const clockPartner=read('supabase/migrations/20261004121500_daily_double_partner_match_day_neutral_v23.sql');
 const due=read('supabase/migrations/20261004003544_managed_due_match_world_identity_v22.sql');
 const matchDay=read('supabase/migrations/20261004120000_match_day_training_neutral_v23.sql');
 const backend=read('supabase/functions/court-boss/index.ts');
@@ -51,4 +52,11 @@ test('daily match tickets retain exact world-draw identity',()=>{
   assert.match(due,/'world_match_id',v_world_match_id,'opponent_id',v_opponent_id/);
   assert.match(due,/'world_match_id',v_world_match_id,'user_pair_id',v_user_pair_id/);
   assert.match(due,/'opponent_pair_id',v_opponent_pair_id/);
+});
+
+
+test('managed doubles partner also receives the neutral match-day override',()=>{
+  assert.match(clockPartner,/coalesce\(x->>'discipline',''\)='doubles'/);
+  assert.match(clockPartner,/coalesce\(\(x->>'partner_id'\)::bigint,0\)=v_player_id/);
+  assert.match(clockPartner,/'automatic_match_day',true/);
 });

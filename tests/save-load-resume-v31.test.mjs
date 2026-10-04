@@ -122,3 +122,16 @@ test('career integrity audit understands v8 save scopes and timeline shape',()=>
   assert.match(careerIntegrity,/court_boss_hof_profiles/);
   assert.match(careerIntegrity,/v_legacy_slots=0/);
 });
+
+
+test('failed load rollback preserves current live session and point ledger',()=>{
+  assert.match(edge,/async function captureLiveCheckpointSnapshot/);
+  assert.match(edge,/\["active","finished","completed","committed"\]/);
+  assert.match(edge,/live_match_events/);
+  assert.match(edge,/live_match_point_events/);
+  const loadStart=edge.indexOf('if(path.endsWith("/api/load-slot")');
+  const loadEnd=edge.indexOf('if(path.endsWith("/api/delete-slot")',loadStart);
+  const load=edge.slice(loadStart,loadEnd);
+  assert.match(load,/const safetySnapshot=await captureLiveCheckpointSnapshot\(await captureManagedSaveSnapshot\(\)\)/);
+  assert.match(load,/await restoreManagedSaveSnapshot\(safetySnapshot\)/);
+});

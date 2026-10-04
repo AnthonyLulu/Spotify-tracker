@@ -240,7 +240,7 @@ jobs:
             await page.getByRole('heading',{name:'Grands Chelems année par année'}).waitFor();
             await page.getByLabel(/Wimbledon 2025/).click();
             await page.getByText('Finaliste').waitFor();
-            await page.getByText('Jannik Sinner',{exact:true}).waitFor();
+            await page.locator('#overlay').getByText('Jannik Sinner',{exact:true}).first().waitFor();
             await page.getByRole('button',{name:'✕'}).click();
 
             await page.evaluate(()=>openPlayer(14405));

@@ -84,7 +84,7 @@ test('managed tournament Match Center is locked to the exact world-draw opponent
   assert.ok(backend.includes('ensureManagedWorldLiveMatch'));
   assert.ok(backend.includes('bracket_mismatch_guard:true'));
   assert.ok(backend.includes('world_match_id:worldMatchId'));
-  assert.ok(backend.includes('if(tournamentLive&&Number(meta.world_match_id||0)>0)'));
+  assert.ok(backend.includes('if(tournamentLive&&Number(meta.world_match_id)>0)'));
   assert.ok(backend.includes('Le match live ne correspond plus exactement à la case du tableau mondial.'));
   assert.ok(backend.includes('Number(wr.tournament_id||0)!==tournamentId'));
   assert.ok(backend.includes('(round&&worldRound&&round!==worldRound)'));

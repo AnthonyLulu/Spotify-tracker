@@ -4025,6 +4025,7 @@ Deno.serve(async(req:Request)=>{
     };
 
     const statisticsDashboard=await db.rpc("player_statistics_dashboard_v2",{p_player_id:id,p_as_of:referenceDate});
+    const legacyProfile=await db.rpc("court_boss_player_legacy_profile",{p_player_id:id,p_date:referenceDate});
 
     return h({
       player,sponsors:sp.data??[],titles:visibleTitles,history:visibleHistory,shortlist:short.data??null,
@@ -4050,6 +4051,7 @@ Deno.serve(async(req:Request)=>{
       advancedMetrics:advancedMetrics.error?null:advancedMetrics.data,
       careerFinancials,
       statisticsDashboard:statisticsDashboard.error?null:statisticsDashboard.data,
+      legacyProfile:legacyProfile.error?null:legacyProfile.data,
       eloRating:eloRating.error?null:eloRating.data,
       dynamicRatings:dynamicRatings.error?null:dynamicRatings.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),

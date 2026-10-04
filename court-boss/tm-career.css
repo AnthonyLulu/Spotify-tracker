@@ -96,3 +96,43 @@
  .tm-squad-medical-row{grid-template-columns:1fr}
  .tm-squad-medical-row .soft-btn{width:100%}
 }
+
+
+/* Daily career clock + two-a-day training V22 */
+.tm-training-presets{align-items:center}
+.tm-daily-training-grid{display:grid;gap:8px}
+.tm-daily-training-row{
+ display:grid;
+ grid-template-columns:minmax(110px,.75fr) repeat(3,minmax(130px,1fr));
+ gap:8px;
+ align-items:end;
+ padding:10px;
+ border:1px solid var(--border);
+ border-radius:12px;
+ background:rgba(255,255,255,.018);
+}
+.tm-daily-training-row.next-day{
+ border-color:rgba(74,222,128,.42);
+ background:rgba(74,222,128,.07);
+ box-shadow:inset 3px 0 0 rgba(74,222,128,.55);
+}
+.tm-daily-training-row label{display:flex;flex-direction:column;gap:5px}
+.tm-daily-training-row label>span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
+.tm-daily-day{display:flex;flex-direction:column;gap:4px;align-self:center}
+.tm-daily-day b{font-size:14px}
+.tm-daily-day small{color:var(--muted);font-size:11px}
+@media(max-width:760px){
+ .tm-training-presets{display:grid!important;grid-template-columns:1fr 1fr;width:100%}
+ .tm-training-presets .soft-btn{width:100%;min-height:40px}
+ .tm-daily-training-row{
+  grid-template-columns:1fr 1fr;
+  align-items:end;
+ }
+ .tm-daily-day{grid-column:1/-1;flex-direction:row;justify-content:space-between;align-items:center}
+ .tm-daily-training-row label:last-child{grid-column:1/-1}
+}
+@media(max-width:440px){
+ .tm-daily-training-row{grid-template-columns:1fr}
+ .tm-daily-day,.tm-daily-training-row label:last-child{grid-column:1}
+ .tm-training-presets{grid-template-columns:1fr}
+}

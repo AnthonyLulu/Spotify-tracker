@@ -422,13 +422,23 @@
         if(day?.reason==='pending_match'||day?.stop_reason==='match'){
           local.feed=local.feed||[];
           const due=day?.due_matches?.matches?.[0]||null;
+          local.pendingManagedMatch=due||null;
           local.feed.unshift(due
             ?'Match à jouer aujourd’hui · '+String(due.tournament_name||'Tournoi')+' · '+String(due.round||'')
             :'Un match de ton groupe doit être joué avant de continuer.'
           );
           local.feed=local.feed.slice(0,12);
+          const duePlayerId=Number(due?.player_id||0);
+          if(duePlayerId&&duePlayerId!==activeManagedId()
+             &&typeof window.setActiveManagedPlayer==='function'
+             &&managedSquadIds().includes(duePlayerId)){
+            await window.setActiveManagedPlayer(duePlayerId);
+          }
           persist();
           await nav('calendar');
+          if(Number(due?.tournament_id||0)){
+            setTimeout(()=>window.openTournamentPlayMode?.(Number(due.tournament_id)),0);
+          }
           return;
         }
         if(day?.reason==='clock_busy')throw new Error('Le calendrier est déjà en cours de mise à jour. Relance Continuer.');
@@ -511,11 +521,21 @@
   window.openTournamentPlayMode=function(id){
     const t=(tourRows||[]).find(x=>Number(x.id)===Number(id))||{};
     const current=String(local.date||career()?.career_date||'');
+    const pending=(local.pendingManagedMatch
+      &&Number(local.pendingManagedMatch.tournament_id||0)===Number(id)
+      &&String(local.pendingManagedMatch.match_date||'')===current)
+      ?local.pendingManagedMatch:null;
+    const isDoubles=String(pending?.discipline||'singles')==='doubles';
+    const playAction=isDoubles?'startTournamentLiveDoubles':'startTournamentLiveMatch';
+    const exactLine=pending?.world_match_reserved
+      ?'<span class="badge good">Tableau verrouillé · match #'+Number(pending.world_match_id||0)+'</span>'
+      :'<span class="badge">Réservation du tableau au lancement</span>';
     overlay.innerHTML='<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet tournament-play-mode">'
-      +'<div class="sheet-head"><div><div class="eyebrow">Journée de tournoi · '+df(current)+'</div><h1>'+esc(t.name||'Tournoi')+'</h1><div class="muted">Le tournoi avance tour par tour. Tu ne peux jouer que la rencontre prévue à la date actuelle.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>'
+      +'<div class="sheet-head"><div><div class="eyebrow">Journée de tournoi · '+df(current)+'</div><h1>'+esc(t.name||pending?.tournament_name||'Tournoi')+'</h1><div class="muted">'+(pending?esc(String(pending.round||'Match'))+' · '+(isDoubles?'Double':'Simple')+' · ':'')+'Le Match Center reprend exactement la case du tableau mondial.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>'
+      +'<div class="row" style="gap:7px;flex-wrap:wrap;margin:10px 0">'+exactLine+'</div>'
       +'<div class="match-mode-grid">'
-      +'<button class="match-mode-card live" onclick="startTournamentLiveMatch('+Number(id)+',false)"><span>JOUER</span><b>Match du jour</b><small>Match Center point par point. Si le prochain tour est futur, le serveur t’indique sa date exacte.</small></button>'
-      +'<button class="match-mode-card quick" onclick="startTournamentLiveMatch('+Number(id)+',true)"><span>SIMULER</span><b>Simuler le match du jour</b><small>Simule uniquement cette rencontre, jamais tout le tournoi.</small></button>'
+      +'<button class="match-mode-card live" onclick="'+playAction+'('+Number(id)+',false)"><span>JOUER</span><b>Match du jour</b><small>Match Center point par point. L’adversaire'+(isDoubles?' / la paire adverse':'')+' vient du tableau réservé.</small></button>'
+      +'<button class="match-mode-card quick" onclick="'+playAction+'('+Number(id)+',true)"><span>SIMULER</span><b>Simuler le match du jour</b><small>Simule uniquement cette rencontre avec la même case de tableau, jamais tout le tournoi.</small></button>'
       +'</div><div class="notice" style="margin-top:12px"><b>Mode carrière quotidien</b> · après le match, valide le résultat puis utilise Continuer pour passer au lendemain. Les jours off restent de vraies journées de récupération, voyage ou entraînement.</div>'
       +'</div></div>';
   };

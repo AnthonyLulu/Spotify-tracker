@@ -528,6 +528,23 @@ function ageLabel(p,withUnit=true){
 }
 
 
+function cbMediaUrl(raw){
+ const u=String(raw||'').trim();
+ if(!/^https:\/\//i.test(u))return u;
+ try{
+  const host=new URL(u).hostname.toLowerCase();
+  const proxiedHosts=[
+   'atptour.com','www.atptour.com',
+   'assets.stickpng.com',
+   'commons.wikimedia.org','upload.wikimedia.org','thumb.wikimedia.org','en.wikipedia.org',
+   'static.cdnlogo.com','static.hkmenstennisopen.com','trouverlogo.fr',
+   'tennis.kiwi','tennis.com.au','www.tennis.com.au',
+   'itftennis.com','www.itftennis.com'
+  ];
+  if(proxiedHosts.includes(host))return API+'/api/media-proxy?url='+encodeURIComponent(u);
+ }catch{}
+ return u;
+}
 function officialAtpPhotoUrl(p){
  const code=String(p?.atp_code||'').trim().toLowerCase();
  return /^[a-z0-9]{4}$/.test(code)
@@ -537,16 +554,18 @@ function officialAtpPhotoUrl(p){
 function playerPhotoCandidates(p){
  const out=[];
  const add=(url,source)=>{
-   const u=String(url||'').trim();
+   const raw=String(url||'').trim();
+   const u=cbMediaUrl(raw);
    if(!u||out.some(x=>x.url===u))return;
    out.push({url:u,source});
  };
+ // Prefer the verified/stored database photo first. ATP hotlinks are useful as
+ // a fallback only, because some browsers block the direct gladiator endpoint.
+ if(p?.photo_url)add(p.photo_url,p.photo_source_label||p.photo_source||'Photo joueur');
+ if(p?.itf_photo_url)add(p.itf_photo_url,'ITF');
+ const wiki=String(p?.wiki_photo_url||'').trim();
+ if(wiki&&wiki!==String(p?.photo_url||'').trim())add(wiki,'Wikipedia/Wikimedia');
  if(p?.is_real)add(officialAtpPhotoUrl(p),'ATP');
- add(p?.itf_photo_url,'ITF');
- const wiki=String(p?.wiki_photo_url||'').trim()
-   ||(/wiki|commons/i.test(String(p?.photo_source||''))?String(p?.photo_url||'').trim():'');
- add(wiki,'Wikipedia/Wikimedia');
- if(p?.photo_url&&!/wiki|commons/i.test(String(p?.photo_source||'')))add(p.photo_url,p.photo_source_label||p.photo_source||'Photo joueur');
  return out;
 }
 function playerPhotoSourceLabel(p){
@@ -1815,9 +1834,9 @@ function tournamentLogoMeta(t={}){
  const curated=CURATED_TOURNAMENT_LOGOS.find(x=>x.re.test(name));
  const category=String(t.category||t.level||"").trim();
  const circuit=String(t.circuit||"").trim();
- if(major)return {url:major.url,label:major.label,cls:"logo-official "+(major.cls||"")};
- if(curated)return {url:curated.url,label:curated.label,cls:"logo-official logo-curated"};
- if(explicit)return {url:explicit,label:String(category||circuit||"TOUR"),cls:"logo-official"};
+ if(major)return {url:cbMediaUrl(major.url),label:major.label,cls:"logo-official "+(major.cls||"")};
+ if(curated)return {url:cbMediaUrl(curated.url),label:curated.label,cls:"logo-official logo-curated"};
+ if(explicit)return {url:cbMediaUrl(explicit),label:String(category||circuit||"TOUR"),cls:"logo-official"};
  if(/Grand Chelem|Grand Slam/i.test(category))return {url:null,label:"GRAND SLAM",sub:"GS",cls:"logo-gs"};
  if(/Masters 1000/i.test(category))return {url:null,label:"ATP 1000",sub:"M1000",cls:"logo-atp"};
  if(/ATP 500|^500$/i.test(category))return {url:null,label:"ATP 500",sub:"500",cls:"logo-atp"};

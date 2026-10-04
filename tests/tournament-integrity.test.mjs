@@ -99,9 +99,9 @@ test('Finals display participation and cumulative round-robin bonuses',()=>{
 function backend(){
  let handler;const calls=[],writes=[];
  const data={tournaments:{id:7,circuit:'ITF',category:'M15'},career_state:{managed_player_id:1,singles_rank:2,career_focus:'mixed'},wildcard_requests:null,academies:{reputation:100}};
- const db={from(table){const q={select(){return q},eq(){return q},maybeSingle:async()=>({data:data[table]??null,error:null}),upsert(){writes.push(table);throw Error('Unexpected write')}};return q},async rpc(name,args){calls.push({name,args});return {data:{eligible:false,reason:'itf_play_down_top200',entry_method:args.p_entry_method},error:null}}};
+ const db={from(table){const q={select(){return q},eq(){return q},maybeSingle:async()=>({data:data[table]??null,error:null}),upsert(){writes.push(table);throw Error('Unexpected write')}};return q},async rpc(name,args){calls.push({name,args});if(name==='cb_acquire_write_lock_v31')return {data:'test-lock',error:null};if(name==='cb_release_write_lock_v31')return {data:true,error:null};return {data:{eligible:false,reason:'itf_play_down_top200',entry_method:args?.p_entry_method},error:null}}};
  const code=stripTypeScriptTypes(fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,''));
- vm.runInNewContext(code,{console,URL,Request,Response,Headers,Date,Intl,crypto,TextEncoder,TextDecoder,fetch,createClient:()=>db,tournamentRoundPrize,Deno:{env:{get:()=>''},serve:fn=>{handler=fn}}});
+ vm.runInNewContext(code,{console,URL,Request,Response,Headers,Date,Intl,crypto,TextEncoder,TextDecoder,fetch,createClient:()=>db,tournamentRoundPrize,Deno:{env:{get:key=>key==='COURT_BOSS_ACCESS_KEY'?'test-key':''},serve:fn=>{handler=fn}}});
  return {handler,calls,writes};
 }
 test('Entry API returns authoritative decisions for all supported modes without writes',async()=>{
@@ -114,7 +114,7 @@ test('Entry API returns authoritative decisions for all supported modes without 
  assert.equal(b.writes.length,0);
 });
 test('Wildcard request is rejected before saving any decision when the player is ineligible',async()=>{
- const b=backend();const r=await b.handler(new Request('https://example.test/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request_wildcard',id:7})}));
+ const b=backend();const r=await b.handler(new Request('https://example.test/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json','x-court-boss-key':'test-key'},body:JSON.stringify({action:'request_wildcard',id:7})}));
  assert.equal(r.status,409);assert.equal((await r.json()).entry_rule.reason,'itf_play_down_top200');assert.equal(b.writes.length,0);
 });
 

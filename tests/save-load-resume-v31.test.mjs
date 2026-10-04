@@ -84,3 +84,30 @@ test('save v8 refuses incomplete timeline snapshots before restore mutations',()
   assert.match(edge,/requiredTimelineArrays/);
   assert.match(edge,/managed_timeline_v8/);
 });
+
+
+test('access check validates without acquiring or leaking the write lock',()=>{
+  assert.match(edge,/const isAccessCheck=path\.endsWith\("\/api\/access-check"\)/);
+  assert.match(edge,/const protectedWrite=[^\n]*!isAccessCheck/);
+  assert.match(edge,/if\(protectedWrite\)\{[\s\S]*cb_acquire_write_lock_v31/);
+  const authStart=edge.indexOf('const isAccessCheck=');
+  const route=edge.indexOf('if(path.endsWith("/api/access-check")',authStart);
+  const acquire=edge.indexOf('cb_acquire_write_lock_v31',authStart);
+  assert.ok(route>authStart&&acquire>authStart);
+  assert.match(edge,/writeLockHeartbeat=setInterval/);
+  assert.match(edge,/clearInterval\(writeLockHeartbeat\)/);
+});
+
+test('passive bootstrap and career hub stay read-only',()=>{
+  const bootStart=edge.indexOf('if(path.endsWith("/api/bootstrap")');
+  const bootEnd=edge.indexOf('if(path.endsWith("/api/rankings")',bootStart);
+  const boot=edge.slice(bootStart,bootEnd);
+  assert.doesNotMatch(boot,/ensureCareerBaselineTemplate\(/);
+  assert.doesNotMatch(boot,/career_sync_actionable_inbox/);
+  assert.doesNotMatch(boot,/career_sync_operational_alerts/);
+
+  const hubStart=edge.indexOf('if(path.endsWith("/api/career-hub")');
+  const hubEnd=edge.indexOf('if(path.endsWith("/api/managed-player-context")',hubStart);
+  const hub=edge.slice(hubStart,hubEnd);
+  assert.doesNotMatch(hub,/ensure_player_season_plan/);
+});

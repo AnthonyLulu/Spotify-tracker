@@ -12120,6 +12120,22 @@ Deno.serve(async(req:Request)=>{
       tempo,spin:spinPlan,return_pos:ret,aggression:ag,risk,net_intent:net,user_at_net:netAttempt,user_won:userWon,stake:String(pressureContext.stake||"normal")
     });
 
+    const doublesLastScore:any=log[log.length-1]||{};
+    const doublesCompletedGames=Math.max(0,
+      Number(doublesLastScore.user_games??ug)+Number(doublesLastScore.opponent_games??og)
+    );
+    const doublesTbPoints=Math.max(0,
+      setFinished
+        ?Number(doublesLastScore.tiebreak_user_points||0)+Number(doublesLastScore.tiebreak_opponent_points||0)
+        :up+op
+    );
+    const doublesChangeover=tiebreak
+      ?Boolean(
+          (!setFinished&&doublesTbPoints>0&&doublesTbPoints%6===0)
+          ||(setFinished&&!matchFinished&&regularTb)
+        )
+      :Boolean(gameFinished&&!matchFinished&&doublesCompletedGames>0&&doublesCompletedGames%2===1);
+
     const lastPoint:any={
       winner:userWon?"user":"opponent",server:serverIsUser?"user":"opponent",
       server_player_id:Number(server.id),server_player_name:String(server.name),
@@ -12128,6 +12144,7 @@ Deno.serve(async(req:Request)=>{
       rally,ending,shot:ending,serve_number:firstServeIn?1:2,first_serve_in:firstServeIn,double_fault:doubleFault,ace,unreturned_serve:unreturned,
       serve_direction:serveDirection,service_court:serviceCourt,point_no:Number(session.data.rally_no||0)+1,
       phase:matchTb?"match_tiebreak":regularTb?"tiebreak":"doubles",
+      changeover:doublesChangeover,
       visual_label:doubleFault?"Double faute":ace?"Ace":unreturned?"Service non retourné":ending==="return_winner"?"Retour gagnant":ending==="winner"?"Winner":ending==="forced_error"?"Faute provoquée":"Faute directe",
       server_win_probability:Math.round(serverWinProb*1000)/10,
       environment_effects:{
@@ -12151,6 +12168,15 @@ Deno.serve(async(req:Request)=>{
       },
       at:new Date().toISOString()
     };
+    if(doublesChangeover){
+      const visualEvents:any[]=Array.isArray(stats._visual_events)?[...stats._visual_events]:[];
+      visualEvents.push({
+        kind:"changeover",phase:"changeover",
+        label:matchTb?"Changement de côté · match tie-break":regularTb?"Changement de côté · tie-break":"Changement de côté · double",
+        winner:null,rally:0,at:new Date().toISOString()
+      });
+      stats._visual_events=visualEvents.slice(-10);
+    }
 
     const momentumNew=Math.max(0,Math.min(100,Number(session.data.momentum||50)+(userWon?2:-2)));
     const update:any={

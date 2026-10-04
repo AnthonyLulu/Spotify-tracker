@@ -11414,6 +11414,8 @@ Deno.serve(async(req:Request)=>{
     let opponentSource=opponentId?"manual":"ranking_pool";
     let worldMatchId:number|null=null;
     let livePhase=tournamentId?"main":"exhibition";
+    let tournamentSchedule:any=null;
+    let scheduledTournamentDate:string|null=null;
 
     if(tournamentId){
       const alreadyPlayed=await db.from("tournament_runs")
@@ -11485,6 +11487,7 @@ Deno.serve(async(req:Request)=>{
             worldMatchId=Number(exactWorld.match.id||0)||null;
             tournamentRoundOverride=String(exactWorld.round_code||exactWorld.match.round_code||tournamentRoundOverride||"");
             livePhase=String(exactWorld.phase||livePhase)==="qualifying"?"qualifying":"main";
+            scheduledTournamentDate=String(exactWorld.match.simulated_on||"").slice(0,10)||null;
             opponentSource=exactWorld.phase==="qualifying"?"world_qualifying_draw":"world_draw";
           }
         }
@@ -11522,6 +11525,30 @@ Deno.serve(async(req:Request)=>{
     if(!opponentId)return h({error:"Aucun adversaire disponible autour du classement de ce joueur."},404);
     if(opponentId===playerId)return h({error:"Le joueur ne peut pas s’affronter lui-même."},409);
 
+    if(tournamentId&&tournamentRoundOverride){
+      const scheduleRes=await db.rpc("managed_tournament_match_date_v22",{
+        p_tournament_id:tournamentId,
+        p_player_id:playerId,
+        p_round_code:String(tournamentRoundOverride),
+        p_phase:livePhase,
+        p_event_type:"singles"
+      });
+      if(scheduleRes.error)return h({error:"Calendrier du match indisponible : "+scheduleRes.error.message},500);
+      tournamentSchedule=scheduleRes.data||null;
+      scheduledTournamentDate=scheduledTournamentDate||String(tournamentSchedule?.match_date||"").slice(0,10)||null;
+      const gameDate=String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,10);
+      if(scheduledTournamentDate&&gameDate<scheduledTournamentDate){
+        return h({
+          error:"Ce match n’est pas encore au programme. Il est prévu le "+scheduledTournamentDate+".",
+          too_early:true,not_due:true,
+          tournament_id:tournamentId,player_id:playerId,
+          round:String(tournamentRoundOverride),phase:livePhase,
+          career_date:gameDate,next_match_date:scheduledTournamentDate,
+          scheduled_date:scheduledTournamentDate,schedule:tournamentSchedule
+        },409);
+      }
+    }
+
     const opp=await db.from("players")
       .select("*,player_attributes(*)")
       .eq("id",opponentId).maybeSingle();
@@ -11548,6 +11575,8 @@ Deno.serve(async(req:Request)=>{
     const surface=surfaceRaw==="Dur"&&tournament.data?.indoor?"Dur intérieur":surfaceRaw;
     if(/^Q\d+$/i.test(String(tournamentRoundOverride||"")))livePhase="qualifying";
     const environment=buildLiveMatchEnvironment(tournament.data,managed.data,opp.data,String(career.data.career_date||AGE_REFERENCE_DATE),surface,livePhase);
+    if(tournamentSchedule)environment.tournament_schedule=tournamentSchedule;
+    if(scheduledTournamentDate)environment.scheduled_match_date=scheduledTournamentDate;
     environment.medical={user:medicalFor(playerId),opponent:medicalFor(opponentId)};
     if(playingHurt){
       environment.medical.user={

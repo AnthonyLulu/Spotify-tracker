@@ -140,3 +140,38 @@ test('failed load rollback preserves current live session and point ledger',()=>
   assert.match(load,/const safetySnapshot=await captureLiveCheckpointSnapshot\(await captureManagedSaveSnapshot\(\)\)/);
   assert.match(load,/await restoreManagedSaveSnapshot\(safetySnapshot\)/);
 });
+
+
+test('failed-load rollback snapshots live effect ledger and linked opponent state',()=>{
+  assert.match(edge,/live_match_effect_commits_v23/);
+  assert.match(edge,/live_match_effect_commits:liveEffectCommits/);
+  assert.match(edge,/live_external_players/);
+  assert.match(edge,/live_external_injuries/);
+  assert.match(edge,/live_external_elo/);
+  assert.match(edge,/live_external_psychology/);
+  assert.match(edge,/live_external_training_load/);
+  assert.match(edge,/live_world_singles_matches/);
+  assert.match(edge,/live_world_doubles_matches/);
+  assert.match(edge,/requiredLiveArrays=\[/);
+});
+
+test('failed-load recovery is verified by snapshot digest before claiming success',()=>{
+  assert.match(edge,/canonicalSnapshotValue/);
+  assert.match(edge,/snapshotRollbackDigest/);
+  assert.match(edge,/const safetyDigest=await snapshotRollbackDigest\(safetySnapshot\)/);
+  assert.match(edge,/const rollbackDigest=await snapshotRollbackDigest\(rollbackSnapshot\)/);
+  assert.match(edge,/rollbackRecovered=rollbackDigest===safetyDigest/);
+  assert.match(edge,/rollback_verified:rollbackRecovered/);
+  assert.match(edge,/Rollback verification mismatch/);
+});
+
+test('post-restore failures also roll the previous career back',()=>{
+  const start=edge.indexOf('if(path.endsWith("/api/load-slot")');
+  const end=edge.indexOf('if(path.endsWith("/api/delete-slot")',start);
+  const load=edge.slice(start,end);
+  assert.match(load,/Legacy save sync:/);
+  assert.match(load,/Load journal:/);
+  assert.match(load,/currentLegacy/);
+  assert.match(load,/Legacy rollback/);
+  assert.match(load,/await restoreManagedSaveSnapshot\(safetySnapshot\)/);
+});

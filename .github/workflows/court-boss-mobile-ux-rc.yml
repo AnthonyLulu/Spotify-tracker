@@ -1,0 +1,144 @@
+name: Court Boss Mobile UX RC
+
+on:
+  push:
+    branches: ["court-boss-live"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: court-boss-mobile-ux-rc
+  cancel-in-progress: true
+
+jobs:
+  mobile-ux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for exact Render app
+        env:
+          BASE: https://court-boss-tennis-manager.onrender.com
+        run: |
+          LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
+          for i in {1..60}; do
+            if curl --fail --silent --show-error "$BASE/app.js?mobile-ux-rc" -o /tmp/render-app.js; then
+              REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
+              if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then
+                echo "Exact mobile UX build ready"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Render did not publish the exact branch build"
+          exit 1
+
+      - name: Sweep all mobile routes
+        env:
+          BASE: https://court-boss-tennis-manager.onrender.com
+        run: |
+          cd /tmp
+          npm init -y >/dev/null 2>&1
+          npm install --silent playwright@1.55.0
+          npx playwright install --with-deps chromium >/dev/null
+          cat > court-boss-mobile-ux.cjs <<'EOF'
+          const { chromium }=require('playwright');
+
+          const routes=[
+            'home','training','rankings','calendar','academy','more','players',
+            'scouting','staff','contracts','finance','medical','tactics','fantasy',
+            'doubles','university','davis','board','world','history','myplayer',
+            'inbox','saves','careerhub','season','media','relationships','diagnostics',
+            'competitions'
+          ];
+
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({
+              viewport:{width:390,height:844},
+              isMobile:true,
+              hasTouch:true
+            });
+
+            const fatal=[];
+            page.on('pageerror',e=>fatal.push('pageerror: '+e.message));
+            page.on('console',m=>{
+              if(m.type()!=='error')return;
+              const t=m.text();
+              if(/Failed to load resource/i.test(t))return;
+              fatal.push('console: '+t);
+            });
+            page.on('response',r=>{
+              if(r.status()>=500&&/\/api\//.test(r.url()))fatal.push('api '+r.status()+': '+r.url());
+            });
+
+            await page.route('**/api/countries',route=>route.fulfill({
+              status:200,contentType:'application/json',body:JSON.stringify({rows:[]})
+            }));
+
+            await page.goto(process.env.BASE+'/',{waitUntil:'domcontentloaded',timeout:60000});
+            await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:25000});
+
+            const report=[];
+            for(const route of routes){
+              await page.evaluate(async r=>{
+                document.querySelectorAll('.cb-access-gate').forEach(g=>{
+                  try{if(g.open)g.close()}catch{}
+                  g.remove();
+                });
+                await window.nav(r);
+              },route);
+
+              await page.locator('main.page').waitFor({state:'visible',timeout:25000});
+              await page.waitForTimeout(120);
+
+              const state=await page.evaluate(r=>{
+                const root=document.documentElement;
+                const body=document.body;
+                const main=document.querySelector('main.page');
+                const text=(main?.innerText||'').slice(0,12000);
+                const visible=[...document.querySelectorAll('button,a,input,select,textarea')]
+                  .filter(el=>{
+                    const s=getComputedStyle(el),rect=el.getBoundingClientRect();
+                    return s.display!=='none'&&s.visibility!=='hidden'&&rect.width>0&&rect.height>0;
+                  });
+                const clippedControls=visible.filter(el=>{
+                  const rect=el.getBoundingClientRect();
+                  return rect.right>window.innerWidth+8||rect.left<-8;
+                }).slice(0,8).map(el=>({
+                  tag:el.tagName,
+                  text:(el.innerText||el.getAttribute('aria-label')||el.value||'').slice(0,80),
+                  left:Math.round(el.getBoundingClientRect().left),
+                  right:Math.round(el.getBoundingClientRect().right)
+                }));
+                return {
+                  route:r,
+                  title:(main?.querySelector('h1,h2')?.textContent||'').trim().slice(0,120),
+                  loadingFailed:/Chargement impossible|Connexion au monde impossible/i.test(text),
+                  blank:!text.trim(),
+                  viewport:window.innerWidth,
+                  rootWidth:root.scrollWidth,
+                  bodyWidth:body.scrollWidth,
+                  globalOverflow:Math.max(root.scrollWidth,body.scrollWidth)>window.innerWidth+8,
+                  clippedControls
+                };
+              },route);
+
+              report.push(state);
+              if(state.loadingFailed)throw new Error(route+': route rendered a load failure');
+              if(state.blank)throw new Error(route+': route rendered an empty page');
+              if(state.globalOverflow)throw new Error(route+': global horizontal overflow '+state.rootWidth+'px on '+state.viewport+'px viewport');
+              if(state.clippedControls.length)throw new Error(route+': controls clipped outside viewport '+JSON.stringify(state.clippedControls));
+            }
+
+            if(fatal.length)throw new Error('browser/API errors: '+fatal.join(' | '));
+            console.log('MOBILE_UX_RC '+JSON.stringify(report));
+            console.log('Court Boss mobile route sweep: OK');
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          EOF
+          node court-boss-mobile-ux.cjs

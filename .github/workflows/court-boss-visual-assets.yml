@@ -24,7 +24,7 @@ jobs:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
           LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
-          for i in {1..48}; do
+          for i in {1..60}; do
             if curl --fail --silent --show-error "$BASE/app.js?v=visual-assets" -o /tmp/render-app.js; then
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
               if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then

@@ -60,3 +60,12 @@ test('managed doubles partner also receives the neutral match-day override',()=>
   assert.match(clockPartner,/coalesce\(\(x->>'partner_id'\)::bigint,0\)=v_player_id/);
   assert.match(clockPartner,/'automatic_match_day',true/);
 });
+
+
+test('successful daily advance hydrates and opens the exact due-match ticket',()=>{
+  assert.match(daily,/const dueToday=\(day\?\.due_matches\?\.matches\|\|\[\]\)\[0\]\|\|null/);
+  assert.match(daily,/local\.pendingManagedMatch=dueToday/);
+  assert.match(daily,/const duePlayerId=Number\(due\?\.player_id\|\|0\)/);
+  assert.match(daily,/setActiveManagedPlayer\(duePlayerId\)/);
+  assert.match(daily,/openTournamentPlayMode\?\.\(Number\(due\.tournament_id\)\)/);
+});

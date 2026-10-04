@@ -2673,21 +2673,32 @@ Deno.serve(async(req:Request)=>{
   const isPublicTournamentImage=path.endsWith("/api/tournament-image")&&req.method==="GET";
   const isPublicMediaProxy=path.endsWith("/api/media-proxy")&&req.method==="GET";
   const protectedSyncGet=req.method==="GET"&&[
-    "/api/sync-career-ranking-history","/api/sync-atp-career-titles","/api/sync-junior-demographics","/api/sync-real-juniors"
+    "/api/sync-career-ranking-history","/api/sync-atp-career-titles","/api/sync-junior-demographics","/api/sync-real-juniors",
+    "/api/scrape-real-juniors"
   ].some(x=>path.endsWith(x));
-  const protectedWrite=!isHealth&&!isPublicTournamentImage&&!isPublicMediaProxy&&(req.method!=="GET"||protectedSyncGet);
+  const isAccessCheck=path.endsWith("/api/access-check")&&req.method==="POST";
+  const protectedWrite=!isHealth&&!isPublicTournamentImage&&!isPublicMediaProxy&&!isAccessCheck&&(req.method!=="GET"||protectedSyncGet);
+  const needsWriteAuth=protectedWrite||isAccessCheck;
   let writeLockToken:string|null=null;
-  if(protectedWrite){
+  let writeLockHeartbeat:number|null=null;
+  if(needsWriteAuth){
     const envKey=String(Deno.env.get("COURT_BOSS_ACCESS_KEY")||"").trim();
     let expectedDigest=envKey?await sha256Hex(envKey):"";
     if(!expectedDigest){const auth=await db.rpc("cb_write_access_digest_v31");if(!auth.error)expectedDigest=String(auth.data||"")}
     if(!expectedDigest)return h({error:"Protection écriture indisponible"},503);
     if(!await secureDigestMatches(req.headers.get("x-court-boss-key"),expectedDigest))return h({error:"Code d’accès requis"},401);
-    const locked=await db.rpc("cb_acquire_write_lock_v31");
-    if(locked.error)return h({error:"Une autre opération modifie déjà la carrière. Réessaie dans un instant."},423);
-    writeLockToken=String(locked.data||"");
+    if(protectedWrite){
+      const locked=await db.rpc("cb_acquire_write_lock_v31");
+      if(locked.error)return h({error:"Une autre opération modifie déjà la carrière. Réessaie dans un instant."},423);
+      writeLockToken=String(locked.data||"");
+      writeLockHeartbeat=setInterval(()=>{
+        if(writeLockToken)void db.rpc("cb_touch_write_lock_v31",{p_token:writeLockToken}).then(({error})=>{
+          if(error)console.warn("Court Boss write-lock heartbeat",error.message);
+        });
+      },45000);
+    }
   }
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:77,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:78,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
   if(path.endsWith("/api/access-check")&&req.method==="POST")return h({ok:true,write_access:true});
   try{
   if((
@@ -2707,19 +2718,8 @@ Deno.serve(async(req:Request)=>{
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(currentCareer.error)return h({error:currentCareer.error.message},500);
-    try{await ensureCareerBaselineTemplate()}catch(e){console.warn("Career baseline template",String((e as any)?.message||e))}
-    if(currentCareer.data){
-      const inboxSync=await db.rpc("career_sync_actionable_inbox",{
-        p_date:String(currentCareer.data.career_date||AGE_REFERENCE_DATE),
-        p_week:Number(currentCareer.data.week||1)
-      });
-      if(inboxSync.error)console.warn("Career inbox bootstrap sync",inboxSync.error.message);
-      const operationalSync=await db.rpc("career_sync_operational_alerts",{
-        p_date:String(currentCareer.data.career_date||AGE_REFERENCE_DATE),
-        p_week:Number(currentCareer.data.week||1)
-      });
-      if(operationalSync.error)console.warn("Career operational inbox bootstrap sync",operationalSync.error.message);
-    }
+    // Bootstrap is read-only. Baseline creation belongs to /api/new-career and
+    // inbox synchronization belongs to the protected daily clock.
     const [career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries,managedDoublesEntries] = await Promise.all([
       Promise.resolve(currentCareer),
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
@@ -7042,10 +7042,6 @@ Deno.serve(async(req:Request)=>{
     if(managedPlayer.error||!managedPlayer.data)return h({error:managedPlayer.error?.message||"Joueur introuvable"},404);
 
     const year=Number(String(career.data.career_date||AGE_REFERENCE_DATE).slice(0,4));
-    const ensuredPlan=await db.rpc("ensure_player_season_plan",{
-      p_player_id:managedId,p_date:String(career.data.career_date||AGE_REFERENCE_DATE)
-    });
-    if(ensuredPlan.error)return h({error:ensuredPlan.error.message},500);
 
     const [health,integrity,seasonPlan,media,sponsors,board,timeline,relationships,academy,medicalPlan]=await Promise.all([
       db.rpc("career_system_health",{p_date:String(career.data.career_date||AGE_REFERENCE_DATE)}),
@@ -17283,6 +17279,7 @@ Deno.serve(async(req:Request)=>{
 
   return h({error:"Not found"},404);
   } finally {
+    if(writeLockHeartbeat!==null)clearInterval(writeLockHeartbeat);
     if(writeLockToken)await db.rpc("cb_release_write_lock_v31",{p_token:writeLockToken});
   }
 });

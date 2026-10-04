@@ -304,6 +304,7 @@
     const dates=currentWeekDates(),today=String(local.date||career()?.career_date||''),tomorrow=nextDate();
     const report=local.lastDailyTrainingReport||null;
     const playerReport=Array.isArray(report?.training)?report.training.find(x=>Number(x.player_id)===Number(id)):null;
+    const playerRecovery=playerReport?.recovery||null;
     const reportLabels={serve_power:'Puissance service',serve_precision:'Précision service',first_serve_quality:'1re balle',second_serve_quality:'2e balle',serve_variety:'Variété service',serve_spin:'Effet service',serve_consistency:'Régularité service',serve_plus_one:'Service +1',return_game:'Retour',return_aggression:'Retour agressif',return_consistency:'Régularité retour',counter_skill:'Contre',shot_control:'Contrôle de balle',timing:'Timing',forehand:'Coup droit',forehand_power:'Puissance CD',forehand_accuracy:'Précision CD',forehand_consistency:'Régularité CD',topspin:'Lift',backhand:'Revers',backhand_power:'Puissance revers',backhand_accuracy:'Précision revers',backhand_consistency:'Régularité revers',volley:'Volée',touch:'Toucher',movement:'Déplacements',speed:'Vitesse',acceleration:'Accélération',agility:'Agilité',balance:'Équilibre',footwork:'Jeu de jambes',athleticism:'Physique',stamina:'Endurance',strength:'Force',recovery:'Récupération',tactics:'Tactique',decision_making:'Décisions',shot_selection:'Choix de coups',big_points:'Points importants',concentration:'Concentration',composure:'Sang-froid',fighting_spirit:'Combativité',tenacity:'Ténacité',doubles:'Double',net_positioning:'Placement filet',doubles_communication:'Communication double',poaching:'Interceptions'};
     const options=s=>SESSIONS.map(x=>'<option '+(x===s?'selected':'')+'>'+esc(x)+'</option>').join('');
     const intensityOptions=v=>INTENSITIES.map(x=>'<option '+(x===v?'selected':'')+'>'+esc(x)+'</option>').join('');
@@ -338,6 +339,9 @@
       +'<div class="grid g2" style="margin-top:12px"><div class="card"><div class="eyebrow">Profil de développement</div><h2>'+esc(dev.type||'standard')+'</h2><div class="list-item row between"><span>Phase</span><b>'+esc(dev.phase||'—')+'</b></div><div class="list-item row between"><span>Développement</span><b>'+(dev.development_rate??'—')+'/20</b></div><div class="list-item row between"><span>Professionnalisme</span><b>'+(dev.professionalism??'—')+'/20</b></div><div class="list-item row between"><span>Coachability</span><b>'+(dev.coachability??'—')+'/20</b></div><div class="list-item row between"><span>Pic</span><b>'+(dev.peak_age??'—')+' ans</b></div></div>'
       +'<div class="card"><div class="eyebrow">Dernière journée</div><h2>'+(report?.date?df(report.date):'Aucune journée simulée')+'</h2>'
       +(playerReport?'<div class="list-item row between"><span>Séances</span><b>'+esc(playerReport.morning)+' / '+esc(playerReport.afternoon)+'</b></div><div class="list-item row between"><span>Charge</span><b>'+Number(playerReport.load||0).toFixed(1)+'</b></div><div class="list-item row between"><span>Fatigue</span><b>'+Number(playerReport.fatigue_before||0)+' → '+Number(playerReport.fatigue_after||0)+'</b></div><div class="list-item row between"><span>Fitness</span><b>'+Number(playerReport.fitness_before||0)+' → '+Number(playerReport.fitness_after||0)+'</b></div>'
+        +(playerRecovery?'<div class="list-item row between"><span>Récupération nuit</span><b>-'+Number(playerRecovery.fatigue_recovered||0)+' fatigue</b></div><div class="list-item row between"><span>Dette post-match</span><b>'+Number(playerRecovery.post_match_debt_before||0).toFixed(1)+' → '+Number(playerRecovery.post_match_debt_after||0).toFixed(1)+'</b></div>':'')
+        +(playerRecovery?.travel_applied?'<div class="notice warn" style="margin-top:8px"><b>Voyage '+esc(playerRecovery.travel_from||'?')+' → '+esc(playerRecovery.travel_to||'?')+'</b> · charge physique +'+Number(playerRecovery.travel_load||0).toFixed(1)+'.</div>':'')
+        +(playerReport.automatic_medical_restriction?'<div class="notice warn" style="margin-top:8px"><b>Restriction médicale.</b> Le staff a remplacé la séance prévue par récupération / repos.</div>':'')
         +((playerReport.improvements||[]).length?'<div class="daily-improvements">'+playerReport.improvements.slice(0,6).map(x=>'<span class="badge good">'+esc(reportLabels[x.attribute]||x.attribute)+' '+x.from+'→'+x.to+'</span>').join('')+'</div>':'<div class="muted mini" style="margin-top:8px">XP accumulée, aucun palier visible aujourd’hui.</div>')
         +(playerReport.training_niggle?'<div class="notice bad" style="margin-top:8px">Gêne musculaire déclenchée par la charge du jour.</div>':'')
         :'<div class="muted">Le premier rapport apparaîtra après Continuer.</div>')+'</div></div>';
@@ -453,6 +457,13 @@
       local.feed=local.feed||[];
 
       const primaryReport=(day.training||[]).find(x=>Number(x.player_id)===primaryId())||(day.training||[])[0];
+      const primaryRecovery=primaryReport?.recovery||null;
+      if(primaryRecovery?.travel_applied){
+        local.feed.unshift('Voyage '+String(primaryRecovery.travel_from||'?')+' → '+String(primaryRecovery.travel_to||'?')+' · charge trajet +'+Number(primaryRecovery.travel_load||0).toFixed(1)+' · fatigue '+Number(primaryRecovery.fatigue_before||0)+'→'+Number(primaryRecovery.fatigue_after||0)+'.');
+      }else if(primaryRecovery&&Number(primaryRecovery.post_match_debt_before||0)>0){
+        local.feed.unshift('Récupération post-match · fatigue '+Number(primaryRecovery.fatigue_before||0)+'→'+Number(primaryRecovery.fatigue_after||0)+' · dette '+Number(primaryRecovery.post_match_debt_before||0).toFixed(1)+'→'+Number(primaryRecovery.post_match_debt_after||0).toFixed(1)+'.');
+      }
+      if(primaryReport?.automatic_medical_restriction)local.feed.unshift('Staff médical : entraînement remplacé par récupération / repos pour protéger le joueur.');
       if(primaryReport?.training_niggle)local.feed.unshift('Alerte entraînement : '+primaryReport.player_name+' termine la journée avec une gêne musculaire.');
       if((primaryReport?.improvements||[]).length){
         local.feed.unshift('Progression du jour : '+primaryReport.improvements.slice(0,3).map(x=>String(x.attribute)+' '+x.from+'→'+x.to).join(', ')+'.');

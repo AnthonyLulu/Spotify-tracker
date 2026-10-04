@@ -1543,7 +1543,8 @@ async function captureManagedSaveSnapshot(){
     managedInjuriesAll,managedTrainingLoadAll,managedTrainingProgressAll,managedSeasonPlansAll,
     managedEntriesAll,managedDoublesEntriesAll,managedAgencyAll,managedDoublesCommitmentsAll,
     managedPartnerHistoryAll,managedPartnerOffersAll,managedPartnershipsAll,managedRelationshipsAll,
-    managedSponsorsAll,managedStaffAssignmentsAll,managedNcaaRegistryAll,managedRankingPointsAll,managedDoublesRankingPointsAll
+    managedSponsorsAll,managedStaffAssignmentsAll,managedNcaaRegistryAll,managedRankingPointsAll,managedDoublesRankingPointsAll,
+    managedRankingHistoryAll,managedDoublesRankingHistoryAll
   ]=await Promise.all([
     academyManagedPlayerIds.length?db.from("players").select("*").in("id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("player_attributes").select("*").in("player_id",academyManagedPlayerIds).order("player_id"):Promise.resolve({data:[],error:null} as any),
@@ -1565,14 +1566,17 @@ async function captureManagedSaveSnapshot(){
     academyManagedPlayerIds.length?db.from("player_staff_assignments").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("ncaa_player_registry").select("*").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
     academyManagedPlayerIds.length?db.from("user_ranking_points").select("*").eq("owner_id","demo").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
-    academyManagedPlayerIds.length?db.from("user_doubles_points").select("*").eq("owner_id","demo").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any)
+    academyManagedPlayerIds.length?db.from("user_doubles_points").select("*").eq("owner_id","demo").in("player_id",academyManagedPlayerIds).order("id"):Promise.resolve({data:[],error:null} as any),
+    academyManagedPlayerIds.length?db.from("ranking_history").select("*").in("player_id",academyManagedPlayerIds).order("snapshot_date").order("id"):Promise.resolve({data:[],error:null} as any),
+    academyManagedPlayerIds.length?db.from("doubles_ranking_history").select("*").in("player_id",academyManagedPlayerIds).order("snapshot_date").order("player_id"):Promise.resolve({data:[],error:null} as any)
   ]);
   const multiPlayerErr=
     managedPlayersAll.error||managedAttributesAll.error||managedDevelopmentAll.error||managedCeilingsAll.error||
     managedInjuriesAll.error||managedTrainingLoadAll.error||managedTrainingProgressAll.error||managedSeasonPlansAll.error||
     managedEntriesAll.error||managedDoublesEntriesAll.error||managedAgencyAll.error||managedDoublesCommitmentsAll.error||
     managedPartnerHistoryAll.error||managedPartnerOffersAll.error||managedPartnershipsAll.error||managedRelationshipsAll.error||
-    managedSponsorsAll.error||managedStaffAssignmentsAll.error||managedNcaaRegistryAll.error||managedRankingPointsAll.error||managedDoublesRankingPointsAll.error;
+    managedSponsorsAll.error||managedStaffAssignmentsAll.error||managedNcaaRegistryAll.error||managedRankingPointsAll.error||managedDoublesRankingPointsAll.error||
+    managedRankingHistoryAll.error||managedDoublesRankingHistoryAll.error;
   if(multiPlayerErr)throw new Error(multiPlayerErr.message||"Multi-player snapshot failed");
 
   const managedActiveTournamentIds=[...new Set((managedEntriesAll.data??[])
@@ -1667,6 +1671,8 @@ async function captureManagedSaveSnapshot(){
     managed_ncaa_registry_all:managedNcaaRegistryAll.data??[],
     managed_ranking_points_all:managedRankingPointsAll.data??[],
     managed_doubles_ranking_points_all:managedDoublesRankingPointsAll.data??[],
+    managed_ranking_history_all:managedRankingHistoryAll.data??[],
+    managed_doubles_ranking_history_all:managedDoublesRankingHistoryAll.data??[],
     managed_elo_ratings_all:managedEloRatings.data??[],
     managed_world_tournament_matches:managedWorldTournamentMatches.data??[],
     season_plans:seasonPlans.data??[],
@@ -1805,6 +1811,9 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     const missing=requiredTimelineArrays.filter(key=>!Array.isArray(snapshot?.[key]));
     if(missing.length)throw new Error("Incomplete V8 timeline snapshot: "+missing.join(","));
     if(!snapshot?.career||!Array.isArray(snapshot?.managed_players))throw new Error("Incomplete V8 career snapshot");
+    const requiredCareerArrays=["managed_ranking_history_all","managed_doubles_ranking_history_all"];
+    const missingCareer=requiredCareerArrays.filter(key=>!Array.isArray(snapshot?.[key]));
+    if(missingCareer.length)throw new Error("Incomplete V8 ranking history snapshot: "+missingCareer.join(","));
     if(snapshot?.checkpoint_kind==="live"){
       const requiredLiveArrays=[
         "live_match_sessions","live_match_events","live_match_point_events","live_match_effect_commits",
@@ -2017,8 +2026,15 @@ async function restoreManagedSaveSnapshot(snapshot:any){
       await db.from("player_training_load_profiles").delete().eq("player_id",cleanupPlayerId);
       await db.from("injuries").delete().eq("player_id",cleanupPlayerId);
       await db.from("ncaa_player_registry").delete().eq("player_id",cleanupPlayerId);
-      await db.from("ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
-      await db.from("doubles_ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+      if(timelineCheckpoint){
+        const rankHistoryDel=await db.from("ranking_history").delete().eq("player_id",cleanupPlayerId);
+        if(rankHistoryDel.error)throw new Error("ranking history cleanup: "+rankHistoryDel.error.message);
+        const doublesRankHistoryDel=await db.from("doubles_ranking_history").delete().eq("player_id",cleanupPlayerId);
+        if(doublesRankHistoryDel.error)throw new Error("doubles ranking history cleanup: "+doublesRankHistoryDel.error.message);
+      }else{
+        await db.from("ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+        await db.from("doubles_ranking_history").delete().eq("player_id",cleanupPlayerId).gt("snapshot_date",String(snapshot.career_date||AGE_REFERENCE_DATE));
+      }
     }
     await db.from("wildcard_requests").delete().not("id","is",null);
     if(["CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model)){
@@ -2121,6 +2137,10 @@ async function restoreManagedSaveSnapshot(snapshot:any){
       await upsertMany("ncaa_player_registry",snapshot.managed_ncaa_registry_all,"id");
       if(["CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model))await upsertMany("user_ranking_points",snapshot.managed_ranking_points_all,"id");
       if(model==="CB-MANAGED-SAVE-v6")await upsertMany("user_doubles_points",snapshot.managed_doubles_ranking_points_all,"id");
+      if(timelineCheckpoint){
+        await upsertMany("ranking_history",snapshot.managed_ranking_history_all??[],"id");
+        await upsertMany("doubles_ranking_history",snapshot.managed_doubles_ranking_history_all??[],"player_id,snapshot_date");
+      }
     }
   }else if(["CB-MANAGED-SAVE-v2"].includes(model)){
     await upsertMany("player_season_plans",snapshot.season_plans,"player_id,season");

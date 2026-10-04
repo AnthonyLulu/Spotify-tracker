@@ -13938,6 +13938,14 @@ Deno.serve(async(req:Request)=>{
     // Preflight the exact world-draw slot before ANY irreversible live-match side effect.
     // If the bracket changed underneath the session, reject before history, medical,
     // fatigue, Elo, ranking or prize writes can create a ghost result.
+    if(tournamentLive&&Number(meta.world_match_id||0)<=0){
+      return h({
+        error:"Match de tournoi live sans case mondiale réservée.",
+        bracket_mismatch_guard:true,
+        atomic_commit_guard:true,
+        world_match_id:null
+      },409);
+    }
     if(tournamentLive&&Number(meta.world_match_id||0)>0){
       const preflight=await db.from("world_tournament_matches")
         .select("id,tournament_id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
@@ -13974,26 +13982,9 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const historyRpc=await db.rpc("ensure_live_match_history_v23",{
-      p_session_id:id,
-      p_managed_player_id:playerId,
-      p_tournament_name:tournamentName,
-      p_match_date:matchDate,
-      p_surface:String(session.data.surface||"Dur"),
-      p_round:round,
-      p_player_a:String(managed.data.name||"Joueur"),
-      p_player_b:String(opp?.name||"Adversaire"),
-      p_winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
-      p_score:score,
-      p_match_data:{
-        live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
-        stats,tactics:session.data.tactics||{},environment:meta
-      }
-    });
-    if(historyRpc.error||historyRpc.data?.ok===false){
-      return h({error:historyRpc.error?.message||historyRpc.data?.error||"Historique live impossible"},500);
-    }
-    const history:any={data:{id:Number(historyRpc.data?.history_id||0)},error:null};
+    let history:any={data:{id:0},error:null};
+    let elo:any={data:null,error:null};
+    let atomicCommit:any=null;
 
     let medicalWrite:any=null;
     if(retirement?.player_id&&retirement?.injury_type){
@@ -14035,72 +14026,112 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const conditionCommit=await db.rpc("apply_live_match_condition_once_v23",{
-      p_session_id:id,
-      p_player_id:playerId,
-      p_condition:nextCondition,
-      p_sync_career:playerId===Number(career.data.managed_player_id||0)
-    });
-    if(conditionCommit.error||conditionCommit.data?.ok===false){
-      return h({error:conditionCommit.error?.message||conditionCommit.data?.error||"Condition post-match impossible"},500);
-    }
-
-    const elo=await db.rpc("apply_live_match_elo_once_v23",{
-      p_session_id:id,
-      p_winner_id:won?playerId:Number(opp?.id||0),
-      p_loser_id:won?Number(opp?.id||0):playerId,
-      p_surface:String(session.data.surface||"Dur"),
-      p_match_date:matchDate,p_doubles:false,p_weight:1
-    });
-    const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});
-
     let worldProgress:any=null;
-    if(tournamentLive&&Number(meta.world_match_id||0)>0){
-      const worldRow=await db.from("world_tournament_matches")
-        .select("id,tournament_id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
-        .eq("id",Number(meta.world_match_id)).maybeSingle();
-      if(worldRow.error||!worldRow.data)return h({error:worldRow.error?.message||"Match du tableau mondial introuvable."},500);
-      const wr:any=worldRow.data;
-      const a=Number(wr.player_a_id||0),b=Number(wr.player_b_id||0),oppId=Number(opp?.id||0);
-      const worldRound=String(wr.round_code||"");
-      if(
-        Number(wr.tournament_id||0)!==tournamentId
-        || (round&&worldRound&&round!==worldRound)
-        || !((a===playerId&&b===oppId)||(b===playerId&&a===oppId))
-      ){
+    if(tournamentLive){
+      const opponentId=Number(opp?.id||0);
+      const winnerId=won?playerId:opponentId;
+      const loserId=won?opponentId:playerId;
+      const atomic=await db.rpc("commit_live_world_match_atomic_v23",{
+        p_payload:{
+          session_id:id,
+          world_match_id:Number(meta.world_match_id||0),
+          tournament_id:tournamentId,
+          managed_player_id:playerId,
+          opponent_id:opponentId,
+          winner_id:winnerId,
+          loser_id:loserId,
+          round,
+          score,
+          match_date:matchDate,
+          surface:String(session.data.surface||"Dur"),
+          sync_career:playerId===Number(career.data.managed_player_id||0),
+          condition:nextCondition,
+          history:{
+            tournament_name:tournamentName,
+            round,
+            player_a:String(managed.data.name||"Joueur"),
+            player_b:String(opp?.name||"Adversaire"),
+            winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
+            score,
+            match_data:{
+              live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
+              stats,tactics:session.data.tactics||{},environment:meta
+            }
+          },
+          world_components:{
+            form:meta.form||{},
+            weather:meta.weather||{},
+            tactics:session.data.tactics||{}
+          },
+          elo_weight:1
+        }
+      });
+      if(atomic.error||atomic.data?.ok===false){
         return h({
-          error:"Le match live ne correspond plus exactement à la case du tableau mondial.",
-          world_match_id:wr.id,bracket_mismatch_guard:true,
-          expected:{tournament_id:tournamentId,round,player_id:playerId,opponent_id:oppId},
-          actual:{tournament_id:Number(wr.tournament_id||0),round:worldRound,player_a_id:a,player_b_id:b}
+          error:atomic.error?.message||atomic.data?.error||"Commit atomique du match impossible.",
+          world_match_id:Number(meta.world_match_id||0),
+          atomic_commit_guard:true
         },409);
       }
-      const winnerId=won?playerId:oppId,loserId=won?oppId:playerId;
-      if(Number(wr.winner_id||0)>0&&Number(wr.winner_id)!==winnerId){
-        return h({error:"Cette case du tableau possède déjà un autre résultat.",world_match_id:wr.id},409);
-      }
-      const worldScore=a===playerId?score:liveInvertTennisScore(score);
-      const worldUpdate=await db.from("world_tournament_matches").update({
-        winner_id:winnerId,loser_id:loserId,score:worldScore,
-        model_version:"CB-MATCH-ENGINE-v6-LIVE",
-        matchup_components:{
-          ...(wr.matchup_components||{}),status:"completed",source:"managed_live",
-          live_session_id:id,managed_player_id:playerId,form:meta.form||{},
-          weather:meta.weather||{},tactics:session.data.tactics||{}
-        },
-        simulated_on:String(wr.simulated_on||matchDate)
-      }).eq("id",Number(wr.id));
-      if(worldUpdate.error)return h({error:worldUpdate.error.message},500);
+      atomicCommit=atomic.data;
+      history={data:{id:Number(atomic.data?.history?.history_id||0)},error:null};
+      elo={data:atomic.data?.elo||null,error:null};
 
-      const progressed=Boolean(wr.is_qualifying)
+      const progressDate=String(atomic.data?.simulated_on||matchDate);
+      const progressed=Boolean(atomic.data?.is_qualifying)
         ?await db.rpc("advance_world_qualifying_tournament",{
-            p_tournament_id:tournamentId,p_to_date:String(wr.simulated_on||matchDate)
+            p_tournament_id:tournamentId,p_to_date:progressDate
           })
         :await db.rpc("advance_world_knockout_tournament",{
-            p_tournament_id:tournamentId,p_to_date:String(wr.simulated_on||matchDate)
+            p_tournament_id:tournamentId,p_to_date:progressDate
           });
       worldProgress=progressed.error?{ok:false,error:progressed.error.message}:progressed.data;
+    }else{
+      const historyRpc=await db.rpc("ensure_live_match_history_v23",{
+        p_session_id:id,
+        p_managed_player_id:playerId,
+        p_tournament_name:tournamentName,
+        p_match_date:matchDate,
+        p_surface:String(session.data.surface||"Dur"),
+        p_round:round,
+        p_player_a:String(managed.data.name||"Joueur"),
+        p_player_b:String(opp?.name||"Adversaire"),
+        p_winner:won?String(managed.data.name||"Joueur"):String(opp?.name||"Adversaire"),
+        p_score:score,
+        p_match_data:{
+          live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
+          stats,tactics:session.data.tactics||{},environment:meta
+        }
+      });
+      if(historyRpc.error||historyRpc.data?.ok===false){
+        return h({error:historyRpc.error?.message||historyRpc.data?.error||"Historique live impossible"},500);
+      }
+      history={data:{id:Number(historyRpc.data?.history_id||0)},error:null};
+
+      const conditionCommit=await db.rpc("apply_live_match_condition_once_v23",{
+        p_session_id:id,
+        p_player_id:playerId,
+        p_condition:nextCondition,
+        p_sync_career:playerId===Number(career.data.managed_player_id||0)
+      });
+      if(conditionCommit.error||conditionCommit.data?.ok===false){
+        return h({error:conditionCommit.error?.message||conditionCommit.data?.error||"Condition post-match impossible"},500);
+      }
+
+      const eloRpc=await db.rpc("apply_live_match_elo_once_v23",{
+        p_session_id:id,
+        p_winner_id:won?playerId:Number(opp?.id||0),
+        p_loser_id:won?Number(opp?.id||0):playerId,
+        p_surface:String(session.data.surface||"Dur"),
+        p_match_date:matchDate,p_doubles:false,p_weight:1
+      });
+      if(eloRpc.error||eloRpc.data?.ok===false){
+        return h({error:eloRpc.error?.message||eloRpc.data?.error||"Elo post-match impossible"},500);
+      }
+      elo={data:eloRpc.data,error:null};
     }
+
+    const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});
 
     if(tournamentTerminal){
       const [tour,entry,oldRun]=await Promise.all([

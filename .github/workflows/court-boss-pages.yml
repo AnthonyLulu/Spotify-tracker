@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: court-boss-smoke-v9
+  group: court-boss-smoke-v10
   cancel-in-progress: true
 
 jobs:
@@ -82,6 +82,8 @@ jobs:
           curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/modules.js
           curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/daily-career-v22.js
           curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/daily-career-v22.css
+          curl --fail --silent --show-error "$BASE/play.html" -o /tmp/play.html
+          grep -q 'app.js?v=20261004-hof-v30' /tmp/play.html
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js
@@ -219,6 +221,19 @@ jobs:
             if(await page.locator('.attr-row').count()<10)throw new Error('player attributes tab did not render');
             await page.getByRole('button',{name:'✕'}).click();
 
+            await page.evaluate(()=>openPlayer(1));
+            await page.getByText('Dossier joueur').waitFor();
+            await page.getByRole('button',{name:'Records & Awards'}).click();
+            await page.getByRole('heading',{name:'Carrière en cours'}).waitFor();
+            await page.getByText('Hall of Fame',{exact:true}).first().waitFor();
+            await page.getByText('Jannik Sinner dans l’histoire').waitFor();
+            await page.getByRole('button',{name:'✕'}).click();
+
+            await page.evaluate(()=>nav('history'));
+            await page.getByRole('heading',{name:'Histoire, records & nations'}).waitFor();
+            await page.getByText('Hall of Fame dynamique',{exact:true}).waitFor();
+            await page.getByText('Les futures classes se construiront avec la carrière').waitFor();
+
             await page.evaluate(()=>openPlayer(3));
             await page.getByText('Dossier joueur').waitFor();
             await page.getByRole('button',{name:'Palmarès'}).click();
@@ -279,8 +294,9 @@ jobs:
             await page.locator('.cb-court').waitFor();
             if(await page.locator('.fm-player-dot').count()!==2)throw new Error('match viewer needs two player circles');
             if(await page.locator('.fm-ball').count()!==1)throw new Error('match viewer needs one ball');
-            await page.getByRole('button',{name:'Point',exact:true}).click();
-            await page.getByText('6 coups').waitFor();
+            await page.getByRole('button',{name:/Auto/}).click();
+            await page.getByText('6 coups').waitFor({timeout:10000});
+            await page.getByRole('button',{name:/Pause/}).click();
 
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
             console.log('mobile browser smoke: OK');

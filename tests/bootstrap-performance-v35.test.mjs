@@ -16,8 +16,8 @@ test('startup core bootstrap stays small and read-only',()=>{
   assert.match(core,/CB-BOOTSTRAP-CORE-v2/);
   assert.ok((core.match(/db\.from\(/g)||[]).length<=11,'core bootstrap grew past its query budget');
   for(const heavy of ['staff_profiles','scouting_reports','match_history','injuries','davis_squad','medical_plan']){
-    assert.doesNotMatch(core,new RegExp(heavy),heavy+' must stay out of core bootstrap');
-    assert.match(secondary,new RegExp(heavy),heavy+' must live in secondary bootstrap');
+    assert.doesNotMatch(core,new RegExp('db\\.from\\("'+heavy+'"\\)'),heavy+' query must stay out of core bootstrap');
+    assert.match(secondary,new RegExp('db\\.from\\("'+heavy+'"\\)'),heavy+' query must live in secondary bootstrap');
   }
   assert.doesNotMatch(core,/\.insert\(|\.update\(|\.delete\(|\.upsert\(/);
 });

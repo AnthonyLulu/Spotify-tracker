@@ -3466,6 +3466,7 @@ function worldPage(){
 function historyPage(){
  const d=historyData||{rows:[],countryBest:[],continentBest:[],hallOfFame:[],grandSlamRecords:[],u18:[],u21:[],coverage:{players:0,countries:0,ncaaProfiles:0}};
  const rows=d.rows||[],global=rows[0]||null,rec=d.nationalRecords||{};
+ const hofDynamic=d.hallOfFameDynamic||{};
  const continents=['','Europe','North America','South America','Asia','Africa','Oceania'];
  const recordCard=(label,x,field,suffix='')=>x?`<div class="fm-record click" onclick="openPlayer(${x.id})"><span>${label}</span><b>${flags[x.country]||'🏳️'} ${esc(x.name)}</b><strong>${fmt(x[field]||0)}${suffix}</strong></div>`:'';
  const youth=(arr,title)=>`<div class="card fm-squad-card"><div class="row between"><div><div class="eyebrow">Prospects</div><h2>${title}</h2></div><span class="badge">${arr.length}</span></div>${arr.slice(0,12).map((p,i)=>`<div class="fm-scout-row click" onclick="openPlayer(${p.id})"><div class="fm-rank-dot">#${i+1}</div><div class="grow"><b>${flags[p.country]||'🏳️'} ${esc(p.name)}</b><div class="muted mini">${p.age} ans · ${p.ranking?'ATP #'+fmt(p.ranking):p.junior_ranking?'Junior #'+fmt(p.junior_ranking):'Non classé'} ${p.game_generated?'· Newgen '+p.generated_year:''}</div></div><div style="text-align:right"><b>${starRatingHtml(publicLevelStars(p),'Niveau public')}</b><div class="muted mini">Potentiel à scouter</div></div></div>`).join('')||'<div class="empty">Aucun joueur.</div>'}</div>`;
@@ -3488,6 +3489,8 @@ function historyPage(){
    ${recordCard('Semaines Top 100',rec.weeks_top100,'weeks_top100',' sem.')}
    ${rec.win_pct?`<div class="fm-record click" onclick="openPlayer(${rec.win_pct.id})"><span>Meilleur % victoires</span><b>${flags[rec.win_pct.country]||'🏳️'} ${esc(rec.win_pct.name)}</b><strong>${rec.win_pct.win_pct}%</strong></div>`:''}
   </div>
+
+  ${hofHistoryHtml(hofDynamic)}
 
   <div class="grid g2" style="margin-top:12px">
    <div class="card"><div class="row between"><div><div class="eyebrow">Court Boss Hall of Fame</div><h2>Légendes majeures</h2></div><span class="badge">${(d.hallOfFame||[]).length}</span></div>${(d.hallOfFame||[]).slice(0,40).map((x,i)=>`<div class="fm-scout-row click" onclick="openPlayer(${x.id})"><div class="fm-rank-dot">${i+1}</div><div class="grow"><b>${flags[x.country]||'🏳️'} ${esc(x.name)}</b><div class="muted mini">${x.grand_slams} GC · ${x.titles} titres · ${fmt(x.wins)} victoires</div></div><b>${fmt(x.history_score)}</b></div>`).join('')}</div>
@@ -4319,6 +4322,62 @@ window.searchPlayerMatchHistory=q=>{
  document.querySelectorAll('#playerMatchHistoryRows tr').forEach(r=>r.style.display=!s||(r.dataset.matchSearch||'').includes(s)?'':'none');
  const label=document.getElementById('playerMatchHistoryLabel');if(label)label.textContent=s?'Filtre · '+q:'Tous les matchs détaillés de la sauvegarde';
 };
+function hofPlayerHtml(hof,p){
+  const h=hof&&typeof hof==="object"?hof:{};
+  const status=String(h.status||"active");
+  const statusLabels={
+    active:"Carrière en cours",
+    waiting:h.eligibility_year?`Éligible en ${h.eligibility_year}`:"En attente",
+    eligible:"Éligible au Hall of Fame",
+    ballot:"Sur le bulletin",
+    elected:"Élu · cérémonie à venir",
+    inducted:"Hall of Famer",
+    expired:"Ballot terminé",
+    not_nominated:"Non nommé",
+    not_registered:"Retraite à enregistrer"
+  };
+  const ballots=Array.isArray(h.ballots)?h.ballots:[];
+  const cmp=h.comparison||{};
+  const current=h.legacy||{};
+  const badge=status==="inducted"||status==="elected"?"good":"";
+  const classText=h.induction_year?`Classe ${h.induction_year}${h.class_number?" · #"+h.class_number:""}`:"";
+  const voteText=h.last_vote_pct!=null?Number(h.last_vote_pct).toFixed(1)+"%":"—";
+  const eligibleText=h.eligibility_year?String(h.eligibility_year):"—";
+  return `<div class="card fm-panel" style="margin-bottom:12px">
+    <div class="row between" style="align-items:flex-start;gap:12px">
+      <div><div class="eyebrow">Hall of Fame</div><h2>${esc(statusLabels[status]||status)}</h2>
+      <div class="muted mini">${status==="active"?"Le dossier s’ouvrira au moment de la retraite.":status==="inducted"?esc(classText):"Règle Court Boss alignée sur 5 années civiles avant éligibilité · 3 ballots maximum · seuil 75%."}</div></div>
+      <span class="badge ${badge}">${status==="inducted"?"INTRONISÉ":status==="elected"?"ÉLU":status==="ballot"?"BALLOT":status==="waiting"?"ATTENTE":esc(status.toUpperCase())}</span>
+    </div>
+    <div class="kpi-strip" style="margin-top:10px">
+      <div class="kpi"><span class="muted mini">Éligibilité</span><b>${eligibleText}</b></div>
+      <div class="kpi"><span class="muted mini">1re nomination</span><b>${h.first_nomination_year||"—"}</b></div>
+      <div class="kpi"><span class="muted mini">Ballots</span><b>${fmt(Number(h.ballots_count||0))}/3</b></div>
+      <div class="kpi"><span class="muted mini">Meilleur vote</span><b>${h.peak_vote_pct!=null?Number(h.peak_vote_pct).toFixed(1)+"%":"—"}</b></div>
+    </div>
+    ${h.retirement_speech?`<div class="list-item" style="margin-top:9px"><b>Cérémonie de retraite</b><div class="muted mini" style="margin-top:5px">${esc(h.retirement_speech)}</div></div>`:""}
+    ${ballots.length?`<div class="list-item" style="margin-top:9px"><div class="row between"><b>Historique des votes</b><span class="badge">${voteText}</span></div><div class="stack" style="margin-top:7px">${ballots.map(b=>`<div class="row between"><span>${b.ballot_year} · ballot ${b.ballot_number}</span><span><b>${Number(b.final_vote_pct||0).toFixed(1)}%</b> · ${esc(String(b.result||""))}</span></div>`).join("")}</div></div>`:""}
+    ${status==="inducted"?`<div class="list-item" style="margin-top:9px"><div class="row between"><div><b>${esc(classText)}</b><div class="muted micro">${h.induction_date?df(h.induction_date):""} · Newport</div></div><span class="badge good">Hall of Famer</span></div>${h.induction_speech?`<div class="muted mini" style="margin-top:7px">${esc(h.induction_speech)}</div>`:""}</div>`:""}
+    ${current.rank!=null?`<div class="list-item" style="margin-top:9px"><div class="row between"><div><b>Comparaison directe</b><div class="muted micro">Rang Legacy actuel #${fmt(current.rank)}</div></div><span class="badge">${fmt(Number(current.score||0))}</span></div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:7px">${cmp.above?`<span class="badge">Devant · #${cmp.above.rank} ${esc(cmp.above.name)}</span>`:""}${cmp.below?`<span class="badge">Derrière · #${cmp.below.rank} ${esc(cmp.below.name)}</span>`:""}${cmp.goat?`<span class="badge good">GOAT · #1 ${esc(cmp.goat.name)}</span>`:""}</div></div>`:""}
+  </div>`;
+}
+function hofHistoryHtml(hof){
+  const h=hof&&typeof hof==="object"?hof:{};
+  const c=h.current_class||null;
+  const ballot=Array.isArray(h.ballot)?h.ballot:[];
+  const inducted=Array.isArray(h.inductees)?h.inductees:[];
+  const waiting=Array.isArray(h.waiting)?h.waiting:[];
+  if(!c&&!ballot.length&&!inducted.length&&!waiting.length){
+    return `<div class="card fm-panel" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Hall of Fame dynamique</div><h2>Les futures classes se construiront avec la carrière</h2></div><span class="badge">2026+</span></div><div class="muted mini" style="margin-top:7px">Après une retraite, le joueur attend cinq années civiles avant son premier ballot. Les classes, votes, cérémonies et discours apparaîtront ici au fil des décennies.</div></div>`;
+  }
+  return `<div class="card fm-panel" style="margin-top:12px">
+    <div class="row between"><div><div class="eyebrow">Hall of Fame dynamique</div><h2>${c?`Classe ${c.induction_year} · #${c.class_number}`:"Chronologie future"}</h2></div><span class="badge ${c?.status==="inducted"?"good":""}">${esc(String(c?.status||"LIVE").toUpperCase())}</span></div>
+    ${c?`<div class="kpi-strip" style="margin-top:9px"><div class="kpi"><span class="muted mini">Nommés</span><b>${fmt(Number(c.nominee_count||0))}</b></div><div class="kpi"><span class="muted mini">Élus</span><b>${fmt(Number(c.elected_count||0))}</b></div><div class="kpi"><span class="muted mini">Intronisés</span><b>${fmt(Number(c.inducted_count||0))}</b></div><div class="kpi"><span class="muted mini">Cérémonie</span><b style="font-size:13px">${c.induction_date?df(c.induction_date):"—"}</b></div></div>`:""}
+    ${ballot.length?`<div class="list-item" style="margin-top:9px"><div class="row between"><b>Bulletin ${h.year||""}</b><span class="badge">75% requis</span></div>${ballot.slice(0,12).map(x=>`<div class="fm-scout-row click" onclick="openPlayer(${x.player_id})"><div class="fm-rank-dot">${Number(x.final_vote_pct||0).toFixed(0)}%</div><div class="grow"><b>${flags[x.country]||"🏳️"} ${esc(x.player_name)}</b><div class="muted mini">Ballot ${x.ballot_number} · officiel ${Number(x.official_vote_pct||0).toFixed(1)}%${Number(x.fan_bonus_pct||0)>0?" · fan +"+Number(x.fan_bonus_pct).toFixed(0)+"%":""}</div></div><span class="badge ${x.result==="elected"?"good":""}">${esc(String(x.result||""))}</span></div>`).join("")}</div>`:""}
+    ${inducted.length?`<div class="list-item" style="margin-top:9px"><div class="row between"><b>Dernières intronisations</b><span class="badge good">${inducted.length}</span></div>${inducted.slice(0,8).map(x=>`<div class="fm-scout-row click" onclick="openPlayer(${x.player_id})"><div class="fm-rank-dot">#${x.class_number}</div><div class="grow"><b>${flags[x.country]||"🏳️"} ${esc(x.player_name)}</b><div class="muted mini">Classe ${x.induction_year} · Legacy #${x.legacy_rank||"—"}${x.comparison_player_name?" · près de "+esc(x.comparison_player_name):""}</div></div><b>${x.vote_pct!=null?Number(x.vote_pct).toFixed(1)+"%":"—"}</b></div>`).join("")}</div>`:""}
+    ${waiting.length?`<div class="muted micro" style="margin-top:8px">${waiting.length} dossier(s) en attente, éligible(s) ou encore sur le ballot.</div>`:""}
+  </div>`;
+}
 function legacyPlayerHtml(legacyProfile,p){
   const legacy=legacyProfile&&typeof legacyProfile==="object"?legacyProfile:{};
   const all=legacy.all_time||{},stats=legacy.career_stats||{};
@@ -4399,7 +4458,7 @@ window.openPlayer=async id=>{
  try{
   const managedContextId=activeManagedId()||primaryManagedPlayerId()||0;
   const d=await get('/api/player?id='+id+'&managed_context_player_id='+encodeURIComponent(managedContextId)),p=d.player;if(!p)throw new Error('Joueur introuvable');
-  const a=p.player_attributes||{},dev=d.developmentProfile||{},devHistory=d.developmentHistory||[],devTraitHistory=d.developmentTraitHistory||[],psych=d.psychologyState||{},hiddenTraitHistory=d.hiddenTraitHistory||[],roleFit=d.roleSuitability||null,attributeCeilings=d.attributeCeilings?.ceilings||{},attributeTrend=d.attributeTrend||null,mentorship=d.mentorship||{},mentor=mentorship.mentor||null,mentees=mentorship.mentees||[],mentorshipEvents=mentorship.events||[],advanced=d.advancedMetrics||{},elo=d.eloRating||{},dynamicRatings=d.dynamicRatings||{},surfacePref=d.surfacePreference||{},contextProfile=d.contextProfile||{},h2hManaged=d.h2hWithManaged||null,matchupPreviews=d.matchupPreviews||{},styleHistory=d.styleHistory||[],tacticalProfile=d.tacticalProfile||{},tacticalTraits=d.tacticalTraits||[],seasonPlan=d.seasonPlan||null,trainingLoad=d.trainingLoad||null,scoutReport=d.scoutingReport||null,isManaged=managedSquadIds().includes(Number(p.id)),knownContext=isManaged?contextProfile:(scoutReport?.context_estimates||{}),ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[],primaryDoubles=d.primaryDoublesCommitment||null,doublesPartnerHistory=d.doublesPartnerHistory||[],legacyProfile=d.legacyProfile||{};
+  const a=p.player_attributes||{},dev=d.developmentProfile||{},devHistory=d.developmentHistory||[],devTraitHistory=d.developmentTraitHistory||[],psych=d.psychologyState||{},hiddenTraitHistory=d.hiddenTraitHistory||[],roleFit=d.roleSuitability||null,attributeCeilings=d.attributeCeilings?.ceilings||{},attributeTrend=d.attributeTrend||null,mentorship=d.mentorship||{},mentor=mentorship.mentor||null,mentees=mentorship.mentees||[],mentorshipEvents=mentorship.events||[],advanced=d.advancedMetrics||{},elo=d.eloRating||{},dynamicRatings=d.dynamicRatings||{},surfacePref=d.surfacePreference||{},contextProfile=d.contextProfile||{},h2hManaged=d.h2hWithManaged||null,matchupPreviews=d.matchupPreviews||{},styleHistory=d.styleHistory||[],tacticalProfile=d.tacticalProfile||{},tacticalTraits=d.tacticalTraits||[],seasonPlan=d.seasonPlan||null,trainingLoad=d.trainingLoad||null,scoutReport=d.scoutingReport||null,isManaged=managedSquadIds().includes(Number(p.id)),knownContext=isManaged?contextProfile:(scoutReport?.context_estimates||{}),ncaaRows=d.ncaa||[],ncaaCareer=d.ncaaCareer||null,legend=d.legend||null,playerStaff=d.staff||[],playerStaffHistory=d.staffHistory||[],playerStaffBonds=d.staffBonds||[],relationships=d.relationships||[],agencyRepresentation=d.agencyRepresentation||null,agencyHistory=d.agencyHistory||[],careerFocusHistory=d.careerFocusHistory||[],primaryDoubles=d.primaryDoublesCommitment||null,doublesPartnerHistory=d.doublesPartnerHistory||[],legacyProfile=d.legacyProfile||{},hallOfFame=d.hallOfFame||null;
   const attrKnowledge=isManaged?{values:a,ranges:{},confidence:100,source:'managed'}:publicAttributeKnowledge(p,a,scoutReport);
   const knownAttrs=attrKnowledge.values||{},attrRanges=attrKnowledge.ranges||{};
   const attrDisplayValue=key=>isManaged?(knownAttrs[key]??'?'):(attrRanges[key]?attrRanges[key].min+'–'+attrRanges[key].max:(knownAttrs[key]??'?'));
@@ -4757,7 +4816,7 @@ ${isManaged&&attributeTrend?`<div class="card"><div class="row between"><div><di
       ${(d.historicalSeasons||[]).length?`<div class="table-wrap"><table class="table"><thead><tr><th>Saison</th><th>Rang</th><th>Titres</th><th>GC</th><th>Masters</th><th>Finals</th><th>Score saison</th><th>Source</th></tr></thead><tbody>${d.historicalSeasons.map(y=>{const score=weightedSeason(y);const best=Number(y.season)===Number(p.best_season_year||bestHistoricalSeason?.season);return `<tr ${best?'style="background:rgba(92,222,145,.08)"':''}><td class="rank-num">${y.season}${best?' <span class="badge good">BEST</span>':''}</td><td>${y.best_rank?'#'+fmt(y.best_rank):'—'}</td><td>${y.titles==null?'—':y.titles}</td><td><b>${y.grand_slams||0}</b></td><td>${y.masters||0}</td><td>${y.tour_finals||0}</td><td><b>${fmt(score)}</b></td><td class="muted mini">${esc(y.source_label||'Archive')}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">Pas encore de découpage annuel disponible.</div>'}
     </div>
    </template>
-   <template id="legacyTpl">${legacyPlayerHtml(legacyProfile,p)}</template>
+   <template id="legacyTpl">${hofPlayerHtml(hallOfFame,p)}${legacyPlayerHtml(legacyProfile,p)}</template>
    <template id="commercialTpl"><div class="card"><h2>Sponsors vérifiés</h2>${d.sponsors.filter(s=>s.verified).length?d.sponsors.filter(s=>s.verified).map(s=>`<span class="badge good" style="margin:4px">${esc(s.sponsor)}</span>`).join(''):'<div class="empty">Non vérifié</div>'}<p class="muted mini" style="margin-top:10px">Aucune marque n'est inventée quand la donnée n'est pas vérifiée.</p></div></template>
    <template id="historyTpl"><div class="card"><div class="row between"><div><div class="eyebrow">Records classement</div><h2>Historique ATP</h2></div><span class="badge">au 01/12/2025</span></div><div class="kpi-strip" style="margin-top:10px"><div class="kpi"><span class="muted mini">Meilleur simple</span><b>${p.career_high_rank?'#'+fmt(p.career_high_rank):'—'}</b><small class="muted micro">${p.career_high_rank_date?df(p.career_high_rank_date):''}</small></div><div class="kpi"><span class="muted mini">Meilleur double</span><b>${p.career_high_doubles_rank?'#'+fmt(p.career_high_doubles_rank):'—'}</b><small class="muted micro">${p.career_high_doubles_source?esc(p.career_high_doubles_source):''}</small></div><div class="kpi"><span class="muted mini">Meilleure saison</span><b>${p.best_season_year||bestHistoricalSeason?.season||'—'}</b><small class="muted micro">${p.best_season_summary?esc(p.best_season_summary):''}</small></div><div class="kpi"><span class="muted mini">Semaines n°1</span><b>${fmt(p.weeks_at_no1||0)}</b></div></div><div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted mini">Semaines Top 10</span><b>${fmt(p.weeks_top10||0)}</b></div><div class="kpi"><span class="muted mini">Semaines Top 100</span><b>${fmt(p.weeks_top100||0)}</b></div><div class="kpi"><span class="muted mini">Titres</span><b>${titleCount}</b></div><div class="kpi"><span class="muted mini">Grand Chelem</span><b>${slamCount}</b></div></div><div class="muted micro" style="margin-top:8px">${esc(p.ranking_history_source||'Archive ATP')} · ${fmt(p.ranking_history_weeks||0)} semaines indexées.</div></div><div class="card" style="margin-top:12px"><h2>Snapshots de la sauvegarde</h2>${d.history.length?d.history.map(h=>`<div class="list-item row between"><span>${df(h.snapshot_date)}</span><b>#${h.ranking} · ${fmt(h.points)} pts</b></div>`).join(''):'<div class="empty">Pas encore assez de snapshots dans la sauvegarde.</div>'}</div></template>
   </div></div>`;

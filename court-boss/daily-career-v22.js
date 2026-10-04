@@ -467,6 +467,14 @@
       }else if(primaryRecovery&&Number(primaryRecovery.post_match_debt_before||0)>0){
         local.feed.unshift('Récupération post-match · fatigue '+Number(primaryRecovery.fatigue_before||0)+'→'+Number(primaryRecovery.fatigue_after||0)+' · dette '+Number(primaryRecovery.post_match_debt_before||0).toFixed(1)+'→'+Number(primaryRecovery.post_match_debt_after||0).toFixed(1)+'.');
       }
+      if(primaryRecovery&&primaryRecovery.sleep_hours!=null){
+        const sleepH=Number(primaryRecovery.sleep_hours||0).toFixed(1);
+        const sleepQ=Math.round(Number(primaryRecovery.sleep_quality||0));
+        const jet=Number(primaryRecovery.jet_lag_after||0);
+        local.feed.unshift('Sommeil · '+sleepH+' h · qualité '+sleepQ+'/100'
+          +(jet>=1?' · jet lag '+jet.toFixed(1)+' h':'')
+          +(sleepQ<50?' · repos fortement conseillé':sleepQ<70?' · récupération conseillée':'')+'.');
+      }
       if(primaryReport?.automatic_medical_restriction)local.feed.unshift('Staff médical : entraînement remplacé par récupération / repos pour protéger le joueur.');
       if(primaryReport?.training_niggle)local.feed.unshift('Alerte entraînement : '+primaryReport.player_name+' termine la journée avec une gêne musculaire.');
       if((primaryReport?.improvements||[]).length){
@@ -559,9 +567,16 @@
     const exactLine=pending?.world_match_reserved
       ?'<span class="badge good">Tableau verrouillé · match #'+Number(pending.world_match_id||0)+'</span>'
       :'<span class="badge">Réservation du tableau au lancement</span>';
+    const pendingSchedule=pending?.schedule||{};
+    const intradayLine=pending
+      ?'<span class="badge good">Heure locale · '+esc(String(pendingSchedule.match_time||'à confirmer'))+'</span>'
+        +(Number(pendingSchedule.rest_hours_before||0)>0
+          ?'<span class="badge">Repos avant match · '+Number(pendingSchedule.rest_hours_before).toFixed(1)+' h</span>':'')
+        +(pendingSchedule.night_session?'<span class="badge warn">Session de nuit</span>':'')
+      :'';
     overlay.innerHTML='<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet tournament-play-mode">'
       +'<div class="sheet-head"><div><div class="eyebrow">Journée de tournoi · '+df(current)+'</div><h1>'+esc(t.name||pending?.tournament_name||'Tournoi')+'</h1><div class="muted">'+(pending?esc(String(pending.round||'Match'))+' · '+(isDoubles?'Double':'Simple')+' · ':'')+'Le Match Center reprend exactement la case du tableau mondial.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>'
-      +'<div class="row" style="gap:7px;flex-wrap:wrap;margin:10px 0">'+exactLine+'</div>'
+      +'<div class="row" style="gap:7px;flex-wrap:wrap;margin:10px 0">'+exactLine+intradayLine+'</div>'
       +'<div class="match-mode-grid">'
       +'<button class="match-mode-card live" onclick="'+playAction+'('+Number(id)+',false)"><span>JOUER</span><b>Match du jour</b><small>Match Center point par point. L’adversaire'+(isDoubles?' / la paire adverse':'')+' vient du tableau réservé.</small></button>'
       +'<button class="match-mode-card quick" onclick="'+playAction+'('+Number(id)+',true)"><span>SIMULER</span><b>Simuler le match du jour</b><small>Simule uniquement cette rencontre avec la même case de tableau, jamais tout le tournoi.</small></button>'
@@ -576,6 +591,52 @@
     if(typeof startTournamentLiveDoubles==='function')return startTournamentLiveDoubles(Number(id),true);
     alert('Le double avance lui aussi jour par jour. Ouvre le Match Center double pour la rencontre du jour.');
   };
+
+  function intradayCalendarCardV26(){
+    const date=String(local.date||career()?.career_date||'2025-12-01');
+    const activeId=Number(activeManagedId()||primaryId()||0);
+    const day=(local.lastDailyTrainingReport&&String(local.lastDailyTrainingReport.date||'')===date)
+      ?local.lastDailyTrainingReport:null;
+    const report=(day?.training||[]).find(x=>Number(x.player_id||0)===activeId)||(day?.training||[])[0]||null;
+    const recovery=report?.recovery||null;
+    const pending=(local.pendingManagedMatch&&String(local.pendingManagedMatch.match_date||'')===date)
+      ?local.pendingManagedMatch:null;
+    const intra=report?.intraday||{};
+    const schedule=pending?.schedule||intra||{};
+    const idx=Math.max(0,Math.min(6,isoDow(date)-1));
+    const fallback=dailyPlan(activeId)[idx]||{morning:'Repos',afternoon:'Repos',intensity:'Léger'};
+    const matchMinute=Number(schedule.match_minute??report?.match_minute??0);
+    let morning=String(intra.morning||report?.morning||fallback.morning||'Repos');
+    let afternoon=String(intra.afternoon||report?.afternoon||fallback.afternoon||'Repos');
+    let evening=String(intra.evening||report?.evening||(pending?'Match':'Libre'));
+    if(pending&&!report){
+      if(matchMinute&&matchMinute<780){morning='Échauffement';afternoon='Récupération';evening='Repos'}
+      else if(matchMinute&&matchMinute<1080){if(['Endurance','Match play','Déplacements'].includes(morning))morning='Récupération';afternoon='Échauffement';evening='Récupération'}
+      else if(matchMinute){if(['Endurance','Match play','Déplacements'].includes(morning))morning='Service';afternoon='Récupération';evening='Match'}
+    }
+    const matchTime=String(schedule.match_time||report?.match_time||'');
+    const sleepH=recovery?.sleep_hours!=null?Number(recovery.sleep_hours):null;
+    const sleepQ=recovery?.sleep_quality!=null?Number(recovery.sleep_quality):null;
+    const jet=recovery?.jet_lag_after!=null?Number(recovery.jet_lag_after):0;
+    const rest=Number(schedule.rest_hours_before||0);
+    const sleepBadge=sleepH==null
+      ?'<span class="badge">Sommeil · en attente</span>'
+      :'<span class="badge '+(sleepQ<50?'bad':sleepQ<70?'warn':'good')+'">Sommeil · '+sleepH.toFixed(1)+' h · '+Math.round(sleepQ)+'/100</span>';
+    const matchBadge=pending
+      ?'<span class="badge good">'+esc(String(pending.discipline||'singles')==='doubles'?'Double':'Simple')+' · '+esc(String(pending.round||''))+' · '+esc(matchTime||'heure à confirmer')+'</span>'
+      :'<span class="badge">Pas de match aujourd’hui</span>';
+    return '<section class="card intraday-card"><div class="row between intraday-head"><div><div class="eyebrow">Journée · '+df(date)+'</div><h2>Agenda intra-journée</h2></div><div class="row intraday-badges">'+matchBadge+sleepBadge+(jet>=1?'<span class="badge warn">Jet lag · '+jet.toFixed(1)+' h</span>':'')+(rest>0?'<span class="badge">Repos · '+rest.toFixed(1)+' h</span>':'')+'</div></div>'
+      +'<div class="intraday-grid">'
+      +'<div class="intraday-slot"><span>08:30 · Matin</span><b>'+esc(morning)+'</b><small>'+((intra.cancelled||[]).some(x=>x.slot==='morning')?'Séance adaptée automatiquement':'Plan manager')+'</small></div>'
+      +'<div class="intraday-slot"><span>14:30 · Après-midi</span><b>'+esc(afternoon)+'</b><small>'+(pending&&matchMinute<1080?'Fenêtre match / préparation':'Charge contrôlée')+'</small></div>'
+      +'<div class="intraday-slot '+(pending?'match-slot':'')+'"><span>'+(pending&&matchTime?esc(matchTime)+' · Match':'19:30 · Soirée')+'</span><b>'+esc(evening)+'</b><small>'+(pending?(schedule.night_session?'Session de nuit · récupération décalée':'Horaire officiel de la journée'):'Repos, média ou temps libre')+'</small></div>'
+      +'</div></section>';
+  }
+
+  if(typeof calendar==='function'){
+    const baseCalendarV26=calendar;
+    calendar=function(){return intradayCalendarCardV26()+baseCalendarV26()};
+  }
 
   const baseContinueCareer=window.continueCareer;
   window.continueCareer=async function(){

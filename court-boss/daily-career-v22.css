@@ -25,3 +25,19 @@
   .daily-template-row{display:grid;grid-template-columns:1fr 1fr}
   .daily-template-row .soft-btn{width:100%}
 }
+
+
+/* V26 · FM-style intraday agenda */
+.intraday-card{margin-bottom:12px}
+.intraday-head{align-items:flex-start;gap:12px;flex-wrap:wrap}
+.intraday-badges{gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.intraday-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px}
+.intraday-slot{min-width:0;border:1px solid var(--line);border-radius:13px;padding:11px;background:rgba(255,255,255,.02);display:flex;flex-direction:column;gap:5px}
+.intraday-slot span{font-size:11px;color:var(--muted);font-weight:800}
+.intraday-slot b{font-size:15px}
+.intraday-slot small{font-size:10px;color:var(--muted)}
+.intraday-slot.match-slot{border-color:var(--line2);background:rgba(183,255,67,.055)}
+@media(max-width:720px){
+  .intraday-grid{grid-template-columns:1fr}
+  .intraday-badges{justify-content:flex-start}
+}

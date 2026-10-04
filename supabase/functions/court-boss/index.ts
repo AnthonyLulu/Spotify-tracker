@@ -5899,7 +5899,14 @@ Deno.serve(async(req:Request)=>{
     const difficulty=["discovery","normal","manager","hardcore"].includes(String(body?.difficulty||"normal"))
       ?String(body?.difficulty||"normal")
       :"normal";
-    const tick=await db.rpc("advance_career_day_v22",{p_today_plan:plan,p_difficulty:difficulty});
+    const expectedFromDate=/^\\d{4}-\\d{2}-\\d{2}$/.test(String(body?.expected_from_date||""))
+      ?String(body.expected_from_date)
+      :null;
+    const tick=await db.rpc("advance_career_day_v25",{
+      p_today_plan:plan,
+      p_difficulty:difficulty,
+      p_expected_from_date:expectedFromDate
+    });
     if(tick.error)return h({error:tick.error.message},500);
     const data:any=tick.data||{};
     if(data?.requires_rollover)return h(data);

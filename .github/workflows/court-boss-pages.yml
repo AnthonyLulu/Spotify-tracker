@@ -83,7 +83,7 @@ jobs:
           curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/daily-career-v22.js
           curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/daily-career-v22.css
           curl --fail --silent --show-error "$BASE/play.html" -o /tmp/play.html
-          grep -q 'app.js?v=20261004-visual-assets-v32' /tmp/play.html
+          grep -q 'app.js?v=20261004-visual-assets-v33' /tmp/play.html
           grep -q 'records-v1.js?v=20261004-records-v9' /tmp/play.html
           curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
           grep -q 'records-v1.js?v=20261004-records-v9' /tmp/index.html

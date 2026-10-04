@@ -177,6 +177,7 @@ jobs:
             page.on('console',m=>{ if(m.type()==='error') pageErrors.push('console: '+m.text()); });
             page.on('requestfailed',r=>pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||'')));
             page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
+            page.on('dialog',async d=>{ pageErrors.push('dialog: '+d.message()); await d.dismiss(); });
 
             await page.goto(process.env.BASE+'/',{waitUntil:'domcontentloaded',timeout:60000});
             try{
@@ -281,7 +282,7 @@ jobs:
                 win_probability:50
               })
             }));
-            await page.route('**/api/live-match/point',route=>route.fulfill({
+            await page.route('**/api/live-match/point**',route=>route.fulfill({
               status:200,contentType:'application/json',
               body:JSON.stringify({
                 session:{id:999999,status:'active',surface:'Dur',user_sets:0,opponent_sets:0,set_no:1,user_games:0,opponent_games:0,user_points:1,opponent_points:0,serving_user:true,momentum:51,stats:{user_winners:1},score_log:[],last_point:{winner:'user',rally:6,shot:'winner',user_x:62,opp_x:31,ball_x:28,ball_y:24}},
@@ -296,9 +297,10 @@ jobs:
             if(await page.locator('.fm-ball').count()!==1)throw new Error('match viewer needs one ball');
             const liveToggle=page.locator('.cb-speed-row button').first();
             await liveToggle.waitFor();
-            if(/Auto/.test(await liveToggle.innerText()))await liveToggle.click();
-            await page.getByText('6 coups').waitFor({timeout:10000});
             if(/Pause/.test(await liveToggle.innerText()))await liveToggle.click();
+            await page.evaluate(async()=>{ await window.playLivePoint(); });
+            await page.waitForFunction(()=>Number(local.liveMatch?.last_point?.rally||0)===6,null,{timeout:10000});
+            await page.locator('.cb-rally').filter({hasText:'6 coups'}).waitFor({timeout:10000});
 
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
             console.log('mobile browser smoke: OK');

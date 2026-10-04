@@ -11139,6 +11139,13 @@ Deno.serve(async(req:Request)=>{
       schedule:doublesSchedule,round,career_date:careerDate,discipline:"doubles"
     },409);
 
+    let doublesReservation:any=null;
+    if(managedEntry.data){
+      const reserve=await db.rpc("reserve_managed_doubles_live_matches_v22",{p_date:careerDate});
+      if(reserve.error)return h({error:"Réservation du tableau double impossible : "+reserve.error.message},500);
+      doublesReservation=reserve.data||null;
+    }
+
     let worldMatch:any=null,opponentPairId=0,opponentSource="world_pool";
     const exact=await db.from("world_doubles_tournament_matches").select("*")
       .eq("tournament_id",tournamentId).is("winner_pair_id",null)
@@ -11150,6 +11157,19 @@ Deno.serve(async(req:Request)=>{
       if(candidate&&!facedPairIds.has(candidate)){
         worldMatch=exact.data;opponentPairId=candidate;opponentSource="world_draw";
       }
+    }
+
+    if(!opponentPairId&&managedEntry.data){
+      return h({
+        error:"Le Match Center double ne peut pas inventer une paire différente du tableau mondial.",
+        bracket_mismatch_guard:true,
+        discipline:"doubles",
+        tournament_id:tournamentId,
+        player_id:playerId,
+        partner_id:partnerId,
+        user_pair_id:userWorldPairId,
+        reservation:doublesReservation
+      },409);
     }
 
     if(!opponentPairId){

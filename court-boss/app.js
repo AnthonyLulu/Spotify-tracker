@@ -536,7 +536,6 @@ function cbMediaUrl(raw){
   const proxiedHosts=[
    'atptour.com','www.atptour.com',
    'assets.stickpng.com',
-   'commons.wikimedia.org','upload.wikimedia.org','thumb.wikimedia.org','en.wikipedia.org',
    'static.cdnlogo.com','static.hkmenstennisopen.com','trouverlogo.fr',
    'brisbaneinternational.com.au','www.brisbaneinternational.com.au',
    'tennis.kiwi','tennis.com.au','www.tennis.com.au',

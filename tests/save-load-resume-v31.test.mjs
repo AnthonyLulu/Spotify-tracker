@@ -76,3 +76,11 @@ test('match effects and recovery debt are exactly-once per live session',()=>{
   assert.match(recoveryGuards,/'already_applied',true/);
   assert.match(recoveryGuards,/insert into public\.live_match_effect_commits_v23\(session_id,effect,payload\)/);
 });
+
+
+test('save v8 refuses incomplete timeline snapshots before restore mutations',()=>{
+  assert.match(edge,/Timeline snapshot failed/);
+  assert.match(edge,/Incomplete V8 timeline snapshot/);
+  assert.match(edge,/requiredTimelineArrays/);
+  assert.match(edge,/managed_timeline_v8/);
+});

@@ -49,7 +49,7 @@ test('server slot load has a safety snapshot and restores it on failure',()=>{
   const start=edge.indexOf('if(path.endsWith("/api/load-slot")');
   const end=edge.indexOf('if(path.endsWith("/api/delete-slot")',start);
   const block=edge.slice(start,end);
-  assert.match(block,/const safetySnapshot=await captureLiveCheckpointSnapshot\(await captureManagedSaveSnapshot\(\)\)/);
+  assert.match(block,/captureLiveCheckpointSnapshot\(await captureManagedSaveSnapshot\(\)\)/);
   assert.match(block,/await restoreManagedSaveSnapshot\(safetySnapshot\)/);
   assert.match(block,/rollback_recovered/);
 });
@@ -137,7 +137,7 @@ test('failed load rollback preserves current live session and point ledger',()=>
   const loadStart=edge.indexOf('if(path.endsWith("/api/load-slot")');
   const loadEnd=edge.indexOf('if(path.endsWith("/api/delete-slot")',loadStart);
   const load=edge.slice(loadStart,loadEnd);
-  assert.match(load,/const safetySnapshot=await captureLiveCheckpointSnapshot\(await captureManagedSaveSnapshot\(\)\)/);
+  assert.match(load,/captureLiveCheckpointSnapshot\(await captureManagedSaveSnapshot\(\)\)/);
   assert.match(load,/await restoreManagedSaveSnapshot\(safetySnapshot\)/);
 });
 

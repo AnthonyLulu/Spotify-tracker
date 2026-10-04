@@ -11106,17 +11106,21 @@ Deno.serve(async(req:Request)=>{
     const roundIndex=Math.min(tournamentWins,rounds.length-1);
     const round=String(rounds[roundIndex]||"F");
     if(tournamentWins>=rounds.length)return h({error:"Cette paire a déjà remporté le tournoi.",champion:true},409);
-    const doublesStart=String(tour.data.main_draw_start_date||tour.data.start_date||careerDate).slice(0,10);
-    const doublesEnd=String(tour.data.end_date||doublesStart).slice(0,10);
-    const doublesSpan=Math.max(0,liveIsoDayDiff(doublesStart,doublesEnd));
-    const doublesScheduled=liveIsoAddDays(
-      doublesStart,
-      rounds.length<=1?0:Math.round(roundIndex*doublesSpan/Math.max(1,rounds.length-1))
-    );
+    const doublesScheduleRes=await db.rpc("managed_tournament_match_date_v22",{
+      p_tournament_id:tournamentId,
+      p_player_id:playerId,
+      p_round_code:round,
+      p_phase:"main",
+      p_event_type:"doubles"
+    });
+    if(doublesScheduleRes.error)return h({error:"Calendrier du double indisponible : "+doublesScheduleRes.error.message},500);
+    const doublesSchedule:any=doublesScheduleRes.data||null;
+    const doublesScheduled=String(doublesSchedule?.match_date||careerDate).slice(0,10);
     if(careerDate<doublesScheduled)return h({
-      error:"Le prochain match de double n’est pas encore au programme aujourd’hui.",
-      not_due:true,tournament_id:tournamentId,scheduled_date:doublesScheduled,
-      round,career_date:careerDate,discipline:"doubles"
+      error:"Le prochain match de double est prévu le "+doublesScheduled+".",
+      too_early:true,not_due:true,tournament_id:tournamentId,
+      scheduled_date:doublesScheduled,next_match_date:doublesScheduled,
+      schedule:doublesSchedule,round,career_date:careerDate,discipline:"doubles"
     },409);
 
     let worldMatch:any=null,opponentPairId=0,opponentSource="world_pool";
@@ -11261,6 +11265,8 @@ Deno.serve(async(req:Request)=>{
 
     const environment=buildLiveMatchEnvironment(tour.data,managed,oppA,careerDate,surface,"main");
     environment.match_type="doubles";
+    environment.tournament_schedule=doublesSchedule;
+    environment.scheduled_match_date=doublesScheduled;
     environment.no_ad=true;environment.no_ad_rule="atp_doubles";
     environment.match_tiebreak_decider=true;environment.match_tiebreak_points=10;
     environment.sets_to_win=2;environment.best_of=3;

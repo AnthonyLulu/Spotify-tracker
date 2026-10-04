@@ -13535,20 +13535,34 @@ Deno.serve(async(req:Request)=>{
     if(worldMatchId){
       const wr=await db.from("world_doubles_tournament_matches").select("*").eq("id",worldMatchId).maybeSingle();
       if(wr.error)return h({error:wr.error.message},500);
-      if(wr.data){
-        const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
-        const winnerPairId=won?userPairId:oppPairId,loserPairId=won?oppPairId:userPairId;
-        const worldScore=Number(wr.data.pair_a_id)===userPairId?score:liveInvertTennisScore(score);
-        const wu=await db.from("world_doubles_tournament_matches").update({
-          winner_pair_id:winnerPairId,loser_pair_id:loserPairId,score:worldScore,
-          pair_a_win_probability:Number(wr.data.pair_a_id)===userPairId?Number(dmeta.baseline_probability||.5):1-Number(dmeta.baseline_probability||.5),
-          model_version:"CB-LIVE-DOUBLES-v1",
-          matchup_components:{...(wr.data.matchup_components||{}),status:"completed",source:"managed_live",live_session_id:id,
-            pair_model:dmeta.pair_model||null,elo_probability:dmeta.elo_probability||null,tactics:session.data.tactics||{}},
-          simulated_on:String(wr.data.simulated_on||matchDate)
-        }).eq("id",worldMatchId);
-        worldProgress=wu.error?{ok:false,error:wu.error.message}:{ok:true,world_match_id:worldMatchId};
+      if(!wr.data)return h({error:"Match double du tableau mondial introuvable.",world_match_id:worldMatchId},500);
+      const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
+      const pairA=Number(wr.data.pair_a_id||0),pairB=Number(wr.data.pair_b_id||0);
+      if(Number(wr.data.tournament_id||0)!==tournamentId
+         || !((pairA===userPairId&&pairB===oppPairId)||(pairB===userPairId&&pairA===oppPairId))){
+        return h({
+          error:"Le match double live ne correspond plus à la case du tableau mondial.",
+          world_match_id:worldMatchId,bracket_mismatch_guard:true,discipline:"doubles"
+        },409);
       }
+      const winnerPairId=won?userPairId:oppPairId,loserPairId=won?oppPairId:userPairId;
+      if(Number(wr.data.winner_pair_id||0)>0&&Number(wr.data.winner_pair_id)!==winnerPairId){
+        return h({
+          error:"Cette case du tableau double possède déjà un autre résultat.",
+          world_match_id:worldMatchId,bracket_mismatch_guard:true,discipline:"doubles"
+        },409);
+      }
+      const worldScore=pairA===userPairId?score:liveInvertTennisScore(score);
+      const wu=await db.from("world_doubles_tournament_matches").update({
+        winner_pair_id:winnerPairId,loser_pair_id:loserPairId,score:worldScore,
+        pair_a_win_probability:pairA===userPairId?Number(dmeta.baseline_probability||.5):1-Number(dmeta.baseline_probability||.5),
+        model_version:"CB-LIVE-DOUBLES-v22",
+        matchup_components:{...(wr.data.matchup_components||{}),status:"completed",source:"managed_live",live_session_id:id,
+          pair_model:dmeta.pair_model||null,elo_probability:dmeta.elo_probability||null,tactics:session.data.tactics||{}},
+        simulated_on:String(wr.data.simulated_on||matchDate)
+      }).eq("id",worldMatchId);
+      if(wu.error)return h({error:wu.error.message},500);
+      worldProgress={ok:true,world_match_id:worldMatchId};
     }
 
     const tournamentTerminal=!won||round==="F";

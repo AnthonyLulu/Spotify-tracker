@@ -2875,6 +2875,7 @@ window.startTournamentLiveMatch=async(id,quick=false,medicalDecision=null)=>{
   else startLiveAutoFlow(820);
  }catch(e){
    if(e?.data?.injured&&e.data.can_play_hurt&&!medicalDecision&&typeof openMedicalPlayDecisionV15==='function')return openMedicalPlayDecisionV15('live-tournament',Number(id),quick,e.data);
+   if(e?.data?.not_due&&e.data.scheduled_date)return alert('Prochain match '+(e.data.round||'')+' le '+df(e.data.scheduled_date)+'. Continue la carrière jour par jour jusque-là.');
    alert(e.message)
  }
 };
@@ -2894,7 +2895,10 @@ window.startTournamentLiveDoubles=async(id,quick=false)=>{
   route='match';persist();render();
   if(quick)await simulateLiveMatch();
   else startLiveAutoFlow(820);
- }catch(e){alert(e.message)}
+ }catch(e){
+   if(e?.data?.not_due&&e.data.scheduled_date)return alert('Prochain match de double '+(e.data.round||'')+' le '+df(e.data.scheduled_date)+'. Continue la carrière jour par jour jusque-là.');
+   alert(e.message)
+ }
 };
 window.saveLiveCheckpoint=async()=>{
  if(!local.liveMatch)return;

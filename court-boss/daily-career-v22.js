@@ -468,6 +468,36 @@
     };
   }
 
+  // Daily tournament UX: a tournament is no longer a one-click block.
+  // Only the match scheduled for the current career date can be played or quick-simmed.
+  window.openTournamentPlayMode=function(id){
+    const t=(tourRows||[]).find(x=>Number(x.id)===Number(id))||{};
+    const current=String(local.date||career()?.career_date||'');
+    overlay.innerHTML='<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet tournament-play-mode">'
+      +'<div class="sheet-head"><div><div class="eyebrow">Journée de tournoi · '+df(current)+'</div><h1>'+esc(t.name||'Tournoi')+'</h1><div class="muted">Le tournoi avance tour par tour. Tu ne peux jouer que la rencontre prévue à la date actuelle.</div></div><button class="close" onclick="closeOverlay()">✕</button></div>'
+      +'<div class="match-mode-grid">'
+      +'<button class="match-mode-card live" onclick="startTournamentLiveMatch('+Number(id)+',false)"><span>JOUER</span><b>Match du jour</b><small>Match Center point par point. Si le prochain tour est futur, le serveur t’indique sa date exacte.</small></button>'
+      +'<button class="match-mode-card quick" onclick="startTournamentLiveMatch('+Number(id)+',true)"><span>SIMULER</span><b>Simuler le match du jour</b><small>Simule uniquement cette rencontre, jamais tout le tournoi.</small></button>'
+      +'</div><div class="notice" style="margin-top:12px"><b>Mode carrière quotidien</b> · après le match, valide le résultat puis utilise Continuer pour passer au lendemain. Les jours off restent de vraies journées de récupération, voyage ou entraînement.</div>'
+      +'</div></div>';
+  };
+
+  window.playTournament=async function(){
+    alert('La simulation complète du tournoi est désactivée en mode quotidien. Joue ou simule uniquement le match du jour.');
+  };
+
+  const baseContinueCareer=window.continueCareer;
+  window.continueCareer=async function(){
+    const last=local.lastDailyTrainingReport||null;
+    if(last&&String(last.date||'')===String(local.date||'')&&Number(last.pending_matches||0)>0){
+      alert('Un match de ton groupe est à jouer aujourd’hui. Termine-le avant de passer au lendemain.');
+      nav('calendar');
+      return;
+    }
+    return baseContinueCareer();
+  };
+  window.simulateWeek=window.continueCareer;
+
   ensureDailyTraining();
   persist();
 })();

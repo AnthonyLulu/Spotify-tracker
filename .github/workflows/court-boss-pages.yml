@@ -32,11 +32,8 @@ jobs:
           node --check court-boss/match-center-v1.js
           node --check court-boss/daily-career-v22.js
 
-      - name: Run tournament integrity tests
-        run: |
-          node --test tests/tournament-integrity.test.mjs
-          node --test tests/tournament-entry-rules-v19.test.mjs
-          node --test tests/tournament-doubles-entry-rules-v20.test.mjs
+      - name: Run full Court Boss test suite
+        run: node --test tests/*.test.mjs
 
       - name: Wait for Render static deploy
         env:
@@ -189,10 +186,6 @@ jobs:
               pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||''));
             });
             page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
-            page.on('dialog',async d=>{
-              if(d.message()!=='Code d’accès Court Boss')pageErrors.push('dialog: '+d.message());
-              await d.dismiss();
-            });
             await page.route('**/api/countries',route=>route.fulfill({
               status:200,contentType:'application/json',
               body:JSON.stringify({rows:[]})

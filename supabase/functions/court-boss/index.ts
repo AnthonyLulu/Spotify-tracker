@@ -14150,7 +14150,25 @@ Deno.serve(async(req:Request)=>{
       medicalWrite=medical.data;
     }
 
+    if(String(session.data.status||"")==="finished"){
+      const completionMark=await db.from("live_match_sessions")
+        .update({status:"completed",updated_at:new Date().toISOString()})
+        .eq("id",id).eq("status","finished");
+      if(completionMark.error){
+        return h({
+          error:completionMark.error.message||"Impossible de figer le match comme terminé avant analytics.",
+          analytics_commit_guard:true,session_id:id,retry_safe:true
+        },500);
+      }
+    }
+
     const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});
+    if(learned.error||learned.data?.ok===false){
+      return h({
+        error:learned.error?.message||learned.data?.reason||learned.data?.error||"Finalisation analytics impossible.",
+        analytics_commit_guard:true,session_id:id,retry_safe:true
+      },500);
+    }
 
     if(tournamentTerminal){
       const [tour,entry,oldRun]=await Promise.all([

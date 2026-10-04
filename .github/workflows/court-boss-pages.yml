@@ -190,6 +190,10 @@ jobs:
               if(d.message()!=='Code d’accès Court Boss')pageErrors.push('dialog: '+d.message());
               await d.dismiss();
             });
+            await page.route('**/api/countries',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({rows:[]})
+            }));
 
             await page.goto(process.env.BASE+'/',{waitUntil:'domcontentloaded',timeout:60000});
             try{
@@ -274,10 +278,6 @@ jobs:
             await page.getByRole('button',{name:'Match Center'}).click();
             await page.getByRole('heading',{name:'Match Center'}).waitFor();
 
-            await page.route('**/api/countries',route=>route.fulfill({
-              status:200,contentType:'application/json',
-              body:JSON.stringify({rows:[]})
-            }));
             await page.route('**/api/save-slot',route=>route.fulfill({
               status:200,contentType:'application/json',
               body:JSON.stringify({ok:true,slot:{slot_no:0,slot_name:'CI pre-match',career_date:'2025-12-01',week:1,updated_at:'2025-12-01T00:00:00Z'}})

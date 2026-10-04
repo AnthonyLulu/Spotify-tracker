@@ -462,7 +462,7 @@
       if(day.pending_matches>0)local.feed.unshift('Match à jouer : le calendrier s’arrête sur une rencontre de ton groupe.');
       else if(day.pending_decisions>0)local.feed.unshift('Décision manager en attente : le temps s’arrête avant de poursuivre.');
 
-      if(day.weekly_checkpoint_due){
+      if(day.weekly_checkpoint_due&&Number(day.pending_matches||0)===0){
         checkpoint=await get('/api/simulate',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({

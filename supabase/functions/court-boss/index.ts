@@ -1685,6 +1685,40 @@ async function captureManagedSaveSnapshot(){
   };
 }
 
+async function captureLiveCheckpointSnapshot(baseSnapshot:any){
+  const base=baseSnapshot||await captureManagedSaveSnapshot();
+  const livePlayerIds=[...new Set([
+    Number(base.managed_player_id||0),
+    ...((base.managed_players??[]).map((x:any)=>Number(x.id||0)))
+  ].filter(Boolean))];
+  let liveSessions:any[]=[];
+  let liveEvents:any[]=[];
+  let livePointEvents:any[]=[];
+  if(livePlayerIds.length){
+    const live=await db.from("live_match_sessions")
+      .select("*").in("managed_player_id",livePlayerIds)
+      .in("status",["active","finished","completed","committed"]).order("id");
+    if(live.error)throw new Error("Live checkpoint sessions: "+live.error.message);
+    liveSessions=live.data??[];
+    const liveIds=liveSessions.map((x:any)=>Number(x.id)).filter(Boolean);
+    if(liveIds.length){
+      const [events,pointEvents]=await Promise.all([
+        db.from("live_match_events").select("*").in("session_id",liveIds).order("id"),
+        db.from("live_match_point_events").select("*").in("session_id",liveIds).order("id")
+      ]);
+      if(events.error||pointEvents.error)throw new Error("Live checkpoint events: "+(events.error||pointEvents.error)?.message);
+      liveEvents=events.data??[];
+      livePointEvents=pointEvents.data??[];
+    }
+  }
+  return {
+    ...base,checkpoint_kind:"live",
+    live_match_sessions:liveSessions,
+    live_match_events:liveEvents,
+    live_match_point_events:livePointEvents
+  };
+}
+
 async function restoreManagedSaveSnapshot(snapshot:any){
   const storedModel=String(snapshot?.model||"");
   if(!snapshot||!["CB-MANAGED-SAVE-v1","CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6","CB-MANAGED-SAVE-v7","CB-MANAGED-SAVE-v8"].includes(storedModel))throw new Error("Unsupported save snapshot");
@@ -2698,7 +2732,7 @@ Deno.serve(async(req:Request)=>{
       },45000);
     }
   }
-  if(isHealth) return h({ok:true,app:"court-boss-api",version:78,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
+  if(isHealth) return h({ok:true,app:"court-boss-api",version:79,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
   if(path.endsWith("/api/access-check")&&req.method==="POST")return h({ok:true,write_access:true});
   try{
   if((
@@ -17167,35 +17201,7 @@ Deno.serve(async(req:Request)=>{
     // Manual and quick saves are true in-match checkpoints. Autosave remains a
     // pre-match rollback boundary so a ragequit never silently commits live points.
     if(slotType!=="autosave"){
-      const livePlayerIds=[...new Set([
-        Number(baseSnapshot.managed_player_id||0),
-        ...((baseSnapshot.managed_players??[]).map((x:any)=>Number(x.id||0)))
-      ].filter(Boolean))];
-      let liveSessions:any[]=[];
-      let liveEvents:any[]=[];
-      let livePointEvents:any[]=[];
-      if(livePlayerIds.length){
-        const live=await db.from("live_match_sessions")
-          .select("*").in("managed_player_id",livePlayerIds).in("status",["active","finished"]).order("id");
-        if(live.error)return h({error:live.error.message},500);
-        liveSessions=live.data??[];
-        const liveIds=liveSessions.map((x:any)=>Number(x.id)).filter(Boolean);
-        if(liveIds.length){
-          const [events,pointEvents]=await Promise.all([
-            db.from("live_match_events").select("*").in("session_id",liveIds).order("id"),
-            db.from("live_match_point_events").select("*").in("session_id",liveIds).order("id")
-          ]);
-          if(events.error||pointEvents.error)return h({error:(events.error||pointEvents.error)?.message},500);
-          liveEvents=events.data??[];
-          livePointEvents=pointEvents.data??[];
-        }
-      }
-      snapshot={
-        ...baseSnapshot,checkpoint_kind:"live",
-        live_match_sessions:liveSessions,
-        live_match_events:liveEvents,
-        live_match_point_events:livePointEvents
-      };
+      snapshot=await captureLiveCheckpointSnapshot(baseSnapshot);
     }
     const snapshotScope=String(snapshot.model)==="CB-MANAGED-SAVE-v8"?(snapshot.checkpoint_kind==="live"?"managed_timeline_live_v8":"managed_timeline_v8"):String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"managed_squad_live_checkpoint_exact_v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"managed_squad_ledgers_exact_v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"managed_squad_ledger_exact_v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"managed_squad_exact_v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"managed_academy_exact_v3":"managed_world_exact_v2";
     const saveGameVersion=String(snapshot.model)==="CB-MANAGED-SAVE-v8"?"2026.10-career-os-v8":String(snapshot.model)==="CB-MANAGED-SAVE-v7"?"2026.10-career-os-v7":String(snapshot.model)==="CB-MANAGED-SAVE-v6"?"2026.10-career-os-v6":String(snapshot.model)==="CB-MANAGED-SAVE-v5"?"2026.10-career-os-v5":String(snapshot.model)==="CB-MANAGED-SAVE-v4"?"2026.10-career-os-v4":String(snapshot.model)==="CB-MANAGED-SAVE-v3"?"2026.10-career-os-v3":"2026.10-career-os-v2";
@@ -17234,7 +17240,7 @@ Deno.serve(async(req:Request)=>{
     const slot=await db.from("game_save_slots")
       .select("*").eq("browser_key",browserKey).eq("slot_no",slotNo).maybeSingle();
     if(slot.error||!slot.data)return h({error:slot.error?.message||"Sauvegarde introuvable"},404);
-    const safetySnapshot=await captureManagedSaveSnapshot();
+    const safetySnapshot=await captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot());
     let restored:any;
     try{
       restored=await restoreManagedSaveSnapshot(slot.data.managed_snapshot);

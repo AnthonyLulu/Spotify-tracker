@@ -214,6 +214,7 @@
   if(cbBaseHistoryPage){
     historyPage=function(){
       const html=cbBaseHistoryPage();
+      if(html.includes('cb-record-hub'))return html;
       const block=recordHubSection(historyData&&historyData.recordHub);
       const anchor='<div class="fm-record-grid">';
       return html.includes(anchor)?html.replace(anchor,block+anchor):block+html;

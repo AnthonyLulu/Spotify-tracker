@@ -4112,6 +4112,43 @@ Deno.serve(async(req:Request)=>{
     if(!allowed(raw))return new Response("",{status:403,headers:{...cors,"Cache-Control":"no-store"}});
     try{
       let target=raw;
+
+      // Wikimedia Special:Redirect / Special:FilePath links are convenient in
+      // seed data, but a few filenames containing accents can produce flaky
+      // redirects in headless/iOS browsers. Resolve the file through the
+      // Commons API first, then proxy the direct upload.wikimedia.org asset.
+      try{
+        const sourceUrl=new URL(target);
+        if(sourceUrl.hostname.toLowerCase()==="commons.wikimedia.org"
+           && /\/wiki\/Special:(?:Redirect\/file|FilePath)\//i.test(sourceUrl.pathname)){
+          const encodedFile=sourceUrl.pathname.replace(/^.*?\/wiki\/Special:(?:Redirect\/file|FilePath)\//i,"");
+          const fileName=decodeURIComponent(encodedFile);
+          if(fileName){
+            const qs=new URLSearchParams({
+              action:"query",
+              titles:"File:"+fileName,
+              prop:"imageinfo",
+              iiprop:"url|mime",
+              format:"json",
+              origin:"*"
+            });
+            const meta=await fetch("https://commons.wikimedia.org/w/api.php?"+qs.toString(),{
+              headers:{
+                "User-Agent":"CourtBoss/1.0 (+public-media-proxy)",
+                "Accept":"application/json"
+              },
+              signal:AbortSignal.timeout(6000)
+            });
+            if(meta.ok){
+              const payload:any=await meta.json();
+              const page:any=Object.values(payload?.query?.pages||{})[0]||null;
+              const direct=String(page?.imageinfo?.[0]?.url||"").trim();
+              if(direct&&allowed(direct))target=direct;
+            }
+          }
+        }
+      }catch{}
+
       let response:Response|null=null;
       for(let i=0;i<4;i++){
         response=await fetch(target,{
@@ -4145,7 +4182,10 @@ Deno.serve(async(req:Request)=>{
         }
       });
     }catch{
-      return new Response("",{status:502,headers:{...cors,"Cache-Control":"public, max-age=300"}});
+      // Keep the UI visual instead of surfacing a broken-image glyph. This is
+      // only a media fallback, never a data/API fallback.
+      const svg='<svg xmlns="http://www.w3.org/2000/svg" width="160" height="96" viewBox="0 0 160 96"><rect width="160" height="96" rx="14" fill="#10251c"/><circle cx="80" cy="48" r="22" fill="#d7ff47"/><path d="M61 39c10 5 28 5 38 0M61 57c10-5 28-5 38 0" fill="none" stroke="#07110d" stroke-width="3"/></svg>';
+      return new Response(svg,{status:200,headers:{...cors,"Content-Type":"image/svg+xml","Cache-Control":"public, max-age=300"}});
     }
   }
 

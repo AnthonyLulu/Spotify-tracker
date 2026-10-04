@@ -188,3 +188,11 @@ test('ranking history ledgers survive failed-load rollback',()=>{
   assert.match(edge,/upsertMany\("ranking_history",snapshot\.managed_ranking_history_all/);
   assert.match(edge,/upsertMany\("doubles_ranking_history",snapshot\.managed_doubles_ranking_history_all/);
 });
+
+
+test('legacy game_saves mirror is verified during failed-load rollback',()=>{
+  assert.match(edge,/legacySafetyDigest/);
+  assert.match(edge,/legacyRollbackDigest/);
+  assert.match(edge,/Legacy rollback verification mismatch/);
+  assert.match(edge,/rollbackRecovered=rollbackDigest===safetyDigest&&legacyRollbackDigest===legacySafetyDigest/);
+});

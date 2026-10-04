@@ -957,6 +957,8 @@ async function loadHistory(){
  const p=new URLSearchParams({limit:'300'});
  if(historyCountry)p.set('country',historyCountry);
  if(historyContinent)p.set('continent',historyContinent);
+ const pid=Number(activeManagedId?.()||primaryManagedPlayerId?.()||0);
+ if(pid)p.set('player_id',String(pid));
  try{historyData=await get('/api/history-hub?'+p.toString())}catch(e){historyData={rows:[],countryBest:[],continentBest:[],methodology:e.message,coverage:{players:0,countries:0}}}
 }
 async function loadTournaments(){

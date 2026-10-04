@@ -13,6 +13,27 @@ const cors={
 const h=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
 const n=(v:unknown,d:number,min=0,max=5000)=>{const value=v==null||v===""?d:Number(v);return Math.max(min,Math.min(max,Number.isFinite(value)?value:d));};
 const sha256Hex=async(value:string)=>{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,"0")).join("")};
+const canonicalSnapshotValue=(value:any):any=>{
+  if(Array.isArray(value)){
+    const keyed=value.map((item:any)=>{
+      const normalized=canonicalSnapshotValue(item);
+      return {key:JSON.stringify(normalized),value:normalized};
+    });
+    keyed.sort((a:any,b:any)=>a.key.localeCompare(b.key));
+    return keyed.map((x:any)=>x.value);
+  }
+  if(value&&typeof value==="object"){
+    const out:any={};
+    for(const key of Object.keys(value).sort())out[key]=canonicalSnapshotValue(value[key]);
+    return out;
+  }
+  return value;
+};
+const snapshotRollbackDigest=async(snapshot:any)=>{
+  const root=snapshot&&typeof snapshot==="object"?{...snapshot}:{};
+  delete root.captured_at;
+  return sha256Hex(JSON.stringify(canonicalSnapshotValue(root)));
+};
 const secureDigestMatches=async(value:string|null,expected:string)=>{if(!value||!/^[a-f0-9]{64}$/i.test(expected))return false;const got=await sha256Hex(value);let d=0;for(let i=0;i<64;i++)d|=got.charCodeAt(i)^expected.toLowerCase().charCodeAt(i);return d===0};
 const normalizeName=(value:string)=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 const AGE_REFERENCE_DATE="2025-12-01";
@@ -17323,30 +17344,61 @@ Deno.serve(async(req:Request)=>{
     const slot=await db.from("game_save_slots")
       .select("*").eq("browser_key",browserKey).eq("slot_no",slotNo).maybeSingle();
     if(slot.error||!slot.data)return h({error:slot.error?.message||"Sauvegarde introuvable"},404);
-    const safetySnapshot=await captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot());
+
+    const [safetySnapshot,currentLegacy]=await Promise.all([
+      captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot()),
+      db.from("game_saves").select("*").eq("id",browserKey).maybeSingle()
+    ]);
+    if(currentLegacy.error)return h({error:"Préparation du chargement impossible : "+currentLegacy.error.message},500);
+    const safetyDigest=await snapshotRollbackDigest(safetySnapshot);
     let restored:any;
+    let loadedPayload:any={};
     try{
       restored=await restoreManagedSaveSnapshot(slot.data.managed_snapshot);
+      loadedPayload=slot.data.local_payload&&typeof slot.data.local_payload==="object"?{...slot.data.local_payload}:{};
+      delete loadedPayload.liveSessionId;
+      delete loadedPayload.liveMatch;
+      delete loadedPayload.liveOpponent;
+      delete loadedPayload.liveAuto;
+
+      const legacy=await db.from("game_saves").upsert({
+        id:browserKey,payload:loadedPayload,updated_at:new Date().toISOString()
+      },{onConflict:"id"});
+      if(legacy.error)throw new Error("Legacy save sync: "+legacy.error.message);
+
+      const log=await db.from("career_event_log").insert({
+        event_date:slot.data.career_date||AGE_REFERENCE_DATE,week:slot.data.week||1,system:"save",event_type:"save_loaded",
+        entity_type:"save_slot",entity_id:slot.data.id,
+        summary:"Chargement "+slot.data.slot_name,
+        payload:{slot_no:slotNo,snapshot_scope:slot.data.snapshot_scope}
+      });
+      if(log.error)throw new Error("Load journal: "+log.error.message);
     }catch(loadError){
       let rollbackError="";
-      try{await restoreManagedSaveSnapshot(safetySnapshot)}catch(e){rollbackError=String((e as any)?.message||e)}
-      return h({error:"Chargement annulé : "+String((loadError as any)?.message||loadError),rollback_recovered:!rollbackError,rollback_error:rollbackError||null},409);
+      let rollbackRecovered=false;
+      try{
+        await restoreManagedSaveSnapshot(safetySnapshot);
+        if(currentLegacy.data){
+          const legacyRollback=await db.from("game_saves").upsert(currentLegacy.data,{onConflict:"id"});
+          if(legacyRollback.error)throw new Error("Legacy rollback: "+legacyRollback.error.message);
+        }else{
+          const legacyRollback=await db.from("game_saves").delete().eq("id",browserKey);
+          if(legacyRollback.error)throw new Error("Legacy rollback cleanup: "+legacyRollback.error.message);
+        }
+        const rollbackSnapshot=await captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot());
+        const rollbackDigest=await snapshotRollbackDigest(rollbackSnapshot);
+        rollbackRecovered=rollbackDigest===safetyDigest;
+        if(!rollbackRecovered)rollbackError="Rollback verification mismatch";
+      }catch(e){
+        rollbackError=String((e as any)?.message||e);
+      }
+      return h({
+        error:"Chargement annulé : "+String((loadError as any)?.message||loadError),
+        rollback_recovered:rollbackRecovered,
+        rollback_verified:rollbackRecovered,
+        rollback_error:rollbackError||null
+      },409);
     }
-    const loadedPayload=slot.data.local_payload&&typeof slot.data.local_payload==="object"?{...slot.data.local_payload}:{};
-    delete loadedPayload.liveSessionId;
-    delete loadedPayload.liveMatch;
-    delete loadedPayload.liveOpponent;
-    delete loadedPayload.liveAuto;
-    const legacy=await db.from("game_saves").upsert({
-      id:browserKey,payload:loadedPayload,updated_at:new Date().toISOString()
-    },{onConflict:"id"});
-    if(legacy.error)return h({error:legacy.error.message},500);
-    await db.from("career_event_log").insert({
-      event_date:slot.data.career_date||AGE_REFERENCE_DATE,week:slot.data.week||1,system:"save",event_type:"save_loaded",
-      entity_type:"save_slot",entity_id:slot.data.id,
-      summary:"Chargement "+slot.data.slot_name,
-      payload:{slot_no:slotNo,snapshot_scope:slot.data.snapshot_scope}
-    });
     return h({ok:true,slot:{slot_no:slot.data.slot_no,slot_name:slot.data.slot_name,career_date:slot.data.career_date,week:slot.data.week},local_payload:loadedPayload,restored,live_match_sessions:Array.isArray(slot.data.managed_snapshot?.live_match_sessions)?slot.data.managed_snapshot.live_match_sessions.map((x:any)=>({id:x.id,managed_player_id:x.managed_player_id,status:x.status})):[]});
   }
 

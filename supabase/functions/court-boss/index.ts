@@ -11366,6 +11366,40 @@ Deno.serve(async(req:Request)=>{
         tournament_wins:tournamentWins,entry_method:String(managedEntry.data?.entry_method||"direct")}
     };
 
+    if(tournamentId&&Number(worldMatch?.id||0)>0){
+      const worldMatchId=Number(worldMatch.id);
+      const existingBound=await db.from("live_match_sessions")
+        .select("*")
+        .eq("tournament_id",tournamentId)
+        .eq("managed_player_id",playerId)
+        .in("status",["active","finished","completed"])
+        .order("id",{ascending:false}).limit(12);
+      if(existingBound.error)return h({error:existingBound.error.message},500);
+      const resumed=(existingBound.data??[]).find((row:any)=>
+        Number(row?.stats?._meta?.doubles?.world_match_id||0)===worldMatchId
+      );
+      if(resumed){
+        const resumedD:any=resumed?.stats?._meta?.doubles||{};
+        if(Number(resumedD.opponent_pair_id||0)!==opponentPairId){
+          return h({
+            error:"Une session double existante pointe vers une autre paire que la case mondiale.",
+            bracket_mismatch_guard:true,world_match_id:worldMatchId,session_id:resumed.id,discipline:"doubles"
+          },409);
+        }
+        return h({
+          ok:true,resumed:true,engine:"CB-LIVE-DOUBLES-v1",managed_player_id:playerId,session:resumed,
+          match_environment:environment,round,world_match_id:worldMatchId,
+          managed_player:{id:managed.id,name:managed.name,country:managed.country,ranking:managed.doubles_ranking},
+          partner:{id:partner.id,name:partner.name,country:partner.country,ranking:partner.doubles_ranking},
+          opponent:{
+            id:oppA.id,name:String(oppA.name)+" / "+String(oppB.name),country:oppA.country,
+            ranking:Math.min(Number(oppA.doubles_ranking||9999),Number(oppB.doubles_ranking||9999)),
+            pair_id:opponentPairId,players:environment.doubles.opponent_players
+          }
+        });
+      }
+    }
+
     const ins=await db.from("live_match_sessions").insert({
       managed_player_id:playerId,tournament_id:tournamentId,opponent_id:Number(oppA.id),
       surface,status:"active",user_sets:0,opponent_sets:0,set_no:1,user_games:0,opponent_games:0,
@@ -11726,6 +11760,33 @@ Deno.serve(async(req:Request)=>{
         tournament_live:Boolean(tournamentId),entry_method:liveEntryMethod,tournament_wins:tournamentWins,
         qualifying_rounds:qualifyingRounds,opponent_source:opponentSource,world_match_id:worldMatchId}
     };
+
+    if(tournamentId&&worldMatchId){
+      const existingBound=await db.from("live_match_sessions")
+        .select("*")
+        .eq("tournament_id",tournamentId)
+        .eq("managed_player_id",playerId)
+        .in("status",["active","finished","completed"])
+        .order("id",{ascending:false}).limit(12);
+      if(existingBound.error)return h({error:existingBound.error.message},500);
+      const resumed=(existingBound.data??[]).find((row:any)=>
+        Number(row?.stats?._meta?.world_match_id||0)===Number(worldMatchId)
+      );
+      if(resumed){
+        if(Number(resumed.opponent_id||0)!==opponentId){
+          return h({
+            error:"Une session existante pointe vers un adversaire différent de la case mondiale.",
+            bracket_mismatch_guard:true,world_match_id:worldMatchId,session_id:resumed.id
+          },409);
+        }
+        return h({
+          ok:true,resumed:true,engine:"CB-MATCH-ENGINE-v6",
+          managed_player_id:playerId,session:resumed,match_environment:environment,round,
+          opponent_source:opponentSource,world_match_id:worldMatchId,
+          opponent:{id:opp.data.id,name:opp.data.name,country:opp.data.country,ranking:opp.data.ranking,handedness:opp.data.handedness,backhand:opp.data.backhand,style:opp.data.style}
+        });
+      }
+    }
 
     const ins=await db.from("live_match_sessions").insert({
       managed_player_id:playerId,tournament_id:tournamentId||null,

@@ -58,6 +58,8 @@ jobs:
               hasTouch:true
             });
 
+            page.on('dialog',async d=>{ await d.dismiss(); });
+
             await page.route('**/api/countries',route=>route.fulfill({
               status:200,
               contentType:'application/json',

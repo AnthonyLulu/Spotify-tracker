@@ -9,10 +9,11 @@ const v1=read('court-boss/match-center-v1.js');
 const v12=read('court-boss/match-center-v12.js');
 const v13=read('court-boss/match-center-v13.js');
 const v14=read('court-boss/match-center-v14.js');
+const v23=read('court-boss/match-experience-v23.js');
 const play=read('court-boss/play.html');
 
 test('all Match Center browser scripts parse',()=>{
-  for(const [name,source] of [['app',app],['v1',v1],['v12',v12],['v13',v13],['v14',v14]]){
+  for(const [name,source] of [['app',app],['v1',v1],['v12',v12],['v13',v13],['v14',v14],['v23',v23]]){
     assert.doesNotThrow(()=>new Function(source),name+' should parse');
   }
 });
@@ -21,8 +22,8 @@ test('V13 production page loads the live doubles stack with fresh cache keys',()
   assert.match(play,/app\.js\?v=20261004-match-center-v21-9/);
   assert.match(play,/match-center-v1\.js\?v=20261004-match-center-v21-9/);
   assert.match(play,/match-center-v12\.js\?v=20261003-tactical-ai-v5/);
-  assert.match(play,/match-center-v13\.js\?v=20261004-match-center-v21-9/);
-  assert.match(play,/match-center-v13\.css\?v=20261004-match-center-v21-9/);
+  assert.match(play,/match-center-v13\.js\?v=20261004-token-colors-v22-1/);
+  assert.match(play,/match-center-v13\.css\?v=20261004-token-colors-v22-1/);
 });
 
 test('match kernel advertises and contains the new causal layers',()=>{
@@ -124,4 +125,22 @@ test('tournament identity covers signatures and stable generated fallbacks',()=>
   ]) assert.ok(v14.includes(marker),'missing '+marker);
   assert.match(play,/match-center-v14\.js\?v=20261004-tournament-identity-v22-0/);
   assert.match(play,/match-center-v14\.css\?v=20261004-tournament-identity-v22-0/);
+});
+
+
+test('V23 match experience is data-driven from real live state',()=>{
+  for(const marker of [
+    'BRIEFING AVANT MATCH','CHANGEMENT DE CÔTÉ','ANALYSE APRÈS-MATCH',
+    'h2h_memory','user_service_points_won','opponent_memory_read','line_review',
+    'cb-surface-wear-v23','cb-speed-flash-v23','doublesPlan'
+  ]) assert.ok(v23.includes(marker),'missing '+marker);
+  assert.match(play,/match-experience-v23\.js\?v=20261004-match-experience-v23/);
+  assert.match(play,/match-experience-v23\.css\?v=20261004-match-experience-v23/);
+});
+
+test('V23 changeover coaching does not invent a second scoring engine',()=>{
+  assert.doesNotMatch(v23,/Math\.random\(\).*winner/);
+  assert.ok(v23.includes('stats().user_service_points_won')||v23.includes('st.user_service_points_won'));
+  assert.ok(v23.includes('lp.changeover'));
+  assert.ok(v23.includes('applyTactics'));
 });

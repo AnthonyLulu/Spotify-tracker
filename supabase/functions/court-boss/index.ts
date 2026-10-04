@@ -13777,17 +13777,6 @@ Deno.serve(async(req:Request)=>{
       const teamPrize=Math.max(0,Number(tournamentRoundPrize(t,userRound,"doubles").amount||0));
       const prize=Math.round(teamPrize/2*100)/100;
       const prizeFxRateToEur=prizeFxToEur(t.prize_currency||"USD"),prizeEur=prizeToBaseEur(prize,t.prize_currency||"USD");
-      let runId=Number(oldRun.data?.id||0);
-      if(!runId){
-        const run=await db.from("doubles_runs").insert({
-          tournament_id:tournamentId,managed_player_id:userIds[0],partnership_id:Number(dmeta.managed_partnership_id||0)||null,
-          partner_id:userIds[1],entry_method:String(entry.data?.entry_method||meta.entry_method||"direct"),
-          qualifying_points:0,user_round:userRound,user_points:pts,user_prize:prize,user_prize_eur:prizeEur,
-          prize_fx_rate_to_eur:prizeFxRateToEur,status:"completed"
-        }).select("id").single();
-        if(run.error)return h({error:run.error.message},500);runId=Number(run.data.id);
-      }
-
       const pathSessions=await db.from("live_match_sessions").select("id,status,user_sets,opponent_sets,score_log,stats")
         .eq("tournament_id",tournamentId).eq("managed_player_id",userIds[0])
         .in("status",["committed","finished","completed"]).order("id",{ascending:true});
@@ -13799,64 +13788,48 @@ Deno.serve(async(req:Request)=>{
         const upair=(xd.user_players||[]).map((p:any)=>p.name).join(" / ")||userPairName;
         const opair=(xd.opponent_players||[]).map((p:any)=>p.name).join(" / ")||oppPairName;
         const xwon=Number(x.user_sets||0)>Number(x.opponent_sets||0);
-        return {run_id:runId,round_name:String(xm.round||"Match"),user_pair:upair,opponent_pair:opair,winner_pair:xwon?upair:opair,score:xs||"—"};
+        return {round_name:String(xm.round||"Match"),user_pair:upair,opponent_pair:opair,winner_pair:xwon?upair:opair,score:xs||"—"};
       });
-      if(histRows.length){
-        const oldHist=await db.from("doubles_match_history").delete().eq("run_id",runId);
-        if(oldHist.error)return h({error:oldHist.error.message},500);
-        const hi=await db.from("doubles_match_history").insert(histRows);
-        if(hi.error)return h({error:hi.error.message},500);
-      }
 
       const earned=String(t.end_date||t.start_date||matchDate).slice(0,10);
-      let ranking:any=null;
-      if(String(t.circuit||"")==="Junior"){
-        const [ca,cb]=await Promise.all([
-          db.from("players").select("junior_doubles_game_points").eq("id",userIds[0]).maybeSingle(),
-          db.from("players").select("junior_doubles_game_points").eq("id",userIds[1]).maybeSingle()
-        ]);
-        if(ca.error||cb.error)return h({error:(ca.error||cb.error)?.message},500);
-        const [ua,ub]=await Promise.all([
-          db.from("players").update({junior_doubles_game_points:Number(ca.data?.junior_doubles_game_points||0)+pts}).eq("id",userIds[0]),
-          db.from("players").update({junior_doubles_game_points:Number(cb.data?.junior_doubles_game_points||0)+Math.round(pts*.85)}).eq("id",userIds[1])
-        ]);
-        if(ua.error||ub.error)return h({error:(ua.error||ub.error)?.message},500);
-        const rr=await db.rpc("refresh_junior_doubles_ranking",{p_snapshot:earned});
-        if(rr.error)return h({error:rr.error.message},500);
-      }else{
-        if(pts>0){
-          const exp=new Date(earned+"T12:00:00Z");exp.setUTCDate(exp.getUTCDate()+364);
-          const ledger=await db.from("user_doubles_points").insert({
-            owner_id:"demo",player_id:userIds[0],tournament_id:tournamentId,partner_id:userIds[1],
-            label:String(t.name||tournamentName),earned_date:earned,expiry_date:exp.toISOString().slice(0,10),points:pts,active:true
-          });
-          if(ledger.error)return h({error:ledger.error.message},500);
+      const terminalCommit=await db.rpc("commit_live_doubles_terminal_once_v23",{
+        p_payload:{
+          session_id:id,
+          tournament_id:tournamentId,
+          player_id:userIds[0],
+          partner_id:userIds[1],
+          partnership_id:Number(dmeta.managed_partnership_id||0)||null,
+          entry_id:entry.data?.id?Number(entry.data.id):null,
+          entry_method:String(entry.data?.entry_method||meta.entry_method||"direct"),
+          entry_metadata:entry.data?.metadata||{},
+          user_round:userRound,
+          user_points:pts,
+          user_prize:prize,
+          user_prize_eur:prizeEur,
+          prize_fx_rate_to_eur:prizeFxRateToEur,
+          tournament_name:String(t.name||tournamentName),
+          earned_date:earned,
+          is_junior:String(t.circuit||"")==="Junior",
+          champion:userRound==="Champion",
+          title_level:String(t.category||t.level||t.circuit||"Double"),
+          surface:String(t.surface||""),
+          history_rows:histRows
         }
-        const rr=await db.rpc("recalculate_managed_player_doubles_ranking",{p_player_id:userIds[0],p_date:earned});
-        if(rr.error)return h({error:rr.error.message},500);ranking=rr.data;
+      });
+      if(terminalCommit.error||terminalCommit.data?.ok===false){
+        return h({
+          error:terminalCommit.error?.message||terminalCommit.data?.error||"Clôture atomique du double impossible.",
+          doubles_terminal_guard:true,session_id:id,tournament_id:tournamentId
+        },500);
       }
+      const terminalData:any=terminalCommit.data||{};
+      const ranking:any=terminalData.ranking||null;
+      const pairDynamics:any=terminalData.pair_dynamics||null;
+      const runId=Number(terminalData.run_id||0);
 
-      if(prizeEur){
-        const bu=await db.from("career_state").update({budget:Number(career.data.budget||0)+prizeEur,updated_at:new Date().toISOString()}).eq("id","demo");
-        if(bu.error)return h({error:bu.error.message},500);
-      }
-      if(entry.data?.id){
-        const eu=await db.from("managed_doubles_entries").update({
-          status:"played",metadata:{...(entry.data.metadata||{}),played_run_id:runId,played_on:earned,result:userRound},updated_at:new Date().toISOString()
-        }).eq("id",Number(entry.data.id));
-        if(eu.error)return h({error:eu.error.message},500);
-      }
-      const pairDynamics=await db.rpc("apply_managed_doubles_result",{p_run_id:runId,p_date:earned});
-      if(userRound==="Champion"){
-        await Promise.all(userIds.map(pid=>db.from("player_titles").insert({
-          player_id:pid,tournament_name:String(t.name||tournamentName),title_date:earned,
-          level:String(t.category||t.level||t.circuit||"Double"),surface:String(t.surface||""),
-          event_type:String(t.circuit||"")==="Junior"?"junior_doubles":"doubles",partner_player_id:pid===userIds[0]?userIds[1]:userIds[0]
-        })));
-      }
       tournamentOutcome={terminal:true,run_id:runId,user_round:userRound,user_points:pts,user_prize:prize,user_prize_eur:prizeEur,
         new_rank:ranking?.rank??null,total_points:ranking?.points??null,champion:userRound==="Champion",
-        pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data};
+        pair_dynamics:pairDynamics,already_applied:Boolean(terminalData.already_applied),atomic_terminal:true};
     }
 
     const committed=await db.from("live_match_sessions").update({status:"committed",updated_at:new Date().toISOString()}).eq("id",id).select("*").single();

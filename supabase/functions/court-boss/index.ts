@@ -6613,13 +6613,13 @@ Deno.serve(async(req:Request)=>{
 
     // Injury risk is evaluated on the post-match load before weekly recovery.
     // New injuries are then converted into withdrawals before fatigue is reduced.
-    const injurySim=await db.rpc("simulate_injuries_week",{p_date:date,p_week:week});
+    const injurySim=await db.rpc("simulate_injuries_week_v24",{p_date:date,p_week:week});
     if(injurySim.error)return h({error:injurySim.error.message},500);
 
     const forfeitSim=await db.rpc("refresh_tournament_forfeits",{p_date:date});
     if(forfeitSim.error)return h({error:forfeitSim.error.message},500);
 
-    const recoverySim=await db.rpc("apply_world_recovery_week",{p_date:date,p_week:week});
+    const recoverySim=await db.rpc("apply_world_recovery_week_v24",{p_date:date,p_week:week});
     if(recoverySim.error)return h({error:recoverySim.error.message},500);
 
     // World matches/injuries/recovery mutate players. Pull the managed player's
@@ -13679,44 +13679,33 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const tournamentTerminal=!won||round==="F";
-    const nextMatchAvailable=won&&round!=="F";
-    const completedGames=setRows.reduce((sum:number,x:any)=>sum+Number(x.user_games||0)+Number(x.opponent_games||0),0);
-    const durationMinutes=Math.max(35,Math.min(260,Math.round(
-      28+Number(session.data.rally_no||0)*.58+completedGames*1.55+setRows.length*7
+    const doublesPointCount=Math.max(0,Number(session.data.rally_no||0));
+    const doublesSetRows=(Array.isArray(session.data.score_log)?session.data.score_log:[]).filter((x:any)=>x?.set_finished);
+    const doublesTbCount=doublesSetRows.filter((x:any)=>x?.tiebreak||x?.match_tiebreak).length;
+    const doublesHeatLoad=Math.max(0,Number(meta.weather?.temperature_c||21)-27)*.18;
+    const doublesWindLoad=Math.max(0,Number(meta.weather?.wind_kph||0)-16)*.045;
+    const doublesEffortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.05;
+    const doublesDurationMinutes=Math.max(35,Math.min(240,Math.round(
+      16+doublesPointCount*.62+doublesSetRows.length*5+doublesTbCount*3+Math.max(0,Number(meta.weather?.wind_kph||0)-18)*.10
     )));
-    const heatLoad=Math.max(0,Number(meta.weather?.temperature_c||21)-28)*.15;
-    const windLoad=Math.max(0,Number(meta.weather?.wind_kph||0)-16)*.035;
-    const effortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.045;
-    const durationLoad=Math.max(0,(durationMinutes-55)/48);
-    const matchFatigueAdd=Math.max(4,Math.min(15,Math.round(4+durationLoad+heatLoad+windLoad+effortLoad)));
-    const tournamentCountry=String(meta.tournament?.country||"");
-    const managedTravelLoad=tournamentTerminal&&tournamentCountry&&userPlayers[0]?.country&&tournamentCountry!==String(userPlayers[0].country)?2:0;
-    const partnerTravelLoad=tournamentTerminal&&tournamentCountry&&userPlayers[1]?.country&&tournamentCountry!==String(userPlayers[1].country)?2:0;
-    const managedFatigueAdd=Math.max(4,Math.min(18,matchFatigueAdd+managedTravelLoad));
-    const partnerMatchFatigue=Math.max(3,Math.round(matchFatigueAdd*.9));
-    const partnerFatigueAdd=Math.max(3,Math.min(17,partnerMatchFatigue+partnerTravelLoad));
+    const doublesDurationLoad=Math.max(2,Math.min(9,doublesDurationMinutes/24));
+    const fatigueAdd=Math.max(4,Math.min(17,Math.round(3+doublesDurationLoad+doublesHeatLoad+doublesWindLoad+doublesEffortLoad)));
+    const doublesRecoveryMetrics={
+      duration_minutes:doublesDurationMinutes,points:doublesPointCount,fatigue_added:fatigueAdd,
+      heat_load:Number(doublesHeatLoad.toFixed(2)),wind_load:Number(doublesWindLoad.toFixed(2)),
+      effort_load:Number(doublesEffortLoad.toFixed(2)),discipline:"doubles"
+    };
     const managedUpdate={
-      fatigue:Math.min(100,Number(userPlayers[0].fatigue||18)+managedFatigueAdd),
-      fitness:Math.max(35,Number(userPlayers[0].fitness||90)-Math.ceil(managedFatigueAdd*.34)),
+      fatigue:Math.min(100,Number(userPlayers[0].fatigue||18)+fatigueAdd),
+      fitness:Math.max(35,Number(userPlayers[0].fitness||90)-Math.ceil(fatigueAdd*.34)),
       form:Math.max(35,Math.min(100,Number(userPlayers[0].form||70)+(won?2:-1))),
       morale:Math.max(30,Math.min(100,Number(userPlayers[0].morale||70)+(won?3:-2)))
     };
     const partnerUpdate={
-      fatigue:Math.min(100,Number(userPlayers[1].fatigue||18)+partnerFatigueAdd),
-      fitness:Math.max(35,Number(userPlayers[1].fitness||90)-Math.ceil(partnerFatigueAdd*.30)),
+      fatigue:Math.min(100,Number(userPlayers[1].fatigue||18)+Math.max(3,Math.round(fatigueAdd*.9))),
+      fitness:Math.max(35,Number(userPlayers[1].fitness||90)-Math.ceil(fatigueAdd*.30)),
       form:Math.max(35,Math.min(100,Number(userPlayers[1].form||70)+(won?2:-1))),
       morale:Math.max(30,Math.min(100,Number(userPlayers[1].morale||70)+(won?2:-1)))
-    };
-    const recoveryContext={
-      version:"CB-POST-MATCH-RECOVERY-v23",discipline:"doubles",
-      duration_minutes:durationMinutes,points_played:Number(session.data.rally_no||0),
-      sets_completed:setRows.length,heat_load:Number(heatLoad.toFixed(2)),wind_load:Number(windLoad.toFixed(2)),
-      effort:Number(session.data.tactics?.effort||60),tournament_terminal:tournamentTerminal,
-      player_loads:[
-        {player_id:userIds[0],match_fatigue:matchFatigueAdd,travel_load:managedTravelLoad,fatigue_added:managedFatigueAdd},
-        {player_id:userIds[1],match_fatigue:partnerMatchFatigue,travel_load:partnerTravelLoad,fatigue_added:partnerFatigueAdd}
-      ]
     };
 
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
@@ -13752,7 +13741,7 @@ Deno.serve(async(req:Request)=>{
           score,
           match_data:{
             live:true,doubles:true,live_session_id:id,engine:"CB-LIVE-DOUBLES-v1",
-            stats,tactics:session.data.tactics||{},environment:meta,recovery:recoveryContext
+            stats,tactics:session.data.tactics||{},environment:meta
           }
         },
         world_components:{
@@ -13773,10 +13762,29 @@ Deno.serve(async(req:Request)=>{
       },409);
     }
 
+    const [recoveryManaged,recoveryPartner]=await Promise.all([
+      db.rpc("seed_live_match_recovery_v24",{
+        p_session_id:id,p_player_id:userIds[0],p_effect:"recovery_managed_v24",
+        p_match_date:matchDate,p_tournament_id:tournamentId,p_metrics:doublesRecoveryMetrics,p_role_multiplier:1
+      }),
+      db.rpc("seed_live_match_recovery_v24",{
+        p_session_id:id,p_player_id:userIds[1],p_effect:"recovery_partner_v24",
+        p_match_date:matchDate,p_tournament_id:tournamentId,p_metrics:doublesRecoveryMetrics,p_role_multiplier:.90
+      })
+    ]);
+    if(recoveryManaged.error||recoveryPartner.error||recoveryManaged.data?.ok===false||recoveryPartner.data?.ok===false){
+      return h({
+        error:recoveryManaged.error?.message||recoveryPartner.error?.message||recoveryManaged.data?.error||recoveryPartner.data?.error||"Initialisation récupération double impossible.",
+        recovery_commit_guard:true,session_id:id,discipline:"doubles"
+      },500);
+    }
+
     const history:any={data:{id:Number(atomic.data?.history?.history_id||0)},error:null};
     const eloResults:any[]=(Array.isArray(atomic.data?.elo?.calls)?atomic.data.elo.calls:[]).map((x:any)=>({data:x,error:null}));
     let worldProgress:any={ok:true,world_match_id:preflightWorldMatchId,atomic:true};
 
+    const tournamentTerminal=!won||round==="F";
+    const nextMatchAvailable=won&&round!=="F";
     let tournamentOutcome:any=null;
     if(tournamentTerminal&&tournamentId){
       const [tour,oldRun,entry]=await Promise.all([
@@ -13861,7 +13869,8 @@ Deno.serve(async(req:Request)=>{
     return h({
       ok:true,committed:true,session:committed.data,history_id:history.data.id,
       result:{won,score,tournament_name:tournamentName,round,user_pair:userPairName,opponent_pair:oppPairName},
-      condition:{managed:managedUpdate,partner:partnerUpdate},fatigue_added:managedFatigueAdd,recovery:recoveryContext,
+      condition:{managed:managedUpdate,partner:partnerUpdate},fatigue_added:fatigueAdd,
+      match_duration_minutes:doublesDurationMinutes,recovery:{managed:recoveryManaged.data,partner:recoveryPartner.data},
       tournament_live:Boolean(tournamentId),tournament_terminal:tournamentTerminal,next_match_available:nextMatchAvailable,
       tournament_outcome:tournamentOutcome,world_progress:worldProgress,
       elo:eloResults.map((x:any)=>x.error?{error:x.error.message}:x.data)
@@ -13908,19 +13917,21 @@ Deno.serve(async(req:Request)=>{
     const scoreBase=[completedScore,partialRetirementSet].filter(Boolean).join(" ")
       ||("Sets "+String(session.data.user_sets||0)+"-"+String(session.data.opponent_sets||0));
     const score=scoreBase+(retirement?" RET":"");
-    const completedGames=setRows.reduce((sum:number,x:any)=>sum+Number(x.user_games||0)+Number(x.opponent_games||0),0);
-    const partialGames=retirementRow&&!retirementRow.set_finished
-      ?Number(retirementRow.user_games||0)+Number(retirementRow.opponent_games||0)
-      :0;
-    const durationMinutes=Math.max(40,Math.min(360,Math.round(
-      34+Number(session.data.rally_no||0)*.72+(completedGames+partialGames)*1.65+setRows.length*8
-    )));
+    const pointCount=Math.max(0,Number(session.data.rally_no||0));
+    const tiebreakCount=setRows.filter((x:any)=>x?.tiebreak||x?.match_tiebreak).length;
     const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
     const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;
-    const durationLoad=Math.max(0,(durationMinutes-65)/42);
     const effortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.065;
-    const matchLoad=Math.min(8,Math.max(3,3+durationLoad));
-    const fatigueAdd=Math.max(5,Math.min(18,Math.round(4+matchLoad+heatLoad+windLoad+effortLoad)));
+    const durationMinutes=Math.max(40,Math.min(330,Math.round(
+      18+pointCount*.72+setRows.length*7+tiebreakCount*4+Math.max(0,Number(weather.wind_kph||0)-18)*.12
+    )));
+    const durationLoad=Math.max(3,Math.min(11,durationMinutes/22));
+    const fatigueAdd=Math.max(5,Math.min(19,Math.round(4+durationLoad+heatLoad+windLoad+effortLoad)));
+    const recoveryMetrics={
+      duration_minutes:durationMinutes,points:pointCount,fatigue_added:fatigueAdd,
+      heat_load:Number(heatLoad.toFixed(2)),wind_load:Number(windLoad.toFixed(2)),
+      effort_load:Number(effortLoad.toFixed(2)),discipline:"singles"
+    };
     const nextCondition:any={
       fatigue:Math.min(100,Number(managed.data.fatigue||18)+fatigueAdd),
       fitness:Math.max(35,Number(managed.data.fitness||91)-Math.max(2,Math.ceil(fatigueAdd*.36))),
@@ -13935,20 +13946,6 @@ Deno.serve(async(req:Request)=>{
     const tournamentLive=tournamentId>0&&Boolean(meta.tournament_live);
     const tournamentTerminal=tournamentLive&&(!won||round==="F");
     const nextTournamentMatch=tournamentLive&&won&&round!=="F";
-    const tournamentCountry=String(meta.tournament?.country||"");
-    const travelLoad=tournamentTerminal&&tournamentCountry&&managed.data.country&&tournamentCountry!==String(managed.data.country)?2:0;
-    if(travelLoad>0){
-      nextCondition.fatigue=Math.min(100,Number(nextCondition.fatigue||managed.data.fatigue||18)+travelLoad);
-      nextCondition.fitness=Math.max(35,Number(nextCondition.fitness||managed.data.fitness||91)-1);
-    }
-    const fatigueAddedTotal=Math.max(5,Math.min(20,fatigueAdd+travelLoad));
-    const recoveryContext={
-      version:"CB-POST-MATCH-RECOVERY-v23",discipline:"singles",
-      duration_minutes:durationMinutes,points_played:Number(session.data.rally_no||0),
-      sets_completed:setRows.length,heat_load:Number(heatLoad.toFixed(2)),wind_load:Number(windLoad.toFixed(2)),
-      effort:Number(session.data.tactics?.effort||60),tournament_terminal:tournamentTerminal,
-      player_loads:[{player_id:playerId,match_fatigue:fatigueAdd,travel_load:travelLoad,fatigue_added:fatigueAddedTotal}]
-    };
     let tournamentOutcome:any=null;
     // Preflight the exact world-draw slot before ANY irreversible live-match side effect.
     // If the bracket changed underneath the session, reject before history, medical,
@@ -14037,7 +14034,7 @@ Deno.serve(async(req:Request)=>{
             score,
             match_data:{
               live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
-              stats,tactics:session.data.tactics||{},environment:meta,recovery:recoveryContext
+              stats,tactics:session.data.tactics||{},environment:meta
             }
           },
           world_components:{
@@ -14067,7 +14064,20 @@ Deno.serve(async(req:Request)=>{
         :await db.rpc("advance_world_knockout_tournament",{
             p_tournament_id:tournamentId,p_to_date:progressDate
           });
-      worldProgress=progressed.error?{ok:false,error:progressed.error.message}:progressed.data;
+      if(progressed.error||progressed.data?.ok!==true){
+        return h({
+          error:progressed.error?.message
+            ||progressed.data?.error
+            ||progressed.data?.skipped
+            ||"Le résultat est enregistré, mais le tableau n’a pas encore confirmé son avancement.",
+          world_match_id:Number(meta.world_match_id||0),
+          world_progress_guard:true,
+          atomic_commit_guard:true,
+          retry_safe:true,
+          world_result_already_committed:true
+        },500);
+      }
+      worldProgress=progressed.data;
     }else{
       const historyRpc=await db.rpc("ensure_live_match_history_v23",{
         p_session_id:id,
@@ -14082,7 +14092,7 @@ Deno.serve(async(req:Request)=>{
         p_score:score,
         p_match_data:{
           live:true,live_session_id:id,engine:"CB-MATCH-ENGINE-v6",
-          stats,tactics:session.data.tactics||{},environment:meta,recovery:recoveryContext
+          stats,tactics:session.data.tactics||{},environment:meta
         }
       });
       if(historyRpc.error||historyRpc.data?.ok===false){
@@ -14111,6 +14121,17 @@ Deno.serve(async(req:Request)=>{
         return h({error:eloRpc.error?.message||eloRpc.data?.error||"Elo post-match impossible"},500);
       }
       elo={data:eloRpc.data,error:null};
+    }
+
+    const recoverySeed=await db.rpc("seed_live_match_recovery_v24",{
+      p_session_id:id,p_player_id:playerId,p_effect:"recovery_managed_v24",
+      p_match_date:matchDate,p_tournament_id:tournamentId,p_metrics:recoveryMetrics,p_role_multiplier:1
+    });
+    if(recoverySeed.error||recoverySeed.data?.ok===false){
+      return h({
+        error:recoverySeed.error?.message||recoverySeed.data?.error||"Initialisation récupération post-match impossible.",
+        recovery_commit_guard:true,session_id:id
+      },500);
     }
 
     if(retirement?.player_id&&retirement?.injury_type){
@@ -14210,7 +14231,8 @@ Deno.serve(async(req:Request)=>{
     return h({
       ok:true,committed:true,session:committed.data,history_id:history.data.id,
       result:{won,score,tournament_name:tournamentName,round},
-      condition:nextCondition,fatigue_added:fatigueAddedTotal,recovery:recoveryContext,medical:medicalWrite,retirement,
+      condition:nextCondition,fatigue_added:fatigueAdd,match_duration_minutes:durationMinutes,
+      recovery:recoverySeed.data,medical:medicalWrite,retirement,
       tournament_live:tournamentLive,tournament_terminal:tournamentTerminal,next_match_available:nextTournamentMatch,
       tournament_outcome:tournamentOutcome,world_progress:worldProgress,
       elo:elo.error?{error:elo.error.message}:elo.data,

@@ -13633,6 +13633,16 @@ Deno.serve(async(req:Request)=>{
     // Same invariant as singles: validate the exact doubles world slot before
     // history, fatigue, fitness, Elo, ranking or prize side effects.
     const preflightWorldMatchId=Number(dmeta.world_match_id||0);
+    if(!preflightWorldMatchId){
+      return h({
+        error:"Match double de tournoi sans case mondiale réservée.",
+        world_match_id:null,
+        bracket_mismatch_guard:true,
+        atomic_commit_guard:true,
+        discipline:"doubles"
+      },409);
+    }
+
     if(preflightWorldMatchId){
       const preflight=await db.from("world_doubles_tournament_matches")
         .select("*").eq("id",preflightWorldMatchId).maybeSingle();
@@ -13669,14 +13679,6 @@ Deno.serve(async(req:Request)=>{
       }
     }
 
-    const history=await db.from("match_history").insert({
-      managed_player_id:userIds[0],tournament_name:tournamentName,match_date:matchDate,
-      surface:String(session.data.surface||"Dur"),round,
-      player_a:userPairName,player_b:oppPairName,winner:winnerPairName,score,user_involved:true,
-      match_data:{live:true,doubles:true,live_session_id:id,engine:"CB-LIVE-DOUBLES-v1",stats,tactics:session.data.tactics||{},environment:meta}
-    }).select("id").single();
-    if(history.error)return h({error:history.error.message},500);
-
     const fatigueAdd=Math.max(4,Math.min(16,Math.round(4+Number(session.data.rally_no||0)/65+Math.max(0,Number(meta.weather?.temperature_c||21)-28)*.18)));
     const managedUpdate={
       fatigue:Math.min(100,Number(userPlayers[0].fatigue||18)+fatigueAdd),
@@ -13690,70 +13692,64 @@ Deno.serve(async(req:Request)=>{
       form:Math.max(35,Math.min(100,Number(userPlayers[1].form||70)+(won?2:-1))),
       morale:Math.max(30,Math.min(100,Number(userPlayers[1].morale||70)+(won?2:-1)))
     };
-    const [mu,pu]=await Promise.all([
-      db.from("players").update(managedUpdate).eq("id",userIds[0]),
-      db.from("players").update(partnerUpdate).eq("id",userIds[1])
-    ]);
-    if(mu.error||pu.error)return h({error:(mu.error||pu.error)?.message},500);
 
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Carrière introuvable"},500);
-    if(userIds[0]===Number(career.data.managed_player_id||0)){
-      const cu=await db.from("career_state").update({...managedUpdate,updated_at:new Date().toISOString()}).eq("id","demo");
-      if(cu.error)return h({error:cu.error.message},500);
+
+    const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
+    const winnerPairId=won?userPairId:oppPairId,loserPairId=won?oppPairId:userPairId;
+    const atomic=await db.rpc("commit_live_doubles_world_match_atomic_v23",{
+      p_payload:{
+        session_id:id,
+        world_match_id:preflightWorldMatchId,
+        tournament_id:tournamentId,
+        managed_player_id:userIds[0],
+        user_pair_id:userPairId,
+        opponent_pair_id:oppPairId,
+        user_player_ids:userIds,
+        opponent_player_ids:oppIds,
+        winner_pair_id:winnerPairId,
+        loser_pair_id:loserPairId,
+        round,
+        score,
+        match_date:matchDate,
+        surface:String(session.data.surface||"Dur"),
+        sync_career:userIds[0]===Number(career.data.managed_player_id||0),
+        managed_condition:managedUpdate,
+        partner_condition:partnerUpdate,
+        history:{
+          tournament_name:tournamentName,
+          round,
+          player_a:userPairName,
+          player_b:oppPairName,
+          winner:winnerPairName,
+          score,
+          match_data:{
+            live:true,doubles:true,live_session_id:id,engine:"CB-LIVE-DOUBLES-v1",
+            stats,tactics:session.data.tactics||{},environment:meta
+          }
+        },
+        world_components:{
+          pair_model:dmeta.pair_model||null,
+          elo_probability:dmeta.elo_probability||null,
+          baseline_probability:dmeta.baseline_probability||null,
+          tactics:session.data.tactics||{}
+        },
+        elo_weight:.275
+      }
+    });
+    if(atomic.error||atomic.data?.ok===false){
+      return h({
+        error:atomic.error?.message||atomic.data?.error||"Commit atomique du double impossible.",
+        world_match_id:preflightWorldMatchId,
+        atomic_commit_guard:true,
+        discipline:"doubles"
+      },409);
     }
 
-    const winningIds=won?userIds:oppIds;
-    const losingIds=won?oppIds:userIds;
-    const eloCalls=[
-      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[0],p_loser_id:losingIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275}),
-      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[0],p_loser_id:losingIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275}),
-      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[1],p_loser_id:losingIds[0],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275}),
-      db.rpc("update_player_elo_after_match",{p_winner_id:winningIds[1],p_loser_id:losingIds[1],p_surface:String(session.data.surface||"Dur"),p_match_date:matchDate,p_doubles:true,p_weight:.275})
-    ];
-    const eloResults=await Promise.all(eloCalls);
-    if(eloResults.some((x:any)=>x.error))return h({error:eloResults.find((x:any)=>x.error)?.error?.message||"Mise à jour Elo double impossible"},500);
-
-    let worldProgress:any=null;
-    const worldMatchId=Number(dmeta.world_match_id||0);
-    if(worldMatchId){
-      const wr=await db.from("world_doubles_tournament_matches").select("*").eq("id",worldMatchId).maybeSingle();
-      if(wr.error)return h({error:wr.error.message},500);
-      if(!wr.data)return h({error:"Match double du tableau mondial introuvable.",world_match_id:worldMatchId},500);
-      const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
-      const pairA=Number(wr.data.pair_a_id||0),pairB=Number(wr.data.pair_b_id||0);
-      const worldRound=String(wr.data.round_code||"");
-      if(
-        Number(wr.data.tournament_id||0)!==tournamentId
-        || (round&&worldRound&&round!==worldRound)
-        || !((pairA===userPairId&&pairB===oppPairId)||(pairB===userPairId&&pairA===oppPairId))
-      ){
-        return h({
-          error:"Le match double live ne correspond plus exactement à la case du tableau mondial.",
-          world_match_id:worldMatchId,bracket_mismatch_guard:true,discipline:"doubles",
-          expected:{tournament_id:tournamentId,round,user_pair_id:userPairId,opponent_pair_id:oppPairId},
-          actual:{tournament_id:Number(wr.data.tournament_id||0),round:worldRound,pair_a_id:pairA,pair_b_id:pairB}
-        },409);
-      }
-      const winnerPairId=won?userPairId:oppPairId,loserPairId=won?oppPairId:userPairId;
-      if(Number(wr.data.winner_pair_id||0)>0&&Number(wr.data.winner_pair_id)!==winnerPairId){
-        return h({
-          error:"Cette case du tableau double possède déjà un autre résultat.",
-          world_match_id:worldMatchId,bracket_mismatch_guard:true,discipline:"doubles"
-        },409);
-      }
-      const worldScore=pairA===userPairId?score:liveInvertTennisScore(score);
-      const wu=await db.from("world_doubles_tournament_matches").update({
-        winner_pair_id:winnerPairId,loser_pair_id:loserPairId,score:worldScore,
-        pair_a_win_probability:pairA===userPairId?Number(dmeta.baseline_probability||.5):1-Number(dmeta.baseline_probability||.5),
-        model_version:"CB-LIVE-DOUBLES-v22",
-        matchup_components:{...(wr.data.matchup_components||{}),status:"completed",source:"managed_live",live_session_id:id,
-          pair_model:dmeta.pair_model||null,elo_probability:dmeta.elo_probability||null,tactics:session.data.tactics||{}},
-        simulated_on:String(wr.data.simulated_on||matchDate)
-      }).eq("id",worldMatchId);
-      if(wu.error)return h({error:wu.error.message},500);
-      worldProgress={ok:true,world_match_id:worldMatchId};
-    }
+    const history:any={data:{id:Number(atomic.data?.history?.history_id||0)},error:null};
+    const eloResults:any[]=(Array.isArray(atomic.data?.elo?.calls)?atomic.data.elo.calls:[]).map((x:any)=>({data:x,error:null}));
+    let worldProgress:any={ok:true,world_match_id:preflightWorldMatchId,atomic:true};
 
     const tournamentTerminal=!won||round==="F";
     const nextMatchAvailable=won&&round!=="F";

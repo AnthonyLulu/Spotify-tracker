@@ -5904,7 +5904,7 @@ Deno.serve(async(req:Request)=>{
     const expectedFromDate=/^\d{4}-\d{2}-\d{2}$/.test(String(body?.expected_from_date||""))
       ?String(body.expected_from_date)
       :null;
-    const tick=await db.rpc("advance_career_day_v25",{
+    const tick=await db.rpc("advance_career_day_v26",{
       p_today_plan:plan,
       p_difficulty:difficulty,
       p_expected_from_date:expectedFromDate
@@ -5918,7 +5918,7 @@ Deno.serve(async(req:Request)=>{
       ...data,
       career:fresh.data,
       daily:true,
-      engine:"CB-DAILY-CLOCK-v25"
+      engine:"CB-DAILY-CLOCK-v26"
     });
   }
 

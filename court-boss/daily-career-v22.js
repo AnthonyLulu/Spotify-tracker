@@ -448,6 +448,8 @@
       local.week=day.week??local.week;
       local.career={...(local.career||{}),...(day.career||{})};
       local.lastDailyTrainingReport=day;
+      const dueToday=(day?.due_matches?.matches||[])[0]||null;
+      local.pendingManagedMatch=dueToday;
       local.feed=local.feed||[];
 
       const primaryReport=(day.training||[]).find(x=>Number(x.player_id)===primaryId())||(day.training||[])[0];
@@ -485,7 +487,19 @@
       const autosave=await saveCareerSlot(0,'autosave',true);
       if(!autosave?.ok)throw new Error('La journée est validée mais l’autosave a échoué.');
 
-      if(day.stop_reason==='match'||Number(day.pending_matches||0)>0)await nav('calendar');
+      if(day.stop_reason==='match'||Number(day.pending_matches||0)>0){
+        const due=local.pendingManagedMatch||null;
+        const duePlayerId=Number(due?.player_id||0);
+        if(duePlayerId&&duePlayerId!==activeManagedId()
+           &&typeof window.setActiveManagedPlayer==='function'
+           &&managedSquadIds().includes(duePlayerId)){
+          await window.setActiveManagedPlayer(duePlayerId);
+        }
+        await nav('calendar');
+        if(Number(due?.tournament_id||0)){
+          setTimeout(()=>window.openTournamentPlayMode?.(Number(due.tournament_id)),0);
+        }
+      }
       else if(day.stop_reason==='decision')await nav('inbox');
       else if(day.stop_reason==='medical')await nav('medical');
       else if(day.stop_reason==='training_progress')await nav('training');

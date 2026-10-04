@@ -13,10 +13,10 @@ test('V19 removes the invented ITF Top-200 play-down ban everywhere',()=>{
 });
 
 test('ITF candidate order keeps ATP ahead of ITF-only merit and rating fallback',()=>{
- assert.match(core,/when p\.ranking is not null[\s\S]*then 1/);
- assert.match(core,/when p\.itf_ranking is not null then 2/);
- assert.match(core,/100000\+round\(c\.merit_value\)/);
- assert.match(core,/200000\+round\(c\.merit_value\)/);
+ assert.match(core,/p\.ranking::int effective_rank,[\s\S]*1::int merit_tier/);
+ assert.match(core,/p\.itf_ranking::numeric merit_value[\s\S]*2::int merit_tier/);
+ assert.match(core,/3::int merit_tier/);
+ assert.match(core,/order by c\.merit_tier,c\.merit_value,c\.current_ability desc,c\.id/);
 });
 
 test('Grand Slam and junior-age guards are encoded in the authoritative entry arbiter',()=>{
@@ -45,7 +45,7 @@ test('Singles Challenger play-down rules are not copied into doubles',()=>{
 
 test('Junior AI resolves one accepted event per week after interest generation',()=>{
  assert.match(core,/CB-JUNIOR-ENTRY-v19/);
- assert.match(core,/date_trunc\('week',coalesce\(ot\.main_draw_start_date,ot\.start_date\)::timestamp\)::date=v_week/);
+ assert.match(core,/coalesce\(x\.main_draw_start_date,x\.start_date\) between v_week and v_week\+6/);
  assert.match(core,/return not v_better/);
 });
 

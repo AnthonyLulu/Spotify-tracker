@@ -175,3 +175,12 @@ test('post-restore failures also roll the previous career back',()=>{
   assert.match(load,/Legacy rollback/);
   assert.match(load,/await restoreManagedSaveSnapshot\(safetySnapshot\)/);
 });
+
+
+test('ranking history ledgers survive failed-load rollback',()=>{
+  assert.match(edge,/managed_ranking_history_all/);
+  assert.match(edge,/managed_doubles_ranking_history_all/);
+  assert.match(edge,/Incomplete V8 ranking history snapshot/);
+  assert.match(edge,/upsertMany\("ranking_history",snapshot\.managed_ranking_history_all/);
+  assert.match(edge,/upsertMany\("doubles_ranking_history",snapshot\.managed_doubles_ranking_history_all/);
+});

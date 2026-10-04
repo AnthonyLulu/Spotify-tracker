@@ -295,6 +295,9 @@ jobs:
             await page.locator('.cb-court').waitFor();
             if(await page.locator('.fm-player-dot').count()!==2)throw new Error('match viewer needs two player circles');
             if(await page.locator('.fm-ball').count()!==1)throw new Error('match viewer needs one ball');
+            await page.getByText('BRIEFING AVANT MATCH',{exact:true}).waitFor();
+            await page.getByRole('button',{name:/Entrer sur le court/}).click();
+            await page.locator('#cb-match-experience-modal-v23').waitFor({state:'detached'});
             const liveToggle=page.locator('.cb-speed-row button').first();
             await liveToggle.waitFor();
             if(/Pause/.test(await liveToggle.innerText()))await liveToggle.click();

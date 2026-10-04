@@ -248,6 +248,7 @@ function baseLocalState(){
  return {
   date:'2025-12-01',week:1,
   training:['Service','Retour','Coup droit','Récupération','Déplacements','Match play','Repos'],
+  dailyTrainingV22:{},lastDailyTrainingReports:{},
   entries:[],entryMeta:{},doublesEntries:[],doublesEntryMeta:{},shortlist:[],career:null,feed:[],
   scoutingBoost:0,partnerId:null,davisRoles:{},fantasy:[],
   tactics:{aggression:58,risk:52,net:28,returnPos:'Neutre'}
@@ -263,6 +264,8 @@ function cleanCareerLocalState(payload={}){
  next.shortlist=Array.isArray(src.shortlist)?[...src.shortlist]:[];
  next.feed=Array.isArray(src.feed)?[...src.feed]:[];
  next.training=Array.isArray(src.training)&&src.training.length?[...src.training]:[...baseLocalState().training];
+ next.dailyTrainingV22=src.dailyTrainingV22&&typeof src.dailyTrainingV22==='object'?{...src.dailyTrainingV22}:{};
+ next.lastDailyTrainingReports=src.lastDailyTrainingReports&&typeof src.lastDailyTrainingReports==='object'?{...src.lastDailyTrainingReports}:{};
  next.davisRoles=src.davisRoles&&typeof src.davisRoles==='object'?{...src.davisRoles}:{};
  next.fantasy=Array.isArray(src.fantasy)?[...src.fantasy]:[];
  next.tactics=src.tactics&&typeof src.tactics==='object'?{...baseLocalState().tactics,...src.tactics}:{...baseLocalState().tactics};
@@ -616,7 +619,7 @@ function publicAttributeKnowledge(p,attrs,report){
 }
 function header(){
  const cr=local.career||boot?.career||{};
- return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||cr.career_date)}</span><div class="grow"></div><button class="ghost icon-btn" onclick="openGlobalSearch()" aria-label="Recherche">⌕</button><button class="ghost icon-btn" onclick="nav('saves')" aria-label="Sauvegardes">▣</button><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" ${simulating?'disabled':''} onclick="simulateWeek()">${simulating?'Simulation…':'+ 1 semaine'}</button></header>`
+ return `<header class="topbar"><div class="logo">COURT <b>BOSS</b></div><span class="top-date">${df(local.date||cr.career_date)}</span><div class="grow"></div><button class="ghost icon-btn" onclick="openGlobalSearch()" aria-label="Recherche">⌕</button><button class="ghost icon-btn" onclick="nav('saves')" aria-label="Sauvegardes">▣</button><button class="ghost" onclick="nav('inbox')">Boîte <span class="badge">${boot?.inbox?.filter(x=>!x.is_read).length||0}</span></button><button class="primary" ${simulating?'disabled':''} onclick="advanceDay()">${simulating?'Simulation…':'Continuer ▸'}</button></header>`
 }
 function navBar(){
  const x=[['home','Accueil'],['rankings','Classements'],['calendar','Calendrier'],['academy','Académie'],['more','Plus']];
@@ -2242,56 +2245,210 @@ async function loadTrainingPreview(force=false){
   trainingPreviewLoading=false;
  }
 }
+const TRAINING_SESSIONS_V22=['Service','Retour','Coup droit','Revers','Déplacements','Endurance','Match play','Double','Récupération','Repos'];
+const TRAINING_INTENSITIES_V22=['Léger','Normal','Élevé'];
+const TRAINING_DAY_LABELS_V22=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+
+function cbDailyAddDays(iso,days){
+ const d=new Date(String(iso||RANKING_SNAPSHOT)+'T12:00:00Z');
+ d.setUTCDate(d.getUTCDate()+Number(days||0));
+ return d.toISOString().slice(0,10);
+}
+function cbIsoDayIndex(iso){
+ const d=new Date(String(iso||RANKING_SNAPSHOT)+'T12:00:00Z');
+ return (d.getUTCDay()+6)%7;
+}
+function cbTrainingPrimaryId(){
+ return Number((career()&&career().managed_player_id)||local.primaryPlayerId||0);
+}
+function cbSelectedTrainingPlayerId(){
+ return Number(local.trainingPlayerId||local.activeManagedPlayerId||cbTrainingPrimaryId()||0);
+}
+function cbLegacyTrainingPlanFor(id){
+ const primary=cbTrainingPrimaryId();
+ if(Number(id)===primary)return Array.isArray(local.training)&&local.training.length?local.training:[...baseLocalState().training];
+ const p=local.playerTraining&&Array.isArray(local.playerTraining[String(id)])?local.playerTraining[String(id)]:null;
+ return p&&p.length?p:[...baseLocalState().training];
+}
+function cbTrainingScheduleV22(id){
+ const pid=String(Number(id)||cbTrainingPrimaryId()||'primary');
+ if(!local.dailyTrainingV22||typeof local.dailyTrainingV22!=='object')local.dailyTrainingV22={};
+ let rows=local.dailyTrainingV22[pid];
+ if(!Array.isArray(rows)||rows.length!==7){
+   const legacy=cbLegacyTrainingPlanFor(Number(id));
+   rows=TRAINING_DAY_LABELS_V22.map((_,i)=>{
+     const session=String(legacy[i]||'Repos');
+     return session==='Repos'
+       ?{morning:'Repos',afternoon:'Repos',intensity:'Léger'}
+       :session==='Récupération'
+         ?{morning:'Récupération',afternoon:'Repos',intensity:'Léger'}
+         :{morning:session,afternoon:'Repos',intensity:'Normal'};
+   });
+   local.dailyTrainingV22[pid]=rows;
+ }
+ return rows;
+}
+function cbTrainingSessionLoadV22(session,intensity='Normal'){
+ const base=['Endurance','Match play','Déplacements'].includes(session)?3:
+   ['Service','Retour','Coup droit','Revers','Double'].includes(session)?2:
+   session==='Récupération'?-0.75:-1.25;
+ const mult=intensity==='Élevé'?1.16:intensity==='Léger'?0.78:1;
+ return base*mult;
+}
+function cbTrainingDayLoadV22(row){
+ return cbTrainingSessionLoadV22(row?.morning||'Repos',row?.intensity||'Normal')+
+   cbTrainingSessionLoadV22(row?.afternoon||'Repos',row?.intensity||'Normal');
+}
+function cbTrainingWeekLoadV22(rows){return Number((rows||[]).reduce((s,r)=>s+cbTrainingDayLoadV22(r),0).toFixed(1))}
+function cbTrainingOptionsV22(value){
+ return TRAINING_SESSIONS_V22.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('');
+}
+function cbIntensityOptionsV22(value){
+ return TRAINING_INTENSITIES_V22.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('');
+}
+function cbManagedTrainingIdsV22(){
+ const ids=[cbTrainingPrimaryId(),...((management&&management.academyRoster)||[])
+   .filter(r=>String(r.status||'active')==='active')
+   .map(r=>Number(r.player_id||r.players?.id||0))].filter(Boolean);
+ return [...new Set(ids)];
+}
+function cbTodayTrainingPayloadV22(targetDate){
+ const idx=cbIsoDayIndex(targetDate),payload={};
+ for(const id of cbManagedTrainingIdsV22()){
+   const row=cbTrainingScheduleV22(id)[idx]||{morning:'Repos',afternoon:'Repos',intensity:'Léger'};
+   payload[String(id)]={morning:row.morning||'Repos',afternoon:row.afternoon||'Repos',intensity:row.intensity||'Normal'};
+ }
+ return payload;
+}
+window.setDailyTrainingBlock=async function(dayIndex,slot,value){
+ const id=cbSelectedTrainingPlayerId(),rows=cbTrainingScheduleV22(id);
+ const i=Math.max(0,Math.min(6,Number(dayIndex)||0));
+ if(!['morning','afternoon'].includes(String(slot)))return;
+ rows[i][slot]=String(value||'Repos');
+ const legacy=cbLegacyTrainingPlanFor(id);
+ legacy[i]=rows[i].morning;
+ if(id===cbTrainingPrimaryId())local.training=legacy;
+ else{
+   local.playerTraining=local.playerTraining||{};
+   local.playerTraining[String(id)]=legacy;
+ }
+ trainingPreview=null;persist();render();
+ await loadTrainingPreview(true).catch(()=>{});
+ render();
+};
+window.setDailyTrainingIntensity=async function(dayIndex,value){
+ const id=cbSelectedTrainingPlayerId(),rows=cbTrainingScheduleV22(id);
+ rows[Math.max(0,Math.min(6,Number(dayIndex)||0))].intensity=String(value||'Normal');
+ trainingPreview=null;persist();render();
+ await loadTrainingPreview(true).catch(()=>{});
+ render();
+};
+window.applyTrainingPresetV22=async function(name){
+ const id=cbSelectedTrainingPlayerId();
+ const presets={
+  'Repos':[
+   ['Repos','Repos','Léger'],['Repos','Repos','Léger'],['Récupération','Repos','Léger'],['Repos','Repos','Léger'],
+   ['Récupération','Repos','Léger'],['Repos','Repos','Léger'],['Repos','Repos','Léger']
+  ],
+  'Équilibré':[
+   ['Service','Retour','Normal'],['Coup droit','Déplacements','Normal'],['Revers','Endurance','Normal'],['Récupération','Repos','Léger'],
+   ['Service','Match play','Normal'],['Double','Récupération','Léger'],['Repos','Repos','Léger']
+  ],
+  'Développement':[
+   ['Service','Retour','Normal'],['Coup droit','Revers','Normal'],['Déplacements','Endurance','Normal'],['Récupération','Repos','Léger'],
+   ['Service','Coup droit','Élevé'],['Match play','Retour','Normal'],['Repos','Repos','Léger']
+  ],
+  'Préparation tournoi':[
+   ['Service','Retour','Normal'],['Match play','Déplacements','Normal'],['Service','Coup droit','Normal'],['Récupération','Repos','Léger'],
+   ['Match play','Retour','Léger'],['Récupération','Repos','Léger'],['Repos','Repos','Léger']
+  ],
+  'Bloc physique':[
+   ['Endurance','Déplacements','Élevé'],['Endurance','Service','Normal'],['Déplacements','Coup droit','Élevé'],['Récupération','Repos','Léger'],
+   ['Endurance','Match play','Normal'],['Récupération','Repos','Léger'],['Repos','Repos','Léger']
+  ],
+  'Pré-saison':[
+   ['Endurance','Déplacements','Normal'],['Service','Coup droit','Normal'],['Retour','Revers','Normal'],['Récupération','Repos','Léger'],
+   ['Endurance','Match play','Élevé'],['Service','Double','Normal'],['Repos','Repos','Léger']
+  ],
+  'Retour de blessure':[
+   ['Récupération','Repos','Léger'],['Service','Récupération','Léger'],['Retour','Repos','Léger'],['Récupération','Repos','Léger'],
+   ['Coup droit','Récupération','Léger'],['Match play','Repos','Léger'],['Repos','Repos','Léger']
+  ]
+ };
+ const p=presets[name]||presets['Équilibré'];
+ local.dailyTrainingV22=local.dailyTrainingV22||{};
+ local.dailyTrainingV22[String(id)]=p.map(x=>({morning:x[0],afternoon:x[1],intensity:x[2]}));
+ const legacy=p.map(x=>x[0]);
+ if(id===cbTrainingPrimaryId())local.training=legacy;
+ else{
+   local.playerTraining=local.playerTraining||{};
+   local.playerTraining[String(id)]=legacy;
+ }
+ trainingPreview=null;persist();render();
+ await loadTrainingPreview(true).catch(()=>{});
+ render();
+};
+
 function training(){
- const sessions=['Service','Retour','Coup droit','Revers','Déplacements','Endurance','Match play','Double','Récupération','Repos'];
+ const selectedId=cbSelectedTrainingPlayerId();
+ const rows=cbTrainingScheduleV22(selectedId);
  const p=trainingPreview&&!trainingPreview.error?trainingPreview:null;
- const load=p?.load??trainingLoad();
- const min=p?.recommended_load?.min??9,max=p?.recommended_load?.max??12;
- const inRange=load>=min&&load<=max;
- const risk=String(p?.risk||((career().fatigue||18)>=65?'Élevé':(career().fatigue||18)>=50?'Modéré':'Maîtrisé'));
+ const weekLoad=cbTrainingWeekLoadV22(rows);
+ const nextDate=cbDailyAddDays(local.date||career().career_date||RANKING_SNAPSHOT,1);
+ const nextIndex=cbIsoDayIndex(nextDate);
+ const fatigue=Number(p?.fatigue??career().fatigue??18);
+ const fitness=Number(p?.fitness??career().fitness??90);
+ const risk=fatigue>=65||weekLoad>28?'Élevé':fatigue>=50||weekLoad>24?'Modéré':'Maîtrisé';
  const riskClass=risk==='Élevé'?'bad':risk==='Modéré'?'warn':'good';
- const mult=p?.multiplier!=null?Number(p.multiplier):null;
  const dev=p?.development||{};
  const topTargets=(p?.targets||[]).slice(0,5);
- const report=local.lastTrainingReport||null;
- const reportLabels={serve_power:'Puissance service',serve_precision:'Précision service',first_serve_quality:'1re balle',second_serve_quality:'2e balle',serve_variety:'Variété service',serve_spin:'Effet service',serve_consistency:'Régularité service',serve_plus_one:'Service +1',return_game:'Retour',return_aggression:'Retour agressif',return_consistency:'Régularité retour',counter_skill:'Contre',shot_control:'Contrôle de balle',timing:'Timing',forehand:'Coup droit',forehand_power:'Puissance CD',forehand_accuracy:'Précision CD',forehand_consistency:'Régularité CD',topspin:'Lift',backhand:'Revers',backhand_power:'Puissance revers',backhand_accuracy:'Précision revers',backhand_consistency:'Régularité revers',volley:'Volée',touch:'Toucher',movement:'Déplacements',speed:'Vitesse',acceleration:'Accélération',agility:'Agilité',balance:'Équilibre',footwork:'Jeu de jambes',athleticism:'Capacités physiques',stamina:'Endurance',strength:'Force',recovery:'Récupération',tactics:'Tactique',decision_making:'Décisions',shot_selection:'Choix de coups',big_points:'Points importants',concentration:'Concentration',composure:'Sang-froid',fighting_spirit:'Combativité',tenacity:'Ténacité',doubles:'Double',net_positioning:'Placement filet',doubles_communication:'Communication double',poaching:'Interceptions'};
- return `<div class="section-head"><div><div class="eyebrow">Performance · development-v3</div><h1>Entraînement hebdomadaire</h1><div class="muted">Chaque séance est pondérée par l’âge, le potentiel, la personnalité de développement, le staff, les installations, la fatigue et l’orientation simple/double.</div></div><button class="soft-btn" onclick="refreshTrainingPreview()">↻ Réanalyser</button></div>
- ${trainingPreviewLoading?'<div class="card"><div class="loader">Analyse du plan par le staff…</div></div>':''}
- ${trainingPreview?.error?`<div class="card"><span class="badge bad">Analyse indisponible</span><div class="muted" style="margin-top:8px">${esc(trainingPreview.error)}</div></div>`:''}
+ const report=(local.lastDailyTrainingReports||{})[String(selectedId)]||local.lastTrainingReport||null;
+ const reportLabels={serve_power:'Puissance service',serve_precision:'Précision service',first_serve_quality:'1re balle',second_serve_quality:'2e balle',serve_variety:'Variété service',serve_spin:'Effet service',serve_consistency:'Régularité service',serve_plus_one:'Service +1',return_game:'Retour',return_aggression:'Retour agressif',return_consistency:'Régularité retour',counter_skill:'Contre',shot_control:'Contrôle de balle',timing:'Timing',forehand:'Coup droit',forehand_power:'Puissance CD',forehand_accuracy:'Précision CD',forehand_consistency:'Régularité CD',topspin:'Lift',backhand:'Revers',backhand_power:'Puissance revers',backhand_accuracy:'Précision revers',backhand_consistency:'Régularité revers',volley:'Volée',touch:'Toucher',movement:'Déplacements',speed:'Vitesse',stamina:'Endurance',strength:'Force',tactics:'Tactique',decision_making:'Décisions',shot_selection:'Choix de coups',big_points:'Points importants',concentration:'Concentration',composure:'Sang-froid',fighting_spirit:'Combativité',doubles:'Double',net_positioning:'Placement filet',doubles_communication:'Communication double',poaching:'Interceptions'};
+ return `<div class="section-head"><div><div class="eyebrow">Performance · daily training V22</div><h1>Entraînement quotidien</h1><div class="muted">Deux blocs maximum par jour. Le travail crée de l’XP cachée ; les attributs montent seulement quand le palier est réellement atteint.</div></div><button class="soft-btn" onclick="refreshTrainingPreview()">↻ Réanalyser</button></div>
+ ${trainingPreviewLoading?'<div class="card"><div class="loader">Analyse du microcycle par le staff…</div></div>':''}
  <div class="grid g3">
-  <div class="card"><div class="eyebrow">Charge</div><div class="big">${load}</div><div class="muted">Conseillé : ${min}–${max}</div><div style="margin-top:8px"><span class="badge ${inRange?'good':'warn'}">${inRange?'Zone optimale':'À ajuster'}</span></div></div>
-  <div class="card"><div class="eyebrow">Risque physique</div><div class="big">${esc(risk)}</div><div style="margin-top:8px"><span class="badge ${riskClass}">Fatigue ${p?.fatigue??career().fatigue??18}% · forme ${p?.fitness??career().fitness??90}%</span></div></div>
-  <div class="card"><div class="eyebrow">Qualité progression</div><div class="big">${mult==null?'—':'×'+mult.toFixed(2)}</div><div class="muted">Staff ${p?.staff_score??Math.round((boot.staff||[]).reduce((a,x)=>a+x.skill,0)/Math.max(1,(boot.staff||[]).length))}/20 · installations ${p?.facility_score??'—'}</div></div>
+  <div class="card"><div class="eyebrow">Charge 7 jours</div><div class="big">${weekLoad}</div><div class="muted">Zone cible indicative : 16–24</div><div style="margin-top:8px"><span class="badge ${weekLoad>=14&&weekLoad<=25?'good':'warn'}">${weekLoad>=14&&weekLoad<=25?'Microcycle cohérent':'À ajuster'}</span></div></div>
+  <div class="card"><div class="eyebrow">Risque physique</div><div class="big">${risk}</div><div style="margin-top:8px"><span class="badge ${riskClass}">Fatigue ${fatigue}% · forme physique ${fitness}%</span></div></div>
+  <div class="card"><div class="eyebrow">Prochaine journée</div><div class="big">${TRAINING_DAY_LABELS_V22[nextIndex]}</div><div class="muted">${df(nextDate)} · ${rows[nextIndex].morning} / ${rows[nextIndex].afternoon}</div></div>
+ </div>
+ <div class="card" style="margin-top:12px">
+  <div class="row between"><div><div class="eyebrow">Modèles rapides</div><h2>Microcycle</h2></div><span class="pill">${esc(p?.player_name||career().player_name||'Joueur')}</span></div>
+  <div class="row tm-training-presets" style="gap:6px;flex-wrap:wrap;margin-top:10px">
+   ${['Équilibré','Développement','Préparation tournoi','Bloc physique','Pré-saison','Retour de blessure','Repos'].map(x=>`<button class="soft-btn" onclick="applyTrainingPresetV22('${x}')">${x}</button>`).join('')}
+  </div>
+ </div>
+ <div class="card" style="margin-top:12px">
+  <div class="row between"><div><div class="eyebrow">Planification</div><h2>7 jours · matin / après-midi</h2></div><span class="badge">Le match du jour remplace automatiquement l’entraînement par récupération légère</span></div>
+  <div class="tm-daily-training-grid" style="margin-top:10px">
+   ${rows.map((row,i)=>`<div class="tm-daily-training-row ${i===nextIndex?'next-day':''}">
+    <div class="tm-daily-day"><b>${TRAINING_DAY_LABELS_V22[i]}</b><small>${i===nextIndex?'Prochain jour':'Charge '+cbTrainingDayLoadV22(row).toFixed(1)}</small></div>
+    <label><span>Matin</span><select class="select" onchange="setDailyTrainingBlock(${i},'morning',this.value)">${cbTrainingOptionsV22(row.morning)}</select></label>
+    <label><span>Après-midi</span><select class="select" onchange="setDailyTrainingBlock(${i},'afternoon',this.value)">${cbTrainingOptionsV22(row.afternoon)}</select></label>
+    <label><span>Intensité</span><select class="select" onchange="setDailyTrainingIntensity(${i},this.value)">${cbIntensityOptionsV22(row.intensity)}</select></label>
+   </div>`).join('')}
+  </div>
  </div>
  <div class="grid g2" style="margin-top:12px">
-  <div class="card"><div class="row between"><div><div class="eyebrow">Plan de la semaine</div><h2>7 jours</h2></div><span class="pill">${esc(p?.player_name||career().player_name||'Joueur')} · ${p?.age??career().age??'—'} ans</span></div><div class="stack" style="margin-top:10px">${local.training.map((x,i)=>`<div class="list-item row between"><div><b>Jour ${i+1}</b><div class="muted mini">${i<5?'Séance principale':'Week-end'}</div></div><select class="select" style="width:auto" onchange="setTraining(${i},this.value)">${sessions.map(s=>`<option ${s===x?'selected':''}>${s}</option>`).join('')}</select></div>`).join('')}</div></div>
   <div class="card"><div class="row between"><div><div class="eyebrow">Profil de développement</div><h2>${esc(dev.type||'standard')}</h2></div>${dev.phase?`<span class="badge good">${esc(dev.phase)}</span>`:''}</div>
-   <div class="kpi-strip" style="margin-top:10px">
-    <div class="kpi"><span class="muted micro">Niveau</span><b>${p?starRatingHtml(p.current_stars):'—'}</b><small class="muted micro">CA ${p?.current_ability??career().current_ability??'—'}</small></div>
-    <div class="kpi"><span class="muted micro">Potentiel</span><b>${p?starRatingHtml(p.potential_stars):'—'}</b><small class="muted micro">Évaluation interne</small></div>
-   </div>
    <div class="list-item row between"><span>Vitesse de développement</span><b>${dev.development_rate??'—'}/20</b></div>
    <div class="list-item row between"><span>Professionnalisme</span><b>${dev.professionalism??'—'}/20</b></div>
    <div class="list-item row between"><span>Réceptivité au coaching</span><b>${dev.coachability??'—'}/20</b></div>
    <div class="list-item row between"><span>Résilience</span><b>${dev.resilience??'—'}/20</b></div>
    <div class="list-item row between"><span>Discipline</span><b>${dev.discipline??'—'}/20</b></div>
-   <div class="list-item row between"><span>Drive compétitif</span><b>${dev.competitive_drive??'—'}/20</b></div>
    <div class="list-item row between"><span>Pic théorique</span><b>${dev.peak_age??'—'} ans</b></div>
-   <div class="list-item row between"><span>Déclin à partir de</span><b>${dev.decline_start_age??'—'} ans</b></div>
+  </div>
+  <div class="card"><div class="eyebrow">Conseil du staff</div><h2>Séances les plus rentables</h2>
+   <div class="stack" style="margin-top:8px">${topTargets.length?topTargets.map((t,i)=>`<div class="list-item row between"><b>#${i+1} ${esc(t.session)}</b><span class="badge ${i<2?'good':''}">indice ${Number(t.score).toFixed(2)}</span></div>`).join(''):'<div class="muted">Analyse en cours…</div>'}</div>
   </div>
  </div>
- ${topTargets.length?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Rendement estimé</div><h2>Meilleures séances pour ce joueur</h2></div><span class="badge">Orientation ${esc(p?.career_focus||career().career_focus||'mixed')}</span></div><div class="stack" style="margin-top:8px">${topTargets.map((t,i)=>`<div class="list-item row between"><span><b>#${i+1} ${esc(t.session)}</b></span><span class="badge ${i<2?'good':''}">indice ${Number(t.score).toFixed(2)}</span></div>`).join('')}</div></div>`:''}
- ${p?.warnings?.length?`<div class="card" style="margin-top:12px"><div class="eyebrow">Alertes du staff</div><h2>À surveiller</h2><div class="stack" style="margin-top:8px">${p.warnings.map(w=>`<div class="list-item"><span class="badge warn">!</span> ${esc(w)}</div>`).join('')}</div></div>`:''}
- ${report?`<div class="card" style="margin-top:12px">
-  <div class="row between"><div><div class="eyebrow">Dernière semaine simulée</div><h2>Bilan d’entraînement</h2></div><span class="badge good">${report.attribute_improvements??(report.improvements||[]).length} attribut(s) amélioré(s)</span></div>
-  ${(report.improvements||[]).length?`<div class="grid g3" style="margin-top:10px">${report.improvements.slice(0,9).map(x=>`<div class="statbox"><span class="muted mini">${esc(reportLabels[x.attribute]||x.attribute)}</span><b>${x.from} → ${x.to}</b></div>`).join('')}</div>`:'<div class="muted">Pas de +1 visible cette semaine. L’XP est conservée pour les prochaines séances.</div>'}
-  ${report.xp_gains?`<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px">${Object.entries(report.xp_gains).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,6).map(([a,v])=>`<span class="badge">${esc(reportLabels[a]||a)} +${Number(v).toFixed(2)} XP</span>`).join('')}</div>`:''}
-  <div class="muted mini" style="margin-top:10px">Le niveau global et les étoiles sont recalculés par le cycle mensuel. Pas de +1 CA automatique chaque semaine.</div>
- </div>`:''}`
+ ${report?`<div class="card" style="margin-top:12px"><div class="row between"><div><div class="eyebrow">Dernière journée</div><h2>Bilan d’entraînement</h2></div><span class="badge ${report.training_niggle?'bad':'good'}">${report.training_niggle?'Alerte physique':(report.attribute_improvements||0)+' palier(s)'}</span></div>
+  <div class="muted" style="margin-top:8px">${esc(report.morning||'—')} / ${esc(report.afternoon||'—')} · charge ${Number(report.load||0).toFixed(1)} · fatigue ${report.fatigue_before??'—'}→${report.fatigue_after??'—'}</div>
+  ${(report.improvements||[]).length?`<div class="grid g3" style="margin-top:10px">${report.improvements.slice(0,9).map(x=>`<div class="statbox"><span class="muted mini">${esc(reportLabels[x.attribute]||x.attribute)}</span><b>${x.from} → ${x.to}</b></div>`).join('')}</div>`:'<div class="muted mini" style="margin-top:8px">Pas de +1 visible aujourd’hui. L’XP est conservée jusqu’au prochain vrai palier.</div>'}
+ </div>`:''}`;
 }
-function trainingLoad(){return local.training.reduce((a,s)=>a+(['Endurance','Match play','Déplacements'].includes(s)?3:['Service','Retour','Coup droit','Revers','Double'].includes(s)?2:s==='Récupération'?0:-1),0)}
+function trainingLoad(){return cbTrainingWeekLoadV22(cbTrainingScheduleV22(cbSelectedTrainingPlayerId()))}
 window.refreshTrainingPreview=async()=>{trainingPreview=null;await loadTrainingPreview(true);render()}
-window.setTraining=async(i,v)=>{local.training[i]=v;trainingPreview=null;persist();render();await loadTrainingPreview(true);render()}
+window.setTraining=async(i,v)=>{await window.setDailyTrainingBlock(i,'morning',v)}
 function scouting(){
  const shortlist=management?.shortlist||[];
  const reports=boot.scoutingReports||[];
@@ -5573,6 +5730,129 @@ window.simulateWeek=async()=>{
  }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }
+async function cbRunWeeklyCheckpointV22(checkpointDate,fromDate){
+ const cr=career();
+ const sim=await get('/api/simulate',{
+  method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+   clock_mode:'checkpoint',
+   date:String(checkpointDate||local.date),
+   from_date:String(fromDate||cbDailyAddDays(checkpointDate||local.date,-6)),
+   career_state:{form:cr.form,fitness:cr.fitness,morale:cr.morale,fatigue:cr.fatigue,injury_status:cr.injury_status},
+   training:[],player_training:{},difficulty:local.difficulty||'normal'
+  })
+ });
+ local.feed=local.feed||[];
+ if(sim.weeklyFinance)local.feed.unshift(`Bilan semaine · net ${sim.weeklyFinance.net>=0?'+':''}${euro(sim.weeklyFinance.net||0)} · sponsors ${euro(sim.weeklyFinance.sponsors||0)} · staff -${euro(sim.weeklyFinance.staff||0)}.`);
+ local.feed.unshift(`Checkpoint hebdomadaire validé · ${df(checkpointDate||local.date)}.`);
+ local.feed=local.feed.slice(0,10);
+ return sim;
+}
+
+window.advanceDay=async function(){
+ if(simulating)return;
+ if(saveSlotBusy){alert('Une sauvegarde ou un chargement est en cours.');return;}
+ if(local.liveSessionId||window.hasManagedLiveMatches?.()){alert('Termine le match en cours avant de continuer.');nav('match');return;}
+ simulating=true;render();
+ try{
+  const requestDay=async()=>{
+   const target=cbDailyAddDays(local.date||career().career_date||RANKING_SNAPSHOT,1);
+   return await get('/api/advance-day',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({today_plan:cbTodayTrainingPayloadV22(target),difficulty:local.difficulty||'normal'})
+   });
+  };
+
+  let day=await requestDay();
+
+  if(day?.checkpoint_required){
+   await cbRunWeeklyCheckpointV22(day.checkpoint_date||local.date,day.from_date);
+   boot=await get('/api/bootstrap');
+   if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
+   day=await requestDay();
+  }
+
+  if(day?.requires_rollover){
+   const roll=await get('/api/rollover-season',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({new_year:day.new_year,daily_mode:true,clock_mode:'daily'})
+   });
+   local.feed=local.feed||[];
+   local.feed.unshift(`Nouvelle saison ${day.new_year} · ${roll.rollover?.retired_players||0} retraite(s), ${roll.rollover?.newgens?.created||0} newgen(s).`);
+   boot=await get('/api/bootstrap');
+   if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
+   day=await requestDay();
+  }
+
+  if(day?.ok===false){
+   if(day.reason==='pending_match'||day.stop_reason==='match'){
+    local.feed=local.feed||[];
+    const m=day.due_matches?.matches?.[0];
+    local.feed.unshift(m?`Match à jouer aujourd’hui · ${m.tournament_name} · ${m.round}.`:'Un match doit être joué avant de continuer.');
+    local.feed=local.feed.slice(0,10);
+    persist();
+    await nav('calendar');
+    return;
+   }
+   if(day.reason==='clock_busy'){throw new Error('Le calendrier est déjà en cours de mise à jour. Relance Continuer.')}
+   throw new Error(day.reason||'Le jour n’a pas pu être validé.');
+  }
+
+  local.date=day.date||local.date;
+  local.week=day.week||local.week;
+  if(day.career)local.career={...career(),...day.career};
+  local.lastDailyTrainingReports=local.lastDailyTrainingReports||{};
+  for(const report of day.training||[]){
+   if(report?.player_id)local.lastDailyTrainingReports[String(report.player_id)]=report;
+   if(Number(report?.player_id||0)===cbTrainingPrimaryId())local.lastTrainingReport=report;
+  }
+
+  local.feed=local.feed||[];
+  const dayName=TRAINING_DAY_LABELS_V22[cbIsoDayIndex(local.date)];
+  local.feed.unshift(`${dayName} ${df(local.date)} · journée validée.`);
+  if(day.training_improvements>0)local.feed.unshift(`Entraînement · ${day.training_improvements} palier(s) d’attribut franchi(s).`);
+  if(day.training_niggles>0)local.feed.unshift(`Centre médical · ${day.training_niggles} gêne(s) détectée(s) à l’entraînement.`);
+  const due=day.due_matches?.matches||[];
+  if(due.length)local.feed.unshift(`Match du jour · ${due[0].tournament_name} · ${due[0].round}.`);
+  local.feed=local.feed.slice(0,10);
+
+  if(day.weekly_checkpoint_due){
+   await cbRunWeeklyCheckpointV22(day.date,day.week_start_date);
+  }
+
+  boot=await get('/api/bootstrap');
+  if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
+  const activeId=activeManagedId();
+  if(activeId&&activeId!==primaryManagedPlayerId())await loadActiveManagedContext(true,activeId).catch(()=>{});
+  trainingPreview=null;careerHub=null;
+  persist();
+
+  const autosave=await saveCareerSlot(0,'autosave',true);
+  if(!autosave?.ok)throw new Error('La journée est validée mais l’autosave a échoué.');
+
+  await Promise.allSettled([
+   loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),
+   loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)
+  ]);
+  if(route==='training')await loadTrainingPreview(true).catch(()=>{});
+  if(route==='history')await loadHistory().catch(()=>{});
+
+  if(day.stop_reason==='match')await nav('calendar');
+  else if(day.stop_reason==='decision')await nav('inbox');
+  else if(day.stop_reason==='medical')await nav('medical');
+  else if(day.stop_reason==='training_progress')await nav('training');
+ }catch(e){
+  try{
+   boot=await get('/api/bootstrap');
+   if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
+  }catch{}
+  alert('Continuer impossible : '+e.message);
+ }finally{
+  simulating=false;render();
+ }
+};
+window.simulateWeek=window.advanceDay;
+
 window.openGlobalSearch=()=>{
  overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Base mondiale · ${fmt(worldStats?.searchableRealPlayers||20000)} joueurs réels · classement mondial #1–#30000 + base profonde</div><h1>Recherche joueurs</h1></div><button class="close" onclick="closeOverlay()">✕</button></div>
  <input id="globalSearchInput" class="input" style="margin-top:12px" placeholder="Nom du joueur…" oninput="runGlobalSearch(this.value)" autofocus>

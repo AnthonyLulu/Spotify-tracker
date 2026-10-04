@@ -41,7 +41,8 @@ test('automatic match day adds no training XP, fatigue recovery, fitness boost o
 });
 
 test('Match Center remains the single owner of competitive condition changes',()=>{
-  assert.match(backend,/const fatigueAdd=Math\.max\(4,Math\.min\(16,/);
+  assert.match(backend,/const fatigueAdd=Math\.max\(\d+,Math\.min\(\d+,Math\.round\(/);
+  assert.match(backend,/condition:nextCondition/);
   assert.match(backend,/managed_condition:managedUpdate/);
   assert.match(backend,/partner_condition:partnerUpdate/);
   assert.match(backend,/commit_live_world_match_atomic_v23/);

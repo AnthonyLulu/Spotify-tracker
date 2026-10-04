@@ -74,6 +74,17 @@ test('player movement is eased while ball flight remains linear',()=>{
 });
 
 
+test('managed tournament Match Center is locked to the exact world-draw opponent',()=>{
+  assert.ok(backend.includes('const requestedOpponentId=Number(body?.opponent_id||0)'));
+  assert.ok(backend.includes('let opponentId=tournamentId?0:requestedOpponentId'));
+  assert.ok(backend.includes('ensureManagedWorldLiveMatch'));
+  assert.ok(backend.includes('bracket_mismatch_guard:true'));
+  assert.ok(backend.includes('world_match_id:worldMatchId'));
+  assert.ok(backend.includes('if(tournamentLive&&Number(meta.world_match_id||0)>0)'));
+  assert.ok(backend.includes('Le match live ne correspond plus à la case du tableau mondial.'));
+  assert.ok(backend.includes('.eq("id",Number(wr.id))'));
+});
+
 test('live doubles point-by-point uses the real match stack',()=>{
   for(const marker of [
     '/api/live-doubles/start','/api/live-doubles/point','/api/live-doubles/commit',

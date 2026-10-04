@@ -29,7 +29,7 @@ jobs:
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
               if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then
                 curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
-                grep -q 'records-v1.js?v=20261004-records-v9' /tmp/index.html
+                grep -q 'records-v1.js?v=20261004-records-v10' /tmp/index.html
                 echo "Exact visual build ready"
                 exit 0
               fi

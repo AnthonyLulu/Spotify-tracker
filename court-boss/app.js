@@ -5866,7 +5866,7 @@ window.advanceDay=async function(){
    const target=cbDailyAddDays(local.date||career().career_date||RANKING_SNAPSHOT,1);
    return await get('/api/advance-day',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({today_plan:cbTodayTrainingPayloadV22(target),difficulty:local.difficulty||'normal'})
+    body:JSON.stringify({today_plan:cbTodayTrainingPayloadV22(target),difficulty:local.difficulty||'normal',expected_from_date:String(local.date||career().career_date||RANKING_SNAPSHOT)})
    });
   };
 

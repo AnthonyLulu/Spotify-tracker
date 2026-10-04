@@ -1694,6 +1694,14 @@ async function captureLiveCheckpointSnapshot(baseSnapshot:any){
   let liveSessions:any[]=[];
   let liveEvents:any[]=[];
   let livePointEvents:any[]=[];
+  let liveEffectCommits:any[]=[];
+  let liveExternalPlayers:any[]=[];
+  let liveExternalInjuries:any[]=[];
+  let liveExternalElo:any[]=[];
+  let liveExternalPsychology:any[]=[];
+  let liveExternalTrainingLoad:any[]=[];
+  let liveWorldSinglesMatches:any[]=[];
+  let liveWorldDoublesMatches:any[]=[];
   if(livePlayerIds.length){
     const live=await db.from("live_match_sessions")
       .select("*").in("managed_player_id",livePlayerIds)
@@ -1701,21 +1709,66 @@ async function captureLiveCheckpointSnapshot(baseSnapshot:any){
     if(live.error)throw new Error("Live checkpoint sessions: "+live.error.message);
     liveSessions=live.data??[];
     const liveIds=liveSessions.map((x:any)=>Number(x.id)).filter(Boolean);
-    if(liveIds.length){
-      const [events,pointEvents]=await Promise.all([
-        db.from("live_match_events").select("*").in("session_id",liveIds).order("id"),
-        db.from("live_match_point_events").select("*").in("session_id",liveIds).order("id")
-      ]);
-      if(events.error||pointEvents.error)throw new Error("Live checkpoint events: "+(events.error||pointEvents.error)?.message);
-      liveEvents=events.data??[];
-      livePointEvents=pointEvents.data??[];
-    }
+    const linkedPlayerIds=[...new Set(liveSessions.flatMap((row:any)=>{
+      const meta:any=row?.stats?._meta||{};
+      const doubles:Array<any>=Array.isArray(meta?.rollback_doubles_players)?meta.rollback_doubles_players:[];
+      return [
+        Number(row?.opponent_id||0),
+        Number(meta?.rollback_opponent?.player?.id||0),
+        ...doubles.map((x:any)=>Number(x?.player?.id||0))
+      ];
+    }).filter(Boolean).filter((id:number)=>!livePlayerIds.includes(id)))];
+    const worldIds=[...new Set(liveSessions.map((row:any)=>Number(row?.stats?._meta?.world_match_id||0)).filter(Boolean))];
+    const detailReads:any[]=[];
+    if(liveIds.length)detailReads.push(
+      db.from("live_match_events").select("*").in("session_id",liveIds).order("id"),
+      db.from("live_match_point_events").select("*").in("session_id",liveIds).order("id"),
+      db.from("live_match_effect_commits_v23").select("*").in("session_id",liveIds).order("session_id").order("effect")
+    );
+    else detailReads.push(Promise.resolve({data:[],error:null}),Promise.resolve({data:[],error:null}),Promise.resolve({data:[],error:null}));
+    if(linkedPlayerIds.length)detailReads.push(
+      db.from("players").select("*").in("id",linkedPlayerIds).order("id"),
+      db.from("injuries").select("*").in("player_id",linkedPlayerIds).order("id"),
+      db.from("player_elo_ratings").select("*").in("player_id",linkedPlayerIds).order("player_id"),
+      db.from("player_psychology_state").select("*").in("player_id",linkedPlayerIds).order("player_id"),
+      db.from("player_training_load_profiles").select("*").in("player_id",linkedPlayerIds).order("player_id")
+    );
+    else for(let i=0;i<5;i++)detailReads.push(Promise.resolve({data:[],error:null}));
+    if(worldIds.length)detailReads.push(
+      db.from("world_tournament_matches").select("*").in("id",worldIds).order("id"),
+      db.from("world_doubles_tournament_matches").select("*").in("id",worldIds).order("id")
+    );
+    else detailReads.push(Promise.resolve({data:[],error:null}),Promise.resolve({data:[],error:null}));
+    const [
+      events,pointEvents,effects,externalPlayers,externalInjuries,externalElo,
+      externalPsychology,externalTrainingLoad,worldSingles,worldDoubles
+    ]=await Promise.all(detailReads);
+    const detailError=[events,pointEvents,effects,externalPlayers,externalInjuries,externalElo,externalPsychology,externalTrainingLoad,worldSingles,worldDoubles].find((x:any)=>x?.error)?.error;
+    if(detailError)throw new Error("Live checkpoint detail: "+detailError.message);
+    liveEvents=events.data??[];
+    livePointEvents=pointEvents.data??[];
+    liveEffectCommits=effects.data??[];
+    liveExternalPlayers=externalPlayers.data??[];
+    liveExternalInjuries=externalInjuries.data??[];
+    liveExternalElo=externalElo.data??[];
+    liveExternalPsychology=externalPsychology.data??[];
+    liveExternalTrainingLoad=externalTrainingLoad.data??[];
+    liveWorldSinglesMatches=worldSingles.data??[];
+    liveWorldDoublesMatches=worldDoubles.data??[];
   }
   return {
     ...base,checkpoint_kind:"live",
     live_match_sessions:liveSessions,
     live_match_events:liveEvents,
-    live_match_point_events:livePointEvents
+    live_match_point_events:livePointEvents,
+    live_match_effect_commits:liveEffectCommits,
+    live_external_players:liveExternalPlayers,
+    live_external_injuries:liveExternalInjuries,
+    live_external_elo:liveExternalElo,
+    live_external_psychology:liveExternalPsychology,
+    live_external_training_load:liveExternalTrainingLoad,
+    live_world_singles_matches:liveWorldSinglesMatches,
+    live_world_doubles_matches:liveWorldDoublesMatches
   };
 }
 
@@ -1732,7 +1785,11 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     if(missing.length)throw new Error("Incomplete V8 timeline snapshot: "+missing.join(","));
     if(!snapshot?.career||!Array.isArray(snapshot?.managed_players))throw new Error("Incomplete V8 career snapshot");
     if(snapshot?.checkpoint_kind==="live"){
-      const requiredLiveArrays=["live_match_sessions","live_match_events","live_match_point_events"];
+      const requiredLiveArrays=[
+        "live_match_sessions","live_match_events","live_match_point_events","live_match_effect_commits",
+        "live_external_players","live_external_injuries","live_external_elo","live_external_psychology",
+        "live_external_training_load","live_world_singles_matches","live_world_doubles_matches"
+      ];
       const missingLive=requiredLiveArrays.filter(key=>!Array.isArray(snapshot?.[key]));
       if(missingLive.length)throw new Error("Incomplete V8 live checkpoint: "+missingLive.join(","));
     }
@@ -2095,7 +2152,28 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   }
 
   if(liveCheckpoint){
+    const externalPlayerIds=[...new Set((snapshot.live_external_players??[]).map((x:any)=>Number(x.id||0)).filter(Boolean))];
+    if(externalPlayerIds.length){
+      for(const playerId of externalPlayerIds){
+        const injuryDel=await db.from("injuries").delete().eq("player_id",playerId);
+        if(injuryDel.error)throw new Error("live external injuries cleanup: "+injuryDel.error.message);
+        const eloDel=await db.from("player_elo_ratings").delete().eq("player_id",playerId);
+        if(eloDel.error)throw new Error("live external Elo cleanup: "+eloDel.error.message);
+        const psychDel=await db.from("player_psychology_state").delete().eq("player_id",playerId);
+        if(psychDel.error)throw new Error("live external psychology cleanup: "+psychDel.error.message);
+        const loadDel=await db.from("player_training_load_profiles").delete().eq("player_id",playerId);
+        if(loadDel.error)throw new Error("live external training cleanup: "+loadDel.error.message);
+      }
+      await upsertMany("players",snapshot.live_external_players??[],"id");
+      await upsertMany("injuries",snapshot.live_external_injuries??[],"id");
+      await upsertMany("player_elo_ratings",snapshot.live_external_elo??[],"player_id");
+      await upsertMany("player_psychology_state",snapshot.live_external_psychology??[],"player_id");
+      await upsertMany("player_training_load_profiles",snapshot.live_external_training_load??[],"player_id");
+    }
+    await upsertMany("world_tournament_matches",snapshot.live_world_singles_matches??[],"id");
+    await upsertMany("world_doubles_tournament_matches",snapshot.live_world_doubles_matches??[],"id");
     await upsertMany("live_match_sessions",snapshot.live_match_sessions??[],"id");
+    await upsertMany("live_match_effect_commits_v23",snapshot.live_match_effect_commits??[],"session_id,effect");
     await upsertMany("live_match_events",snapshot.live_match_events??[],"id");
     await upsertMany("live_match_point_events",snapshot.live_match_point_events??[],"id");
   }

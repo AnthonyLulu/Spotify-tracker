@@ -106,18 +106,6 @@ jobs:
             // Record Hub must exist on the root build the user opens.
             await page.evaluate(()=>nav('history'));
             await page.getByRole('heading',{name:'Histoire, records & nations'}).waitFor({timeout:25000});
-            const recordDiag=await page.evaluate(()=>({
-              renderer:typeof window.courtBossRecordHubSection,
-              historyDataType:typeof historyData,
-              historyKeys:historyData&&typeof historyData==='object'?Object.keys(historyData):[],
-              recordHubType:historyData&&historyData.recordHub==null?String(historyData.recordHub):typeof historyData?.recordHub,
-              recordHubKeys:historyData?.recordHub&&typeof historyData.recordHub==='object'?Object.keys(historyData.recordHub):[],
-              recordHubError:historyData?.recordHub?.error||null,
-              recordHubManaged:historyData?.recordHub?.managed?.name||null,
-              hasHubMarkup:!!document.querySelector('.cb-record-hub'),
-              historyText:(document.querySelector('#app')?.innerText||'').slice(0,5000)
-            }));
-            console.log('RECORD_DIAG '+JSON.stringify(recordDiag));
             await page.getByText('Record Hub · historique + sauvegarde',{exact:true}).waitFor();
             await page.getByRole('heading',{name:'Exploits, séries et records cultes'}).waitFor();
 

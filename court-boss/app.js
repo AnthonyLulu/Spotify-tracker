@@ -493,7 +493,22 @@ async function loadCareerSlot(slotNo){
   const activeLiveId=activeManagedId()||primaryManagedPlayerId()||0;
   if(restoredLive.some(x=>Number(x.managed_player_id)===Number(activeLiveId)))await restoreLiveMatchForPlayer(activeLiveId).catch(()=>{});
   route=local.liveMatch?'match':'home';render();
- }catch(e){alert('Chargement impossible : '+e.message);return {ok:false,error:String(e?.message||e)}}
+ }catch(e){
+  if(e?.data?.recovery_pending){
+   alert('Récupération de sécurité en cours. La partie précédente est protégée ; relance le chargement dans quelques instants.');
+   return {ok:false,reason:'recovery_pending',error:String(e?.message||e)};
+  }
+  if(e?.data?.rollback_verified===true){
+   alert('Chargement annulé : '+e.message+'\n\nL’état d’avant chargement a été restauré et vérifié sans perte.');
+   return {ok:false,reason:'load_rolled_back_verified',error:String(e?.message||e)};
+  }
+  if(e?.data?.rollback_verified===false){
+   alert('ERREUR DE RÉCUPÉRATION : '+e.message+'\n\nLe serveur n’a pas pu prouver que l’état précédent est intact. Ne continue pas la carrière avant une nouvelle récupération.');
+   return {ok:false,reason:'rollback_verification_failed',error:String(e?.message||e)};
+  }
+  alert('Chargement impossible : '+e.message);
+  return {ok:false,error:String(e?.message||e)};
+ }
  return {ok:true,slot_no:Number(slotNo)};
  });
 }
@@ -3833,7 +3848,7 @@ function saveCenterPage(){
  const cards=[0,1,2,3,4,5,9].map(n=>{
   const x=byNo.get(n),auto=n===0,quick=n===9;
   const slotLabel=auto?'Autosave':quick?'Quicksave':'Slot '+n;
-  const scopeLabel=x?.snapshot_scope==='managed_squad_college_exact_v7'?'v7 · groupe + NCAA + médical':x?.snapshot_scope==='managed_squad_ledgers_exact_v6'?'v6 · groupe + ATP simple/double':x?.snapshot_scope==='managed_squad_ledger_exact_v5'?'v5 · groupe + ledger ATP':x?.snapshot_scope==='managed_squad_exact_v4'?'v4 · groupe exact':x?.snapshot_scope==='managed_academy_exact_v3'?'v3 · multi-joueurs':x?.snapshot_scope==='managed_world_exact_v2'?'v2 · joueur principal':x?'legacy':'';
+  const scopeLabel=x?.snapshot_scope==='managed_timeline_live_v8'?'v8 · timeline + match live exact':x?.snapshot_scope==='managed_timeline_v8'?'v8 · timeline complète':x?.snapshot_scope==='managed_squad_college_exact_v7'?'v7 · groupe + NCAA + médical':x?.snapshot_scope==='managed_squad_live_checkpoint_exact_v7'?'v7 · checkpoint live':x?.snapshot_scope==='managed_squad_ledgers_exact_v6'?'v6 · groupe + ATP simple/double':x?.snapshot_scope==='managed_squad_ledger_exact_v5'?'v5 · groupe + ledger ATP':x?.snapshot_scope==='managed_squad_exact_v4'?'v4 · groupe exact':x?.snapshot_scope==='managed_academy_exact_v3'?'v3 · multi-joueurs':x?.snapshot_scope==='managed_world_exact_v2'?'v2 · joueur principal':x?'legacy':'';
   return `<div class="card save-slot ${x?'has-save':''} ${auto?'is-autosave':''} ${quick?'is-quicksave':''}">
     <div class="row between"><div><div class="eyebrow">${slotLabel}</div><h2>${esc(x?.slot_name||(auto?'Autosave hebdomadaire':quick?'Sauvegarde rapide':'Slot vide'))}</h2></div><div class="row" style="gap:6px"><span class="badge ${x?'good':''}">${x?'Disponible':'Vide'}</span>${x&&scopeLabel?`<span class="badge">${esc(scopeLabel)}</span>`:''}</div></div>
     ${x?`<div class="list-item row between"><span>Date carrière</span><b>${df(x.career_date)}</b></div><div class="list-item row between"><span>Semaine</span><b>${fmt(x.week||1)}</b></div><div class="list-item row between"><span>Joueur</span><b>${esc(x.player_name||'—')}</b></div><div class="muted micro" style="margin-top:7px">Dernière écriture : ${new Date(x.updated_at).toLocaleString('fr-FR')}</div>`:auto?'<div class="muted">L’autosave sera créé après la prochaine semaine simulée.</div>':'<div class="empty">Aucune sauvegarde dans ce slot.</div>'}
@@ -3844,8 +3859,8 @@ function saveCenterPage(){
     </div>
    </div>`;
  }).join('');
- return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot V6 conserve le groupe géré complet : joueurs, entraînements, médical, relations, staff, sponsors, inscriptions, résultats et ledgers ATP simple + double par joueur.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
- <div class="notice mini"><b>Snapshot groupe V6 exact :</b> les 1 à 8 joueurs sont figés ensemble avec attributs, progression, fatigue, blessures, plans, relations, sponsors, staff perso, inscriptions, runs simple/double et leurs deux ledgers de classement 52 semaines. Charger un slot remet toute la timeline managée au même instant.</div>
+ return `<div class="section-head"><div><div class="eyebrow">Career OS</div><h1>Sauvegardes</h1><div class="muted">Autosave hebdomadaire + 5 slots manuels + quicksave. Le snapshot V8 conserve la timeline gérée complète : joueurs, entraînements, médical, relations, staff, sponsors, inscriptions, résultats, records, Hall of Fame, classements et checkpoints live.</div></div><button class="primary" onclick="saveCareerSlot(9,'quick')">Sauvegarde rapide</button></div>
+ <div class="notice mini"><b>Snapshot V8 exact :</b> la carrière, le groupe géré, les ledgers, l’historique, les records et les matchs live sauvegardés reviennent au même instant. Un chargement interrompu garde en plus un snapshot de sécurité durable vérifié avant de rendre la main.</div>
  ${local.lastSaveState?`<div class="card" style="margin-top:10px"><div class="row between"><div><div class="eyebrow">Dernière opération de sauvegarde</div><b>${local.lastSaveState.slot_type==='autosave'?'Autosave':local.lastSaveState.slot_type==='quick'?'Quicksave':'Sauvegarde manuelle'} · semaine ${fmt(local.lastSaveState.week||1)}</b></div><span class="badge ${local.lastSaveState.status==='ok'?'good':'bad'}">${local.lastSaveState.status==='ok'?'Sécurisée':'Échec'}</span></div><div class="muted mini" style="margin-top:6px">${df(local.lastSaveState.career_date)} · ${new Date(local.lastSaveState.updated_at).toLocaleString('fr-FR')}${local.lastSaveState.error?' · '+esc(local.lastSaveState.error):''}</div></div>`:''}
  <div class="row" style="margin-top:10px"><button class="ghost" onclick="nav('launcher')">Menu carrière</button></div>
  <div class="grid g2" style="margin-top:12px">${cards}</div>`;

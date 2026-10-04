@@ -13829,6 +13829,45 @@ Deno.serve(async(req:Request)=>{
     const tournamentTerminal=tournamentLive&&(!won||round==="F");
     const nextTournamentMatch=tournamentLive&&won&&round!=="F";
     let tournamentOutcome:any=null;
+    // Preflight the exact world-draw slot before ANY irreversible live-match side effect.
+    // If the bracket changed underneath the session, reject before history, medical,
+    // fatigue, Elo, ranking or prize writes can create a ghost result.
+    if(tournamentLive&&Number(meta.world_match_id||0)>0){
+      const preflight=await db.from("world_tournament_matches")
+        .select("id,tournament_id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
+        .eq("id",Number(meta.world_match_id)).maybeSingle();
+      if(preflight.error||!preflight.data){
+        return h({
+          error:preflight.error?.message||"Match du tableau mondial introuvable avant validation.",
+          world_match_id:Number(meta.world_match_id||0),
+          bracket_mismatch_guard:true,
+          preflight:true
+        },409);
+      }
+      const wr:any=preflight.data;
+      const a=Number(wr.player_a_id||0),b=Number(wr.player_b_id||0),oppId=Number(opp?.id||0);
+      const worldRound=String(wr.round_code||"");
+      if(
+        Number(wr.tournament_id||0)!==tournamentId
+        || (round&&worldRound&&round!==worldRound)
+        || !((a===playerId&&b===oppId)||(b===playerId&&a===oppId))
+      ){
+        return h({
+          error:"Le match live ne correspond plus exactement à la case du tableau mondial.",
+          world_match_id:wr.id,bracket_mismatch_guard:true,preflight:true,
+          expected:{tournament_id:tournamentId,round,player_id:playerId,opponent_id:oppId},
+          actual:{tournament_id:Number(wr.tournament_id||0),round:worldRound,player_a_id:a,player_b_id:b}
+        },409);
+      }
+      const expectedWinnerId=won?playerId:oppId;
+      if(Number(wr.winner_id||0)>0&&Number(wr.winner_id)!==expectedWinnerId){
+        return h({
+          error:"Cette case du tableau possède déjà un autre résultat.",
+          world_match_id:wr.id,bracket_mismatch_guard:true,preflight:true
+        },409);
+      }
+    }
+
     const history=await db.from("match_history").insert({
       managed_player_id:playerId,tournament_name:tournamentName,match_date:matchDate,
       surface:String(session.data.surface||"Dur"),round,

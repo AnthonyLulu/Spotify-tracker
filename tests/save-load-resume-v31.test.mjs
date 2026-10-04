@@ -7,6 +7,7 @@ const app=read('court-boss/app.js');
 const edge=read('supabase/functions/court-boss/index.ts');
 const daily=read('supabase/migrations/20261004122433_idempotent_daily_clock_training_v25.sql')+'\n'+read('supabase/migrations/20261004175500_audit_reliability_v31.sql');
 const recoveryGuards=read('supabase/migrations/20261004010204_live_match_idempotent_commit_guards_v23.sql')+'\n'+read('supabase/migrations/20261004130000_post_match_recovery_v24.sql');
+const careerIntegrity=read('supabase/migrations/20261004172500_career_integrity_save_v8_v32.sql');
 
 test('passive local persistence never opens the private access gate',()=>{
   const start=app.indexOf('function persist()');
@@ -110,4 +111,14 @@ test('passive bootstrap and career hub stay read-only',()=>{
   const hubEnd=edge.indexOf('if(path.endsWith("/api/managed-player-context")',hubStart);
   const hub=edge.slice(hubStart,hubEnd);
   assert.doesNotMatch(hub,/ensure_player_season_plan/);
+});
+
+
+test('career integrity audit understands v8 save scopes and timeline shape',()=>{
+  assert.match(careerIntegrity,/CB-CAREER-INTEGRITY-v4/);
+  assert.match(careerIntegrity,/managed_timeline_v8/);
+  assert.match(careerIntegrity,/managed_timeline_live_v8/);
+  assert.match(careerIntegrity,/CB-MANAGED-SAVE-v8/);
+  assert.match(careerIntegrity,/court_boss_hof_profiles/);
+  assert.match(careerIntegrity,/v_legacy_slots=0/);
 });

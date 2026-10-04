@@ -95,10 +95,25 @@
 
   function recordHero(hub,progress,occurrences){
     const byCode=new Map((hub.catalog||[]).map(x=>[String(x.code),x]));
-    const codes=['calendar_golden_slam_men','nole_slam','career_golden_masters','sunshine_double_career_record','masters_aces_edition_reference'];
+    const codes=['calendar_golden_slam_men','nole_slam','career_golden_masters','career_aces_reference','aces_match_record','return_points_won_season_save'];
     return '<div class="cb-record-hero-grid">'+codes.map(code=>{
       const r=byCode.get(code);return r?recordCard(r,progress,occurrences.get(code)||[],true):'';
     }).join('')+'</div>';
+  }
+
+  function recordAwardSection(hub){
+    const rows=Array.isArray(hub&&hub.awards)?hub.awards:[];
+    if(!rows.length){
+      return '<section class="card cb-record-awards"><div class="row between"><div><div class="eyebrow">Awards de saison</div><h2>Le palmarès annuel se construit dans ta sauvegarde</h2></div><span class="badge">Dès la fin de saison</span></div><p class="muted">Joueur de l’année, Most Improved, Breakthrough, Comeback, meilleur serveur, meilleur retourneur, meilleur sous pression, meilleur U21, rois du dur / de la terre / du gazon et équipe de l’année. Les gagnants sont recalculés à chaque passage de saison.</p></section>';
+    }
+    const latest=Math.max(...rows.map(x=>Number(x.season||0)));
+    const seasonRows=rows.filter(x=>Number(x.season||0)===latest);
+    const main=seasonRows.filter(x=>String(x.award_code)!=='team_of_year');
+    const team=seasonRows.filter(x=>String(x.award_code)==='team_of_year').sort((a,b)=>Number(a.award_rank||0)-Number(b.award_rank||0));
+    return '<section class="card cb-record-awards"><div class="row between"><div><div class="eyebrow">Awards de saison</div><h2>Palmarès '+latest+'</h2></div><span class="badge">'+main.length+' trophées</span></div>'
+      +'<div class="grid g2" style="margin-top:12px">'+main.map(a=>'<div class="list-item"><div class="row between"><span><b>'+esc(a.award_name||a.award_code)+'</b><div class="muted micro">'+esc(a.player_name)+(a.country?' · '+(flags[a.country]||a.country):'')+'</div></span><span class="badge good">#1</span></div></div>').join('')+'</div>'
+      +(team.length?'<div class="list-item" style="margin-top:10px"><b>Équipe de l’année</b><div class="cb-record-occurrences" style="margin-top:8px">'+team.map(a=>'<span class="cb-record-occ-chip">#'+Number(a.award_rank||0)+' '+(a.country?(flags[a.country]||'🏳️')+' ':'')+esc(a.player_name)+'</span>').join('')+'</div></div>':'')
+      +'</section>';
   }
 
   function recordHubSection(hub){
@@ -111,15 +126,16 @@
     const mythic=catalog.filter(x=>String(x.rarity)==='mythic').length;
     const historical=((hub.occurrences)||[]).length;
     const managed=hub.managed||{};
-    const mainCards=filtered.filter(r=>!['calendar_golden_slam_men','nole_slam','career_golden_masters','sunshine_double_career_record','masters_aces_edition_reference'].includes(String(r.code)));
+    const mainCards=filtered.filter(r=>!['calendar_golden_slam_men','nole_slam','career_golden_masters','career_aces_reference','aces_match_record','return_points_won_season_save'].includes(String(r.code)));
 
     return '<section class="cb-record-hub">'
       +'<div class="cb-record-head card"><div><div class="eyebrow">Record Hub · historique + sauvegarde</div><h2>Exploits, séries et records cultes</h2><p class="muted">Records figés sur la référence historique du 1er décembre 2025, puis comparés aux exploits générés dans ta carrière.</p></div>'
       +'<div class="cb-record-kpis"><div><span>Records</span><b>'+fmt(catalog.length)+'</b></div><div><span>Mythiques</span><b>'+fmt(mythic)+'</b></div><div><span>Occurrences historiques</span><b>'+fmt(historical)+'</b></div><div><span>Réalisés par '+esc(managed.name||'ton joueur')+'</span><b>'+fmt(achieved)+'</b></div></div></div>'
       +'<div class="cb-record-tabs">'+categories.map(x=>'<button class="'+(cbRecordCategory===x?'active':'')+'" onclick="setCourtBossRecordCategory(\''+esc(x)+'\')">'+esc(x)+'</button>').join('')+'</div>'
       +(cbRecordCategory==='Tous'?recordHero(hub,progress,occurrences):'')
+      +(cbRecordCategory==='Tous'||cbRecordCategory==='Awards'?recordAwardSection(hub):'')
       +'<div class="cb-record-grid">'+mainCards.map(r=>recordCard(r,progress,occurrences.get(String(r.code))||[],false)).join('')+'</div>'
-      +'<div class="notice mini cb-record-note"><b>Aces :</b> Court Boss compare maintenant ta meilleure édition de Masters au benchmark sourcé de <b>98 aces de John Isner à Miami 2019</b>. Cette marque est enregistrée comme référence documentée de cette édition, pas comme affirmation de record absolu sur toute l’histoire des Masters. Les records de sauvegarde restent calculés match par match par le moteur.</div>'
+      +'<div class="notice mini cb-record-note"><b>Stats avancées :</b> le record carrière d’aces est désormais calé à <b>14 450 pour John Isner</b>, avec le record match à <b>113</b>. Tes matchs live utilisent les points réellement joués. Les matchs IA/newgens produisent une boxscore déterministe issue des attributs, du score, de la surface et du niveau adverse. Le meilleur retourneur et le meilleur serveur sont donc calculés, jamais distribués à la main.</div>'
       +'</section>';
   }
 

@@ -2876,66 +2876,106 @@ Deno.serve(async(req:Request)=>{
     const sid=saveId(req);
     const currentCareer=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(currentCareer.error)return h({error:currentCareer.error.message},500);
-    // Bootstrap is read-only. Baseline creation belongs to /api/new-career and
-    // inbox synchronization belongs to the protected daily clock.
-    const [career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries,managedDoublesEntries] = await Promise.all([
-      Promise.resolve(currentCareer),
+    const managedId=Number(currentCareer.data?.managed_player_id||0);
+    // Core bootstrap is intentionally small: it must paint Home before optional
+    // staff/scouting/medical/history data is fetched in the background.
+    const [academy,finance,board,inbox,news,events,save,managedEntries,managedDoublesEntries]=await Promise.all([
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
-      db.from("staff").select("*,profile:staff_profiles(*)").order("id"),
-      db.from("facilities").select("*").order("id"),
       db.from("finances").select("*").eq("id","demo").maybeSingle(),
       db.from("board_objectives").select("*").order("priority",{ascending:true}),
       db.from("inbox_items").select("*").order("created_at",{ascending:false}).limit(20),
-      db.from("scouting_assignments").select("*,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,primary_role,nationality,scouting_rating,reputation,regions,workload,burnout,energy,operational_status,rest_until)").order("id"),
-      db.from("scouting_reports").select("*,player:players!scouting_reports_player_id_fkey(id,name,country,ranking,game_world_rank,junior_ranking,age,birth_date,style,photo_url,ncaa_current,career_status)").order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(60),
-      db.from("academy_youth").select("*").order("potential",{ascending:false}),
-      db.from("federation_state").select("*").eq("nation","FRA").maybeSingle(),
       db.from("news_items").select("*").order("created_at",{ascending:false}).limit(12),
-      db.from("match_history").select("*").eq("user_involved",true).order("match_date",{ascending:false}).limit(10),
-      db.from("players").select("id,name,country,ranking,points,doubles_ranking,itf_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,is_real").eq("ranking_current",true).lte("ranking",30).order("ranking"),
       db.from("tournaments").select("*").eq("is_active",true).gte("start_date",currentCareer.data?.career_date||AGE_REFERENCE_DATE).order("start_date").limit(40),
-      db.from("injuries").select("*,players(id,name,country,ranking)").order("started_at",{ascending:false}).limit(30),
-      db.from("davis_squad").select("id,nation,role,players(id,name,country,ranking,points,doubles_ranking,form,fitness,morale,fatigue,style)").eq("nation","FRA").order("id"),
-      db.from("training_plan").select("*").order("day_index"),
-      db.from("medical_plan").select("*").eq("id","demo").maybeSingle(),
       sid?db.from("game_saves").select("payload").eq("id",sid).maybeSingle():Promise.resolve({data:null,error:null}),
-      currentCareer.data?.managed_player_id
+      managedId
         ?db.from("entries")
           .select("id,tournament_id,player_id,status,entry_method,entry_rank,requested_on,withdrawn_on,metadata,updated_at,tournaments(id,name,country,circuit,category,start_date,end_date,qualifying_start_date,qualifying_end_date,main_draw_start_date,qualifying_entry_deadline,main_entry_deadline,singles_entry_deadline,late_entry_deadline)")
-          .eq("player_id",currentCareer.data.managed_player_id).eq("status","entered")
+          .eq("player_id",managedId).eq("status","entered")
           .order("requested_on",{ascending:true})
         :Promise.resolve({data:[],error:null}),
-      currentCareer.data?.managed_player_id
+      managedId
         ?db.from("managed_doubles_entries")
           .select("id,owner_id,tournament_id,player_id,partner_id,status,entry_method,entry_phase,combined_rank,protected_combined_rank,projected_cut,requested_on,withdrawn_on,metadata,updated_at,partner:players!managed_doubles_entries_partner_id_fkey(id,name,country,ranking,doubles_ranking),tournaments(id,name,country,circuit,category,start_date,end_date,doubles_entry_deadline,doubles_onsite_deadline,qualifying_start_date,main_draw_start_date)")
-          .eq("owner_id","demo").eq("player_id",currentCareer.data.managed_player_id).eq("status","entered")
+          .eq("owner_id","demo").eq("player_id",managedId).eq("status","entered")
           .order("requested_on",{ascending:true})
         :Promise.resolve({data:[],error:null})
     ]);
-    const results=[career,academy,staff,facilities,finance,board,inbox,scouting,scoutingReports,youth,fed,news,matches,top,events,injuries,davis,training,medicalPlan,save,managedEntries,managedDoublesEntries];
+    const results=[academy,finance,board,inbox,news,events,save,managedEntries,managedDoublesEntries];
     const err=results.find((x:any)=>x?.error)?.error;
-    if(err) return h({error:err.message},500);
+    if(err)return h({error:err.message},500);
+    const career=currentCareer.data;
     return h({
-      career:career.data,academy:academy.data,staff:staff.data??[],facilities:facilities.data??[],
-      finance:finance.data,board:board.data??[],inbox:inbox.data??[],scouting:scouting.data??[],
-      scoutingReports:scoutingReports.data??[],
-      youth:youth.data??[],federation:fed.data,news:news.data??[],matches:matches.data??[],
-      topPlayers:top.data??[],
+      bootstrap_model:"CB-BOOTSTRAP-CORE-v2",
+      secondary_loaded:false,
+      career,
+      academy:academy.data,
+      finance:finance.data,
+      board:board.data??[],
+      inbox:inbox.data??[],
+      news:news.data??[],
       upcoming:(events.data??[])
-        .filter((x:any)=>String(x.start_date)>=String(career.data?.career_date||AGE_REFERENCE_DATE))
+        .filter((x:any)=>String(x.start_date)>=String(career?.career_date||AGE_REFERENCE_DATE))
         .filter((x:any)=>{
-          const focus=String(career.data?.career_focus||"mixed");
+          const focus=String(career?.career_focus||"mixed");
           if(focus==="doubles_only")return Boolean(x.doubles);
           if(focus==="singles_only")return Boolean(x.singles);
           return true;
         })
         .slice(0,40),
-      injuries:injuries.data??[],
-      managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===Number(career.data?.managed_player_id)&&x.status==="Active")??null,
-      medicalPlan:medicalPlan.data??null,
-      davisSquad:davis.data??[],training:training.data??[],save:save.data?.payload??null,
+      save:save.data?.payload??null,
       entries:managedEntries.data??[],
-      doublesEntries:managedDoublesEntries.data??[]
+      doublesEntries:managedDoublesEntries.data??[],
+      // Stable empty shapes let Home render immediately before secondary hydration.
+      staff:[],facilities:[],scouting:[],scoutingReports:[],youth:[],
+      federation:null,matches:[],topPlayers:[],injuries:[],managedInjury:null,
+      medicalPlan:null,davisSquad:[],training:[]
+    });
+  }
+
+  if(path.endsWith("/api/bootstrap-secondary")&&req.method==="GET"){
+    const currentCareer=await db.from("career_state")
+      .select("managed_player_id,country,federation_nation,selected_federation_nation")
+      .eq("id","demo").maybeSingle();
+    if(currentCareer.error)return h({error:currentCareer.error.message},500);
+    const nation=String(
+      currentCareer.data?.federation_nation
+      ||currentCareer.data?.selected_federation_nation
+      ||currentCareer.data?.country
+      ||"FRA"
+    ).toUpperCase();
+    const managedId=Number(currentCareer.data?.managed_player_id||0);
+    const [staff,facilities,scouting,scoutingReports,youth,fed,matches,top,injuries,davis,medicalPlan]=await Promise.all([
+      db.from("staff").select("*,profile:staff_profiles(*)").order("id"),
+      db.from("facilities").select("*").order("id"),
+      db.from("scouting_assignments").select("*,staff:staff_profiles!scouting_assignments_staff_profile_id_fkey(id,name,primary_role,nationality,scouting_rating,reputation,regions,workload,burnout,energy,operational_status,rest_until)").order("id"),
+      db.from("scouting_reports").select("*,player:players!scouting_reports_player_id_fkey(id,name,country,ranking,game_world_rank,junior_ranking,age,birth_date,style,photo_url,ncaa_current,career_status)").order("report_date",{ascending:false}).order("confidence",{ascending:false}).limit(60),
+      db.from("academy_youth").select("*").order("potential",{ascending:false}),
+      db.from("federation_state").select("*").eq("nation",nation).maybeSingle(),
+      db.from("match_history").select("*").eq("user_involved",true).order("match_date",{ascending:false}).limit(10),
+      db.from("players").select("id,name,country,ranking,points,doubles_ranking,itf_ranking,age,current_ability,potential,form,fitness,morale,fatigue,style,is_real").eq("ranking_current",true).lte("ranking",30).order("ranking"),
+      db.from("injuries").select("*,players(id,name,country,ranking)").order("started_at",{ascending:false}).limit(30),
+      db.from("davis_squad").select("id,nation,role,players(id,name,country,ranking,points,doubles_ranking,form,fitness,morale,fatigue,style)").eq("nation",nation).order("id"),
+      db.from("medical_plan").select("*").eq("id","demo").maybeSingle()
+    ]);
+    const results=[staff,facilities,scouting,scoutingReports,youth,fed,matches,top,injuries,davis,medicalPlan];
+    const err=results.find((x:any)=>x?.error)?.error;
+    if(err)return h({error:err.message},500);
+    return h({
+      bootstrap_model:"CB-BOOTSTRAP-SECONDARY-v2",
+      secondary_loaded:true,
+      staff:staff.data??[],
+      facilities:facilities.data??[],
+      scouting:scouting.data??[],
+      scoutingReports:scoutingReports.data??[],
+      youth:youth.data??[],
+      federation:fed.data??null,
+      matches:matches.data??[],
+      topPlayers:top.data??[],
+      injuries:injuries.data??[],
+      managedInjury:(injuries.data??[]).find((x:any)=>Number(x.player_id)===managedId&&x.status==="Active")??null,
+      medicalPlan:medicalPlan.data??null,
+      davisSquad:davis.data??[],
+      training:[]
     });
   }
 

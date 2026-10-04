@@ -47,9 +47,30 @@ function countryTheme(code){
 }
 const saveKey=(()=>{let k=localStorage.getItem('courtBossSaveKey');if(!k){k=crypto.randomUUID();localStorage.setItem('courtBossSaveKey',k)}return k})();
 let accessKey=(localStorage.getItem('courtBossAccessKey')||'').trim();
-function courtBossAccessKey(){
-  if(!accessKey)accessKey=(prompt('Code d’accès Court Boss')||'').trim();
-  return accessKey;
+let accessRequest=null;
+function requestCourtBossAccess(){
+ if(accessKey)return Promise.resolve(accessKey);
+ if(accessRequest)return accessRequest;
+ accessRequest=new Promise(resolve=>{
+  const gate=document.createElement('dialog');
+  gate.className='cb-access-gate';
+  gate.setAttribute('aria-labelledby','cb-access-title');
+  gate.innerHTML=`<form><h2 id="cb-access-title">Accéder aux actions privées</h2><p>Entre ton code Court Boss pour sauvegarder, jouer ou modifier la carrière.</p><label for="cb-access-code">Code d’accès</label><input id="cb-access-code" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required><p class="cb-access-error" role="alert"></p><button class="primary" type="submit">Déverrouiller</button></form>`;
+  document.body.append(gate);
+  const form=gate.querySelector('form'),input=gate.querySelector('input'),error=gate.querySelector('.cb-access-error'),button=gate.querySelector('button');
+  gate.addEventListener('cancel',e=>e.preventDefault());
+  form.addEventListener('submit',async e=>{
+   e.preventDefault();const candidate=input.value.trim();if(!candidate)return;button.disabled=true;error.textContent='';
+   try{
+    const r=await fetch(API+'/api/access-check',{method:'POST',cache:'no-store',headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':candidate}});
+    if(!r.ok)throw new Error(r.status===401?'Code incorrect.':'Connexion indisponible.');
+    accessKey=candidate;localStorage.setItem('courtBossAccessKey',candidate);gate.close();gate.remove();resolve(candidate);
+   }catch(err){error.textContent=err.message||'Code incorrect.';input.focus()}
+   finally{button.disabled=false}
+  });
+  gate.showModal();input.focus();
+ }).finally(()=>{accessRequest=null});
+ return accessRequest;
 }
 const fmt=n=>new Intl.NumberFormat('fr-FR').format(Math.round(Number(n)||0));
 const euro=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n)||0);
@@ -223,7 +244,7 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 
-const get=async(path,opts={},retried=false)=>{const key=courtBossAccessKey();const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':key,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){localStorage.removeItem('courtBossAccessKey');accessKey='';return get(path,opts,true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}if(key)localStorage.setItem('courtBossAccessKey',key);return body;};
+const get=async(path,opts={},retried=false)=>{const key=accessKey;const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,...(key?{'X-Court-Boss-Key':key}:{}),...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){if(accessKey===key){localStorage.removeItem('courtBossAccessKey');accessKey=''}await requestCourtBossAccess();return get(path,opts,true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 const calendarMobile=()=>Boolean(
   (typeof window!=='undefined'&&window.matchMedia?.('(max-width: 760px)').matches)
@@ -286,10 +307,9 @@ function persist(){
  delete durableLocal.liveOpponent;
  delete durableLocal.liveAuto;
  localStorage.setItem('cbLocal',JSON.stringify(durableLocal));
- const key=courtBossAccessKey(),payload=snapshotLocalForSave();
+ const payload=snapshotLocalForSave();
  enqueueSaveSlotWrite(async()=>{
-  const r=await fetch(API+'/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Save-Key':saveKey,'X-Court-Boss-Key':key},body:JSON.stringify(payload)});
-  if(!r.ok)throw new Error('Legacy save sync '+r.status);
+  await get('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  },false).catch(e=>console.warn('Legacy save sync',e));
 }
 async function loadSaveSlots(){

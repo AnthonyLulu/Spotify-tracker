@@ -11,6 +11,10 @@ const v13=read('court-boss/match-center-v13.js');
 const v14=read('court-boss/match-center-v14.js');
 const v23=read('court-boss/match-experience-v23.js');
 const play=read('court-boss/play.html');
+const atomicDoubles=read('supabase/migrations/20261004075116_live_doubles_atomic_world_commit_v23.sql');
+const terminalSingles=read('supabase/migrations/20261004105500_live_match_terminal_atomic_v23.sql');
+const medicalV23=read('supabase/migrations/20261004110100_live_match_medical_idempotent_v23.sql');
+const terminalDoubles=read('supabase/migrations/20261004111200_live_doubles_terminal_atomic_v23.sql');
 
 test('all Match Center browser scripts parse',()=>{
   for(const [name,source] of [['app',app],['v1',v1],['v12',v12],['v13',v13],['v14',v14],['v23',v23]]){
@@ -99,7 +103,8 @@ test('managed doubles Match Center is locked to the reserved world-draw pair',()
   assert.ok(backend.includes('Number(row?.stats?._meta?.doubles?.world_match_id||0)===worldMatchId'));
   assert.ok(backend.includes('ok:true,resumed:true,engine:"CB-LIVE-DOUBLES-v1"'));
   assert.ok(backend.includes('Cette case du tableau double possède déjà un autre résultat.'));
-  assert.ok(backend.includes('model_version:"CB-LIVE-DOUBLES-v22"'));
+  assert.ok(backend.includes('commit_live_doubles_world_match_atomic_v23'));
+  assert.match(atomicDoubles,/model_version='CB-LIVE-DOUBLES-v23-ATOMIC'/);
 });
 
 test('live doubles point-by-point uses the real match stack',()=>{
@@ -123,7 +128,9 @@ test('live doubles level blends attributes, Elo, chemistry and active point matc
   assert.match(backend,/userNetScore-oppNetScore/);
   assert.match(backend,/dmeta\.chemistry/);
   assert.match(backend,/kernel\.serverWinProb/);
-  assert.match(backend,/update_player_elo_after_match/);
+  assert.ok(backend.includes('commit_live_doubles_world_match_atomic_v23'));
+  assert.match(atomicDoubles,/update_player_elo_after_match/);
+  assert.match(atomicDoubles,/effect='elo_doubles'/);
 });
 
 test('double live scoring keeps no-ad and deciding match tie-break',()=>{
@@ -181,4 +188,17 @@ test('live doubles emits real changeovers for bench coaching',()=>{
   assert.ok(backend.includes('doublesCompletedGames%2===1'));
   assert.ok(backend.includes('Changement de côté · double'));
   assert.ok(v23.includes('lp.changeover'));
+});
+
+
+test('V23 terminal commits keep tournament rewards and medical effects idempotent',()=>{
+  assert.ok(backend.includes('commit_live_tournament_terminal_once_v23'));
+  assert.ok(backend.includes('apply_live_match_medical_once_v23'));
+  assert.ok(backend.includes('commit_live_doubles_terminal_once_v23'));
+  assert.match(terminalSingles,/effect='tournament_terminal'/);
+  assert.match(terminalSingles,/already_applied/);
+  assert.match(medicalV23,/effect='medical'/);
+  assert.match(medicalV23,/already_applied/);
+  assert.match(terminalDoubles,/effect='doubles_terminal'/);
+  assert.match(terminalDoubles,/already_applied/);
 });

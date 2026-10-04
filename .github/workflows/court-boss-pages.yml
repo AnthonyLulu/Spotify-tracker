@@ -44,7 +44,7 @@ jobs:
           LOCAL_CSS=$(sha256sum court-boss/app.css | awk '{print $1}')
           LOCAL_DAILY_JS=$(sha256sum court-boss/daily-career-v22.js | awk '{print $1}')
           LOCAL_DAILY_CSS=$(sha256sum court-boss/daily-career-v22.css | awk '{print $1}')
-          for i in {1..36}; do
+          for i in {1..60}; do
             if curl --fail --silent --show-error "$BASE/app.js?v=20260927-10" -o /tmp/render-app.js \
               && curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/render-modules.js \
               && curl --fail --silent --show-error "$BASE/app.css?v=20260927-10" -o /tmp/render-app.css \
@@ -80,7 +80,7 @@ jobs:
           curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/daily-career-v22.js
           curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/daily-career-v22.css
           curl --fail --silent --show-error "$BASE/play.html" -o /tmp/play.html
-          grep -q 'app.js?v=20261004-visual-assets-v33' /tmp/play.html
+          grep -q 'app.js?v=20261004-visual-assets-v35' /tmp/play.html
           grep -q 'records-v1.js?v=20261004-records-v10' /tmp/play.html
           curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
           grep -q 'records-v1.js?v=20261004-records-v10' /tmp/index.html
@@ -376,7 +376,7 @@ jobs:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
           LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
-          for i in {1..36}; do
+          for i in {1..60}; do
             if curl --fail --silent --show-error "$BASE/app.js?v=visual-smoke" -o /tmp/render-app.js; then
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
               if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then

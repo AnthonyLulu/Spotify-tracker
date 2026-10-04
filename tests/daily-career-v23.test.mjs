@@ -6,6 +6,7 @@ const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const daily=read('court-boss/daily-career-v22.js');
 const clock=read('supabase/migrations/20261004010328_daily_match_ticket_reserve_on_resume_v22.sql');
 const clockPartner=read('supabase/migrations/20261004121500_daily_double_partner_match_day_neutral_v23.sql');
+const clockSunday=read('supabase/migrations/20261004123000_daily_match_before_weekly_checkpoint_v23.sql');
 const due=read('supabase/migrations/20261004003544_managed_due_match_world_identity_v22.sql');
 const matchDay=read('supabase/migrations/20261004120000_match_day_training_neutral_v23.sql');
 const backend=read('supabase/functions/court-boss/index.ts');
@@ -68,4 +69,12 @@ test('successful daily advance hydrates and opens the exact due-match ticket',()
   assert.match(daily,/const duePlayerId=Number\(due\?\.player_id\|\|0\)/);
   assert.match(daily,/setActiveManagedPlayer\(duePlayerId\)/);
   assert.match(daily,/openTournamentPlayMode\?\.\(Number\(due\.tournament_id\)\)/);
+});
+
+
+test('Sunday closes only after every managed match on that date is resolved',()=>{
+  const duePos=clockSunday.indexOf('v_due:=public.managed_due_matches_v22(v_from)');
+  const checkpointPos=clockSunday.indexOf('if extract(isodow from v_from)::int=7');
+  assert.ok(duePos>=0&&checkpointPos>=0&&duePos<checkpointPos);
+  assert.match(daily,/if\(day\.weekly_checkpoint_due&&Number\(day\.pending_matches\|\|0\)===0\)/);
 });

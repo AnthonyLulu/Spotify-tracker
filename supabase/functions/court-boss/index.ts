@@ -11415,13 +11415,16 @@ Deno.serve(async(req:Request)=>{
       },409);
     }
 
-    let opponentId=Number(body?.opponent_id||0);
+    const requestedOpponentId=Number(body?.opponent_id||0);
+    // In a real tournament the world draw owns the opponent. A client-provided
+    // opponent_id is only valid for exhibitions/fantasy matches.
+    let opponentId=tournamentId?0:requestedOpponentId;
     const rank=Math.max(1,Number(managed.data.ranking??(playerId===primaryId?career.data.singles_rank:500)??500));
     let tournamentRoundOverride=requestedRound;
     let liveEntryMethod="direct";
     let tournamentWins=0;
     let qualifyingRounds=0;
-    let opponentSource=opponentId?"manual":"ranking_pool";
+    let opponentSource=!tournamentId&&opponentId?"manual":"ranking_pool";
     let worldMatchId:number|null=null;
     let livePhase=tournamentId?"main":"exhibition";
     let tournamentSchedule:any=null;
@@ -11479,8 +11482,11 @@ Deno.serve(async(req:Request)=>{
         else return h({error:"Ce joueur a déjà remporté le tournoi.",champion:true},409);
       }
 
+      const progressiveWorldDraw=["ATP","Challenger","ITF"].includes(String(tournament.data?.circuit||""))
+        && !["ATP Finals","Next Gen Finals"].includes(String(tournament.data?.category||""));
+      let exactWorld:any=null;
       if(!opponentId){
-        const exactWorld=await ensureManagedWorldLiveMatch(tournament.data,playerId,liveEntryMethod,String(career.data.career_date||AGE_REFERENCE_DATE));
+        exactWorld=await ensureManagedWorldLiveMatch(tournament.data,playerId,liveEntryMethod,String(career.data.career_date||AGE_REFERENCE_DATE));
         if(exactWorld?.error)return h({error:String(exactWorld.error),tournament_id:tournamentId,world_phase:exactWorld.phase||null},409);
         if(exactWorld?.not_due)return h({
           error:"Ce match n’est pas encore au programme aujourd’hui.",
@@ -11501,6 +11507,18 @@ Deno.serve(async(req:Request)=>{
             opponentSource=exactWorld.phase==="qualifying"?"world_qualifying_draw":"world_draw";
           }
         }
+      }
+
+      if(!opponentId&&progressiveWorldDraw&&exactWorld?.supported!==false){
+        return h({
+          error:"Le Match Center ne peut pas inventer un adversaire différent du tableau mondial.",
+          bracket_mismatch_guard:true,
+          tournament_id:tournamentId,
+          player_id:playerId,
+          world_phase:exactWorld?.phase||livePhase,
+          round:String(exactWorld?.round_code||tournamentRoundOverride||""),
+          world_match_id:Number(exactWorld?.match?.id||0)||null
+        },409);
       }
 
       if(!opponentId){

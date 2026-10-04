@@ -84,6 +84,8 @@ test('save v8 refuses incomplete timeline snapshots before restore mutations',()
   assert.match(edge,/Incomplete V8 timeline snapshot/);
   assert.match(edge,/requiredTimelineArrays/);
   assert.match(edge,/managed_timeline_v8/);
+  assert.match(edge,/Incomplete V8 live checkpoint/);
+  assert.match(edge,/live_match_point_events/);
 });
 
 

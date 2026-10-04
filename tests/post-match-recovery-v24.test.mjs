@@ -84,7 +84,7 @@ test('daily UI exposes post-match recovery travel and medical restriction',()=>{
   assert.match(daily,/Récupération post-match/);
   assert.match(daily,/Staff médical : entraînement remplacé/);
   assert.match(daily,/playerRecovery\?\.travel_applied/);
-  assert.match(play,/daily-career-v22\.js\?v=20261004-post-match-recovery-v24/);
+  assert.match(play,/daily-career-v22\.js\?v=20261004-intraday-v26/);
 });
 
 

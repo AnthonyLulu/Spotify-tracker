@@ -17176,8 +17176,16 @@ Deno.serve(async(req:Request)=>{
         .limit(5000),
       db.from("history_player_search").select("id",{count:"exact",head:true})
     ]);
-    const err=historyRows.error||youthRows.error||ncaaRows.error||rankRecordRows.error||historyTotal.error;
-    if(err)return h({error:err.message},500);
+    // History is a read-only museum page: a slow optional leaderboard must never
+    // take Record Hub / Hall of Fame down with it. Keep the successful slices and
+    // expose degraded coverage instead of turning one statement timeout into a 500.
+    const historyWarnings=[
+      ["history",historyRows.error],
+      ["youth",youthRows.error],
+      ["ncaa",ncaaRows.error],
+      ["ranking_records",rankRecordRows.error],
+      ["history_count",historyTotal.error]
+    ].filter((x:any)=>Boolean(x[1])).map((x:any)=>({scope:x[0],error:String(x[1]?.message||x[1])}));
 
     const rankRecordById=new Map((rankRecordRows.data??[]).map((x:any)=>[Number(x.id),x]));
     const allHistory=(historyRows.data??[]).map((x:any)=>({
@@ -17243,8 +17251,12 @@ Deno.serve(async(req:Request)=>{
     const ncaaActive=new Set((ncaaRows.data??[]).filter((x:any)=>x.status==="Active").map((x:any)=>Number(x.player_id)));
     const requestedRecordPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
     const recordPlayerId=requestedRecordPlayerId||Number(career.data?.managed_player_id||0)||null;
-    const recordHub=await db.rpc("court_boss_record_hub",{p_player_id:recordPlayerId,p_date:gameDate});
-    const hallOfFameDynamic=await db.rpc("court_boss_hall_of_fame_hub",{p_date:gameDate});
+    // These two hubs are independent. Run them together so a busy database does
+    // not pay two sequential round trips after the historical lists are prepared.
+    const [recordHub,hallOfFameDynamic]=await Promise.all([
+      db.rpc("court_boss_record_hub",{p_player_id:recordPlayerId,p_date:gameDate}),
+      db.rpc("court_boss_hall_of_fame_hub",{p_date:gameDate})
+    ]);
 
     return h({
       methodology:"Indice Court Boss: 10 000/Grand Chelem + 2 200/ATP Finals + 1 200/Masters + 180/autre titre + 2/victoire enregistrée. Ce n'est pas un classement officiel du GOAT.",
@@ -17265,7 +17277,9 @@ Deno.serve(async(req:Request)=>{
         countries:new Set(allHistory.map((x:any)=>x.country)).size,
         ncaaProfiles:ncaaProfiles.size,
         ncaaActive:ncaaActive.size,
-        gameDate
+        gameDate,
+        degraded:historyWarnings.length>0,
+        warnings:historyWarnings
       }
     });
   }

@@ -81,7 +81,9 @@ test('managed tournament Match Center is locked to the exact world-draw opponent
   assert.ok(backend.includes('bracket_mismatch_guard:true'));
   assert.ok(backend.includes('world_match_id:worldMatchId'));
   assert.ok(backend.includes('if(tournamentLive&&Number(meta.world_match_id||0)>0)'));
-  assert.ok(backend.includes('Le match live ne correspond plus à la case du tableau mondial.'));
+  assert.ok(backend.includes('Le match live ne correspond plus exactement à la case du tableau mondial.'));
+  assert.ok(backend.includes('Number(wr.tournament_id||0)!==tournamentId'));
+  assert.ok(backend.includes('(round&&worldRound&&round!==worldRound)'));
   assert.ok(backend.includes('.eq("id",Number(wr.id))'));
 });
 
@@ -89,7 +91,9 @@ test('managed doubles Match Center is locked to the reserved world-draw pair',()
   assert.ok(backend.includes('reserve_managed_doubles_live_matches_v22'));
   assert.ok(backend.includes('Le Match Center double ne peut pas inventer une paire différente du tableau mondial.'));
   assert.ok(backend.includes('world_match_id:Number(worldMatch?.id||0)||null'));
-  assert.ok(backend.includes('Le match double live ne correspond plus à la case du tableau mondial.'));
+  assert.ok(backend.includes('Le match double live ne correspond plus exactement à la case du tableau mondial.'));
+  assert.ok(backend.includes('Number(wr.data.tournament_id||0)!==tournamentId'));
+  assert.ok(backend.includes('(round&&worldRound&&round!==worldRound)'));
   assert.ok(backend.includes('Cette case du tableau double possède déjà un autre résultat.'));
   assert.ok(backend.includes('model_version:"CB-LIVE-DOUBLES-v22"'));
 });

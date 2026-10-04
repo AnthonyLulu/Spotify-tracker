@@ -13555,11 +13555,17 @@ Deno.serve(async(req:Request)=>{
       if(!wr.data)return h({error:"Match double du tableau mondial introuvable.",world_match_id:worldMatchId},500);
       const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
       const pairA=Number(wr.data.pair_a_id||0),pairB=Number(wr.data.pair_b_id||0);
-      if(Number(wr.data.tournament_id||0)!==tournamentId
-         || !((pairA===userPairId&&pairB===oppPairId)||(pairB===userPairId&&pairA===oppPairId))){
+      const worldRound=String(wr.data.round_code||"");
+      if(
+        Number(wr.data.tournament_id||0)!==tournamentId
+        || (round&&worldRound&&round!==worldRound)
+        || !((pairA===userPairId&&pairB===oppPairId)||(pairB===userPairId&&pairA===oppPairId))
+      ){
         return h({
-          error:"Le match double live ne correspond plus à la case du tableau mondial.",
-          world_match_id:worldMatchId,bracket_mismatch_guard:true,discipline:"doubles"
+          error:"Le match double live ne correspond plus exactement à la case du tableau mondial.",
+          world_match_id:worldMatchId,bracket_mismatch_guard:true,discipline:"doubles",
+          expected:{tournament_id:tournamentId,round,user_pair_id:userPairId,opponent_pair_id:oppPairId},
+          actual:{tournament_id:Number(wr.data.tournament_id||0),round:worldRound,pair_a_id:pairA,pair_b_id:pairB}
         },409);
       }
       const winnerPairId=won?userPairId:oppPairId,loserPairId=won?oppPairId:userPairId;
@@ -13838,8 +13844,18 @@ Deno.serve(async(req:Request)=>{
       if(worldRow.error||!worldRow.data)return h({error:worldRow.error?.message||"Match du tableau mondial introuvable."},500);
       const wr:any=worldRow.data;
       const a=Number(wr.player_a_id||0),b=Number(wr.player_b_id||0),oppId=Number(opp?.id||0);
-      if(!((a===playerId&&b===oppId)||(b===playerId&&a===oppId))){
-        return h({error:"Le match live ne correspond plus à la case du tableau mondial.",world_match_id:wr.id},409);
+      const worldRound=String(wr.round_code||"");
+      if(
+        Number(wr.tournament_id||0)!==tournamentId
+        || (round&&worldRound&&round!==worldRound)
+        || !((a===playerId&&b===oppId)||(b===playerId&&a===oppId))
+      ){
+        return h({
+          error:"Le match live ne correspond plus exactement à la case du tableau mondial.",
+          world_match_id:wr.id,bracket_mismatch_guard:true,
+          expected:{tournament_id:tournamentId,round,player_id:playerId,opponent_id:oppId},
+          actual:{tournament_id:Number(wr.tournament_id||0),round:worldRound,player_a_id:a,player_b_id:b}
+        },409);
       }
       const winnerId=won?playerId:oppId,loserId=won?oppId:playerId;
       if(Number(wr.winner_id||0)>0&&Number(wr.winner_id)!==winnerId){

@@ -11054,6 +11054,9 @@ Deno.serve(async(req:Request)=>{
     const tactics:any=body?.tactics||{};
     const requestedPlayerId=n(body?.player_id,0,0,99999999);
     const tournamentId=n(body?.tournament_id,0,1,99999999);
+    const expectedWorldMatchId=n(body?.expected_world_match_id,0,0,999999999);
+    const expectedUserPairId=n(body?.expected_user_pair_id,0,0,999999999);
+    const expectedOpponentPairId=n(body?.expected_opponent_pair_id,0,0,999999999);
 
     const career=await db.from("career_state").select("*").eq("id","demo").maybeSingle();
     if(career.error||!career.data)return h({error:career.error?.message||"Carrière introuvable"},500);
@@ -11174,6 +11177,30 @@ Deno.serve(async(req:Request)=>{
       if(candidate&&!facedPairIds.has(candidate)){
         worldMatch=exact.data;opponentPairId=candidate;opponentSource="world_draw";
       }
+    }
+
+    if(expectedWorldMatchId&&Number(worldMatch?.id||0)!==expectedWorldMatchId){
+      return h({
+        error:"La case du tableau double a changé depuis l’arrêt du calendrier. Recharge la journée avant de lancer le match.",
+        bracket_mismatch_guard:true,discipline:"doubles",
+        expected_world_match_id:expectedWorldMatchId,
+        actual_world_match_id:Number(worldMatch?.id||0)||null,
+        tournament_id:tournamentId,player_id:playerId,partner_id:partnerId
+      },409);
+    }
+    if(expectedUserPairId&&expectedUserPairId!==userWorldPairId){
+      return h({
+        error:"La paire gérée ne correspond plus au ticket du match du jour.",
+        bracket_mismatch_guard:true,discipline:"doubles",
+        expected_user_pair_id:expectedUserPairId,actual_user_pair_id:userWorldPairId
+      },409);
+    }
+    if(expectedOpponentPairId&&expectedOpponentPairId!==Number(opponentPairId||0)){
+      return h({
+        error:"La paire adverse ne correspond plus au ticket du match du jour.",
+        bracket_mismatch_guard:true,discipline:"doubles",
+        expected_opponent_pair_id:expectedOpponentPairId,actual_opponent_pair_id:Number(opponentPairId||0)||null
+      },409);
     }
 
     if(!opponentPairId&&managedEntry.data){
@@ -11428,6 +11455,7 @@ Deno.serve(async(req:Request)=>{
     const requestedPlayerId=n(body?.player_id,0,0,99999999);
     const tournamentId=n(body?.tournament_id,0,0,99999999);
     const requestedRound=String(body?.round||"").slice(0,40);
+    const expectedWorldMatchId=n(body?.expected_world_match_id,0,0,999999999);
 
     const career=await db.from("career_state")
       .select("managed_player_id,singles_rank,player_name,career_focus,career_date")
@@ -11590,6 +11618,19 @@ Deno.serve(async(req:Request)=>{
             opponentSource=exactWorld.phase==="qualifying"?"world_qualifying_draw":"world_draw";
           }
         }
+      }
+
+      if(expectedWorldMatchId&&Number(worldMatchId||0)!==expectedWorldMatchId){
+        return h({
+          error:"La case du tableau mondial a changé depuis l’arrêt du calendrier. Recharge la journée avant de lancer le match.",
+          bracket_mismatch_guard:true,
+          expected_world_match_id:expectedWorldMatchId,
+          actual_world_match_id:Number(worldMatchId||0)||null,
+          tournament_id:tournamentId,
+          player_id:playerId,
+          world_phase:exactWorld?.phase||livePhase,
+          round:String(exactWorld?.round_code||tournamentRoundOverride||"")
+        },409);
       }
 
       if(!opponentId&&progressiveWorldDraw&&exactWorld?.supported!==false){

@@ -139,6 +139,8 @@
       +'</section>';
   }
 
+  window.courtBossRecordHubSection=recordHubSection;
+
   loadHistory=async function(){
     const p=new URLSearchParams({limit:'300'});
     if(historyCountry)p.set('country',historyCountry);

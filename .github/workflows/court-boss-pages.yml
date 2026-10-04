@@ -329,6 +329,35 @@ jobs:
             await page.waitForFunction(()=>Number(local.liveMatch?.last_point?.rally||0)===6,null,{timeout:10000});
             await page.locator('.cb-rally').filter({hasText:'6 coups'}).waitFor({timeout:10000});
 
+            // Mobile ragequit/reload: an armed pre-match marker must restore the
+            // checkpoint before bootstrap and clear the unsaved live batch.
+            await page.route('**/api/load-slot',route=>route.fulfill({
+              status:200,contentType:'application/json',
+              body:JSON.stringify({
+                ok:true,
+                slot:{slot_no:0,slot_name:'CI pre-match',career_date:'2025-12-01',week:1,updated_at:'2025-12-01T00:00:00Z'},
+                local_payload:{date:'2025-12-01',week:1,tactics:{aggression:23,risk:41,net:17,returnPos:'Neutre'},shortlist:[321]},
+                live_match_sessions:[]
+              })
+            }));
+            await page.evaluate(()=>{
+              local.tactics={...local.tactics,aggression:99};
+              local.shortlist=[999];
+              localStorage.setItem('cbLocal',JSON.stringify(local));
+              localStorage.setItem('cbLiveRollbackCheckpointV1',JSON.stringify({slot_no:0,career_date:'2025-12-01',week:1,created_at:new Date().toISOString()}));
+            });
+            await page.reload({waitUntil:'domcontentloaded',timeout:60000});
+            await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:25000});
+            await page.waitForFunction(()=>Number(local?.tactics?.aggression||0)===23&&Array.isArray(local?.shortlist)&&local.shortlist[0]===321,null,{timeout:15000});
+            const rollbackState=await page.evaluate(()=>({
+              marker:localStorage.getItem('cbLiveRollbackCheckpointV1'),
+              stored:JSON.parse(localStorage.getItem('cbLocal')||'{}'),
+              accessGate:document.querySelectorAll('.cb-access-gate[open]').length
+            }));
+            if(rollbackState.marker!==null)throw new Error('ragequit rollback marker was not cleared');
+            if(Number(rollbackState.stored?.tactics?.aggression)!==23)throw new Error('ragequit rollback did not persist restored local state');
+            if(rollbackState.accessGate!==0)throw new Error('passive reload opened the private access gate');
+
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
             console.log('mobile browser smoke: OK');
             await browser.close();

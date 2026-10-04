@@ -244,7 +244,7 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
  return rows.map(p=>`<tr ${p.id?`class="click" onclick="openPlayer(${Number(p.id)})"`:''}><td>${p.ranking?'#'+fmt(p.ranking):'—'}</td><td>${flags[p.country]||'🎾'} <b>${esc(p.name)}</b><div class="muted micro">${esc(labels[p.entry_method]||'')}${p.seed?' · TDS '+p.seed:''}</div></td><td>${p.points==null?'—':fmt(p.points)}</td><td>${isJunior?esc(p.result||'Engagé'):(p.form??'—')}</td></tr>`).join('');
 }
 
-const get=async(path,opts={},retried=false)=>{const key=accessKey;const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,...(key?{'X-Court-Boss-Key':key}:{}),...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){if(accessKey===key){localStorage.removeItem('courtBossAccessKey');accessKey=''}await requestCourtBossAccess();return get(path,opts,true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}return body;};
+const get=async(path,opts={},retried=false)=>{const {authPrompt=true,...fetchOpts}=opts||{};const key=accessKey;const r=await fetch(API+path,{cache:'no-store',...fetchOpts,headers:{'X-Save-Key':saveKey,...(key?{'X-Court-Boss-Key':key}:{}),...(fetchOpts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){if(!authPrompt){const e=new Error(body.error||'Action privée verrouillée.');e.status=401;e.data=body;throw e}if(accessKey===key){localStorage.removeItem('courtBossAccessKey');accessKey=''}await requestCourtBossAccess();return get(path,{...fetchOpts,authPrompt},true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 const calendarMobile=()=>Boolean(
   (typeof window!=='undefined'&&window.matchMedia?.('(max-width: 760px)').matches)
@@ -309,7 +309,7 @@ function persist(){
  localStorage.setItem('cbLocal',JSON.stringify(durableLocal));
  const payload=snapshotLocalForSave();
  enqueueSaveSlotWrite(async()=>{
-  await get('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  await get('/api/save',{authPrompt:false,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  },false).catch(e=>console.warn('Legacy save sync',e));
 }
 async function loadSaveSlots(){
@@ -735,7 +735,7 @@ async function syncLegacySinglesEntries(serverRows=[]){
   if(meta.circuit&&!['ATP','Challenger','ITF'].includes(String(meta.circuit)))continue;
   try{
    await get('/api/tournament-entry',{
-    method:'POST',headers:{'Content-Type':'application/json'},
+    authPrompt:false,method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({tournament_id:id,player_id:playerId,action:'enter',entry_method:String(meta.entry_method||'alternate'),legacy:true})
    });
   }catch(e){console.warn('Legacy singles entry sync failed',id,e)}
@@ -753,7 +753,7 @@ async function syncLegacyDoublesEntries(serverRows=[]){
   if(meta.circuit&&!['ATP','Challenger','ITF'].includes(String(meta.circuit)))continue;
   try{
    await get('/api/doubles-entry',{
-    method:'POST',headers:{'Content-Type':'application/json'},
+    authPrompt:false,method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({tournament_id:id,player_id:playerId,action:'enter',legacy:true,requested_on:meta.requested_on||local.date})
    });
   }catch(e){console.warn('Legacy doubles entry sync failed',id,e)}

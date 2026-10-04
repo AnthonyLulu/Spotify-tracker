@@ -1835,6 +1835,7 @@ const CURATED_TOURNAMENT_LOGOS=[
  // Current identities for which a clean transparent current asset is not
  // reliably available: render a tournament-specific dark wordmark instead of
  // an inaccurate old logo or a generic ATP 250 tile.
+ {re:/Next Gen ATP Finals|Next Gen Finals/i,url:null,label:"NEXT GEN"},
  {re:/BOSS Open/i,url:null,label:"BOSS OPEN"},
  {re:/Lynk & Co Hangzhou Open|Hangzhou Open/i,url:null,label:"HANGZHOU"},
  {re:/Grand Prix Auvergne-Rhone-Alpes|Grand Prix Auvergne-Rhône-Alpes/i,url:null,label:"GP AURA"},

@@ -13684,15 +13684,26 @@ Deno.serve(async(req:Request)=>{
     const doublesTbCount=doublesSetRows.filter((x:any)=>x?.tiebreak||x?.match_tiebreak).length;
     const doublesHeatLoad=Math.max(0,Number(meta.weather?.temperature_c||21)-27)*.18;
     const doublesWindLoad=Math.max(0,Number(meta.weather?.wind_kph||0)-16)*.045;
+    const doublesHumidityLoad=Math.max(0,Number(meta.weather?.humidity_pct||50)-68)*.025;
     const doublesEffortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.05;
+    const doublesHandledEnv=new Set(
+      (Array.isArray(stats?._environment_events_handled)?stats._environment_events_handled:[]).map((x:any)=>String(x))
+    );
+    const doublesDelayMinutes=(Array.isArray(meta.event_schedule)?meta.event_schedule:[])
+      .filter((x:any)=>doublesHandledEnv.has(String(x?.id||x?.type||"")))
+      .reduce((sum:number,x:any)=>sum+Math.max(0,Number(x?.duration_min||0)),0);
     const doublesDurationMinutes=Math.max(35,Math.min(240,Math.round(
       16+doublesPointCount*.62+doublesSetRows.length*5+doublesTbCount*3+Math.max(0,Number(meta.weather?.wind_kph||0)-18)*.10
     )));
     const doublesDurationLoad=Math.max(2,Math.min(9,doublesDurationMinutes/24));
-    const fatigueAdd=Math.max(4,Math.min(17,Math.round(3+doublesDurationLoad+doublesHeatLoad+doublesWindLoad+doublesEffortLoad)));
+    const fatigueAdd=Math.max(4,Math.min(18,Math.round(
+      3+doublesDurationLoad+doublesHeatLoad+doublesWindLoad+doublesHumidityLoad+doublesEffortLoad
+    )));
     const doublesRecoveryMetrics={
       duration_minutes:doublesDurationMinutes,points:doublesPointCount,fatigue_added:fatigueAdd,
       heat_load:Number(doublesHeatLoad.toFixed(2)),wind_load:Number(doublesWindLoad.toFixed(2)),
+      humidity_load:Number(doublesHumidityLoad.toFixed(2)),
+      environment_delay_minutes:Math.round(doublesDelayMinutes),
       effort_load:Number(doublesEffortLoad.toFixed(2)),discipline:"doubles"
     };
     const managedUpdate={
@@ -13921,15 +13932,26 @@ Deno.serve(async(req:Request)=>{
     const tiebreakCount=setRows.filter((x:any)=>x?.tiebreak||x?.match_tiebreak).length;
     const heatLoad=Math.max(0,Number(weather.temperature_c||21)-27)*.20;
     const windLoad=Math.max(0,Number(weather.wind_kph||0)-14)*.06;
+    const humidityLoad=Math.max(0,Number(weather.humidity_pct||50)-68)*.03;
     const effortLoad=Math.max(0,Number(session.data.tactics?.effort||60)-60)*.065;
+    const handledEnv=new Set(
+      (Array.isArray(stats?._environment_events_handled)?stats._environment_events_handled:[]).map((x:any)=>String(x))
+    );
+    const environmentDelayMinutes=(Array.isArray(meta.event_schedule)?meta.event_schedule:[])
+      .filter((x:any)=>handledEnv.has(String(x?.id||x?.type||"")))
+      .reduce((sum:number,x:any)=>sum+Math.max(0,Number(x?.duration_min||0)),0);
     const durationMinutes=Math.max(40,Math.min(330,Math.round(
       18+pointCount*.72+setRows.length*7+tiebreakCount*4+Math.max(0,Number(weather.wind_kph||0)-18)*.12
     )));
     const durationLoad=Math.max(3,Math.min(11,durationMinutes/22));
-    const fatigueAdd=Math.max(5,Math.min(19,Math.round(4+durationLoad+heatLoad+windLoad+effortLoad)));
+    const fatigueAdd=Math.max(5,Math.min(20,Math.round(
+      4+durationLoad+heatLoad+windLoad+humidityLoad+effortLoad
+    )));
     const recoveryMetrics={
       duration_minutes:durationMinutes,points:pointCount,fatigue_added:fatigueAdd,
       heat_load:Number(heatLoad.toFixed(2)),wind_load:Number(windLoad.toFixed(2)),
+      humidity_load:Number(humidityLoad.toFixed(2)),
+      environment_delay_minutes:Math.round(environmentDelayMinutes),
       effort_load:Number(effortLoad.toFixed(2)),discipline:"singles"
     };
     const nextCondition:any={

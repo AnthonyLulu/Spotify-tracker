@@ -13563,6 +13563,45 @@ Deno.serve(async(req:Request)=>{
     const tournamentId=Number(session.data.tournament_id||0);
     const tournamentName=String(meta.tournament?.name||"Double live");
 
+    // Same invariant as singles: validate the exact doubles world slot before
+    // history, fatigue, fitness, Elo, ranking or prize side effects.
+    const preflightWorldMatchId=Number(dmeta.world_match_id||0);
+    if(preflightWorldMatchId){
+      const preflight=await db.from("world_doubles_tournament_matches")
+        .select("*").eq("id",preflightWorldMatchId).maybeSingle();
+      if(preflight.error||!preflight.data){
+        return h({
+          error:preflight.error?.message||"Match double du tableau mondial introuvable avant validation.",
+          world_match_id:preflightWorldMatchId,bracket_mismatch_guard:true,
+          discipline:"doubles",preflight:true
+        },409);
+      }
+      const userPairId=Number(dmeta.user_pair_id||0),oppPairId=Number(dmeta.opponent_pair_id||0);
+      const pairA=Number(preflight.data.pair_a_id||0),pairB=Number(preflight.data.pair_b_id||0);
+      const worldRound=String(preflight.data.round_code||"");
+      if(
+        Number(preflight.data.tournament_id||0)!==tournamentId
+        || (round&&worldRound&&round!==worldRound)
+        || !((pairA===userPairId&&pairB===oppPairId)||(pairB===userPairId&&pairA===oppPairId))
+      ){
+        return h({
+          error:"Le match double live ne correspond plus exactement à la case du tableau mondial.",
+          world_match_id:preflightWorldMatchId,bracket_mismatch_guard:true,
+          discipline:"doubles",preflight:true,
+          expected:{tournament_id:tournamentId,round,user_pair_id:userPairId,opponent_pair_id:oppPairId},
+          actual:{tournament_id:Number(preflight.data.tournament_id||0),round:worldRound,pair_a_id:pairA,pair_b_id:pairB}
+        },409);
+      }
+      const expectedWinnerPairId=won?userPairId:oppPairId;
+      if(Number(preflight.data.winner_pair_id||0)>0&&Number(preflight.data.winner_pair_id)!==expectedWinnerPairId){
+        return h({
+          error:"Cette case du tableau double possède déjà un autre résultat.",
+          world_match_id:preflightWorldMatchId,bracket_mismatch_guard:true,
+          discipline:"doubles",preflight:true
+        },409);
+      }
+    }
+
     const history=await db.from("match_history").insert({
       managed_player_id:userIds[0],tournament_name:tournamentName,match_date:matchDate,
       surface:String(session.data.surface||"Dur"),round,

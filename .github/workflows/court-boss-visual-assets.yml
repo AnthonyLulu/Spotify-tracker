@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: court-boss-visual-assets-${{ github.ref }}
+  group: court-boss-visual-assets-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:

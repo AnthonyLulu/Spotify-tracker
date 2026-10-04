@@ -13983,43 +13983,10 @@ Deno.serve(async(req:Request)=>{
     let atomicCommit:any=null;
 
     let medicalWrite:any=null;
-    if(retirement?.player_id&&retirement?.injury_type){
-      const injuredId=Number(retirement.player_id);
-      const existing=await db.from("injuries").select("id,injury_type,status")
-        .eq("player_id",injuredId).in("status",["active","Active"])
-        .order("started_at",{ascending:false}).limit(1).maybeSingle();
-      if(existing.error){
-        medicalWrite={ok:false,error:existing.error.message};
-      }else if(existing.data){
-        medicalWrite={ok:true,existing:true,injury_id:existing.data.id,injury_type:existing.data.injury_type};
-      }else{
-        const expected=new Date(matchDate+"T12:00:00Z");
-        expected.setUTCDate(expected.getUTCDate()+Math.max(2,Number(retirement.days_out||5)));
-        const injuryInsert=await db.from("injuries").insert({
-          player_id:injuredId,injury_type:String(retirement.injury_type),
-          severity:String(retirement.severity||"Faible"),started_at:matchDate,
-          expected_return:expected.toISOString().slice(0,10),
-          aggravation_risk:Math.max(0,Math.min(100,Number(retirement.aggravation_risk||20))),
-          treatment:"Évaluation post-match + soins",status:"active"
-        }).select("id").single();
-        if(injuryInsert.error){
-          medicalWrite={ok:false,error:injuryInsert.error.message};
-        }else{
-          medicalWrite={ok:true,existing:false,injury_id:injuryInsert.data.id,injury_type:retirement.injury_type,expected_return:expected.toISOString().slice(0,10)};
-          const injuredBase=injuredId===playerId?managed.data:opp;
-          const fitnessLoss=Number(retirement.days_out||0)>=28?20:Number(retirement.days_out||0)>=12?14:8;
-          if(injuredId===playerId){
-            nextCondition.injury_status=String(retirement.injury_type);
-            nextCondition.fitness=Math.max(20,Math.min(Number(nextCondition.fitness||90),Number(managed.data.fitness||90)-fitnessLoss));
-          }else{
-            await db.from("players").update({
-              injury_status:String(retirement.injury_type),
-              fitness:Math.max(20,Number(injuredBase?.fitness||90)-fitnessLoss),
-              fatigue:Math.max(0,Number(injuredBase?.fatigue||18)-5)
-            }).eq("id",injuredId);
-          }
-        }
-      }
+    if(retirement?.player_id&&retirement?.injury_type&&Number(retirement.player_id)===playerId){
+      const fitnessLoss=Number(retirement.days_out||0)>=28?20:Number(retirement.days_out||0)>=12?14:8;
+      nextCondition.injury_status=String(retirement.injury_type);
+      nextCondition.fitness=Math.max(20,Math.min(Number(nextCondition.fitness||90),Number(managed.data.fitness||90)-fitnessLoss));
     }
 
     let worldProgress:any=null;
@@ -14125,6 +14092,22 @@ Deno.serve(async(req:Request)=>{
         return h({error:eloRpc.error?.message||eloRpc.data?.error||"Elo post-match impossible"},500);
       }
       elo={data:eloRpc.data,error:null};
+    }
+
+    if(retirement?.player_id&&retirement?.injury_type){
+      const medical=await db.rpc("apply_live_match_medical_once_v23",{
+        p_session_id:id,
+        p_managed_player_id:playerId,
+        p_match_date:matchDate,
+        p_retirement:retirement
+      });
+      if(medical.error||medical.data?.ok===false){
+        return h({
+          error:medical.error?.message||medical.data?.error||"Écriture médicale post-match impossible.",
+          medical_commit_guard:true,session_id:id
+        },500);
+      }
+      medicalWrite=medical.data;
     }
 
     const learned=await db.rpc("finalize_live_match_analytics",{p_session_id:id,p_date:matchDate});

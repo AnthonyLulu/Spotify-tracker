@@ -252,6 +252,10 @@ jobs:
             await page.waitForFunction(()=>{const img=document.querySelector('#overlay img[alt="Jannik Sinner"]');return !!img&&img.complete&&img.naturalWidth>0;},null,{timeout:15000});
             await page.getByRole('button',{name:'✕'}).click();
 
+            await page.evaluate(()=>nav('calendar'));
+            await page.locator('img.tm-tour-logo').first().waitFor({timeout:15000});
+            await page.waitForFunction(()=>{const img=document.querySelector('img.tm-tour-logo');return !!img&&img.complete&&img.naturalWidth>0;},null,{timeout:15000});
+
             await page.evaluate(()=>nav('history'));
             await page.getByRole('heading',{name:'Histoire, records & nations'}).waitFor();
             await page.getByText('Record Hub · historique + sauvegarde',{exact:true}).waitFor();

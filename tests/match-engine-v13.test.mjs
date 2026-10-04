@@ -172,3 +172,13 @@ test('V23 changeover coaching does not invent a second scoring engine',()=>{
   assert.ok(v23.includes('lp.changeover'));
   assert.ok(v23.includes('applyTactics'));
 });
+
+
+test('live doubles emits real changeovers for bench coaching',()=>{
+  assert.ok(backend.includes('const doublesChangeover=tiebreak'));
+  assert.ok(backend.includes('changeover:doublesChangeover'));
+  assert.ok(backend.includes('doublesTbPoints>0&&doublesTbPoints%6===0'));
+  assert.ok(backend.includes('doublesCompletedGames%2===1'));
+  assert.ok(backend.includes('Changement de côté · double'));
+  assert.ok(v23.includes('lp.changeover'));
+});

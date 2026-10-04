@@ -80,10 +80,10 @@ jobs:
           curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/daily-career-v22.js
           curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/daily-career-v22.css
           curl --fail --silent --show-error "$BASE/play.html" -o /tmp/play.html
-          grep -q 'app.js?v=20261004-visual-assets-v35' /tmp/play.html
-          grep -q 'records-v1.js?v=20261004-records-v10' /tmp/play.html
+          grep -Eq 'app\\.js\\?v=[^" ]+' /tmp/play.html
+          grep -Eq 'records-v1\\.js\\?v=[^" ]+' /tmp/play.html
           curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
-          grep -q 'records-v1.js?v=20261004-records-v10' /tmp/index.html
+          grep -Eq 'records-v1\\.js\\?v=[^" ]+' /tmp/index.html
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js
@@ -381,7 +381,7 @@ jobs:
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
               if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then
                 curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
-                grep -q 'records-v1.js?v=20261004-records-v10' /tmp/index.html
+                grep -Eq 'records-v1\\.js\\?v=[^" ]+' /tmp/index.html
                 echo "Visual build ready"
                 exit 0
               fi

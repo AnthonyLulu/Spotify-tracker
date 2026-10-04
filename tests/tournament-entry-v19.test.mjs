@@ -14,7 +14,7 @@ test('V19 removes the invented ITF Top-200 play-down ban everywhere',()=>{
 
 test('ITF candidate order keeps ATP ahead of ITF-only merit and rating fallback',()=>{
  assert.match(core,/p\.ranking::int effective_rank,[\s\S]*1::int merit_tier/);
- assert.match(core,/p\.itf_ranking::numeric merit_value[\s\S]*2::int merit_tier/);
+ assert.match(core,/2::int merit_tier,[\s\S]*p\.itf_ranking::numeric merit_value/);
  assert.match(core,/3::int merit_tier/);
  assert.match(core,/order by c\.merit_tier,c\.merit_value,c\.current_ability desc,c\.id/);
 });

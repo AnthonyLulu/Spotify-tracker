@@ -6,6 +6,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const app=read('court-boss/app.js');
 const edge=read('supabase/functions/court-boss/index.ts');
 const daily=read('supabase/migrations/20261004122433_idempotent_daily_clock_training_v25.sql')+'\n'+read('supabase/migrations/20261004175500_audit_reliability_v31.sql');
+const recoveryGuards=read('supabase/migrations/20261004010204_live_match_idempotent_commit_guards_v23.sql')+'\n'+read('supabase/migrations/20261004130000_post_match_recovery_v24.sql');
 
 test('passive local persistence never opens the private access gate',()=>{
   const start=app.indexOf('function persist()');
@@ -65,4 +66,13 @@ test('daily advance is idempotent across reload or retry',()=>{
   assert.match(daily,/daily_tick_commit_v25/);
   assert.match(daily,/already_applied/);
   assert.match(daily,/stale_day_request/);
+});
+
+
+test('match effects and recovery debt are exactly-once per live session',()=>{
+  assert.match(recoveryGuards,/primary key\(session_id,effect\)/);
+  assert.match(recoveryGuards,/perform 1 from public\.live_match_sessions where id=p_session_id for update/);
+  assert.match(recoveryGuards,/where session_id=p_session_id and effect=p_effect/);
+  assert.match(recoveryGuards,/'already_applied',true/);
+  assert.match(recoveryGuards,/insert into public\.live_match_effect_commits_v23\(session_id,effect,payload\)/);
 });

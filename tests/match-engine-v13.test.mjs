@@ -85,6 +85,15 @@ test('managed tournament Match Center is locked to the exact world-draw opponent
   assert.ok(backend.includes('.eq("id",Number(wr.id))'));
 });
 
+test('managed doubles Match Center is locked to the reserved world-draw pair',()=>{
+  assert.ok(backend.includes('reserve_managed_doubles_live_matches_v22'));
+  assert.ok(backend.includes('Le Match Center double ne peut pas inventer une paire différente du tableau mondial.'));
+  assert.ok(backend.includes('world_match_id:Number(worldMatch?.id||0)||null'));
+  assert.ok(backend.includes('Le match double live ne correspond plus à la case du tableau mondial.'));
+  assert.ok(backend.includes('Cette case du tableau double possède déjà un autre résultat.'));
+  assert.ok(backend.includes('model_version:"CB-LIVE-DOUBLES-v22"'));
+});
+
 test('live doubles point-by-point uses the real match stack',()=>{
   for(const marker of [
     '/api/live-doubles/start','/api/live-doubles/point','/api/live-doubles/commit',

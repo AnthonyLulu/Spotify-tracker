@@ -9878,7 +9878,6 @@ Deno.serve(async(req:Request)=>{
     const board=await db.rpc("update_board_state");
     return h({ok:true,run_id:run.data.id,managed_player_id:Number(anthony.id),managed_player_name:String(anthony.name||""),tournament:t,partner:{id:partner.id,name:partner.name},round:userRound,points:pts,prize,prize_eur:prizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,rank:isJuniorDouble?juniorDoubleRank?.junior_doubles_ranking:rank.data?.rank,total_points:isJuniorDouble?juniorDoubleRank?.junior_doubles_points:rank.data?.points,ranking_kind:isJuniorDouble?"junior_doubles":"atp_doubles",doubles_entry_status:doublesEntryStatus,entry_method:doublesRunEntryMethod,qualifying_points:qualifyingPointsEarned,protected_ranking_use:protectedDoubleUse,fatigue_added:fatigueAdd,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credits:staffAchievementCredits,hidden_trait_evolution:hiddenTraitEvolution,pair_dynamics:pairDynamics.error?{error:pairDynamics.error.message}:pairDynamics.data,doubles_tactics:doublesTactics,matches:matches.filter((m:any)=>m.user_pair===userPair.name),board:board.data});
   }
-    */
 
   if(path.endsWith("/api/season-summary")&&req.method==="GET"){
     const requestedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);

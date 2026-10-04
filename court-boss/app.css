@@ -1473,3 +1473,22 @@ body{background:
 /* Private write gate: mobile keyboard safe and accessible. */
 .cb-access-gate{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #526071;border-radius:18px;background:#14202d;color:#f4f7fa;padding:24px;box-sizing:border-box}
 .cb-access-gate::backdrop{background:#080f19dd}.cb-access-gate form{display:grid;gap:12px}.cb-access-gate h2,.cb-access-gate p{margin:0}.cb-access-gate input{font-size:16px;min-height:48px;width:100%;box-sizing:border-box}.cb-access-gate button{min-height:48px}.cb-access-error{color:#ffb8b8;min-height:1.2em}
+
+
+/* RC mobile nav: keep all five primary tabs inside narrow iPhone viewports. */
+@media(max-width:520px){
+  .bottom-nav{
+    width:calc(100% - 16px);
+    max-width:calc(100vw - 16px);
+    overflow:hidden;
+    padding-left:max(5px,env(safe-area-inset-left));
+    padding-right:max(5px,env(safe-area-inset-right));
+  }
+  .bottom-nav button{
+    min-width:0;
+    flex:1 1 0;
+    padding-left:4px;
+    padding-right:4px;
+    font-size:9px;
+  }
+}

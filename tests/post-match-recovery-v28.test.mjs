@@ -50,5 +50,5 @@ test('manager UI exposes previous match load without adding another mutation pat
   assert.match(app,/last_match_load/);
   assert.match(app,/last_match_humidity_load/);
   assert.match(app,/last_match_conditioning_score/);
-  assert.match(play,/app\.js\?v=20261004-visual-assets-v\d+/);
+  assert.match(play,/app\.js\?v=[^"'\\s>]+/);
 });

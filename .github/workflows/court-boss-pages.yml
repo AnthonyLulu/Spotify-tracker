@@ -250,7 +250,7 @@ jobs:
             await page.getByRole('heading',{name:'Grands Chelems année par année'}).waitFor();
             await page.getByLabel(/Wimbledon 2009/).click();
             await page.getByText('Vainqueur').waitFor();
-            await page.getByText('Andy Roddick',{exact:true}).waitFor();
+            await page.locator('#overlay').getByText('Andy Roddick',{exact:true}).first().waitFor();
             await page.getByText(/16-14/).waitFor();
             await page.getByRole('button',{name:'✕'}).click();
 

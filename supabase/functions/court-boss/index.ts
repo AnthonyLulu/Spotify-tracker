@@ -7177,7 +7177,6 @@ Deno.serve(async(req:Request)=>{
       legacy_full_tournament_disabled:true,
       action:"use_live_match"
     },409);
-    /*
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const tid=n(body?.tournament_id,0,1,99999999);
     const requestedPlayerId=n(body?.player_id,0,0,99999999);
@@ -8998,7 +8997,6 @@ Deno.serve(async(req:Request)=>{
     return h({ok:true,run_id:runId,managed_player_id:managedId,managed_player_name:String(managedPlayer.data.name||c.player_name||"Joueur"),is_primary_managed:isPrimaryManaged,playing_hurt:playingHurt,tournament:t,champion:{id:champion?.id??null,name:champion?.name||user.name},user_round:userRound,user_points:userPoints,user_prize:userPrize,user_prize_eur:userPrizeEur,prize_fx_rate_to_eur:prizeFxRateToEur,base_currency:BASE_CURRENCY,matches:userMatches,draw_matches:matchRows.length,match_model:"TA-H2H-v2",court_speed:courtSpeed,best_of:bestOf,match_learning:matchLearning,world_result_sync:worldResultSync,travel_cost:travelCost,agent_commission:agentCommission,staff_performance_bonus:staffPerformanceBonus,staff_achievement_credit:staffAchievementCredit,hidden_trait_evolution:hiddenTraitEvolution,fatigue_added:totalFatigue,fitness:newFitness,wildcard:wildcardGranted,lucky_loser:luckyLoser,lucky_loser_qualifying_loss_round:userQualifyingLossRound,alternate:alternateEntered,special_exempt:specialExempt,special_exempt_info:specialExemptInfo,entry_mode:entryMode,entry_ranking:entryRank,entry_ranking_date:entryRankingDate,entry_direct_cut:direct,entry_qual_cut:qual,entry_projection_model:entryProjectionModel,protected_ranking:protectedRankingInfo,protected_ranking_use:protectedRankingUse,performance_bye:performanceBye,performance_bye_info:performanceByeInfo,performance_bye_players:performanceByePlayers,new_rank:newRank,total_points:newPoints,board:board.data});
   }
 
-    */
 
   if(path.endsWith("/api/play-doubles")&&req.method==="POST"){
     return h({
@@ -9007,7 +9005,6 @@ Deno.serve(async(req:Request)=>{
       legacy_full_tournament_disabled:true,
       action:"use_live_doubles"
     },409);
-    /*
     let body:any;try{body=await req.json()}catch{return h({error:"Invalid JSON"},400)}
     const doublesTactics:any=body?.doubles_tactics&&typeof body.doubles_tactics==="object"?body.doubles_tactics:{plan:"balanced"};
     const doublesPlan=String(doublesTactics.plan||"balanced");

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const hof=read('supabase/migrations/20261004214439_hof_retirement_fastpath_v37.sql');
 const ranks=read('supabase/migrations/20261004214721_career_rank_nullable_v38.sql');
+const rollover=read('supabase/migrations/20261004215400_rollover_differential_ability_updates_v39.sql');
 
 test('mass retirement HOF registration is player-scoped, not a global leaderboard per retiree',()=>{
   assert.match(hof,/CB-HOF-RETIREMENT-v2-fast/);
@@ -17,4 +18,12 @@ test('mass retirement HOF registration is player-scoped, not a global leaderboar
 test('managed career can become unranked without breaking season rollover',()=>{
   assert.match(ranks,/singles_rank drop not null/);
   assert.match(ranks,/doubles_rank drop not null/);
+});
+
+
+test('year rollover only updates abilities that actually change',()=>{
+  assert.match(rollover,/with ability_changes as/);
+  assert.match(rollover,/current_ability is distinct from a\.new_current_ability/);
+  assert.match(rollover,/potential is distinct from a\.new_potential/);
+  assert.doesNotMatch(rollover,/where ranking_current=true;\s*\n\s*get diagnostics/);
 });

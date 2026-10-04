@@ -4100,6 +4100,7 @@ Deno.serve(async(req:Request)=>{
       "assets.stickpng.com",
       "commons.wikimedia.org","upload.wikimedia.org","thumb.wikimedia.org","en.wikipedia.org",
       "static.cdnlogo.com","static.hkmenstennisopen.com","trouverlogo.fr",
+      "brisbaneinternational.com.au","www.brisbaneinternational.com.au",
       "tennis.kiwi","tennis.com.au","www.tennis.com.au",
       "itftennis.com","www.itftennis.com"
     ]);
@@ -4110,6 +4111,10 @@ Deno.serve(async(req:Request)=>{
       }catch{return false}
     };
     if(!allowed(raw))return new Response("",{status:403,headers:{...cors,"Cache-Control":"no-store"}});
+    const mediaFallback=()=>{
+      const svg='<svg xmlns="http://www.w3.org/2000/svg" width="160" height="96" viewBox="0 0 160 96"><rect width="160" height="96" rx="14" fill="#10251c"/><circle cx="80" cy="48" r="22" fill="#d7ff47"/><path d="M61 39c10 5 28 5 38 0M61 57c10-5 28-5 38 0" fill="none" stroke="#07110d" stroke-width="3"/></svg>';
+      return new Response(svg,{status:200,headers:{...cors,"Content-Type":"image/svg+xml","Cache-Control":"public, max-age=300"}});
+    };
     try{
       let target=raw;
 
@@ -4170,9 +4175,9 @@ Deno.serve(async(req:Request)=>{
         }
         break;
       }
-      if(!response)return new Response("",{status:502,headers:cors});
+      if(!response)return mediaFallback();
       const contentType=String(response.headers.get("content-type")||"");
-      if(!response.ok||!/^image\//i.test(contentType))return new Response("",{status:502,headers:{...cors,"Cache-Control":"public, max-age=300"}});
+      if(!response.ok||!/^image\//i.test(contentType))return mediaFallback();
       return new Response(response.body,{
         status:200,
         headers:{
@@ -4184,8 +4189,7 @@ Deno.serve(async(req:Request)=>{
     }catch{
       // Keep the UI visual instead of surfacing a broken-image glyph. This is
       // only a media fallback, never a data/API fallback.
-      const svg='<svg xmlns="http://www.w3.org/2000/svg" width="160" height="96" viewBox="0 0 160 96"><rect width="160" height="96" rx="14" fill="#10251c"/><circle cx="80" cy="48" r="22" fill="#d7ff47"/><path d="M61 39c10 5 28 5 38 0M61 57c10-5 28-5 38 0" fill="none" stroke="#07110d" stroke-width="3"/></svg>';
-      return new Response(svg,{status:200,headers:{...cors,"Content-Type":"image/svg+xml","Cache-Control":"public, max-age=300"}});
+      return mediaFallback();
     }
   }
 

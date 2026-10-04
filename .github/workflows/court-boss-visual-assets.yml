@@ -24,12 +24,17 @@ jobs:
           BASE: https://court-boss-tennis-manager.onrender.com
         run: |
           LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
+          LOCAL_RECORDS=$(sha256sum court-boss/records-v1.js | awk '{print $1}')
+          node --check court-boss/records-v1.js
           for i in {1..60}; do
-            if curl --fail --silent --show-error "$BASE/app.js?v=visual-assets" -o /tmp/render-app.js; then
+            if curl --fail --silent --show-error "$BASE/app.js?v=visual-assets" -o /tmp/render-app.js \
+              && curl --fail --silent --show-error "$BASE/records-v1.js?v=20261004-records-v11" -o /tmp/render-records.js; then
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
-              if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then
+              REMOTE_RECORDS=$(sha256sum /tmp/render-records.js | awk '{print $1}')
+              if [ "$LOCAL_APP" = "$REMOTE_APP" ] && [ "$LOCAL_RECORDS" = "$REMOTE_RECORDS" ]; then
                 curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
-                grep -q 'records-v1.js?v=20261004-records-v10' /tmp/index.html
+                grep -q 'records-v1.js?v=20261004-records-v11' /tmp/index.html
+                node --check /tmp/render-records.js
                 echo "Exact visual build ready"
                 exit 0
               fi

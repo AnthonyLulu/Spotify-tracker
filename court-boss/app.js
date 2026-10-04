@@ -3520,6 +3520,7 @@ function historyPage(){
   </div>
   ${global?`<div class="fm-history-hero card click" onclick="openPlayer(${global.id})"><div><div class="eyebrow">Référence de la sélection</div><div class="hero-name">${flags[global.country]||'🏳️'} ${esc(global.name)}</div><div class="muted">${esc(global.country)} · ${esc(global.continent)} · ${global.career_status==='retired'?'Retraité':'Actif'}</div></div><div class="fm-history-score"><span>Indice historique</span><b>${fmt(global.history_score)}</b></div><div class="fm-history-stats"><div><span>Grand Chelem</span><b>${global.grand_slams}</b></div><div><span>Titres</span><b>${global.titles}</b></div><div><span>Victoires</span><b>${fmt(global.wins)}</b></div><div><span>% victoires</span><b>${global.win_pct==null?'—':global.win_pct+'%'}</b></div></div></div>`:''}
 
+  ${typeof window.courtBossRecordHubSection==='function'?window.courtBossRecordHubSection(d.recordHub):''}
   <div class="fm-record-grid">
    ${recordCard('Record Grand Chelem',rec.grand_slams,'grand_slams',' GC')}
    ${recordCard('Record titres',rec.titles,'titles','')}

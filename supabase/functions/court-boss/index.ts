@@ -1508,6 +1508,9 @@ async function captureManagedSaveSnapshot(){
   const detailErr=staffProfiles.error||staffTraining.error||staffPeerRelationships.error||tournamentDrawMatches.error;
   if(detailErr)throw new Error(detailErr.message||"Career detail snapshot failed");
 
+  const clockState=await db.from("career_clock_state_v22").select("*").eq("id","demo").maybeSingle();
+  if(clockState.error)throw new Error("Daily clock snapshot failed: "+clockState.error.message);
+
   const academyManagedPlayerIds=[...new Set([
     managedId,
     ...(roster.data??[]).map((x:any)=>Number(x.player_id||0))
@@ -1571,6 +1574,11 @@ async function captureManagedSaveSnapshot(){
     managed_player_id:managedId||null,
     federation_nation:nation,
     career:career.data,
+    career_clock_state:clockState.data||{
+      id:"demo",
+      last_daily_date:career.data.career_date,
+      last_weekly_checkpoint_date:null
+    },
     academy:academy.data,
     finance:finance.data,
     finance_transactions:financeTransactions.data??[],
@@ -1900,6 +1908,15 @@ async function restoreManagedSaveSnapshot(snapshot:any){
   }
 
   await upsertOne("career_state",snapshot.career,"id");
+  await upsertOne("career_clock_state_v22",
+    snapshot.career_clock_state||{
+      id:"demo",
+      last_daily_date:snapshot.career_date||snapshot.career?.career_date||AGE_REFERENCE_DATE,
+      last_weekly_checkpoint_date:null,
+      updated_at:new Date().toISOString()
+    },
+    "id"
+  );
   await upsertOne("academies",snapshot.academy,"id");
   await upsertOne("finances",snapshot.finance,"id");
   if(["CB-MANAGED-SAVE-v2","CB-MANAGED-SAVE-v3","CB-MANAGED-SAVE-v4","CB-MANAGED-SAVE-v5","CB-MANAGED-SAVE-v6"].includes(model))await upsertMany("finance_transactions",snapshot.finance_transactions,"id");

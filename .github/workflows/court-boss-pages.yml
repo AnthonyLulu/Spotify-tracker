@@ -238,6 +238,7 @@ jobs:
 
             await page.evaluate(()=>openPlayer(1));
             await page.getByText('Dossier joueur').waitFor();
+            await clearAccessGate();
             await page.getByRole('button',{name:'Records & Awards'}).click();
             await page.getByRole('heading',{name:'Carrière en cours'}).waitFor();
             await page.getByText('Hall of Fame',{exact:true}).first().waitFor();
@@ -381,6 +382,13 @@ jobs:
 
             await page.goto(process.env.BASE+'/',{waitUntil:'domcontentloaded',timeout:60000});
             await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:25000});
+            const clearAccessGate=async()=>page.evaluate(()=>{
+              document.querySelectorAll('.cb-access-gate').forEach(g=>{
+                try{ if(g.open)g.close(); }catch{}
+                g.remove();
+              });
+            });
+            await clearAccessGate();
 
             await page.evaluate(()=>openPlayer(1));
             await page.getByText('Dossier joueur').waitFor();

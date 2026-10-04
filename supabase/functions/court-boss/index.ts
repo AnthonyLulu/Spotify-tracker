@@ -4026,6 +4026,7 @@ Deno.serve(async(req:Request)=>{
 
     const statisticsDashboard=await db.rpc("player_statistics_dashboard_v2",{p_player_id:id,p_as_of:referenceDate});
     const legacyProfile=await db.rpc("court_boss_player_legacy_profile",{p_player_id:id,p_date:referenceDate});
+    const hallOfFameProfile=await db.rpc("court_boss_hof_player_snapshot",{p_player_id:id,p_date:referenceDate});
 
     return h({
       player,sponsors:sp.data??[],titles:visibleTitles,history:visibleHistory,shortlist:short.data??null,
@@ -4052,6 +4053,7 @@ Deno.serve(async(req:Request)=>{
       careerFinancials,
       statisticsDashboard:statisticsDashboard.error?null:statisticsDashboard.data,
       legacyProfile:legacyProfile.error?null:legacyProfile.data,
+      hallOfFame:hallOfFameProfile.error?null:hallOfFameProfile.data,
       eloRating:eloRating.error?null:eloRating.data,
       dynamicRatings:dynamicRatings.error?null:dynamicRatings.data,
       styleHistory:styleHistory.error?[]:(styleHistory.data??[]),
@@ -16919,6 +16921,7 @@ Deno.serve(async(req:Request)=>{
     const requestedRecordPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
     const recordPlayerId=requestedRecordPlayerId||Number(career.data?.managed_player_id||0)||null;
     const recordHub=await db.rpc("court_boss_record_hub",{p_player_id:recordPlayerId,p_date:gameDate});
+    const hallOfFameDynamic=await db.rpc("court_boss_hall_of_fame_hub",{p_date:gameDate});
 
     return h({
       methodology:"Indice Court Boss: 10 000/Grand Chelem + 2 200/ATP Finals + 1 200/Masters + 180/autre titre + 2/victoire enregistrée. Ce n'est pas un classement officiel du GOAT.",
@@ -16931,6 +16934,7 @@ Deno.serve(async(req:Request)=>{
       nationalRecords,
       rankingRecords,
       recordHub:recordHub.error?{error:recordHub.error.message}:recordHub.data,
+      hallOfFameDynamic:hallOfFameDynamic.error?{error:hallOfFameDynamic.error.message}:hallOfFameDynamic.data,
       u18,u21,
       coverage:{
         players:pool.length,

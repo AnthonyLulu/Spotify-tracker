@@ -2418,7 +2418,7 @@ function training(){
   </div>
  </div>
  <div class="card" style="margin-top:12px">
-  <div class="row between"><div><div class="eyebrow">Planification</div><h2>7 jours · matin / après-midi</h2></div><span class="badge">Le match du jour remplace automatiquement l’entraînement par récupération légère</span></div>
+  <div class="row between"><div><div class="eyebrow">Planification</div><h2>7 jours · matin / après-midi</h2></div><span class="badge">Le jour de match neutralise l’entraînement · la charge physique appartient au Match Center</span></div>
   <div class="tm-daily-training-grid" style="margin-top:10px">
    ${rows.map((row,i)=>`<div class="tm-daily-training-row ${i===nextIndex?'next-day':''}">
     <div class="tm-daily-day"><b>${TRAINING_DAY_LABELS_V22[i]}</b><small>${i===nextIndex?'Prochain jour':'Charge '+cbTrainingDayLoadV22(row).toFixed(1)}</small></div>

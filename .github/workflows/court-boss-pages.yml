@@ -30,6 +30,7 @@ jobs:
           node --check court-boss/tactics.js
           node --check court-boss/modules.js
           node --check court-boss/match-center-v1.js
+          node --check court-boss/daily-career-v22.js
 
       - name: Run tournament integrity tests
         run: |
@@ -44,12 +45,24 @@ jobs:
           LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
           LOCAL_MODULES=$(sha256sum court-boss/modules.js | awk '{print $1}')
           LOCAL_CSS=$(sha256sum court-boss/app.css | awk '{print $1}')
+          LOCAL_DAILY_JS=$(sha256sum court-boss/daily-career-v22.js | awk '{print $1}')
+          LOCAL_DAILY_CSS=$(sha256sum court-boss/daily-career-v22.css | awk '{print $1}')
           for i in {1..36}; do
-            if curl --fail --silent --show-error "$BASE/app.js?v=20260927-10" -o /tmp/render-app.js               && curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/render-modules.js               && curl --fail --silent --show-error "$BASE/app.css?v=20260927-10" -o /tmp/render-app.css; then
+            if curl --fail --silent --show-error "$BASE/app.js?v=20260927-10" -o /tmp/render-app.js \
+              && curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/render-modules.js \
+              && curl --fail --silent --show-error "$BASE/app.css?v=20260927-10" -o /tmp/render-app.css \
+              && curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/render-daily.js \
+              && curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/render-daily.css; then
               REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
               REMOTE_MODULES=$(sha256sum /tmp/render-modules.js | awk '{print $1}')
               REMOTE_CSS=$(sha256sum /tmp/render-app.css | awk '{print $1}')
-              if [ "$LOCAL_APP" = "$REMOTE_APP" ] && [ "$LOCAL_MODULES" = "$REMOTE_MODULES" ] && [ "$LOCAL_CSS" = "$REMOTE_CSS" ]; then
+              REMOTE_DAILY_JS=$(sha256sum /tmp/render-daily.js | awk '{print $1}')
+              REMOTE_DAILY_CSS=$(sha256sum /tmp/render-daily.css | awk '{print $1}')
+              if [ "$LOCAL_APP" = "$REMOTE_APP" ] \
+                && [ "$LOCAL_MODULES" = "$REMOTE_MODULES" ] \
+                && [ "$LOCAL_CSS" = "$REMOTE_CSS" ] \
+                && [ "$LOCAL_DAILY_JS" = "$REMOTE_DAILY_JS" ] \
+                && [ "$LOCAL_DAILY_CSS" = "$REMOTE_DAILY_CSS" ]; then
                 echo "Render build matches the checked-out branch"
                 exit 0
               fi
@@ -67,9 +80,12 @@ jobs:
           curl --fail --silent --show-error "$BASE/app.js?v=20260927-10" -o /tmp/app.js
           curl --fail --silent --show-error "$BASE/tactics.js?v=20260927-10" -o /tmp/tactics.js
           curl --fail --silent --show-error "$BASE/modules.js?v=20260927-10" -o /tmp/modules.js
+          curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/daily-career-v22.js
+          curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/daily-career-v22.css
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js
+          node --check /tmp/daily-career-v22.js
 
       - name: Check live backend
         env:
@@ -168,6 +184,13 @@ jobs:
               console.error('ERRORS:',pageErrors);
               throw e;
             }
+            await page.getByRole('button',{name:'Continuer ›'}).waitFor();
+            await page.evaluate(()=>nav('training'));
+            await page.getByRole('heading',{name:'Entraînement jour par jour'}).waitFor();
+            await page.getByRole('heading',{name:'Matin / après-midi'}).waitFor();
+            await page.getByText('2 blocs max / jour').waitFor();
+            if(await page.locator('.daily-training-day').count()!==7)throw new Error('daily training must render exactly 7 days');
+            if(await page.locator('.daily-training-day select').count()<21)throw new Error('daily training needs morning, afternoon and intensity controls');
 
             await page.getByRole('button',{name:'Classements'}).click();
             await page.getByRole('heading',{name:'Classements'}).waitFor();

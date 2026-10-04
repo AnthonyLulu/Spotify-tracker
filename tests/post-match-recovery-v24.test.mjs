@@ -7,6 +7,7 @@ const backend=read('supabase/functions/court-boss/index.ts');
 const recovery=read('supabase/migrations/20261004130000_post_match_recovery_v24.sql');
 const clock=read('supabase/migrations/20261004131500_daily_recovery_clock_v24.sql');
 const daily=read('court-boss/daily-career-v22.js');
+const trainingOwner=read('supabase/migrations/20261004135000_training_recovery_single_owner_v24.sql');
 const play=read('court-boss/play.html');
 
 test('live singles and doubles expose duration-driven physical load',()=>{
@@ -84,4 +85,16 @@ test('daily UI exposes post-match recovery travel and medical restriction',()=>{
   assert.match(daily,/Staff médical : entraînement remplacé/);
   assert.match(daily,/playerRecovery\?\.travel_applied/);
   assert.match(play,/daily-career-v22\.js\?v=20261004-post-match-recovery-v24/);
+});
+
+
+test('V24 recovery has one physical owner and training only reads residual debt',()=>{
+  assert.doesNotMatch(trainingOwner,/managed_post_match_recovery_context_v23/);
+  assert.doesNotMatch(trainingOwner,/post_match_recovery_debt\s*=/);
+  assert.doesNotMatch(trainingOwner,/travel_recovery_debt\s*=/);
+  assert.match(trainingOwner,/select[\s\S]*post_match_recovery_debt[\s\S]*travel_recovery_debt[\s\S]*into v_post_match_debt,v_travel_debt/);
+  assert.match(trainingOwner,/'recovery_owner','CB-DAILY-RECOVERY-v24'/);
+  assert.match(trainingOwner,/v_debt_training_mult/);
+  assert.match(trainingOwner,/v_overreach_penalty/);
+  assert.match(trainingOwner,/'model','CB-DAILY-TRAINING-v24'/);
 });

@@ -387,7 +387,11 @@
       let checkpoint=null;
       const advanceOneDay=()=>get('/api/advance-day',{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({today_plan:payload,difficulty:local.difficulty||'normal'})
+        body:JSON.stringify({
+          today_plan:payload,
+          difficulty:local.difficulty||'normal',
+          expected_from_date:String(local.date||career()?.career_date||'')
+        })
       });
       let day=await advanceOneDay();
 

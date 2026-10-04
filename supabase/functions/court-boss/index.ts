@@ -5916,7 +5916,7 @@ Deno.serve(async(req:Request)=>{
       ...data,
       career:fresh.data,
       daily:true,
-      engine:"CB-DAILY-CLOCK-v22"
+      engine:"CB-DAILY-CLOCK-v25"
     });
   }
 

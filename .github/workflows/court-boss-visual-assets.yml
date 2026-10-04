@@ -32,7 +32,7 @@ jobs:
               REMOTE_RECORDS=$(sha256sum /tmp/render-records.js | awk '{print $1}')
               if [ "$LOCAL_APP" = "$REMOTE_APP" ] && [ "$LOCAL_RECORDS" = "$REMOTE_RECORDS" ]; then
                 curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
-                grep -Eq 'records-v1\\.js\\?v=[^" ]+' /tmp/index.html
+                grep -Fq 'records-v1.js?v=' /tmp/index.html
                 echo "Exact visual build ready"
                 exit 0
               fi

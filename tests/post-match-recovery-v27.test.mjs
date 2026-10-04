@@ -30,8 +30,8 @@ test('match duration weather effort and doubles role create post-match debt once
   assert.match(backend,/effort_load:Number\(effortLoad\.toFixed\(2\)\)/);
   assert.match(backend,/p_effect:"recovery_managed_v24"/);
   assert.match(backend,/p_effect:"recovery_partner_v24"/);
-  assert.match(recovery,/live_match_effect_commits_v23/);
-  assert.match(recovery,/already_applied/);
+  assert.match(backend,/seed_live_match_recovery_v24/);
+  assert.match(recovery,/last_recovery_date is not null and v_load\.last_recovery_date>=v_date/);
 });
 
 test('travel and medical staff feed one daily recovery pass',()=>{
@@ -47,7 +47,8 @@ test('residual debt hurts training adaptation and raises risk without removing f
   assert.match(training,/v_debt_training_mult:=greatest\(\.58,least\(1,1-v_recovery_debt\*\.014\)\)/);
   assert.match(training,/\*v_debt_training_mult;/);
   assert.match(training,/v_recovery_pressure\*\.22/);
-  assert.match(training,/\+v_recovery_pressure\*8/);
+  assert.match(training,/greatest\(0,v_recovery_debt-6\)\*\.16/);
+  assert.match(training,/v_overreach_penalty\*1\.8/);
 });
 
 test('training niggles become real short injuries and UI sees recovery state',()=>{

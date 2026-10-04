@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const app=read('court-boss/app.js');
 const edge=read('supabase/functions/court-boss/index.ts');
-const daily=read('supabase/migrations/20261004112500_daily_clock_idempotent_v26.sql');
+const daily=read('supabase/migrations/20261004122433_idempotent_daily_clock_training_v25.sql')+'\n'+read('supabase/migrations/20261004175500_audit_reliability_v31.sql');
 
 test('passive local persistence never opens the private access gate',()=>{
   const start=app.indexOf('function persist()');

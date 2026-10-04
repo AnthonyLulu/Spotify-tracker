@@ -418,7 +418,22 @@
         day=await advanceOneDay();
       }
 
-      if(!day?.ok)throw new Error(day?.reason||'Tick journalier impossible');
+      if(!day?.ok){
+        if(day?.reason==='pending_match'||day?.stop_reason==='match'){
+          local.feed=local.feed||[];
+          const due=day?.due_matches?.matches?.[0]||null;
+          local.feed.unshift(due
+            ?'Match à jouer aujourd’hui · '+String(due.tournament_name||'Tournoi')+' · '+String(due.round||'')
+            :'Un match de ton groupe doit être joué avant de continuer.'
+          );
+          local.feed=local.feed.slice(0,12);
+          persist();
+          await nav('calendar');
+          return;
+        }
+        if(day?.reason==='clock_busy')throw new Error('Le calendrier est déjà en cours de mise à jour. Relance Continuer.');
+        throw new Error(day?.reason||'Tick journalier impossible');
+      }
       local.date=day.date||local.date;
       local.week=day.week??local.week;
       local.career={...(local.career||{}),...(day.career||{})};

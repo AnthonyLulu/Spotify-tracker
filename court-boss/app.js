@@ -225,7 +225,10 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
 
 const get=async(path,opts={},retried=false)=>{const key=courtBossAccessKey();const r=await fetch(API+path,{cache:'no-store',...opts,headers:{'X-Save-Key':saveKey,'X-Court-Boss-Key':key,...(opts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){localStorage.removeItem('courtBossAccessKey');accessKey='';return get(path,opts,true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}if(key)localStorage.setItem('courtBossAccessKey',key);return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
-const calendarMobile=()=>Boolean(window.matchMedia?.('(max-width: 760px)').matches||/iPhone|iPad|iPod/i.test(navigator.userAgent));
+const calendarMobile=()=>Boolean(
+  (typeof window!=='undefined'&&window.matchMedia?.('(max-width: 760px)').matches)
+  ||(typeof navigator!=='undefined'&&/iPhone|iPad|iPod/i.test(String(navigator.userAgent||'')))
+);
 const calendarPageSize=()=>calendarMobile()?32:72;
 let tourLoadSeq=0;
 let competitionRows=[],competitionCount=0,competitionOffset=0,competitionLoading=false,competitionFilters={q:'',circuit:'Tous',category:'Toutes',surface:'Toutes',country:'',source:'Tous',prestige:'Tous',history:'Tous',holder:'Tous'};

@@ -246,6 +246,25 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
 
 const get=async(path,opts={},retried=false)=>{const {authPrompt=true,...fetchOpts}=opts||{};const key=accessKey;const r=await fetch(API+path,{cache:'no-store',...fetchOpts,headers:{'X-Save-Key':saveKey,...(key?{'X-Court-Boss-Key':key}:{}),...(fetchOpts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){if(!authPrompt){const e=new Error(body.error||'Action privée verrouillée.');e.status=401;e.data=body;throw e}if(accessKey===key){localStorage.removeItem('courtBossAccessKey');accessKey=''}await requestCourtBossAccess();return get(path,{...fetchOpts,authPrompt},true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}return body;};
 let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+const BOOT_SECONDARY_KEYS=['staff','facilities','scouting','scoutingReports','youth','federation','matches','topPlayers','injuries','managedInjury','medicalPlan','davisSquad','training'];
+let bootstrapSecondaryPromise=null;
+function mergeBootstrapCore(data){
+ const previous=boot;
+ const next={...(previous||{}),...(data||{})};
+ if(previous?.secondary_loaded===true&&data?.secondary_loaded===false){
+  for(const key of BOOT_SECONDARY_KEYS)next[key]=previous[key];
+  next.secondary_loaded=true;
+ }
+ return next;
+}
+async function loadBootstrapSecondary(force=false){
+ if(boot?.secondary_loaded===true&&!force)return boot;
+ if(bootstrapSecondaryPromise&&!force)return bootstrapSecondaryPromise;
+ bootstrapSecondaryPromise=get('/api/bootstrap-secondary')
+  .then(data=>{boot={...(boot||{}),...(data||{}),secondary_loaded:true};return boot})
+  .finally(()=>{bootstrapSecondaryPromise=null});
+ return bootstrapSecondaryPromise;
+}
 const calendarMobile=()=>Boolean(
   (typeof window!=='undefined'&&window.matchMedia?.('(max-width: 760px)').matches)
   ||(typeof navigator!=='undefined'&&/iPhone|iPad|iPod/i.test(String(navigator.userAgent||'')))
@@ -468,7 +487,7 @@ async function loadCareerSlot(slotNo){
   local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:'load',career_date:d.slot?.career_date||local.date,week:d.slot?.week||local.week,updated_at:new Date().toISOString()};
   localStorage.setItem('cbLocal',JSON.stringify(local));
   invalidateCareerCaches();
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
   await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadSaveSlots(),loadCareerHub(true)]);
   const activeLiveId=activeManagedId()||primaryManagedPlayerId()||0;
@@ -688,6 +707,9 @@ window.nav=async r=>{
  route=r;
  window.scrollTo({top:0,behavior:'smooth'});
  try{
+  if(['academy','scouting','staff','finance','medical','davis','match','players','contracts'].includes(r)){
+   await loadBootstrapSecondary();
+  }
   if(r==='rankings'&&(!rankRows.length||rankKind==='ncaa')){
    loading('Chargement du classement…');
    await loadRankings();
@@ -833,7 +855,7 @@ async function init(){
  loading();
  try{
    await rollbackUnsavedLiveBatchOnStartup();
-   boot=await get('/api/bootstrap');
+   boot=mergeBootstrapCore(await get('/api/bootstrap'));
    if(boot.save&&typeof boot.save==='object'&&!localStorage.getItem('cbLocal')) local=cleanCareerLocalState(boot.save);
    local.career={...(local.career||{}),...(boot.career||{})};
    local.date=boot.career?.career_date||local.date||RANKING_SNAPSHOT;
@@ -857,7 +879,7 @@ async function init(){
    // In doubles-only careers, active server singles entries are withdrawn instead.
    if(String(local.career?.career_focus||'mixed')==='doubles_only'){
      Promise.allSettled((serverSinglesEntries||[]).map(row=>get('/api/tournament-entry',{
-       method:'POST',headers:{'Content-Type':'application/json'},
+       authPrompt:false,method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({tournament_id:Number(row.tournament_id),action:'withdraw',entry_method:String(row.entry_method||'alternate')})
      }))).catch(()=>{});
    }else{
@@ -868,16 +890,17 @@ async function init(){
      local.doublesEntries=[];
      local.doublesEntryMeta={};
      Promise.allSettled((serverDoublesEntries||[]).map(row=>get('/api/doubles-entry',{
-       method:'POST',headers:{'Content-Type':'application/json'},
+       authPrompt:false,method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({tournament_id:Number(row.tournament_id),action:'withdraw'})
      }))).catch(()=>{});
    }else{
      syncLegacyDoublesEntries(serverDoublesEntries).catch(e=>console.warn('Doubles entry migration failed',e));
    }
 
-   // Render immediately after the small bootstrap. Heavy world/ranking/calendar data
-   // is now lazy-loaded by route instead of hammering Postgres at startup.
+   // Paint Home from the core bootstrap before optional staff/scouting/medical data.
    render();
+   loadBootstrapSecondary().then(()=>{if(route==='home'||route==='more')render()})
+     .catch(e=>console.warn('Secondary bootstrap',e));
 
    Promise.allSettled([
      loadManagement(),
@@ -2245,14 +2268,14 @@ function academy(){
  </div>`;
 }
 
-window.setAcademySetting=async(field,value)=>{try{await managerAction('academy_setting',0,{field,value});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
+window.setAcademySetting=async(field,value)=>{try{await managerAction('academy_setting',0,{field,value});boot=mergeBootstrapCore(await get('/api/bootstrap'));render()}catch(e){alert(e.message)}}
 window.assignHeadOfYouth=async()=>{
  const select=document.getElementById('academyHeadSelect');
  const id=Number(select?.value||0);
  if(!id){alert('Choisis un membre du staff.');return}
  try{
   await managerAction('assign_head_of_youth',id);
-  boot=await get('/api/bootstrap');await loadManagement();render();
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));await loadManagement();render();
  }catch(e){alert(e.message)}
 }
 window.decideYouthPathway=async(id,decision)=>{
@@ -2260,7 +2283,7 @@ window.decideYouthPathway=async(id,decision)=>{
  if(!confirm(question))return;
  try{
   const d=await managerAction('academy_pathway',id,{decision});
-  boot=await get('/api/bootstrap');await loadManagement();
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));await loadManagement();
   alert(decision==='ncaa'?'Destination : '+d.destination:decision==='release'?'Le jeune a été libéré.':'Passage pro confirmé.');
   render();
  }catch(e){alert(e.message)}
@@ -2523,13 +2546,13 @@ function scouting(){
   <div class="card"><h2>Prospects académie</h2><div class="table-wrap"><table class="table"><thead><tr><th>Joueur</th><th>Âge</th><th>Potentiel</th></tr></thead><tbody>${(boot.youth||[]).map(y=>`<tr class="click" onclick="openYouth(${y.id})"><td><b>${esc(y.name)}</b></td><td>${y.age}</td><td class="a-good"><b>${starRatingHtml(abilityStarValue(y.potential||0),'Potentiel académie')}</b></td></tr>`).join('')}</tbody></table></div></div>
  </div>`
 }
-window.changeScoutAssignment=async(id,focus,scoutProfileId,region)=>{try{await managerAction('set_scouting_assignment',id,{focus,region,scout_profile_id:Number(scoutProfileId||0)||null});boot=await get('/api/bootstrap');render()}catch(e){alert(e.message)}}
+window.changeScoutAssignment=async(id,focus,scoutProfileId,region)=>{try{await managerAction('set_scouting_assignment',id,{focus,region,scout_profile_id:Number(scoutProfileId||0)||null});boot=mergeBootstrapCore(await get('/api/bootstrap'));render()}catch(e){alert(e.message)}}
 window.recruitScoutedPlayer=async(playerId,reportId)=>{
  if(!confirm('Proposer un contrat académie à ce joueur ?'))return;
  try{
   const d=await managerAction('recruit_scouted_player',Number(playerId),{report_id:Number(reportId)});
   if(local.career)local.career.budget=d.budget;
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   await Promise.allSettled([loadManagement(),loadCareerHub(true)]);
   alert((d.already?'Déjà dans l’académie : ':'Recrutement confirmé : ')+(d.player_name||'joueur')+(d.signing_cost!=null?' · prime '+euro(d.signing_cost):''));
   render();
@@ -3137,7 +3160,7 @@ window.saveLiveCheckpoint=async()=>{
 };
 async function reloadAfterRollback(){
  invalidateCareerCaches();
- boot=await get('/api/bootstrap');
+ boot=mergeBootstrapCore(await get('/api/bootstrap'));
  if(boot.career){local.career={...(local.career||{}),...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week}
  await Promise.allSettled([loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadTournaments(),loadCareerHub(true)]);
  route='home';closeOverlay();render();
@@ -3169,7 +3192,7 @@ window.commitLiveMatch=async(saveAfter=true)=>{
   if(local.lastDailyTrainingReport&&String(local.lastDailyTrainingReport.date||'')===String(local.date||'')){
     local.lastDailyTrainingReport={...local.lastDailyTrainingReport,pending_matches:0,due_matches:{ok:true,date:local.date,count:0,matches:[]}};
   }
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   if(boot.career&&activeManagedId()===primaryManagedPlayerId())local.career={...(local.career||{}),...boot.career};
   else await loadActiveManagedContext(true,activeManagedId()).catch(()=>{});
   await Promise.allSettled([loadManagement(),loadSeasonSummary(),loadRankingLedger(),loadCareerHub(true)]);
@@ -3462,7 +3485,7 @@ function davisPage(){
 window.selectFederation=async nation=>{
  try{
   await managerAction('select_federation',1,{nation});
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   local.career={...(local.career||{}),...(boot.career||{})};
   await loadManagement();
   render();
@@ -3848,7 +3871,7 @@ window.startNewCareer=async()=>{
   local=cleanCareerLocalState(d.local_payload||{});
   localStorage.setItem('cbLocal',JSON.stringify(local));
   invalidateCareerCaches();
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   local.career={...(local.career||{}),...(boot.career||{})};
   local.date=boot.career?.career_date||local.date;
   local.week=boot.career?.week??local.week;
@@ -3875,7 +3898,7 @@ window.startCareerWithPlayer=async(id,name='ce joueur')=>{
   local.playedTournaments={};local.liveSessionId=null;
   localStorage.setItem('cbLocal',JSON.stringify(local));
   rankRows=[];tourRows=[];management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;careerHub=null;historyData=null;competitionRows=[];
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   local.career={...(local.career||{}),...(boot.career||{})};
   local.date=boot.career?.career_date||local.date;local.week=boot.career?.week??1;
   await Promise.all([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
@@ -3987,38 +4010,38 @@ window.runInboxDecision=async(id,type,payload={})=>{
         await loadManagement().catch(()=>{});
       }
     }
-    boot=await get('/api/bootstrap');
+    boot=mergeBootstrapCore(await get('/api/bootstrap'));
     await nav(payload.route||'home');
     return;
   }
   if(type==='academy_pathway'){
     const youthId=Number(payload.youth_id||0);
     const d=await managerAction('academy_pathway',youthId,{decision:payload.decision});
-    boot=await get('/api/bootstrap');await loadManagement();
+    boot=mergeBootstrapCore(await get('/api/bootstrap'));await loadManagement();
     alert(payload.decision==='ncaa'?'Départ NCAA confirmé : '+d.destination:'Passage professionnel confirmé.');
     render();return;
   }
   if(type==='accept_sponsor'){
     await managerAction('accept_sponsor',Number(payload.offer_id||0));
-    careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
+    careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
   if(type==='decline_sponsor'){
     await managerAction('decline_sponsor',Number(payload.offer_id||0));
-    careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
+    careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
   if(type==='renew_contract'){
     const d=await managerAction('renew_contract',Number(payload.contract_id||0));
-    careerHub=null;boot=await get('/api/bootstrap');await Promise.allSettled([loadManagement(),loadCareerHub(true)]);
+    careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await Promise.allSettled([loadManagement(),loadCareerHub(true)]);
     alert('Contrat renouvelé jusqu’au '+df(d.end_date)+' · '+euro(d.weekly_salary)+'/sem.');
     render();return;
   }
   if(type==='medical_protocol'){
     await managerAction('set_medical_protocol',Number(payload.injury_id||0),{protocol:payload.protocol,player_id:Number(payload.player_id||activeManagedId()||primaryManagedPlayerId()||0)});
-    careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();return;
+    careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await loadCareerHub(true);render();return;
   }
   if(type==='respond_partner_offer'){
     await managerAction('respond_partner_offer',Number(payload.offer_id||0),{decision:payload.decision||'decline',player_id:Number(payload.player_id||activeManagedId()||primaryManagedPlayerId()||0)});
-    careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
+    careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
   if(type==='respond_laver_cup_invitation'){
     const invitationId=Number(payload?.invitation_id||0);
@@ -4030,21 +4053,21 @@ window.runInboxDecision=async(id,type,payload={})=>{
       tournament_id:Number(payload?.tournament_id||0)
     });
     careerHub=null;
-    boot=await get('/api/bootstrap');
+    boot=mergeBootstrapCore(await get('/api/bootstrap'));
     await Promise.allSettled([loadManagement(),loadCareerHub(true)]);
     render();return;
   }
   if(type==='match_staff_offer'||type==='release_staff_offer'){
     await managerAction(type,Number(payload.offer_id||0));
-    careerHub=null;boot=await get('/api/bootstrap');await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
+    careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await Promise.all([loadManagement(),loadCareerHub(true)]);render();return;
   }
-  await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap');render();
+  await managerAction('mark_inbox_read',id);boot=mergeBootstrapCore(await get('/api/bootstrap'));render();
  }catch(e){alert(e.message)}
 }
 window.markAllInboxRead=async()=>{
  const unread=(boot.inbox||[]).filter(x=>!x.is_read);
  for(const x of unread){try{await managerAction('mark_inbox_read',x.id)}catch{}}
- boot=await get('/api/bootstrap');render();
+ boot=mergeBootstrapCore(await get('/api/bootstrap'));render();
 }
 
 
@@ -4135,7 +4158,7 @@ function mediaPage(){
 window.respondMedia=async(id,choice)=>{
  try{
   await managerAction('respond_media',Number(id),{choice});
-  careerHub=null;boot=await get('/api/bootstrap');await loadCareerHub(true);render();
+  careerHub=null;boot=mergeBootstrapCore(await get('/api/bootstrap'));await loadCareerHub(true);render();
  }catch(e){alert(e.message)}
 }
 function diagnosticsPage(){
@@ -5361,7 +5384,7 @@ window.playTournament=async(id,medicalDecision=null)=>{
     const playPlayerId=activeManagedId()||primaryManagedPlayerId()||0;
     const d=await get('/api/play-tournament',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,tactics:local.tactics||{},medical_decision:medicalDecision||undefined})});
     local.playedTournaments=local.playedTournaments||{};local.playedTournaments[String(playPlayerId)+':'+String(id)]=d;
-    boot=await get('/api/bootstrap');
+    boot=mergeBootstrapCore(await get('/api/bootstrap'));
     if(boot.career){
       local.career={...(local.career||{}),budget:boot.career.budget};
       if(playPlayerId===primaryManagedPlayerId()){
@@ -5391,7 +5414,7 @@ window.playDoublesTournament=async id=>{
  try{
   const playPlayerId=activeManagedId()||primaryManagedPlayerId()||0;
   const d=await get('/api/play-doubles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tournament_id:id,player_id:playPlayerId,doubles_tactics:local.doublesTactics||{plan:'balanced'}})});
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   if(boot.career){
    local.career={...(local.career||{}),budget:boot.career.budget};
    if(playPlayerId===primaryManagedPlayerId())local.career={...local.career,doubles_rank:boot.career.doubles_rank,doubles_points:boot.career.doubles_points,fatigue:boot.career.fatigue,fitness:boot.career.fitness};
@@ -5413,7 +5436,7 @@ async function managerAction(action,id,extra={}){
   return get('/api/manager-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,id,...extra})});
 }
 async function refreshManagerState(){
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   await loadManagement();
   if(boot.career){
     local.career={...(local.career||{}),budget:boot.career.budget};
@@ -5640,7 +5663,7 @@ window.setMedicalProtocol=async protocol=>{
       }
       if(Number(local.trainingPlayerId||0)===playerId)trainingPreview=null;
     }
-    boot=await get('/api/bootstrap');
+    boot=mergeBootstrapCore(await get('/api/bootstrap'));
     await loadActiveManagedContext(true,playerId).catch(()=>{});
     persist();render();
   }catch(e){alert(e.message)}
@@ -5780,14 +5803,14 @@ window.choosePartner=async id=>{
   await managerAction('choose_partner',id,{player_id:playerId});
   if(isPrimary){
    local.partnerId=id;local.doublesEntries=[];local.doublesEntryMeta={};persist();
-   boot=await get('/api/bootstrap');mergeServerDoublesEntries(boot.doublesEntries||[]);
+   boot=mergeBootstrapCore(await get('/api/bootstrap'));mergeServerDoublesEntries(boot.doublesEntries||[]);
   }
   await loadManagement();
   await loadActiveManagedContext(true,playerId).catch(()=>{});
   render()
  }catch(e){alert(e.message)}
 }
-window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=await get('/api/bootstrap')}catch(e){alert(e.message)}render()}
+window.setDavisRole=async(id,role)=>{local.davisRoles=local.davisRoles||{};for(const [pid,r] of Object.entries(local.davisRoles)){if(r===role&&role!=='Réserve')delete local.davisRoles[pid]}local.davisRoles[id]=role;persist();try{await managerAction('davis_role',id,{role});boot=mergeBootstrapCore(await get('/api/bootstrap'))}catch(e){alert(e.message)}render()}
 window.setCareerFocus=async focus=>{
  const labels={singles_only:'Simple exclusivement',singles_priority:'Simple prioritaire',mixed:'Simple + double',doubles_only:'Double exclusivement'};
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
@@ -5817,7 +5840,7 @@ window.setCareerFocus=async focus=>{
   }else if(['doubles_only','singles_only'].includes(String(cr.career_focus||'mixed'))){
     tmCalFilters.entry='Tous';
   }
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   if(isPrimary&&boot.career)local.career={...(local.career||{}),...boot.career};
   await loadActiveManagedContext(true,playerId).catch(()=>{});
   tournamentDetailRows.clear();
@@ -5844,7 +5867,7 @@ window.editCareer=async(k,v)=>{
  try{
   await managerAction('edit_career',0,{field:k,value:v,player_id:playerId});
   if(isPrimary){
-   boot=await get('/api/bootstrap');
+   boot=mergeBootstrapCore(await get('/api/bootstrap'));
    if(boot.career)local.career={...local.career,...boot.career};
   }else{
    await loadActiveManagedContext(true,playerId);
@@ -5859,7 +5882,7 @@ window.createFantasy=()=>{const name=prompt('Nom du tournoi ?','Court Boss Invit
 window.deleteFantasy=i=>{local.fantasy.splice(i,1);persist();render()}
 window.openFantasy=i=>{const t=local.fantasy[i];if(!t)return;overlay.innerHTML=`<div class="modal" onclick="if(event.target===this)closeOverlay()"><div class="sheet"><div class="sheet-head"><div><div class="eyebrow">Fantasy Court</div><h1>${esc(t.name)}</h1></div><button class="close" onclick="closeOverlay()">✕</button></div><div class="card"><div class="list-item row between"><span>Surface</span><b>${esc(surfaceLabel(t))}</b></div><div class="list-item row between"><span>Tableau</span><b>${t.draw} joueurs</b></div></div></div></div>`}
 window.facilityLevel=f=>local.facilityLevels?.[f.id]??f.level
-window.upgradeFacility=async(id,name,base)=>{try{const d=await managerAction('upgrade_facility',id);boot=await get('/api/bootstrap');if(boot.career)local.career={...local.career,...boot.career};local.facilityLevels=local.facilityLevels||{};local.facilityLevels[id]=d.level;persist();render()}catch(e){alert(e.message)}}
+window.upgradeFacility=async(id,name,base)=>{try{const d=await managerAction('upgrade_facility',id);boot=mergeBootstrapCore(await get('/api/bootstrap'));if(boot.career)local.career={...local.career,...boot.career};local.facilityLevels=local.facilityLevels||{};local.facilityLevels[id]=d.level;persist();render()}catch(e){alert(e.message)}}
 window.openInboxItem=async(id,r)=>{
  const item=(boot?.inbox||[]).find(x=>Number(x.id)===Number(id));
  const targetRoute=String(r||item?.action_route||'home');
@@ -5868,7 +5891,7 @@ window.openInboxItem=async(id,r)=>{
   trainingPreview=null;
   persist();
  }
- try{await managerAction('mark_inbox_read',id);boot=await get('/api/bootstrap')}catch{}
+ try{await managerAction('mark_inbox_read',id);boot=mergeBootstrapCore(await get('/api/bootstrap'))}catch{}
  await nav(targetRoute)
 }
 window.simulateWeek=async()=>{
@@ -5897,7 +5920,7 @@ window.simulateWeek=async()=>{
     const ng=roll.rollover?.newgens||{};
     local.feed.unshift(`Nouvelle saison ${nextYear} : ${roll.rollover?.retired_players||0} retraite(s), ${ng.created||0} jeunes générés, ${ng.promoted||0} promu(s) vers le circuit pro.`);
     local.career=cr;persist();
-    boot=await get('/api/bootstrap');
+    boot=mergeBootstrapCore(await get('/api/bootstrap'));
     if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
     const rolloverActiveId=activeManagedId();
     if(rolloverActiveId&&rolloverActiveId!==primaryManagedPlayerId())await loadActiveManagedContext(true,rolloverActiveId).catch(()=>{});
@@ -5926,7 +5949,7 @@ window.simulateWeek=async()=>{
   }
   local.feed=local.feed||[];if(sim.medical){local.feed.unshift(sim.medical.recovered?'Centre médical : retour à 100%, le joueur est déclaré apte.':`Centre médical : ${sim.medical.protocol}, risque ${sim.medical.risk_delta>=0?'+':''}${sim.medical.risk_delta}, retour gagné ${sim.medical.return_days_gained||0} jour(s).`)}if(sim.weeklyFinance)local.feed.unshift(`Finances semaine : sponsors +${euro(sim.weeklyFinance.sponsors||0)}, staff -${euro(sim.weeklyFinance.staff||0)}, joueurs -${euro(sim.weeklyFinance.players||0)}, médical -${euro(sim.weeklyFinance.medical||0)} · net ${sim.weeklyFinance.net>=0?'+':''}${euro(sim.weeklyFinance.net||0)}.`);if((sim.weeklyFinance?.expired_contracts||0)>0)local.feed.unshift(`${sim.weeklyFinance.expired_contracts} contrat(s) joueur arrivé(s) à échéance.`);if((sim.academyDevelopment?.ability_progressions||0)>0)local.feed.unshift(`Académie : ${sim.academyDevelopment.ability_progressions} jeune(s) ont progressé en niveau global, ${sim.academyDevelopment.attribute_improvements||0} attribut(s) amélioré(s).`);if((sim.injuries?.new_injuries||0)>0)local.feed.unshift(`${sim.injuries.new_injuries} nouvelle(s) blessure(s) dans le monde cette semaine.`);if((sim.forfeits?.forfeits||0)>0)local.feed.unshift(`${sim.forfeits.forfeits} place(s) libérée(s) par forfait sur les tournois à venir.`);if((sim.worldDoublesTournaments?.tournaments_simulated||0)>0)local.feed.unshift(`Circuit double mondial : ${sim.worldDoublesTournaments.tournaments_simulated} tournoi(s) simulé(s), avec palmarès et points de paire mis à jour.`);local.feed.unshift(`Semaine simulée : ${cr.player_name||'Joueur'} est ${String(cr.career_focus||'mixed')==='doubles_only'?'Double #'+cr.doubles_rank:'ATP #'+cr.singles_rank} · Monde mis à jour : ${sim.world?.updated_players||0} joueurs.`);local.feed=local.feed.slice(0,8);
   local.career=cr;persist();
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   if(boot.career){local.career={...cr,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   const weeklyActiveId=activeManagedId();
   if(weeklyActiveId&&weeklyActiveId!==primaryManagedPlayerId())await loadActiveManagedContext(true,weeklyActiveId).catch(()=>{});
@@ -5936,7 +5959,7 @@ window.simulateWeek=async()=>{
   await Promise.allSettled([loadRankings(),loadTournaments(),loadManagement(),loadRankingLedger(),loadSeasonSummary(),loadScheduleAdvice(),loadCountries(),loadCareerHub(true)]);
   if(route==='training')await loadTrainingPreview(true).catch(()=>{});
   if(route==='history')await loadHistory().catch(()=>{});
- }catch(e){try{boot=await get('/api/bootstrap');if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
+ }catch(e){try{boot=mergeBootstrapCore(await get('/api/bootstrap'));if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;localStorage.setItem('cbLocal',JSON.stringify(local));}}catch{}alert('Simulation incomplète : '+e.message)}
  finally{simulating=false;render()}
 }
 async function cbRunWeeklyCheckpointV22(checkpointDate,fromDate){
@@ -5976,7 +5999,7 @@ window.advanceDay=async function(){
 
   if(day?.checkpoint_required){
    await cbRunWeeklyCheckpointV22(day.checkpoint_date||local.date,day.from_date);
-   boot=await get('/api/bootstrap');
+   boot=mergeBootstrapCore(await get('/api/bootstrap'));
    if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
    day=await requestDay();
   }
@@ -5988,7 +6011,7 @@ window.advanceDay=async function(){
    });
    local.feed=local.feed||[];
    local.feed.unshift(`Nouvelle saison ${day.new_year} · ${roll.rollover?.retired_players||0} retraite(s), ${roll.rollover?.newgens?.created||0} newgen(s).`);
-   boot=await get('/api/bootstrap');
+   boot=mergeBootstrapCore(await get('/api/bootstrap'));
    if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??1;}
    day=await requestDay();
   }
@@ -6029,7 +6052,7 @@ window.advanceDay=async function(){
    await cbRunWeeklyCheckpointV22(day.date,day.week_start_date);
   }
 
-  boot=await get('/api/bootstrap');
+  boot=mergeBootstrapCore(await get('/api/bootstrap'));
   if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   const activeId=activeManagedId();
   if(activeId&&activeId!==primaryManagedPlayerId())await loadActiveManagedContext(true,activeId).catch(()=>{});
@@ -6052,7 +6075,7 @@ window.advanceDay=async function(){
   else if(day.stop_reason==='training_progress')await nav('training');
  }catch(e){
   try{
-   boot=await get('/api/bootstrap');
+   boot=mergeBootstrapCore(await get('/api/bootstrap'));
    if(boot.career){local.career={...local.career,...boot.career};local.date=boot.career.career_date||local.date;local.week=boot.career.week??local.week;}
   }catch{}
   alert('Continuer impossible : '+e.message);

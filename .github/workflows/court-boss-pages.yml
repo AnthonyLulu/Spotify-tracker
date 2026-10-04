@@ -83,7 +83,10 @@ jobs:
           curl --fail --silent --show-error "$BASE/daily-career-v22.js?v=20261004-daily-v22" -o /tmp/daily-career-v22.js
           curl --fail --silent --show-error "$BASE/daily-career-v22.css?v=20261004-daily-v22" -o /tmp/daily-career-v22.css
           curl --fail --silent --show-error "$BASE/play.html" -o /tmp/play.html
-          grep -q 'app.js?v=20261004-hof-v30' /tmp/play.html
+          grep -q 'app.js?v=20261004-visual-assets-v31' /tmp/play.html
+          grep -q 'records-v1.js?v=20261004-records-v9' /tmp/play.html
+          curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
+          grep -q 'records-v1.js?v=20261004-records-v9' /tmp/index.html
           node --check /tmp/app.js
           node --check /tmp/tactics.js
           node --check /tmp/modules.js
@@ -244,10 +247,15 @@ jobs:
             await page.getByRole('heading',{name:'Carrière en cours'}).waitFor();
             await page.getByText('Hall of Fame',{exact:true}).first().waitFor();
             await page.getByText('Jannik Sinner dans l’histoire').waitFor();
+            const sinnerPhoto=page.locator('#overlay img[alt="Jannik Sinner"]').first();
+            await sinnerPhoto.waitFor();
+            await page.waitForFunction(()=>{const img=document.querySelector('#overlay img[alt="Jannik Sinner"]');return !!img&&img.complete&&img.naturalWidth>0;},null,{timeout:15000});
             await page.getByRole('button',{name:'✕'}).click();
 
             await page.evaluate(()=>nav('history'));
             await page.getByRole('heading',{name:'Histoire, records & nations'}).waitFor();
+            await page.getByText('Record Hub · historique + sauvegarde',{exact:true}).waitFor();
+            await page.getByRole('heading',{name:'Exploits, séries et records cultes'}).waitFor();
             await page.getByText('Hall of Fame dynamique',{exact:true}).waitFor();
             await page.getByText('Les futures classes se construiront avec la carrière').waitFor();
 

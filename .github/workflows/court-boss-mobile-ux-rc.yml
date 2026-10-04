@@ -108,7 +108,18 @@ jobs:
                   });
                 const clippedControls=visible.filter(el=>{
                   const rect=el.getBoundingClientRect();
-                  return rect.right>window.innerWidth+8||rect.left<-8;
+                  const clipped=rect.right>window.innerWidth+8||rect.left<-8;
+                  if(!clipped)return false;
+                  // Horizontal tab strips/tables are intentionally scrollable on mobile.
+                  // Only fail controls that are clipped without such a scroll container.
+                  let node=el.parentElement;
+                  while(node&&node!==document.body){
+                    const cs=getComputedStyle(node);
+                    const ox=cs.overflowX;
+                    if((ox==='auto'||ox==='scroll')&&node.scrollWidth>node.clientWidth+2)return false;
+                    node=node.parentElement;
+                  }
+                  return true;
                 }).slice(0,8).map(el=>({
                   tag:el.tagName,
                   text:(el.innerText||el.getAttribute('aria-label')||el.value||'').slice(0,80),

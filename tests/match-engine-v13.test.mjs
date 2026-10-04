@@ -23,7 +23,7 @@ test('all Match Center browser scripts parse',()=>{
 });
 
 test('V13 production page loads the live doubles stack with fresh cache keys',()=>{
-  assert.match(play,/app\.js\?v=20261004-match-center-v21-9/);
+  assert.match(play,/app\.js\?v=20261004-visual-assets-v33/);
   assert.match(play,/match-center-v1\.js\?v=20261004-match-center-v21-9/);
   assert.match(play,/match-center-v12\.js\?v=20261003-tactical-ai-v5/);
   assert.match(play,/match-center-v13\.js\?v=20261004-token-colors-v22-1/);
@@ -88,7 +88,7 @@ test('managed tournament Match Center is locked to the exact world-draw opponent
   assert.ok(backend.includes('Le match live ne correspond plus exactement à la case du tableau mondial.'));
   assert.ok(backend.includes('Number(wr.tournament_id||0)!==tournamentId'));
   assert.ok(backend.includes('(round&&worldRound&&round!==worldRound)'));
-  assert.ok(backend.includes('.eq("id",Number(wr.id))'));
+  assert.ok(backend.includes('.eq("id",Number(meta.world_match_id||0))'));
   assert.ok(backend.includes('Number(row?.stats?._meta?.world_match_id||0)===Number(worldMatchId)'));
   assert.ok(backend.includes('ok:true,resumed:true,engine:"CB-MATCH-ENGINE-v6"'));
 });
@@ -98,7 +98,7 @@ test('managed doubles Match Center is locked to the reserved world-draw pair',()
   assert.ok(backend.includes('Le Match Center double ne peut pas inventer une paire différente du tableau mondial.'));
   assert.ok(backend.includes('world_match_id:Number(worldMatch?.id||0)||null'));
   assert.ok(backend.includes('Le match double live ne correspond plus exactement à la case du tableau mondial.'));
-  assert.ok(backend.includes('Number(wr.data.tournament_id||0)!==tournamentId'));
+  assert.ok(backend.includes('Number(preflight.data.tournament_id||0)!==tournamentId'));
   assert.ok(backend.includes('(round&&worldRound&&round!==worldRound)'));
   assert.ok(backend.includes('Number(row?.stats?._meta?.doubles?.world_match_id||0)===worldMatchId'));
   assert.ok(backend.includes('ok:true,resumed:true,engine:"CB-LIVE-DOUBLES-v1"'));

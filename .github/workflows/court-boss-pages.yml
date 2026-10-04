@@ -186,6 +186,8 @@ jobs:
               pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||''));
             });
             page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
+            page.on('dialog',async d=>{ await d.dismiss(); });
+
             await page.route('**/api/countries',route=>route.fulfill({
               status:200,contentType:'application/json',
               body:JSON.stringify({rows:[]})

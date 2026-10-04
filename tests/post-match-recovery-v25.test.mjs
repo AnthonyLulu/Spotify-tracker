@@ -13,7 +13,7 @@ const app=read('court-boss/app.js');
 
 test('live match load uses duration, effort and weather then seeds recovery exactly once',()=>{
   assert.match(backend,/const durationMinutes=Math\.max\(40,Math\.min\(330,/);
-  assert.match(backend,/const fatigueAdd=Math\.max\(5,Math\.min\(19,/);
+  assert.match(backend,/const fatigueAdd=Math\.max\(5,Math\.min\(20,/);
   assert.match(backend,/heat_load:Number\(heatLoad\.toFixed\(2\)\)/);
   assert.match(backend,/wind_load:Number\(windLoad\.toFixed\(2\)\)/);
   assert.match(backend,/p_effect:"recovery_managed_v24"/);

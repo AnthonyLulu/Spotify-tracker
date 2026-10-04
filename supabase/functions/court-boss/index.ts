@@ -10848,6 +10848,14 @@ Deno.serve(async(req:Request)=>{
           if(qs.error)return {supported:true,error:qs.error.message,phase:"qualifying"};
           continue;
         }
+        const scheduledDate=String(row.data.simulated_on||t.qualifying_start_date||gameDate).slice(0,10);
+        if(String(gameDate).slice(0,10)<scheduledDate){
+          return {
+            supported:true,phase:"qualifying",match:row.data,not_due:true,
+            scheduled_date:scheduledDate,round_code:String(row.data.round_code||("Q"+qRound)),
+            qualifying_rounds:Number(qs.data.rounds_count||0)
+          };
+        }
         const opponentId=Number(row.data.player_a_id)===playerId?Number(row.data.player_b_id||0):Number(row.data.player_a_id||0);
         if(!opponentId){
           const progressed=await db.rpc("advance_world_qualifying_tournament",{
@@ -10901,6 +10909,12 @@ Deno.serve(async(req:Request)=>{
       const end=String(t.end_date||mainStart);
       const span=liveIsoDayDiff(mainStart,end);
       const scheduledDate=liveIsoAddDays(mainStart,roundsCount<=1?0:Math.round((currentRound-1)*span/Math.max(1,roundsCount-1)));
+      if(String(gameDate).slice(0,10)<scheduledDate){
+        return {
+          supported:true,phase:"main",match:null,not_due:true,
+          scheduled_date:scheduledDate,round_code:roundCode
+        };
+      }
 
       const existing=await db.from("world_tournament_matches")
         .select("id,round_no,round_code,match_no,player_a_id,player_b_id,winner_id,loser_id,score,best_of,simulated_on,is_qualifying,matchup_components")
@@ -11089,8 +11103,21 @@ Deno.serve(async(req:Request)=>{
     for(let size=drawSize;size>=2;size=Math.floor(size/2)){
       rounds.push(size<=2?"F":size<=4?"SF":size<=8?"QF":size<=16?"R16":size<=32?"R32":"R"+String(size));
     }
-    const round=String(rounds[Math.min(tournamentWins,rounds.length-1)]||"F");
+    const roundIndex=Math.min(tournamentWins,rounds.length-1);
+    const round=String(rounds[roundIndex]||"F");
     if(tournamentWins>=rounds.length)return h({error:"Cette paire a déjà remporté le tournoi.",champion:true},409);
+    const doublesStart=String(tour.data.main_draw_start_date||tour.data.start_date||careerDate).slice(0,10);
+    const doublesEnd=String(tour.data.end_date||doublesStart).slice(0,10);
+    const doublesSpan=Math.max(0,liveIsoDayDiff(doublesStart,doublesEnd));
+    const doublesScheduled=liveIsoAddDays(
+      doublesStart,
+      rounds.length<=1?0:Math.round(roundIndex*doublesSpan/Math.max(1,rounds.length-1))
+    );
+    if(careerDate<doublesScheduled)return h({
+      error:"Le prochain match de double n’est pas encore au programme aujourd’hui.",
+      not_due:true,tournament_id:tournamentId,scheduled_date:doublesScheduled,
+      round,career_date:careerDate,discipline:"doubles"
+    },409);
 
     let worldMatch:any=null,opponentPairId=0,opponentSource="world_pool";
     const exact=await db.from("world_doubles_tournament_matches").select("*")
@@ -11443,6 +11470,12 @@ Deno.serve(async(req:Request)=>{
       if(!opponentId){
         const exactWorld=await ensureManagedWorldLiveMatch(tournament.data,playerId,liveEntryMethod,String(career.data.career_date||AGE_REFERENCE_DATE));
         if(exactWorld?.error)return h({error:String(exactWorld.error),tournament_id:tournamentId,world_phase:exactWorld.phase||null},409);
+        if(exactWorld?.not_due)return h({
+          error:"Ce match n’est pas encore au programme aujourd’hui.",
+          not_due:true,tournament_id:tournamentId,world_phase:exactWorld.phase||null,
+          scheduled_date:exactWorld.scheduled_date||null,round:exactWorld.round_code||null,
+          career_date:String(career.data.career_date||AGE_REFERENCE_DATE)
+        },409);
         if(exactWorld?.champion)return h({error:"Ce joueur a déjà remporté le tournoi.",champion:true},409);
         if(Number(exactWorld?.qualifying_rounds||0)>0)qualifyingRounds=Number(exactWorld.qualifying_rounds);
         if(exactWorld?.match&&Number(exactWorld.opponent_id||0)>0){

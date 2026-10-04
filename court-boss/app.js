@@ -3019,11 +3019,20 @@ window.startTournamentLiveMatch=async(id,quick=false,medicalDecision=null)=>{
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  if(!playerId)return alert('Joueur géré introuvable.');
  if(liveMatchSessionsByPlayer.has(playerId))return alert('Ce joueur a déjà un match en attente. Termine, valide ou annule-le d’abord.');
+ const pending=local.pendingManagedMatch
+   &&String(local.pendingManagedMatch.discipline||'singles')==='singles'
+   &&Number(local.pendingManagedMatch.tournament_id||0)===Number(id)
+   &&Number(local.pendingManagedMatch.player_id||0)===Number(playerId)
+   ?local.pendingManagedMatch:null;
  try{
   await ensureLivePreMatchCheckpoint();
   const d=await get('/api/live-match/start',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{},medical_decision:medicalDecision||undefined})
+   body:JSON.stringify({
+    tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{},
+    medical_decision:medicalDecision||undefined,
+    expected_world_match_id:Number(pending?.world_match_id||0)||undefined
+   })
   });
   applyLiveMatchResponse(d);
   closeOverlay();
@@ -3040,12 +3049,22 @@ window.startTournamentLiveDoubles=async(id,quick=false)=>{
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
  if(!playerId)return alert('Joueur géré introuvable.');
  if(liveMatchSessionsByPlayer.has(playerId))return alert('Ce joueur a déjà un match en attente. Termine, valide ou annule-le d’abord.');
+ const pending=local.pendingManagedMatch
+   &&String(local.pendingManagedMatch.discipline||'')==='doubles'
+   &&Number(local.pendingManagedMatch.tournament_id||0)===Number(id)
+   &&Number(local.pendingManagedMatch.player_id||0)===Number(playerId)
+   ?local.pendingManagedMatch:null;
  try{
   await ensureLivePreMatchCheckpoint();
   local.tactics={...(local.tactics||{}),doublesPlan:String(local.doublesTactics?.plan||local.tactics?.doublesPlan||'balanced')};
   const d=await get('/api/live-doubles/start',{
    method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{},doubles_plan:local.tactics.doublesPlan})
+   body:JSON.stringify({
+    tournament_id:Number(id),player_id:playerId,tactics:local.tactics||{},doubles_plan:local.tactics.doublesPlan,
+    expected_world_match_id:Number(pending?.world_match_id||0)||undefined,
+    expected_user_pair_id:Number(pending?.user_pair_id||0)||undefined,
+    expected_opponent_pair_id:Number(pending?.opponent_pair_id||0)||undefined
+   })
   });
   applyLiveMatchResponse(d);
   closeOverlay();
@@ -3095,6 +3114,12 @@ window.commitLiveMatch=async(saveAfter=true)=>{
   });
   local.lastCommittedMatchResult=d;
   applyLiveMatchResponse(d);
+  // The exact world slot has been committed. Clear the daily stop ticket so
+  // Continuer cannot remain stuck on a match that is already finished.
+  local.pendingManagedMatch=null;
+  if(local.lastDailyTrainingReport&&String(local.lastDailyTrainingReport.date||'')===String(local.date||'')){
+    local.lastDailyTrainingReport={...local.lastDailyTrainingReport,pending_matches:0,due_matches:{ok:true,date:local.date,count:0,matches:[]}};
+  }
   boot=await get('/api/bootstrap');
   if(boot.career&&activeManagedId()===primaryManagedPlayerId())local.career={...(local.career||{}),...boot.career};
   else await loadActiveManagedContext(true,activeManagedId()).catch(()=>{});

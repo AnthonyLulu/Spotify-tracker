@@ -332,3 +332,80 @@ jobs:
           })().catch(e=>{console.error(e);process.exit(1)});
           EOF
           node mobile-smoke.cjs
+
+  visual-assets-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for visual build
+        env:
+          BASE: https://court-boss-tennis-manager.onrender.com
+        run: |
+          LOCAL_APP=$(sha256sum court-boss/app.js | awk '{print $1}')
+          for i in {1..36}; do
+            if curl --fail --silent --show-error "$BASE/app.js?v=visual-smoke" -o /tmp/render-app.js; then
+              REMOTE_APP=$(sha256sum /tmp/render-app.js | awk '{print $1}')
+              if [ "$LOCAL_APP" = "$REMOTE_APP" ]; then
+                curl --fail --silent --show-error "$BASE/" -o /tmp/index.html
+                grep -q 'records-v1.js?v=20261004-records-v9' /tmp/index.html
+                echo "Visual build ready"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Visual build not ready"
+          exit 1
+
+      - name: Records photos and tournament logos on mobile
+        env:
+          BASE: https://court-boss-tennis-manager.onrender.com
+        run: |
+          cd /tmp
+          npm init -y >/dev/null 2>&1
+          npm install --silent playwright@1.55.0
+          npx playwright install --with-deps chromium >/dev/null
+          cat > visual-assets-smoke.cjs <<'EOF'
+          const { chromium } = require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+
+            await page.route('**/api/countries',route=>route.fulfill({
+              status:200,contentType:'application/json',body:JSON.stringify({rows:[]})
+            }));
+
+            await page.goto(process.env.BASE+'/',{waitUntil:'domcontentloaded',timeout:60000});
+            await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:25000});
+
+            await page.evaluate(()=>openPlayer(1));
+            await page.getByText('Dossier joueur').waitFor();
+            await page.getByRole('button',{name:'Records & Awards'}).click();
+            await page.getByText('Jannik Sinner dans l’histoire').waitFor();
+            await page.getByText('Hall of Fame',{exact:true}).first().waitFor();
+            await page.waitForFunction(()=>{
+              const img=document.querySelector('#overlay img[alt="Jannik Sinner"]');
+              return !!img&&img.complete&&img.naturalWidth>0;
+            },null,{timeout:20000});
+            await page.getByRole('button',{name:'✕'}).click();
+
+            await page.evaluate(()=>nav('calendar'));
+            await page.waitForFunction(()=>{
+              const imgs=[...document.querySelectorAll('img.tm-tour-logo')];
+              const img=imgs.find(x=>/Brisbane/i.test(x.alt||''))||imgs[0];
+              return !!img&&img.complete&&img.naturalWidth>0;
+            },null,{timeout:25000});
+
+            await page.evaluate(()=>nav('history'));
+            await page.getByRole('heading',{name:'Histoire, records & nations'}).waitFor({timeout:25000});
+            await page.getByText('Record Hub · historique + sauvegarde',{exact:true}).waitFor();
+            await page.getByRole('heading',{name:'Exploits, séries et records cultes'}).waitFor();
+
+            console.log('visual assets smoke: OK');
+            await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          EOF
+          node visual-assets-smoke.cjs
+

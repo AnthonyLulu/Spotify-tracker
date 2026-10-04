@@ -7,7 +7,7 @@ const backend=read('supabase/functions/court-boss/index.ts');
 const recovery=read('supabase/migrations/20261004130000_post_match_recovery_v24.sql');
 const clock=read('supabase/migrations/20261004131500_daily_recovery_clock_v24.sql');
 const daily=read('court-boss/daily-career-v22.js');
-const trainingOwner=read('supabase/migrations/20261004140500_restore_recovery_aware_training_v25.sql');
+const trainingOwner=read('supabase/migrations/20261004141500_training_recovery_final_v26.sql');
 const play=read('court-boss/play.html');
 
 test('live singles and doubles expose duration-driven physical load',()=>{
@@ -88,15 +88,17 @@ test('daily UI exposes post-match recovery travel and medical restriction',()=>{
 });
 
 
-test('V25 keeps passive recovery single-owned and lets training consume residual debt only',()=>{
+test('V26 keeps recovery single-owned and training only turns residual debt into adaptation loss and overreach',()=>{
   assert.doesNotMatch(trainingOwner,/managed_post_match_recovery_context_v23/);
   assert.doesNotMatch(trainingOwner,/post_match_recovery_debt\s*=/);
   assert.doesNotMatch(trainingOwner,/travel_recovery_debt\s*=/);
-  assert.match(trainingOwner,/select coalesce\(post_match_recovery_debt,0\),coalesce\(travel_recovery_debt,0\)/);
-  assert.match(trainingOwner,/v_recovery_pressure:=greatest\(0,least\(1,\(v_post_match_debt\+v_travel_debt\)\/30\.0\)\)/);
-  assert.match(trainingOwner,/v_recovery_gain_mult:=greatest\(\.52,1-v_recovery_pressure\*\.42\)/);
-  assert.match(trainingOwner,/when v_session='Récupération' then -\.25/);
+  assert.match(trainingOwner,/coalesce\(post_match_recovery_debt,0\)/);
+  assert.match(trainingOwner,/coalesce\(travel_recovery_debt,0\)/);
+  assert.match(trainingOwner,/v_recovery_pressure:=greatest\(0,least\(1,v_recovery_debt\/30\.0\)\)/);
+  assert.match(trainingOwner,/v_debt_training_mult:=greatest\(\.58,least\(1,1-v_recovery_debt\*\.014\)\)/);
+  assert.match(trainingOwner,/when v_session='Récupération' then 0/);
   assert.doesNotMatch(trainingOwner,/else -1\.25/);
-  assert.match(trainingOwner,/'condition_owner','daily_recovery_plus_training_load'/);
-  assert.match(trainingOwner,/'model','CB-DAILY-TRAINING-v25'/);
+  assert.match(trainingOwner,/v_overreach_penalty/);
+  assert.match(trainingOwner,/'recovery_owner','CB-DAILY-RECOVERY-v24'/);
+  assert.match(trainingOwner,/'model','CB-DAILY-TRAINING-v26'/);
 });

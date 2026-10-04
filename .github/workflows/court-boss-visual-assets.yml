@@ -71,10 +71,18 @@ jobs:
               timeout:60000
             });
             await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:25000});
+            const clearAccessGate=async()=>page.evaluate(()=>{
+              document.querySelectorAll('.cb-access-gate').forEach(g=>{
+                try{ if(g.open)g.close(); }catch{}
+                g.remove();
+              });
+            });
+            await clearAccessGate();
 
             // Player photo must survive the tab switch to Records & Awards.
             await page.evaluate(()=>openPlayer(1));
             await page.getByText('Dossier joueur').waitFor();
+            await clearAccessGate();
             await page.getByRole('button',{name:'Records & Awards'}).click();
             await page.getByText('Jannik Sinner dans l’histoire').waitFor();
             await page.getByText('Hall of Fame',{exact:true}).first().waitFor();

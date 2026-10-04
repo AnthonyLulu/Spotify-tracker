@@ -17371,6 +17371,9 @@ Deno.serve(async(req:Request)=>{
     ]);
     if(currentLegacy.error)return h({error:"Préparation du chargement impossible : "+currentLegacy.error.message},500);
     const safetyDigest=await snapshotRollbackDigest(safetySnapshot);
+    const legacySafetyDigest=currentLegacy.data
+      ?await sha256Hex(JSON.stringify(canonicalSnapshotValue(currentLegacy.data)))
+      :"";
     let restored:any;
     let loadedPayload:any={};
     try{
@@ -17405,10 +17408,21 @@ Deno.serve(async(req:Request)=>{
           const legacyRollback=await db.from("game_saves").delete().eq("id",browserKey);
           if(legacyRollback.error)throw new Error("Legacy rollback cleanup: "+legacyRollback.error.message);
         }
-        const rollbackSnapshot=await captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot());
+        const [rollbackSnapshot,legacyCheck]=await Promise.all([
+          captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot()),
+          db.from("game_saves").select("*").eq("id",browserKey).maybeSingle()
+        ]);
+        if(legacyCheck.error)throw new Error("Legacy rollback verification: "+legacyCheck.error.message);
         const rollbackDigest=await snapshotRollbackDigest(rollbackSnapshot);
-        rollbackRecovered=rollbackDigest===safetyDigest;
-        if(!rollbackRecovered)rollbackError="Rollback verification mismatch";
+        const legacyRollbackDigest=legacyCheck.data
+          ?await sha256Hex(JSON.stringify(canonicalSnapshotValue(legacyCheck.data)))
+          :"";
+        rollbackRecovered=rollbackDigest===safetyDigest&&legacyRollbackDigest===legacySafetyDigest;
+        if(!rollbackRecovered){
+          rollbackError=rollbackDigest!==safetyDigest
+            ?"Rollback verification mismatch"
+            :"Legacy rollback verification mismatch";
+        }
       }catch(e){
         rollbackError=String((e as any)?.message||e);
       }

@@ -55,7 +55,7 @@ function harness(mode='normal'){
         delete(){return {eq:async()=>{state.legacy=null;return {error:null}}}},
         async insert(data){
           state.operations.push('insert:'+table);
-          if(mode==='event_fail')return {error:{message:'simulated journal timeout'}};
+          if(mode==='event_fail'||mode==='digest_mismatch')return {error:{message:'simulated journal timeout'}};
           state.world.events.push(copy(data));return {error:null};
         }
       };

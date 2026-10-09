@@ -3274,18 +3274,25 @@ Deno.serve(async(req:Request)=>{
       if(country)juniorQuery=juniorQuery.eq("country",country);
       juniorQuery=juniorQuery.order("display_order",{ascending:true}).range(offset,offset+limit-1);
 
-      const [page,officialCount,simulatedCount,nrCount,generatedTotal] = await Promise.all([
+      // The leaderboard page is mandatory; pool statistics are decorative.
+      // Never fail the entire junior ranking because an auxiliary COUNT timed out
+      // while the world simulation was refreshing thousands of players.
+      const [page,officialCount,simulatedCount,nrCount] = await Promise.all([
         juniorQuery,
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","official"),
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","simulated"),
-        db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","verified_nr"),
-        db.from("players").select("id",{count:"exact",head:true})
-          .eq("game_generated",true).eq("career_status","active")
-          .gte("age",13).lte("age",17)
-          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+        db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","verified_nr")
       ]);
-      const e=page.error||officialCount.error||simulatedCount.error||nrCount.error||generatedTotal.error;
-      if(e)return h({error:e.message},500);
+      if(page.error)return h({
+        error:page.error.message,code:"junior_ranking_page_unavailable",retryable:true
+      },503);
+
+      const metadataPartial=Boolean(officialCount.error||simulatedCount.error||nrCount.error);
+      const rankedReal=officialCount.error?null:Number(officialCount.count||0);
+      const unrankedReal=nrCount.error?null:Number(nrCount.count||0);
+      const generated=simulatedCount.error?null:Number(simulatedCount.count||0);
+      const verifiedProfiles=rankedReal===null||unrankedReal===null
+        ?null:rankedReal+unrankedReal;
 
       const rows=(page.data??[]).map((p:any)=>({
         ...p,
@@ -3305,17 +3312,17 @@ Deno.serve(async(req:Request)=>{
             :"Newgen simulé"
       }));
 
-      const rankedReal=Number(officialCount.count||0);
-      const unrankedReal=Number(nrCount.count||0);
-      const generated=Number(simulatedCount.count||0);
       return h({
-        kind,offset,limit,count:page.count??0,rows,
-        officialRealCount:rankedReal+unrankedReal,
+        kind,offset,limit,count:page.count??offset+rows.length,rows,
+        officialRealCount:verifiedProfiles,
         officialRankedCount:rankedReal,
         verifiedUnrankedCount:unrankedReal,
         generatedCount:generated,
-        generatedReserve:Math.max(0,Number(generatedTotal.count||0)-generated),
-        verifiedProfiles:rankedReal+unrankedReal,
+        // Reserve is an optional estimate; never trigger a full player-table
+        // count on every junior ranking request just to populate this field.
+        generatedReserve:null,
+        verifiedProfiles,
+        metadataPartial,
         eligibility:"ITF Juniors · vrais profils vérifiés + 1 200 newgens classés 13–17 + réserve dynamique",
         rankingDate:AGE_REFERENCE_DATE
       });

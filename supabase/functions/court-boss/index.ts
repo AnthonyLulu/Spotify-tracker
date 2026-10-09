@@ -3339,25 +3339,20 @@ Deno.serve(async(req:Request)=>{
       if(country)juniorQuery=juniorQuery.eq("country",country);
       juniorQuery=juniorQuery.order("display_order",{ascending:true}).range(offset,offset+limit-1);
 
-      // The leaderboard page is mandatory; pool statistics are decorative.
-      // Never fail the entire junior ranking because an auxiliary COUNT timed out
-      // while the world simulation was refreshing thousands of players.
-      const [page,officialCount,simulatedCount,nrCount] = await Promise.all([
+      const [page,officialCount,simulatedCount,nrCount,generatedTotal] = (await Promise.allSettled([
         juniorQuery,
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","official"),
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","simulated"),
-        db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","verified_nr")
-      ]);
-      if(page.error)return h({
-        error:page.error.message,code:"junior_ranking_page_unavailable",retryable:true
-      },503);
-
-      const metadataPartial=Boolean(officialCount.error||simulatedCount.error||nrCount.error);
-      const rankedReal=officialCount.error?null:Number(officialCount.count||0);
-      const unrankedReal=nrCount.error?null:Number(nrCount.count||0);
-      const generated=simulatedCount.error?null:Number(simulatedCount.count||0);
-      const verifiedProfiles=rankedReal===null||unrankedReal===null
-        ?null:rankedReal+unrankedReal;
+        db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","verified_nr"),
+        db.from("players").select("id",{count:"planned",head:true})
+          .eq("game_generated",true).eq("career_status","active")
+          .gte("age",13).lte("age",17)
+          .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
+      ])).map((r:any)=>r.status==="fulfilled"?r.value:{error:{message:"Query unavailable"},count:null});
+      // Ranking rows are essential; a timed-out population count is optional.
+      if(page.error)return h({error:page.error.message},500);
+      const metadataPartial=[officialCount,simulatedCount,nrCount,generatedTotal]
+        .some((r:any)=>!!r.error||r.count==null);
 
       const rows=(page.data??[]).map((p:any)=>({
         ...p,
@@ -3377,17 +3372,24 @@ Deno.serve(async(req:Request)=>{
             :"Newgen simulé"
       }));
 
+      const safeCount=(r:any)=>r.error||r.count==null?null:Number(r.count);
+      const rankedReal=safeCount(officialCount);
+      const unrankedReal=safeCount(nrCount);
+      const generated=safeCount(simulatedCount);
+      const generatedReserveTotal=safeCount(generatedTotal);
+      const verified=rankedReal==null||unrankedReal==null?null:rankedReal+unrankedReal;
       return h({
-        kind,offset,limit,count:page.count??offset+rows.length,rows,
-        officialRealCount:verifiedProfiles,
+        kind,offset,limit,count:page.count??0,rows,
+        metadataPartial,
+        // Reserve count uses PostgreSQL planner estimates to avoid expensive
+        // COUNT(*) scans during season rollover; not an exact audited total.
+        generatedReserveEstimated:true,
+        officialRealCount:verified,
         officialRankedCount:rankedReal,
         verifiedUnrankedCount:unrankedReal,
         generatedCount:generated,
-        // Reserve is an optional estimate; never trigger a full player-table
-        // count on every junior ranking request just to populate this field.
-        generatedReserve:null,
-        verifiedProfiles,
-        metadataPartial,
+        generatedReserve:generatedReserveTotal==null||generated==null?null:Math.max(0,generatedReserveTotal-generated),
+        verifiedProfiles:verified,
         eligibility:"ITF Juniors · vrais profils vérifiés + 1 200 newgens classés 13–17 + réserve dynamique",
         rankingDate:AGE_REFERENCE_DATE
       });

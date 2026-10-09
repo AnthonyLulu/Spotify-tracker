@@ -11,7 +11,8 @@ const finalWorldProb=(gap)=>Math.max(upsetFloor(gap),Math.min(1-upsetFloor(gap),
 
 test('world simulation uses skill-gap-sensitive upset floor instead of a flat 3.5%',()=>{
   assert.match(edge,/const eloProb=1\/\(1\+Math\.pow\(10,\(bElo-aElo\)\/400\)\)/);
-  assert.match(edge,/probA=Math\.max\(\.035,Math\.min\(\.965,probA\)\)/);
+  assert.ok(edge.includes('const upsetFloor=Math.max(.005,Math.min(.035,'));
+  assert.ok(edge.includes('probA=Math.max(upsetFloor,Math.min(1-upsetFloor,probA));'));
 
   assert.equal(eloWin(0),.5);
   assert.ok(eloWin(100)>.63&&eloWin(100)<.65);

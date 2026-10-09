@@ -93,32 +93,30 @@ jobs:
         env:
           API: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss
         run: |
-          # Keep the failing endpoint and response visible in Actions logs.
-          api_get() {
-            local route="$1"
-            local output="$2"
-            local code
-            code="$(curl --silent --show-error --max-time 60 -w '%{http_code}' "$API$route" -o "$output")" || {
-              echo "::error title=Backend unreachable::$route failed"
-              return 1
-            }
-            if [[ "$code" != "200" ]]; then
-              echo "::error title=Backend HTTP $code::$route returned HTTP $code"
-              if [[ -f "$output" ]]; then head -c 700 "$output"; echo; fi
-              return 1
-            fi
+          # Retrying read-only requests tolerates temporary DB load without hiding outages.
+          fetch_backend() {
+            local url="$1" out="$2" status
+            for attempt in 1 2 3; do
+              status="$(curl --silent --show-error --max-time 60 -o "$out" -w '%{http_code}' "$url")" || status="000"
+              if [[ "$status" == "200" ]]; then return 0; fi
+              echo "::warning:: GET $url returned HTTP $status (attempt $attempt/3)"
+              if [[ -s "$out" ]]; then head -c 400 "$out"; echo; fi
+              if [[ "$attempt" -lt 3 ]]; then sleep 3; fi
+            done
+            echo "::error:: Backend GET failed: $url (HTTP $status)"
+            return 1
           }
-          api_get "/api/world" /tmp/world.json
+          fetch_backend "$API/api/world" /tmp/world.json
           for kind in singles race doubles nextgen junior; do
-            api_get "/api/rankings?kind=$kind&offset=0&limit=10" "/tmp/$kind.json"
+            fetch_backend "$API/api/rankings?kind=$kind&offset=0&limit=10" "/tmp/$kind.json"
           done
-          api_get "/api/player?id=14405" /tmp/federer.json
-          api_get "/api/player?id=14406" /tmp/nadal.json
-          api_get "/api/tournament-detail?id=3266" /tmp/ao-junior.json
-          api_get "/api/tournament-detail?id=3269" /tmp/uso-junior.json
-          api_get "/api/tournament-detail?id=2078" /tmp/united-cup.json
-          api_get "/api/tournament-detail?id=2040" /tmp/laver-cup.json
-          api_get "/api/tournament-detail?id=3396" /tmp/junior-davis.json
+          fetch_backend "$API/api/player?id=14405" /tmp/federer.json
+          fetch_backend "$API/api/player?id=14406" /tmp/nadal.json
+          fetch_backend "$API/api/tournament-detail?id=3266" /tmp/ao-junior.json
+          fetch_backend "$API/api/tournament-detail?id=3269" /tmp/uso-junior.json
+          fetch_backend "$API/api/tournament-detail?id=2078" /tmp/united-cup.json
+          fetch_backend "$API/api/tournament-detail?id=2040" /tmp/laver-cup.json
+          fetch_backend "$API/api/tournament-detail?id=3396" /tmp/junior-davis.json
           node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
           node <<'EOF'
           const fs=require('fs');

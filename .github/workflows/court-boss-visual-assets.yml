@@ -110,9 +110,11 @@ jobs:
                 return rect.width>0 && rect.height>0 && img.complete && img.naturalWidth>0;
               });
             },null,{timeout:30000});
+            // The iPhone calendar intentionally uses compact table rows, NOT
+            // photo cards. The visible decoded logo assertion above validates
+            // the actual mobile row media, while this checks row population.
             await page.waitForFunction(()=>{
-              const photos=[...document.querySelectorAll('.tm-tour-card-photo-media')];
-              return photos.length>0;
+              return document.querySelectorAll('.tm-calendar-table tbody tr').length>0;
             },null,{timeout:25000});
 
             // Record Hub must exist on the root build the user opens.

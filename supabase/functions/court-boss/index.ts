@@ -1829,13 +1829,13 @@ async function restoreManagedSaveSnapshot(snapshot:any){
 
   const upsertOne=async(table:string,row:any,onConflict?:string)=>{
     if(!row)return;
-    const q=onConflict?db.from(table).upsert(row,{onConflict}):db.from(table).upsert(row);
-    const r=await q;if(r.error)throw new Error(table+": "+r.error.message);
+    const r=await db.rpc("cb_restore_snapshot_rows_v32",{p_table:table,p_rows:[row],p_conflict:onConflict??null});
+    if(r.error)throw new Error(table+": "+r.error.message);
   };
   const upsertMany=async(table:string,rows:any[],onConflict?:string)=>{
     if(!Array.isArray(rows)||!rows.length)return;
-    const q=onConflict?db.from(table).upsert(rows,{onConflict}):db.from(table).upsert(rows);
-    const r=await q;if(r.error)throw new Error(table+": "+r.error.message);
+    const r=await db.rpc("cb_restore_snapshot_rows_v32",{p_table:table,p_rows:rows,p_conflict:onConflict??null});
+    if(r.error)throw new Error(table+": "+r.error.message);
   };
   const deleteAll=async(table:string,column="id")=>{
     const r=await db.from(table).delete().not(column,"is",null);
@@ -1854,44 +1854,37 @@ async function restoreManagedSaveSnapshot(snapshot:any){
         const did=Number(item?.player?.id||0);
         if(!did||restored.has(did)||!item?.player)continue;
         restored.add(did);
-        const playerRestore=await db.from("players").upsert(item.player,{onConflict:"id"});
-        if(playerRestore.error)throw new Error("doubles rollback player: "+playerRestore.error.message);
+        await upsertOne("players",item.player,"id");
         const eloClear=await db.from("player_elo_ratings").delete().eq("player_id",did);
         if(eloClear.error)throw new Error("doubles rollback Elo cleanup: "+eloClear.error.message);
         if(item.elo){
-          const eloRestore=await db.from("player_elo_ratings").upsert(item.elo,{onConflict:"player_id"});
-          if(eloRestore.error)throw new Error("doubles rollback Elo: "+eloRestore.error.message);
+          await upsertOne("player_elo_ratings",item.elo,"player_id");
         }
         const psychClear=await db.from("player_psychology_state").delete().eq("player_id",did);
         if(psychClear.error)throw new Error("doubles rollback psychology cleanup: "+psychClear.error.message);
         if(item.psychology){
-          const psychRestore=await db.from("player_psychology_state").upsert(item.psychology,{onConflict:"player_id"});
-          if(psychRestore.error)throw new Error("doubles rollback psychology: "+psychRestore.error.message);
+          await upsertOne("player_psychology_state",item.psychology,"player_id");
         }
       }
       const worldDoublesRollback:any=meta?.rollback_world_doubles_match||null;
       if(worldDoublesRollback?.id){
-        const worldRestore=await db.from("world_doubles_tournament_matches").upsert(worldDoublesRollback,{onConflict:"id"});
-        if(worldRestore.error)throw new Error("doubles rollback world match: "+worldRestore.error.message);
+        await upsertOne("world_doubles_tournament_matches",worldDoublesRollback,"id");
       }
 
       const rb:any=meta?.rollback_opponent||null;
       const pid=Number(rb?.player?.id||row?.opponent_id||0);
       if(!pid||restored.has(pid)||!rb?.player)continue;
       restored.add(pid);
-      const playerRestore=await db.from("players").upsert(rb.player,{onConflict:"id"});
-      if(playerRestore.error)throw new Error("opponent rollback player: "+playerRestore.error.message);
+      await upsertOne("players",rb.player,"id");
       const injuryClear=await db.from("injuries").delete().eq("player_id",pid);
       if(injuryClear.error)throw new Error("opponent rollback injuries cleanup: "+injuryClear.error.message);
       if(Array.isArray(rb.injuries)&&rb.injuries.length){
-        const injuryRestore=await db.from("injuries").upsert(rb.injuries,{onConflict:"id"});
-        if(injuryRestore.error)throw new Error("opponent rollback injuries: "+injuryRestore.error.message);
+        await upsertMany("injuries",rb.injuries,"id");
       }
       const eloClear=await db.from("player_elo_ratings").delete().eq("player_id",pid);
       if(eloClear.error)throw new Error("opponent rollback Elo cleanup: "+eloClear.error.message);
       if(rb.elo){
-        const eloRestore=await db.from("player_elo_ratings").upsert(rb.elo,{onConflict:"player_id"});
-        if(eloRestore.error)throw new Error("opponent rollback Elo: "+eloRestore.error.message);
+        await upsertOne("player_elo_ratings",rb.elo,"player_id");
       }
     }
   };
@@ -2002,7 +1995,7 @@ async function restoreManagedSaveSnapshot(snapshot:any){
     await deleteAll("staff");
     await deleteAll("training_plan","day_index");
     await deleteAll("user_training_progress","attribute");
-    await deleteAll("shortlist");
+    await deleteAll("shortlist","player_id");
     await deleteAll("college_offers");
     await db.from("college_career_state").delete().eq("id","demo");
     await deleteAll("season_history");
@@ -2859,6 +2852,78 @@ Deno.serve(async(req:Request)=>{
   if(isHealth) return h({ok:true,app:"court-boss-api",version:80,season_model:"priority-national-teams-united-cup-laver-invitations-v2-pro-atp-finals-junior-ncaa-fatigue-sync-v27",tournament_model:"entry-calendar-prize-v9+public-image-cache-v11+venue-city-parser-v8+geo-aliases+media-type-guard+safe-category-fallback+doubles-seeding",development_model:"development-v3",match_model:"CB-MATCH-ENGINE-v6+canonical-point-game+temporary-form-multiplier+weather+mood+runtime-fatigue+tactics+adaptive-tactical-memory-v4+h2h-memory-v1+situational-rules-v1+environment-events-v1+player-identity-v1+doubles-visual-v2+live-doubles-point-by-point-v1+doubles-elo-surface-blend-v1+live-doubles-opponent-materializer-v1+provisional-checkpoints",write_access_protected:true,write_lock:true,save_model:"CB-MANAGED-SAVE-v8"});
   if(path.endsWith("/api/access-check")&&req.method==="POST")return h({ok:true,write_access:true});
   try{
+  // Durable crash recovery for interrupted loads. A real Edge termination never
+  // reaches the load catch block, so every stateful request first checks whether
+  // a previous load left a safety snapshot behind. While another writer still
+  // owns the lease, reads return 423 instead of exposing a half-restored career.
+  const requestBrowserKey=saveId(req);
+  if(requestBrowserKey){
+    const pendingRecovery=await db.rpc("cb_get_load_recovery_v33",{p_browser_key:requestBrowserKey});
+    if(pendingRecovery.error)return h({error:"Vérification de récupération impossible : "+pendingRecovery.error.message},500);
+    const recovery:any=pendingRecovery.data||null;
+    if(recovery?.operation_id){
+      if(!writeLockToken){
+        const recoveryLock=await db.rpc("cb_acquire_write_lock_v31");
+        if(recoveryLock.error){
+          return h({
+            error:"Une restauration de sauvegarde est encore en cours.",
+            recovery_pending:true,retryable:true
+          },423);
+        }
+        writeLockToken=String(recoveryLock.data||"");
+        writeLockHeartbeat=setInterval(()=>{
+          if(writeLockToken)void db.rpc("cb_touch_write_lock_v31",{p_token:writeLockToken}).then(({error})=>{
+            if(error)console.warn("Court Boss recovery-lock heartbeat",error.message);
+          });
+        },45000);
+      }
+      try{
+        await restoreManagedSaveSnapshot(recovery.safety_snapshot);
+        if(recovery.legacy_present){
+          const legacyRecovery=await db.from("game_saves").upsert(recovery.legacy_snapshot,{onConflict:"id"});
+          if(legacyRecovery.error)throw new Error("Legacy crash recovery: "+legacyRecovery.error.message);
+        }else{
+          const legacyRecovery=await db.from("game_saves").delete().eq("id",requestBrowserKey);
+          if(legacyRecovery.error)throw new Error("Legacy crash recovery cleanup: "+legacyRecovery.error.message);
+        }
+
+        const [recoveredSnapshot,recoveredLegacy]=await Promise.all([
+          captureLiveCheckpointSnapshot(await captureManagedSaveSnapshot()),
+          db.from("game_saves").select("*").eq("id",requestBrowserKey).maybeSingle()
+        ]);
+        if(recoveredLegacy.error)throw new Error("Crash recovery verification: "+recoveredLegacy.error.message);
+        const recoveredDigest=await snapshotRollbackDigest(recoveredSnapshot);
+        const recoveredLegacyDigest=recoveredLegacy.data
+          ?await sha256Hex(JSON.stringify(canonicalSnapshotValue(recoveredLegacy.data)))
+          :"";
+        if(
+          recoveredDigest!==String(recovery.safety_digest||"")
+          ||recoveredLegacyDigest!==String(recovery.legacy_digest||"")
+        ){
+          throw new Error(
+            recoveredDigest!==String(recovery.safety_digest||"")
+              ?"Crash recovery snapshot digest mismatch"
+              :"Crash recovery legacy digest mismatch"
+          );
+        }
+        const cleared=await db.rpc("cb_clear_load_recovery_v33",{
+          p_browser_key:requestBrowserKey,p_operation_id:String(recovery.operation_id)
+        });
+        if(cleared.error||cleared.data!==true)throw new Error("Crash recovery journal cleanup failed");
+      }catch(recoveryError){
+        await db.rpc("cb_mark_load_recovery_v33",{
+          p_browser_key:requestBrowserKey,
+          p_operation_id:String(recovery.operation_id),
+          p_status:"rollback_pending",
+          p_error:String((recoveryError as any)?.message||recoveryError)
+        });
+        return h({
+          error:"Récupération de sauvegarde incomplète : "+String((recoveryError as any)?.message||recoveryError),
+          recovery_pending:true,retryable:true
+        },503);
+      }
+    }
+  }
   if((
     path.endsWith("/api/refresh-live-rankings")
     ||path.endsWith("/api/refresh-doubles-race")
@@ -17436,6 +17501,30 @@ Deno.serve(async(req:Request)=>{
     const legacySafetyDigest=currentLegacy.data
       ?await sha256Hex(JSON.stringify(canonicalSnapshotValue(currentLegacy.data)))
       :"";
+
+    // Persist the complete rollback boundary before the first destructive restore.
+    // If the Edge process dies after this point, the next request recovers it.
+    const prepared=await db.rpc("cb_prepare_load_recovery_v33",{
+      p_browser_key:browserKey,
+      p_slot_no:slotNo,
+      p_safety_snapshot:safetySnapshot,
+      p_safety_digest:safetyDigest,
+      p_legacy_snapshot:currentLegacy.data??null,
+      p_legacy_present:Boolean(currentLegacy.data),
+      p_legacy_digest:legacySafetyDigest
+    });
+    if(prepared.error||!prepared.data){
+      return h({error:"Journal de sécurité du chargement impossible : "+(prepared.error?.message||"operation id missing")},500);
+    }
+    const recoveryOperationId=String(prepared.data);
+    const applying=await db.rpc("cb_mark_load_recovery_v33",{
+      p_browser_key:browserKey,p_operation_id:recoveryOperationId,p_status:"applying",p_error:null
+    });
+    if(applying.error||applying.data!==true){
+      await db.rpc("cb_clear_load_recovery_v33",{p_browser_key:browserKey,p_operation_id:recoveryOperationId});
+      return h({error:"Activation du journal de chargement impossible"},500);
+    }
+
     let restored:any;
     let loadedPayload:any={};
     try{
@@ -17458,6 +17547,11 @@ Deno.serve(async(req:Request)=>{
         payload:{slot_no:slotNo,snapshot_scope:slot.data.snapshot_scope}
       });
       if(log.error)throw new Error("Load journal: "+log.error.message);
+
+      const cleared=await db.rpc("cb_clear_load_recovery_v33",{
+        p_browser_key:browserKey,p_operation_id:recoveryOperationId
+      });
+      if(cleared.error||cleared.data!==true)throw new Error("Load recovery journal cleanup failed");
     }catch(loadError){
       let rollbackError="";
       let rollbackRecovered=false;
@@ -17485,17 +17579,43 @@ Deno.serve(async(req:Request)=>{
             ?"Rollback verification mismatch"
             :"Legacy rollback verification mismatch";
         }
+        if(rollbackRecovered){
+          const cleared=await db.rpc("cb_clear_load_recovery_v33",{
+            p_browser_key:browserKey,p_operation_id:recoveryOperationId
+          });
+          if(cleared.error||cleared.data!==true){
+            rollbackRecovered=false;
+            rollbackError="Rollback recovered but recovery journal cleanup failed";
+          }
+        }
       }catch(e){
         rollbackError=String((e as any)?.message||e);
+      }
+      if(!rollbackRecovered){
+        await db.rpc("cb_mark_load_recovery_v33",{
+          p_browser_key:browserKey,
+          p_operation_id:recoveryOperationId,
+          p_status:"rollback_pending",
+          p_error:rollbackError||String((loadError as any)?.message||loadError)
+        });
       }
       return h({
         error:"Chargement annulé : "+String((loadError as any)?.message||loadError),
         rollback_recovered:rollbackRecovered,
         rollback_verified:rollbackRecovered,
+        rollback_durable:true,
         rollback_error:rollbackError||null
       },409);
     }
-    return h({ok:true,slot:{slot_no:slot.data.slot_no,slot_name:slot.data.slot_name,career_date:slot.data.career_date,week:slot.data.week},local_payload:loadedPayload,restored,live_match_sessions:Array.isArray(slot.data.managed_snapshot?.live_match_sessions)?slot.data.managed_snapshot.live_match_sessions.map((x:any)=>({id:x.id,managed_player_id:x.managed_player_id,status:x.status})):[]});
+    return h({
+      ok:true,
+      slot:{slot_no:slot.data.slot_no,slot_name:slot.data.slot_name,career_date:slot.data.career_date,week:slot.data.week},
+      local_payload:loadedPayload,restored,
+      rollback_durable:true,
+      live_match_sessions:Array.isArray(slot.data.managed_snapshot?.live_match_sessions)
+        ?slot.data.managed_snapshot.live_match_sessions.map((x:any)=>({id:x.id,managed_player_id:x.managed_player_id,status:x.status}))
+        :[]
+    });
   }
 
   if(path.endsWith("/api/delete-slot")&&req.method==="POST"){

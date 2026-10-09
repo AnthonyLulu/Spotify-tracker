@@ -245,7 +245,7 @@ function tournamentEntryRowsHtml(rows,isJunior=false){
 }
 
 const get=async(path,opts={},retried=false)=>{const {authPrompt=true,...fetchOpts}=opts||{};const key=accessKey;const r=await fetch(API+path,{cache:'no-store',...fetchOpts,headers:{'X-Save-Key':saveKey,...(key?{'X-Court-Boss-Key':key}:{}),...(fetchOpts.headers||{})}});const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));if(r.status===401&&!retried){if(!authPrompt){const e=new Error(body.error||'Action privée verrouillée.');e.status=401;e.data=body;throw e}if(accessKey===key){localStorage.removeItem('courtBossAccessKey');accessKey=''}await requestCourtBossAccess();return get(path,{...fetchOpts,authPrompt},true)}if(r.status===401){const e=new Error('Code d’accès Court Boss incorrect.');e.status=401;e.data=body;throw e}if(!r.ok){const e=new Error(body.error||'Erreur serveur '+r.status);e.status=r.status;e.data=body;throw e}return body;};
-let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
+let boot=null,route='home',rankKind='singles',rankOffset=0,rankRows=[],rankCount=0,rankMeta={},rankQuery='',rankCountry='',nextGenAge=21,countryRows=[],historyData=null,historyCountry='',historyContinent='',tourOffset=0,tourRows=[],tourTbc=[],tourCount=0,tourAcceptancePartial=false,tourCountEstimate=false,tourFilters={circuit:'Tous',category:'Toutes',surface:'Toutes',source:'Tous',month:'',q:''},tourShowPast=false,management=null,worldStats=null,rankingLedger=null,seasonSummary=null,scheduleAdvice=null,simulating=false;
 const BOOT_SECONDARY_KEYS=['staff','facilities','scouting','scoutingReports','youth','federation','matches','topPlayers','injuries','managedInjury','medicalPlan','davisSquad','training'];
 let bootstrapSecondaryPromise=null;
 function mergeBootstrapCore(data){
@@ -1023,6 +1023,8 @@ async function loadTournaments(){
  if(requestSeq!==tourLoadSeq)return;
  let rows=base.rows||[];
  let tbc=[...(base.tbc||[])];
+ let acceptancePartial=Boolean(base.acceptance_metadata_partial);
+ const countEstimated=Boolean(base.calendar_count_is_estimate);
 
  const overview=!tourFilters.circuit||tourFilters.circuit==="Tous";
  if(tourOffset===0&&overview&&!calendarMobile()){
@@ -1035,6 +1037,7 @@ async function loadTournaments(){
   extra.forEach(x=>{
    rows.push(...(x.rows||[]));
    tbc.push(...(x.tbc||[]));
+   acceptancePartial=acceptancePartial||Boolean(x.acceptance_metadata_partial);
   });
  }
 
@@ -1048,6 +1051,8 @@ async function loadTournaments(){
  const tbcKey=x=>[x.id||"",x.name||"",x.start_date||"",x.circuit||""].join("|");
  tourTbc=[...new Map(tbc.map(x=>[tbcKey(x),x])).values()];
  tourCount=base.count||tourRows.length;
+ tourAcceptancePartial=acceptancePartial;
+ tourCountEstimate=countEstimated;
 }
 async function loadCompetitions(){
  competitionLoading=true;
@@ -2017,7 +2022,8 @@ function calendar(){
  const officialCount=worldStats?.verifiedTournaments||0;
  const coverage=`ATP ${fmt(worldStats?.officialATP||0)} · CH ${fmt(worldStats?.officialChallenger||0)} · ITF ${fmt(worldStats?.officialITF||0)} · Junior ${fmt(worldStats?.officialJunior||0)} · NCAA ${fmt(worldStats?.officialNCAA||0)} · Davis ${fmt(worldStats?.officialFederation||0)}`;
  const cr=activePlayerCareerView(),partner=activeDoublesPartner(),singleEntries=(local.entries||[]).length,doubleEntries=(local.doublesEntries||[]).length;
- return `<div class="fm-page-head tm-calendar-head"><div><div class="eyebrow">Tournament registration · calendrier TM</div><h1>Calendrier mondial</h1><div class="muted">Départ de la base : <b>01/12/2025</b>. Vrais événements 2025-26, semaine par semaine, avec simple, double, qualifs et règles d’accès séparés.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${fmt(tourCount)} tournois</div><div class="fm-head-badge subtle">${fmt(officialCount)} officiels</div><div class="fm-head-badge subtle">S ${singleEntries} · D ${doubleEntries}</div></div></div>
+ return `<div class="fm-page-head tm-calendar-head"><div><div class="eyebrow">Tournament registration · calendrier TM</div><h1>Calendrier mondial</h1><div class="muted">Départ de la base : <b>01/12/2025</b>. Vrais événements 2025-26, semaine par semaine, avec simple, double, qualifs et règles d’accès séparés.</div></div><div class="fm-head-stack"><div class="fm-head-badge">${tourCountEstimate?"≈ ":""}${fmt(tourCount)} tournois</div><div class="fm-head-badge subtle">${fmt(officialCount)} officiels</div><div class="fm-head-badge subtle">S ${singleEntries} · D ${doubleEntries}</div></div></div>
+ ${tourAcceptancePartial?`<div class="notice warn mini" role="status">Certains statuts d’inscription (DA, alternates, qualifs) sont temporairement indisponibles. Aucun statut n’est considéré comme confirmé tant que la récupération est incomplète.</div>`:""}
  <div class="tm-calendar-tabs"><button class="${tourFilters.circuit==='Tous'?'active':''}" onclick="tourFilter('circuit','Tous')">Tous</button><button class="${tourFilters.circuit==='ATP'?'active':''}" onclick="tourFilter('circuit','ATP')">ATP</button><button class="${tourFilters.circuit==='Challenger'?'active':''}" onclick="tourFilter('circuit','Challenger')">Challenger</button><button class="${tourFilters.circuit==='ITF'?'active':''}" onclick="tourFilter('circuit','ITF')">ITF</button><button class="${tourFilters.circuit==='Junior'?'active':''}" onclick="tourFilter('circuit','Junior')">Junior</button><button class="${tourFilters.circuit==='NCAA'?'active':''}" onclick="tourFilter('circuit','NCAA')">NCAA</button><button class="${tourFilters.circuit==='Federation'?'active':''}" onclick="tourFilter('circuit','Federation')">Davis Cup</button><button onclick="showMyEntries()">Mes inscriptions</button></div>
  <div class="card tm-registration-summary"><div><span>Joueur</span><b>${esc(cr.player_name)}</b><small>ATP #${fmt(cr.singles_rank)} · Double ${careerDoublesRankText(cr)} · ${careerFocusLabel(cr.career_focus||'mixed')}</small></div><div><span>Partenaire double</span><b>${String(cr.career_focus||'mixed')==='singles_only'?'Désactivé':partner?esc(partner.name):'Aucun'}</b><small>${String(cr.career_focus||'mixed')==='singles_only'?'Carrière 100 % simple':partner?'Double #'+fmt(partner.doubles_ranking||0):'Choisir dans le hub Double'}</small></div><div><span>Date carrière</span><b>${df(local.date||'2025-12-01')}</b><small>Semaine ${calGameWeek(local.date||'2025-12-01')}</small></div><div><span>Couverture</span><b>${coverage}</b><small>Officiels + fictifs Challenger/ITF · filtrables</small></div></div>
  <div class="filters fm-calendar-filters"><input class="input" placeholder="Rechercher un tournoi…" value="${esc(tourFilters.q)}" onchange="tourFilter('q',this.value)"><select class="select" onchange="tourFilter('circuit',this.value)">${circs.map(x=>`<option ${x===tourFilters.circuit?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('category',this.value)">${cats.map(x=>`<option ${x===tourFilters.category?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('surface',this.value)">${surfaces.map(x=>`<option ${x===tourFilters.surface?'selected':''}>${x}</option>`).join('')}</select><select class="select" onchange="tourFilter('source',this.value)"><option value="Tous" ${tourFilters.source==='Tous'?'selected':''}>Tous</option><option value="Officiel" ${tourFilters.source==='Officiel'?'selected':''}>Officiels</option><option value="Fictif" ${tourFilters.source==='Fictif'?'selected':''}>Fictifs Challenger/ITF</option></select><input class="input" type="month" min="2025-12" value="${tourFilters.month}" onchange="tourFilter('month',this.value)"></div>

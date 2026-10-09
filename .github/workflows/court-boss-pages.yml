@@ -93,17 +93,30 @@ jobs:
         env:
           API: https://qrsvliliezbiedmaewml.supabase.co/functions/v1/court-boss
         run: |
-          curl --fail --silent --show-error "$API/api/world" -o /tmp/world.json
+          # Retrying read-only requests tolerates temporary DB load without hiding outages.
+          fetch_backend() {
+            local url="$1" out="$2" status
+            for attempt in 1 2 3; do
+              status="$(curl --silent --show-error --max-time 60 -o "$out" -w '%{http_code}' "$url")" || status="000"
+              if [[ "$status" == "200" ]]; then return 0; fi
+              echo "::warning:: GET $url returned HTTP $status (attempt $attempt/3)"
+              if [[ -s "$out" ]]; then head -c 400 "$out"; echo; fi
+              if [[ "$attempt" -lt 3 ]]; then sleep 3; fi
+            done
+            echo "::error:: Backend GET failed: $url (HTTP $status)"
+            return 1
+          }
+          fetch_backend "$API/api/world" /tmp/world.json
           for kind in singles race doubles nextgen junior; do
-            curl --fail --silent --show-error "$API/api/rankings?kind=$kind&offset=0&limit=10" -o "/tmp/$kind.json"
+            fetch_backend "$API/api/rankings?kind=$kind&offset=0&limit=10" "/tmp/$kind.json"
           done
-          curl --fail --silent --show-error "$API/api/player?id=14405" -o /tmp/federer.json
-          curl --fail --silent --show-error "$API/api/player?id=14406" -o /tmp/nadal.json
-          curl --fail --silent --show-error "$API/api/tournament-detail?id=3266" -o /tmp/ao-junior.json
-          curl --fail --silent --show-error "$API/api/tournament-detail?id=3269" -o /tmp/uso-junior.json
-          curl --fail --silent --show-error "$API/api/tournament-detail?id=2078" -o /tmp/united-cup.json
-          curl --fail --silent --show-error "$API/api/tournament-detail?id=2040" -o /tmp/laver-cup.json
-          curl --fail --silent --show-error "$API/api/tournament-detail?id=3396" -o /tmp/junior-davis.json
+          fetch_backend "$API/api/player?id=14405" /tmp/federer.json
+          fetch_backend "$API/api/player?id=14406" /tmp/nadal.json
+          fetch_backend "$API/api/tournament-detail?id=3266" /tmp/ao-junior.json
+          fetch_backend "$API/api/tournament-detail?id=3269" /tmp/uso-junior.json
+          fetch_backend "$API/api/tournament-detail?id=2078" /tmp/united-cup.json
+          fetch_backend "$API/api/tournament-detail?id=2040" /tmp/laver-cup.json
+          fetch_backend "$API/api/tournament-detail?id=3396" /tmp/junior-davis.json
           node -e "const w=require('/tmp/world.json'); if(!w.playersTotal) throw new Error('world payload invalid'); console.log('players',w.playersTotal)"
           node <<'EOF'
           const fs=require('fs');

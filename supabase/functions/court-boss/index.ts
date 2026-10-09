@@ -8388,7 +8388,10 @@ Deno.serve(async(req:Request)=>{
          (Number(ta.defense_to_attack_bias||10)-Number(tb.aggression_bias||10))*(Number(aa.defense_to_attack??aa.tactics??10)+Number(aa.passing_shot??aa.return_game??10)-20)/620)
         -
         ((Number(tb.net_frequency||10)-10)*(Number(ab.volley||10)+Number(ab.net_positioning||10)-Number(aa.passing_shot??aa.return_game??10)-Number(aa.reaction??aa.anticipation??10))/520+
-         (Number(tb.aggression_bias||10)-Number(ta.defense_to_attack_bias||10))*(Number(ab.forehand_power??ab.forehand??10)+Number(ab.serve_plus_one??ab.forehand??10)-20)/600);
+         (Number(tb.aggression_bias||10)-Number(ta.defense_to_attack_bias||10))*(Number(ab.forehand_power??ab.forehand??10)+Number(ab.serve_plus_one??ab.forehand??10)-20)/600+
+         (Number(tb.rally_length_preference||10)-10)*(Number(ab.rally_tolerance??ab.stamina??10)+Number(ab.consistency??ab.concentration??10)-Number(aa.rally_tolerance??aa.stamina??10)-Number(aa.consistency??aa.concentration??10))/520+
+         (Number(tb.drop_shot_frequency||10)-10)*(Number(ab.drop_shot??ab.touch??10)+Number(ab.decision_making??ab.tactics??10)-Number(aa.reaction??aa.anticipation??10)-Number(aa.movement||10))/650+
+         (Number(tb.defense_to_attack_bias||10)-Number(ta.aggression_bias||10))*(Number(ab.defense_to_attack??ab.tactics??10)+Number(ab.passing_shot??ab.return_game??10)-20)/620);
 
       let contextFit=((Number(ca.tiebreak_skill||10)+Number(ca.deciding_set_skill||10)+Number(ca.comeback_mentality||10)+Number(ca.front_runner||10))-
         (Number(cb.tiebreak_skill||10)+Number(cb.deciding_set_skill||10)+Number(cb.comeback_mentality||10)+Number(cb.front_runner||10)))/320;

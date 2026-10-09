@@ -8484,7 +8484,8 @@ Deno.serve(async(req:Request)=>{
         confidenceFit+paceFit+h2h+formDelta+userTactics+extendedAttributeFit;
       if(bestOf>=5)logit*=1.10;
       let probA=1/(1+Math.exp(-logit));
-      probA=Math.max(.035,Math.min(.965,probA));
+      const upsetFloor=Math.max(.005,Math.min(.035,.035-Math.max(0,Math.abs(aElo-bElo)-400)*.00005));
+      probA=Math.max(upsetFloor,Math.min(1-upsetFloor,probA));
       return {probA,components:{
         elo_probability:eloProb,surface_elo_a:aElo,surface_elo_b:bElo,
         service_return:serviceReturn,mental,physical,surface_fit:surfaceFit,pace_fit:paceFit,

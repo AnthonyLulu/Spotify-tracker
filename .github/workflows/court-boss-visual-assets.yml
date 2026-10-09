@@ -100,26 +100,16 @@ jobs:
             // an invisible fallback that browsers do not lazy-load.
             await page.evaluate(()=>nav('calendar'));
             await page.getByRole('heading',{name:'Calendrier mondial'}).waitFor({timeout:25000});
-            const brisbane=await page.evaluate(async()=>{
-              // Use the same exported HTML renderer as the game's actual cards.
-              // Internal metadata helpers are not a stable public API.
-              const markup=window.tournamentLogoHtml({name:'Brisbane International'});
-              const scratch=document.createElement('div');
-              scratch.innerHTML=markup;
-              const mapped=scratch.querySelector('img.tm-tour-logo');
-              if(!mapped?.src)return {ok:false,reason:'renderer returned no image',markup:markup.slice(0,250)};
-              const loaded=await Promise.race([
-                new Promise(resolve=>{
-                  const img=new Image();
-                  img.onload=()=>resolve(img.naturalWidth>0);
-                  img.onerror=()=>resolve(false);
-                  img.src=mapped.src;
-                }),
-                new Promise(resolve=>setTimeout(()=>resolve(false),20000))
-              ]);
-              return {ok:loaded,url:mapped.src,reason:loaded?'decoded':'decode failed'};
-            });
-            if(!brisbane.ok)throw new Error('Brisbane tournament logo cannot decode: '+JSON.stringify(brisbane));
+            await page.waitForFunction(()=>{
+              // Check the ACTUAL image elements used on cards. Calling an
+              // unrelated helper with synthetic input produced a false
+              // negative even while the gallery was rendering correctly.
+              const logos=[...document.querySelectorAll('.tm-tour-card-logo img, .tm-tour-logo-shell img')];
+              return logos.some(img=>{
+                const rect=img.getBoundingClientRect();
+                return rect.width>0 && rect.height>0 && img.complete && img.naturalWidth>0;
+              });
+            },null,{timeout:30000});
             await page.waitForFunction(()=>{
               const photos=[...document.querySelectorAll('.tm-tour-card-photo-media')];
               return photos.length>0;

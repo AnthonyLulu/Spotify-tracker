@@ -4720,7 +4720,7 @@ Deno.serve(async(req:Request)=>{
     const surface=(u.searchParams.get("surface")??"").trim().slice(0,40);
     const from=(u.searchParams.get("from")??"").trim();
     const requestedManagedPlayerId=n(u.searchParams.get("player_id"),0,0,99999999);
-    let query=db.from("tournaments").select("*",{count:"exact"}).eq("is_active",true);
+    let query=db.from("tournaments").select("*",{count:"planned"}).eq("is_active",true);
     if(circuit&&circuit!=="Tous") query=query.eq("circuit",circuit);
     if(category&&category!=="Toutes") query=query.eq("category",category);
     if(source==="Officiel") query=query.eq("is_verified",true);
@@ -4738,12 +4738,16 @@ Deno.serve(async(req:Request)=>{
     }
     query=query.order("start_date",{ascending:true}).order("is_verified",{ascending:false}).range(offset,offset+limit-1);
     const {data,error,count}=await query;
-    if(error) return h({error:error.message},500);
+    if(error){
+      const timedOut=/statement timeout|canceling statement due to statement timeout/i.test(error.message||"");
+      return h({error:error.message,retryable:timedOut},timedOut?503:500);
+    }
 
     // Surface the managed player's frozen acceptance state directly in the
     // tournament calendar so the list view shows real DA / ALT / Q status,
     // not only a projected cut until the detail sheet is opened.
     let rows:any[]=(data??[]);
+    let acceptanceMetadataPartial=false;
     const tournamentIds=rows.map((x:any)=>Number(x.id||0)).filter(Boolean);
     if(tournamentIds.length){
       const managed=await db.from("career_state").select("managed_player_id").eq("id","demo").maybeSingle();
@@ -4764,15 +4768,21 @@ Deno.serve(async(req:Request)=>{
             .select("tournament_id,status,acceptance_order,effective_rank,entry_method,snapshot_date,promoted_on,withdrawn_on,withdrawal_phase,withdrawal_reason")
             .eq("player_id",managedId).in("tournament_id",tournamentIds)
         ]);
-        if(mainAcceptance.error||qAcceptance.error)return h({error:(mainAcceptance.error||qAcceptance.error)?.message},500);
-        const mainMap=new Map((mainAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
-        const qMap=new Map((qAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
-        rows=rows.map((t:any)=>({
-          ...t,
-          managed_acceptance_player_id:managedId,
-          managed_acceptance_main:mainMap.get(Number(t.id))??null,
-          managed_acceptance_qualifying:qMap.get(Number(t.id))??null
-        }));
+        if(mainAcceptance.error||qAcceptance.error){
+          // Calendar entries remain browseable if an optional acceptance lookup
+          // times out under heavy season rollover load. The client can label
+          // this state as incomplete rather than inventing DA/ALT/Q results.
+          acceptanceMetadataPartial=true;
+        }else{
+          const mainMap=new Map((mainAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
+          const qMap=new Map((qAcceptance.data??[]).map((x:any)=>[Number(x.tournament_id),x]));
+          rows=rows.map((t:any)=>({
+            ...t,
+            managed_acceptance_player_id:managedId,
+            managed_acceptance_main:mainMap.get(Number(t.id))??null,
+            managed_acceptance_qualifying:qMap.get(Number(t.id))??null
+          }));
+        };
       }
     }
 
@@ -4793,7 +4803,7 @@ Deno.serve(async(req:Request)=>{
         });
       }
     }
-    return h({offset,limit,count:count??0,rows,tbc:tbcRows});
+    return h({offset,limit,count:count??0,rows,tbc:tbcRows,acceptance_metadata_partial:acceptanceMetadataPartial,calendar_count_is_estimate:true});
   }
 
 

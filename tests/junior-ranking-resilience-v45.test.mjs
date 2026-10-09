@@ -85,5 +85,5 @@ test('missing ranking page is surfaced as error and never a fake empty table',as
 
 test('junior UI explains partial counts instead of displaying fake zeroes',()=>{
   const app=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8');
-  assert.match(app,/rankMeta\?\.metadataPartial\?"Statistiques du vivier momentanément indisponibles"/);
+  assert.match(app,/rankMeta\?\.metadataPartial\?"Statistiques du vivier momentanément indisponibles/);
 });

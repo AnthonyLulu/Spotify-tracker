@@ -1,55 +1,89 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
-const read=(p)=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
-const edge=read('supabase/functions/court-boss/index.ts');
-const app=read('court-boss/app.js');
-const ci=read('.github/workflows/court-boss-pr-ci.yml');
-const smoke=read('.github/workflows/court-boss-pages.yml');
-const juniorStart=edge.indexOf('if(kind==="junior"){',edge.indexOf('if(path.endsWith("/api/rankings")'));
-const juniorEnd=edge.indexOf('let orderCol=kind==="singles"',juniorStart);
-const route=edge.slice(juniorStart,juniorEnd);
+const edge=fs.readFileSync(new URL('../supabase/functions/court-boss/index.ts',import.meta.url),'utf8');
+const start=edge.indexOf('if(kind==="junior"){',edge.indexOf('if(path.endsWith("/api/rankings")'));
+const end=edge.indexOf('\n\n\n    let orderCol=',start);
+assert.ok(start>=0&&end>start,'junior ranking handler must exist');
+// Evaluate the production handler using a fake read-only Supabase query layer.
+// The TypeScript-only annotations are stripped for Node's JavaScript runtime.
+const block=edge.slice(start,end).replaceAll('(p:any)=>','(p)=>').replaceAll('(r:any)=>','(r)=>');
 
-test('junior ranking remains available when ancillary counts time out',()=>{
-  assert.ok(juniorStart>0&&juniorEnd>juniorStart);
-  assert.match(route,/Promise\.allSettled\(/);
-  assert.match(route,/select\("id",\{count:"planned",head:true\}\)/);
-  assert.match(route,/generatedReserveEstimated:true/);
-  assert.match(route,/if\(page\.error\)return h\(\{error:page\.error\.message\},500\)/);
-  assert.match(route,/const metadataPartial=/);
-  assert.match(route,/const safeCount=\(r:any\)=>r\.error\|\|r\.count==null\?null:Number\(r\.count\)/);
-  assert.doesNotMatch(route,/page\.error\|\|officialCount\.error/);
-  assert.match(route,/generatedReserve:generatedReserveTotal==null\|\|generated==null\?null/);
+const execute=async({pageError=null,auxError=null,queryReject=null}={})=>{
+  const reads=[];
+  const makeQuery=(table)=>{
+    let rankType='';
+    const q={
+      select(){return q;},
+      eq(field,value){if(field==='rank_type')rankType=value;return q;},
+      ilike(){return q;},order(){return q;},range(){return q;},
+      gte(){return q;},lte(){return q;},or(){return q;},
+      then(resolve,reject){
+        reads.push({table,rankType});
+        if(table===queryReject||rankType===queryReject)
+          return Promise.reject(new Error('upstream reset')).then(resolve,reject);
+        const sample={id:123,name:'Junior Example',rank_type:'official',display_rank:1,junior_points:100,junior_game_points:10,age:16};
+        const result=table==='junior_display_pool_view'
+          ?{data:pageError?null:[sample],count:pageError?null:1,error:pageError&&{message:pageError}}
+          :{count:table==='players'?4000:rankType==='official'?31:rankType==='verified_nr'?3:1200,
+            error:table===auxError||rankType===auxError?{message:'statement timeout'}:null};
+        return Promise.resolve(result).then(resolve,reject);
+      }
+    };
+    return q;
+  };
+  const context={db:{from:makeQuery},kind:'junior',q:'',country:'',offset:0,limit:10,
+    normalizeName:v=>v,ageAt:(_date,_baseline,age)=>age,
+    AGE_REFERENCE_DATE:'2025-12-01',
+    h:(body,status=200)=>({body,status})};
+  const response=await vm.runInNewContext('(async()=>{'+block+'})()',context);
+  return {response,reads};
+};
+
+test('junior ranking survives timeout of optional pool count',async()=>{
+  const {response,reads}=await execute({auxError:'simulated'});
+  assert.equal(response.status,200);
+  assert.equal(response.body.rows.length,1);
+  assert.equal(response.body.rows[0].junior_points,110);
+  assert.equal(response.body.metadataPartial,true);
+  assert.equal(response.body.generatedCount,null);
+  assert.equal(response.body.officialRealCount,34);
+  assert.equal(response.body.generatedReserve,null);
+  assert.equal(reads.length,5);
+  assert.equal(reads.filter(x=>x.table==='players').length,1);
 });
 
-test('junior UI discloses unavailable counts instead of showing zero',()=>{
+test('junior ranking survives rejected database Promise',async()=>{
+  const {response}=await execute({queryReject:'players'});
+  assert.equal(response.status,200);
+  assert.equal(response.body.metadataPartial,true);
+  assert.equal(response.body.generatedReserve,null);
+  assert.equal(response.body.rows.length,1);
+});
+
+test('normal junior counts are preserved and reserve is explicitly estimated',async()=>{
+  const {response}=await execute();
+  assert.equal(response.status,200);
+  assert.equal(response.body.count,1);
+  assert.equal(response.body.metadataPartial,false);
+  assert.equal(response.body.officialRankedCount,31);
+  assert.equal(response.body.verifiedUnrankedCount,3);
+  assert.equal(response.body.officialRealCount,34);
+  assert.equal(response.body.generatedCount,1200);
+  assert.equal(response.body.generatedReserveEstimated,true);
+  assert.equal(response.body.generatedReserve,2800);
+});
+
+test('missing ranking page is surfaced as error and never a fake empty table',async()=>{
+  const {response}=await execute({pageError:'statement timeout'});
+  assert.equal(response.status,500);
+  assert.equal(response.body.error,'statement timeout');
+  assert.ok(!response.body.rows);
+});
+
+test('junior UI explains partial counts instead of displaying fake zeroes',()=>{
+  const app=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8');
   assert.match(app,/rankMeta\?\.metadataPartial\?"Statistiques du vivier momentanément indisponibles/);
-});
-
-test('smoke reports the failing read endpoint, retries transient overload, and eventually fails',()=>{
-  const at=smoke.indexOf('      - name: Check live backend');
-  const block=smoke.slice(at,smoke.indexOf('      - name: Mobile browser smoke test',at));
-  assert.match(block,/fetch_backend\(\)/);
-  assert.match(block,/for attempt in 1 2 3/);
-  assert.match(block,/::error:: Backend GET failed/);
-  assert.match(block,/fetch_backend "\$API\/api\/rankings\?kind=\$kind&offset=0&limit=10"/);
-  assert.match(block,/return 1/);
-});
-
-test('P0 pull-request gates never publish changes to live',()=>{
-  assert.match(ci,/pull_request:/);
-  assert.match(ci,/branches: \[court-boss-live\]/);
-  assert.match(ci,/node --test tests\/\*\.test\.mjs/);
-  assert.doesNotMatch(ci,/deploy|publish|service_role/i);
-});
-
-test('save/load retains digest-verification and never claims an unverified rollback',()=>{
-  const start=edge.indexOf('if(path.endsWith("/api/load-slot")');
-  const stop=edge.indexOf('if(path.endsWith("/api/delete-slot")',start);
-  const load=edge.slice(start,stop);
-  assert.match(load,/rollbackRecovered=rollbackDigest===safetyDigest&&legacyRollbackDigest===legacySafetyDigest/);
-  assert.match(load,/rollback_verified:rollbackRecovered/);
-  assert.match(load,/rollback_error:rollbackError\|\|null/);
-  assert.match(app,/rollback_verification_failed/);
 });

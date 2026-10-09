@@ -1,0 +1,29 @@
+name: Court Boss P0 Pull Request Gates
+
+on:
+  pull_request:
+    branches: [court-boss-live]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p0-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check client JavaScript
+        run: |
+          node --check court-boss/app.js
+          node --check court-boss/modules.js
+          node --check court-boss/match-center-v1.js
+          node --check court-boss/daily-career-v22.js
+      - name: All Court Boss regression tests
+        run: node --test tests/*.test.mjs

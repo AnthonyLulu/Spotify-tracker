@@ -17529,6 +17529,9 @@ Deno.serve(async(req:Request)=>{
       p_legacy_present:Boolean(currentLegacy.data),
       p_legacy_digest:legacySafetyDigest
     });
+    if(prepared.error?.code==="55P03"){
+      return h({error:"Une récupération de sauvegarde est déjà en cours. Terminer la récupération avant de charger une autre partie.",recovery_pending:true},409);
+    }
     if(prepared.error||!prepared.data){
       return h({error:"Journal de sécurité du chargement impossible : "+(prepared.error?.message||"operation id missing")},500);
     }

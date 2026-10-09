@@ -3279,7 +3279,7 @@ Deno.serve(async(req:Request)=>{
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","official"),
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","simulated"),
         db.from("junior_display_pool").select("player_id",{count:"exact",head:true}).eq("rank_type","verified_nr"),
-        db.from("players").select("id",{count:"exact",head:true})
+        db.from("players").select("id",{count:"planned",head:true})
           .eq("game_generated",true).eq("career_status","active")
           .gte("age",13).lte("age",17)
           .or("data_source.is.null,data_source.not.ilike.*hidden duplicate merged into*")
@@ -3316,6 +3316,9 @@ Deno.serve(async(req:Request)=>{
       return h({
         kind,offset,limit,count:page.count??0,rows,
         metadataPartial,
+        // Reserve count uses PostgreSQL planner estimates to avoid expensive
+        // COUNT(*) scans during season rollover; not an exact audited total.
+        generatedReserveEstimated:true,
         officialRealCount:verified,
         officialRankedCount:rankedReal,
         verifiedUnrankedCount:unrankedReal,

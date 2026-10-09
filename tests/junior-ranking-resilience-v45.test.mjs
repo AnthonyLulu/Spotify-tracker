@@ -14,6 +14,8 @@ const route=edge.slice(juniorStart,juniorEnd);
 test('junior ranking remains available when ancillary counts time out',()=>{
   assert.ok(juniorStart>0&&juniorEnd>juniorStart);
   assert.match(route,/Promise\.allSettled\(/);
+  assert.match(route,/select\("id",\{count:"planned",head:true\}\)/);
+  assert.match(route,/generatedReserveEstimated:true/);
   assert.match(route,/if\(page\.error\)return h\(\{error:page\.error\.message\},500\)/);
   assert.match(route,/const metadataPartial=/);
   assert.match(route,/const safeCount=\(r:any\)=>r\.error\|\|r\.count==null\?null:Number\(r\.count\)/);

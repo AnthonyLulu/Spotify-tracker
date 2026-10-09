@@ -14,7 +14,7 @@ const end=edge.indexOf('if(path.endsWith("/api/delete-slot")',start);
 const recoverStart=edge.indexOf('// Durable crash recovery for interrupted loads.');
 const recoverEnd=edge.indexOf('if((\n    path.endsWith("/api/refresh-live-rankings")',recoverStart);
 assert.ok(start>=0&&end>start&&recoverStart>=0&&recoverEnd>recoverStart);
-const stripTs=s=>s.replace(/\b(let|const) (\w+):any\b/g,'$1 $2').replace(/ as any\b/g,'');
+const stripTs=s=>s.replace(/\b(let|const) (\w+):any\b/g,'$1 $2').replace(/(\w+):any(?=\))/g,'$1').replace(/ as any\b/g,'');
 const loadCode=stripTs(edge.slice(start,end));
 const recoveryCode=stripTs(edge.slice(recoverStart,recoverEnd));
 const copy=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));

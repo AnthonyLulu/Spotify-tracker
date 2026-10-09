@@ -24,7 +24,7 @@ test('world simulation uses skill-gap-sensitive upset floor instead of a flat 3.
   // the bounded underdog floor declines gradually from 3.5% to 0.5%.
   assert.equal(upsetFloor(400),.035);
   assert.ok(upsetFloor(600)<.035&&upsetFloor(600)>.02);
-  assert.equal(upsetFloor(1000),.005);
+  assert.ok(Math.abs(upsetFloor(1000)-.005)<1e-12);
   assert.ok(finalWorldProb(600)>.965&&finalWorldProb(600)<.975);
   assert.equal(finalWorldProb(1500),.995);
   assert.ok(1-finalWorldProb(1500)>=.005-1e-12);

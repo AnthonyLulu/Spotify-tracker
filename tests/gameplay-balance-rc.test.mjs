@@ -6,9 +6,10 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const edge=read('supabase/functions/court-boss/index.ts');
 
 const eloWin=(gap)=>1/(1+Math.pow(10,-gap/400));
-const finalWorldProb=(gap)=>Math.max(.035,Math.min(.965,eloWin(gap)));
+const upsetFloor=(gap)=>Math.max(.005,Math.min(.035,.035-Math.max(0,Math.abs(gap)-400)*.00005));
+const finalWorldProb=(gap)=>Math.max(upsetFloor(gap),Math.min(1-upsetFloor(gap),eloWin(gap)));
 
-test('world simulation keeps a realistic upset floor instead of deterministic favourites',()=>{
+test('world simulation uses skill-gap-sensitive upset floor instead of a flat 3.5%',()=>{
   assert.match(edge,/const eloProb=1\/\(1\+Math\.pow\(10,\(bElo-aElo\)\/400\)\)/);
   assert.match(edge,/probA=Math\.max\(\.035,Math\.min\(\.965,probA\)\)/);
 
@@ -18,11 +19,14 @@ test('world simulation keeps a realistic upset floor instead of deterministic fa
   assert.ok(eloWin(300)>.84&&eloWin(300)<.86);
   assert.ok(eloWin(400)>.90&&eloWin(400)<.92);
 
-  // Even an enormous 600-Elo mismatch remains playable: the underdog has a
-  // 3.5% floor rather than a scripted loss. A normal 400-Elo mismatch still
-  // leaves roughly a one-in-eleven upset before contextual modifiers.
-  assert.equal(finalWorldProb(600),.965);
-  assert.ok(1-finalWorldProb(600)>=.035-1e-12);
+  // Below 400 Elo the existing game behavior is unchanged; at huge gaps
+  // the bounded underdog floor declines gradually from 3.5% to 0.5%.
+  assert.equal(upsetFloor(400),.035);
+  assert.ok(upsetFloor(600)<.035&&upsetFloor(600)>.02);
+  assert.equal(upsetFloor(1000),.005);
+  assert.ok(finalWorldProb(600)>.965&&finalWorldProb(600)<.975);
+  assert.equal(finalWorldProb(1500),.995);
+  assert.ok(1-finalWorldProb(1500)>=.005-1e-12);
   assert.ok(1-finalWorldProb(400)>.08&&1-finalWorldProb(400)<.10);
 });
 

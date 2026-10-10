@@ -818,6 +818,12 @@ window.nav=async r=>{
   return;
  }
  await render();
+ // Double is painted and navigation resolved before optional rankings start.
+ // Never initiate three world GETs while the page template is still rendering.
+ if(r==='doubles'&&route==='doubles'&&!doublesHubAttempted&&!doublesHubLoading){
+  doublesHubAttempted=true;
+  setTimeout(()=>{if(route==='doubles')void loadDoublesHub()},0);
+ }
 }
 async function syncLegacySinglesEntries(serverRows=[]){
  const playerId=activeManagedId()||primaryManagedPlayerId()||0;
@@ -3457,7 +3463,6 @@ window.clearLiveMatch=()=>{
 }
 function doublesPage(){
  const c=activePlayerCareerView(),activeId=activeManagedId(),primaryId=primaryManagedPlayerId(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
- if(!doublesHubAttempted&&!doublesHubLoading){doublesHubAttempted=true;setTimeout(loadDoublesHub,0);}
  const pool=doublesHubRows;
  const juniorPool=juniorDoublesHubRows;
  const serverPartner=activeDoublesPartner();

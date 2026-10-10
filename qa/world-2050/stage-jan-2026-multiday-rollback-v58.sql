@@ -91,7 +91,7 @@ BEGIN
      'junior_doubles',r->'newgens'->'junior_doubles_pool',
      'first_training',jsonb_array_length(first_tick->'training'),
      'last_training',jsonb_array_length(last_tick->'training'),
-     'elapsed_ms',pg_catalog.extract(epoch from pg_catalog.clock_timestamp()-started_at)*1000
+     'elapsed_ms',EXTRACT(epoch FROM pg_catalog.clock_timestamp()-started_at)*1000
    );
    RAISE EXCEPTION 'CB_REAL_MULTIDAY_ROLLBACK';
  EXCEPTION WHEN OTHERS THEN
@@ -100,7 +100,7 @@ BEGIN
    RETURN pg_catalog.jsonb_build_object(
      'ok',false,'rolled_back',true,'error',left(err,950),
      'partial_dates',dates,'elapsed_ms',
-     pg_catalog.extract(epoch from pg_catalog.clock_timestamp()-started_at)*1000
+     EXTRACT(epoch FROM pg_catalog.clock_timestamp()-started_at)*1000
    );
  END;
 END;

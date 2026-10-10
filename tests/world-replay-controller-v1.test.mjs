@@ -28,7 +28,16 @@ function makeWorld(startDate='2025-12-01'){
    return {ok:true,date,weekly_checkpoint_due:new Date(date+'T00:00:00Z').getUTCDay()===0,
       week_start_date:date};
   },
-  async runWeeklyCheckpoint({checkpointDate}){checkpoints++;checkpointed.add(checkpointDate)},
+  async runWeeklyCheckpoint({checkpointDate}){
+   checkpoints++;checkpointed.add(checkpointDate);
+   // Explicit MOCK receipt: unit tests exercise only the controller protocol.
+   // Live certification must reconstruct these numbers from actual DB match rows.
+   return {
+    ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
+    world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+    matches_due:0,matches_committed:0,managed_matches_pending:0,duplicate_match_effects:0
+   };
+  },
   async rolloverSeason({newYear}){rolled++;years.add(newYear)},
   async playManagedMatch({expectedFromDate}){matches++;matchDone.add(expectedFromDate)},
   async probeSaveReload(){probes++},
@@ -71,7 +80,13 @@ test('weekly checkpoint is committed once and season rollover is applied before 
 
 test('repeated checkpoint is a hard error, not an endless loop',async()=>{
  const {world}=makeWorld('2025-12-28');
- world.runWeeklyCheckpoint=async()=>{};
+ world.runWeeklyCheckpoint=async({checkpointDate})=>({
+  ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-uncommitted-'+checkpointDate,
+  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  matches_due:0,matches_committed:0,managed_matches_pending:0,duplicate_match_effects:0
+ });
+ // This intentionally does NOT mark checkpointed in the mock world; the
+ // next attempt must reject the unresolved repeated weekly condition.
  await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-28',endDate:'2025-12-29'}),/Unresolved repeat/);
 });
 
@@ -155,4 +170,50 @@ test('25-year controller smoke includes all rollovers and a released lease, not 
  assert.equal(stats().leaseAcquires,1);
  assert.equal(stats().leaseReleases,1);
  assert.notEqual(r.status,'REAL_GAME_2050_CERTIFIED');
+});
+
+test('real-week adapter cannot pass off a bare clock marker as world simulation',async()=>{
+ const {world}=makeWorld('2025-12-27');
+ world.runWeeklyCheckpoint=async()=>({ok:true,checkpoint_date:'2025-12-28'});
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2025-12-29'}),
+   /World week lacks verified simulation/);
+});
+
+test('weekly world results must reconcile every due AI and managed match',async()=>{
+ const {world}=makeWorld('2025-12-27');
+ world.runWeeklyCheckpoint=async({checkpointDate})=>({
+  ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
+  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  matches_due:9,matches_committed:5,managed_matches_pending:1,duplicate_match_effects:0
+ });
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2025-12-29'}),
+   /World week has missing or duplicated match effects/);
+});
+
+test('weekly checkpoint refuses duplicated match effects even when its own flag is green',async()=>{
+ const {world}=makeWorld('2025-12-27');
+ world.runWeeklyCheckpoint=async({checkpointDate})=>({
+  ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
+  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  matches_due:9,matches_committed:9,managed_matches_pending:0,duplicate_match_effects:1
+ });
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2025-12-29'}),
+   /World week has missing or duplicated match effects/);
+});
+
+test('verified weekly receipts accumulate genuine world match counts without leap in dates',async()=>{
+ const {world}=makeWorld('2025-12-27');
+ const commitCheckpoint=world.runWeeklyCheckpoint.bind(world);
+ world.runWeeklyCheckpoint=async({checkpointDate,...args})=>{
+  // Preserve the mock's actual weekly state transition before adding a
+  // positive receipt: otherwise the next day legitimately detects a loop.
+  const committed=await commitCheckpoint({checkpointDate,...args});
+  return {...committed,matches_due:12,matches_committed:12};
+ };
+ const result=await replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2026-01-03'});
+ assert.equal(result.checkpoints,1);
+ assert.equal(result.worldWeeksVerified,1);
+ assert.equal(result.worldMatchesCommitted,12);
+ assert.equal(result.lastCommittedDate,'2026-01-03');
+ assert.notEqual(result.status,'REAL_GAME_2050_CERTIFIED');
 });

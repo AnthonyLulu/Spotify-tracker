@@ -17,6 +17,32 @@ const quarterly=date=>{
  return ([3,6,9,12].includes(m) && nextDay(date).slice(5,7)!==date.slice(5,7));
 };
 
+// Real isolated adapters MUST prove their weekly world simulation and
+// tournament reconciliation were durably committed. The clock watermark alone
+// (mark_weekly_checkpoint_v22) is NOT proof that any AI match was played.
+export function assertVerifiedWorldWeek(receipt,checkpointDate){
+ if(receipt?.ok!==true
+   || receipt.world_simulation_committed!==true
+   || receipt.checkpoint_persisted!==true
+   || receipt.ranking_integrity_ok!==true
+   || receipt.checkpoint_date!==checkpointDate
+   || typeof receipt.world_run_id!=='string'
+   || !receipt.world_run_id.trim()){
+  throw Error('World week lacks verified simulation + durable checkpoint receipt for '+checkpointDate);
+ }
+ const due=receipt.matches_due;
+ const resolved=receipt.matches_committed;
+ const pending=receipt.managed_matches_pending;
+ const duplicate=receipt.duplicate_match_effects;
+ if(![due,resolved,pending,duplicate].every(n=>Number.isSafeInteger(n)&&n>=0)){
+  throw Error('World week has no verified match-count reconciliation for '+checkpointDate);
+ }
+ if(resolved+pending!==due || duplicate!==0){
+  throw Error('World week has missing or duplicated match effects for '+checkpointDate);
+ }
+ return receipt;
+}
+
 export async function replayIsolatedWorld({
   adapter, startDate='2025-12-01',endDate='2050-12-31',
   onProgress=()=>{},maxTransitions=15000
@@ -43,7 +69,7 @@ export async function replayIsolatedWorld({
  const first=await adapter.readCareerDate();
  if(first!==startDate)throw Error('Starting world date mismatch: '+first+' / '+startDate);
  const report={status:'RUNNING_NOT_CERTIFIED',startDate,endDate,days:0,managedMatches:0,
-  checkpoints:0,rollovers:0,quarterlyChecks:0,saveLoadProbes:0,lastCommittedDate:startDate};
+  checkpoints:0,worldWeeksVerified:0,worldMatchesCommitted:0,rollovers:0,quarterlyChecks:0,saveLoadProbes:0,lastCommittedDate:startDate};
  let date=startDate;
  while(date<endDate){
   if(report.days>=maxTransitions)throw Error('Hard stop: maxTransitions exceeded at '+date);
@@ -66,11 +92,14 @@ export async function replayIsolatedWorld({
    if(seen.has(progressKey))throw Error('Unresolved repeat '+progressKey);
    seen.add(progressKey);
    if(phase==='checkpoint'){
-    await adapter.runWeeklyCheckpoint({
-     checkpointDate:response.checkpoint_date||date,
+    const checkpointDate=response.checkpoint_date||date;
+    const weeklyReceipt=assertVerifiedWorldWeek(await adapter.runWeeklyCheckpoint({
+     checkpointDate,
      fromDate:response.from_date,
      source:'pre_advance'
-    });
+    }),checkpointDate);
+    report.worldWeeksVerified++;
+    report.worldMatchesCommitted+=weeklyReceipt.matches_committed;
     report.checkpoints++;
    }else if(phase==='rollover'){
     const nextYear=isoDay(nextDay(date)).getUTCFullYear();
@@ -92,9 +121,11 @@ export async function replayIsolatedWorld({
   if(await adapter.readCareerDate()!==newDate)throw Error('Committed day not stored '+newDate);
   date=newDate;report.days++;report.lastCommittedDate=date;
   if(response.weekly_checkpoint_due){
-   await adapter.runWeeklyCheckpoint({
+   const weeklyReceipt=assertVerifiedWorldWeek(await adapter.runWeeklyCheckpoint({
     checkpointDate:date,fromDate:response.week_start_date,source:'post_advance'
-   });
+   }),date);
+   report.worldWeeksVerified++;
+   report.worldMatchesCommitted+=weeklyReceipt.matches_committed;
    report.checkpoints++;
   }
   if(quarterly(date)||date===endDate){

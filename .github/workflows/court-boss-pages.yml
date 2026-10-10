@@ -201,6 +201,15 @@ jobs:
             });
             page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
             page.on('dialog',async d=>{ await d.dismiss(); });
+            // This browser test checks read-only navigation, not protected actions.
+            // Do not modify the game's real access gate, only dismiss its visual
+            // overlay in the disposable Playwright browser used by this job.
+            const clearAccessGate=async()=>page.evaluate(()=>{
+              document.querySelectorAll('.cb-access-gate').forEach(g=>{
+                try{if(g.open)g.close()}catch{}
+                g.remove();
+              });
+            });
 
             await page.route('**/api/countries',route=>route.fulfill({
               status:200,contentType:'application/json',
@@ -216,6 +225,7 @@ jobs:
               throw e;
             }
             await page.getByRole('button',{name:'Continuer ›'}).waitFor();
+            await clearAccessGate();
             await page.evaluate(()=>nav('training'));
             await page.getByRole('heading',{name:'Entraînement jour par jour'}).waitFor();
             await page.getByRole('heading',{name:'Matin / après-midi'}).waitFor();

@@ -10,6 +10,8 @@ on:
       - "court-boss/match-center-tournament-v3.js"
       - "court-boss/match-center-arena-v4.css"
       - "court-boss/match-center-arena-v4.js"
+      - "court-boss/match-center-perspective-v5.js"
+      - "court-boss/match-center-perspective-v5.css"
       - "tests/match-layout-browser.cjs"
       - "tests/tournament-skins-browser.cjs"
       - ".github/workflows/court-boss-match-layout-smoke.yml"
@@ -35,6 +37,7 @@ jobs:
           node --check tests/match-layout-browser.cjs
           node --check court-boss/match-center-tournament-v3.js
           node --check court-boss/match-center-arena-v4.js
+          node --check court-boss/match-center-perspective-v5.js
           node --check tests/tournament-skins-browser.cjs
       - name: Install browser test runtime
         run: |
@@ -53,5 +56,6 @@ jobs:
             match-layout-*.png
             skin-*.png
             arena-*.png
+            perspective-*.png
           if-no-files-found: ignore
           retention-days: 3

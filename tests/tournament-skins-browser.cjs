@@ -7,9 +7,11 @@ const get=p=>fs.readFileSync(path.join(base,p),"utf8");
 const css=[
   "court-boss/app.css","court-boss/match-center-v1.css",
   "court-boss/match-center-v14.css","court-boss/match-center-layout-v2.css",
-  "court-boss/match-center-tournament-v3.css"
+  "court-boss/match-center-tournament-v3.css",
+  "court-boss/match-center-arena-v4.css"
 ].map(get).join("\n");
 const v3=get("court-boss/match-center-tournament-v3.js");
+const v4=get("court-boss/match-center-arena-v4.js");
 const fixtures=[
  {name:"Australian Open",category:"Grand Chelem",city:"Melbourne",surface:"Dur",id:"ao",a:"#2f86c9",b:"#1f5d95"},
  {name:"Roland-Garros",category:"Grand Chelem",city:"Paris",surface:"Terre battue",id:"rg",a:"#cf7948",b:"#a64f2f"},
@@ -49,11 +51,13 @@ const fixture=f=>{
     // Ensure enhancement observes DOM reconstruction, rather than injecting a new JS copy per case.
     if(!seen.has("loaded")){
       await page.addScriptTag({content:v3});
+      await page.addScriptTag({content:v4});
       seen.set("loaded",true);
     }else{
-      await page.evaluate(()=>window.cbTournamentPresentationV3.enhance());
+      await page.evaluate(()=>{window.cbTournamentPresentationV3.enhance();window.cbMatchArenaV4.enhance();});
     }
     await page.locator(".cb-v3-court-brand").waitFor({timeout:6000});
+    await page.locator(".cb-v4-venue-graphics").waitFor({timeout:6000});
     const result=await page.evaluate(()=>{
       const court=document.querySelector(".cb-court"),card=document.querySelector(".cb-live-card");
       return {name:card.querySelector(".cb-v3-court-brand b").textContent,
@@ -64,6 +68,12 @@ const fixture=f=>{
         markerCount:court.querySelectorAll(".fm-player-dot").length,
         ballCount:court.querySelectorAll(".fm-ball").length,
         watermark:court.querySelectorAll(".cb-v3-court-brand").length,
+        arenaCount:court.querySelectorAll(".cb-v4-venue-graphics").length,
+        standCount:court.querySelectorAll(".cb-v4-grandstand").length,
+        ledLabels:[...court.querySelectorAll(".cb-v4-led")].map(x=>x.textContent),
+        preservedLines:court.querySelectorAll(".fm-court-line").length,
+        netMesh:getComputedStyle(court.querySelector(".fm-net")).backgroundImage,
+        markerPositions:[...court.querySelectorAll(".fm-player-dot")].map(x=>[x.style.left,x.style.top]),
         sw:document.documentElement.scrollWidth,iw:window.innerWidth};
     });
     assert.equal(result.name,f.name);
@@ -72,19 +82,25 @@ const fixture=f=>{
     assert.equal(result.surf,surface(f.surface));
     assert.equal(result.markerCount,2);assert.equal(result.ballCount,1);
     assert.equal(result.watermark,1);
+    assert.equal(result.arenaCount,1,"stadium missing/duplicated");
+    assert.equal(result.standCount,4,"stadium stands missing");
+    assert.ok(result.ledLabels.some(x=>x.includes(f.name.toUpperCase())),"event LED board missing "+f.name);
+    assert.equal(result.preservedLines,6,"tennis court lines changed");
+    assert.ok(result.netMesh.includes("gradient"),"net mesh missing");
+    assert.deepEqual(result.markerPositions,[["50%","80%"],["50%","20%"]],"players were moved by renderer");
     assert.ok(result.bg.includes("gradient"),"court surface not themed");
     assert.ok(result.sw<=result.iw+8,"mobile horizontal overflow: "+f.name+" "+result.sw);
     if(["Australian Open","Roland-Garros","Wimbledon","US Open","Monte-Carlo Masters"].includes(f.name)){
       assert.ok(result.bg.includes("gradient"),"court skin missing "+f.name);
     }
     if(["Australian Open","Roland-Garros","Wimbledon","US Open","Monte-Carlo Masters"].includes(f.name)){
-      await page.screenshot({path:"skin-"+size.label+"-"+f.id+".png",fullPage:false});
+      await page.screenshot({path:"arena-"+size.label+"-"+f.id+".png",fullPage:false});
     }
     console.log("PASS",size.label,f.name,result.surf,result.theme);
    }
    assert.deepEqual(errors,[],"browser errors");
    await page.close();
   }
-  console.log("TOURNAMENT V3 THEME SMOKE PASS");
+  console.log("TOURNAMENT V4 ARENA AND V3 SKINS SMOKE PASS");
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

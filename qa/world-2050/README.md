@@ -1,3 +1,17 @@
+## 10 October 2026, current reconstruction (live isolated DB, read-only checks)
+
+The user authorized stage-only reconstruction. The production SQL catalogue was retrieved via read-only introspection, without needing a manual SQL export. Only definitions were stored in restricted staging tables, **no production rows, accounts, or saves**.
+
+In `cb_e2e_reconstruction_20261010.blueprint`, all **1,852** catalogued production objects are available for staging reconstruction. Actual installed objects are *not* all complete: **296/296 tables**, **3,831/3,831 columns**, **1,036/1,036 named constraints** (one FK action still drifted), **648/650 matching function definitions**, **134/134 sequences**, **301 expected indexes still missing**, **7 views missing**, and **40 triggers missing**. The two absent functions depend on the junior views. No production game Edge Function is deployed in stage.
+
+All 85 original isolated fixture tables were repeatedly verified against the saved snapshot by projecting their original column sets: no original row values were changed. This internal checkpoint **is not** a physically independent backup.
+
+A genuine call to `public.world_integrity_guard_v18('2025-12-01')` returned **ok=false**: 2,890 active adults versus a required 24,000, 8,845 active staff, 3,725 junior-pipeline profiles and two near-calendar duplicate groups. A real 2050 daily replay is correctly blocked, not certified. Do not bypass this gate by inventing a successful result.
+
+The read-only SQL checker `qa/world-2050/stage-parity-gate.sql` and dated `reconstruction-status-2026-10-10.json` capture the actual incomplete state; the JSON is a snapshot, not a live source of truth. Restore missing objects with reviewed staging-only migrations, seed a complete authorized/synthetic world, validate source and derived rankings, provision an authenticated isolated Edge Function, then run a complete real-engine career replay with save/load and rollback probes. No new paid project was created.
+
+---
+
 # Court Boss 2025–2050: reproducible world baseline gate
 
 Status on **10 October 2026: BLOCKED. This is not an end-to-end 2050 pass.**

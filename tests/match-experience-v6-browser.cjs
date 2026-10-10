@@ -71,6 +71,24 @@ function fixture(f){
        await page.locator('.cb-v6-stadium-svg').waitFor({state:'attached'});
        await page.locator('.cb-v6-tactic-chip').first().waitFor({state:'attached'});
        await page.locator('.cb-v7-choice-row').first().waitFor({state:'attached'});
+       // Grand Slams may display five set columns. No horizontal scroll
+       // must be needed to see the current game's live point score on iPhone.
+       if(label==='phone' && f.id==='wimbledon'){
+         await page.evaluate(()=>{
+           const score=document.querySelector('.cb-tv-score');
+           score.style.setProperty('--cb-set-count','5');
+           const rows=[...score.querySelectorAll('.cb-tv-score-row')];
+           rows.forEach((row,idx)=>{
+             const game=row.children[row.children.length-2];
+             for(let n=3;n<=5;n++){
+               const extra=document.createElement(idx===0?'span':'b');
+               if(idx>0)extra.className='cb-tv-set';
+               extra.textContent=idx===0?'S'+n:'0';
+               row.insertBefore(extra,game);
+             }
+           });
+         });
+       }
        const state=await page.evaluate(()=>{
          const c=document.querySelector('.cb-court'),panel=document.querySelector('.cb-coach-panel');
          return {crowd:c.querySelectorAll('.cb-v6-spectators circle').length,

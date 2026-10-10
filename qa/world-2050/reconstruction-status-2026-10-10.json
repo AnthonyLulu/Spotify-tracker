@@ -8,7 +8,12 @@
     "tables": 85,
     "rows": 21651,
     "verified_original_data_tables": 85,
-    "external_backup_verified": false
+    "external_backup_verified": false,
+    "verified_with": "cb_e2e_reconstruction_20261010.verify_original_fixture_rows_v3()",
+    "approved_calendar_overrides": [
+      132,
+      133
+    ]
   },
   "stage_parity": {
     "tables": {
@@ -24,30 +29,32 @@
     "constraints": {
       "expected": 1036,
       "missing": 0,
-      "definition_drift": 1,
-      "exception": "public.ncaa_career_player_id_fkey missing ON DELETE CASCADE"
+      "definition_drift": 0
     },
     "functions": {
       "expected": 650,
       "definition_identical": 648,
-      "missing": 2,
-      "definition_drift": 0,
-      "missing_depend_on": [
-        "public.junior_doubles_race_view",
-        "public.junior_race_view"
+      "missing": 0,
+      "definition_drift": 2,
+      "reviewed_stage_only_overrides": [
+        {
+          "signature": "cb_generated_player_name(p_country text, p_seed integer)",
+          "reason": "sandbox-only deterministic compound-name fallbacks for exhausted country pools; not in captured production routine"
+        },
+        {
+          "signature": "rollover_season_daily_v22(p_new_year integer)",
+          "reason": "sandbox-specific junior refresh, 1 January preservation and ranking test handling; differs from captured production SQL"
+        }
       ]
     },
     "indexes": {
       "expected": 722,
-      "missing": 301
+      "missing": 0,
+      "definition_drift": 0
     },
     "views": {
       "expected": 10,
-      "missing": 7,
-      "dependencies": [
-        "public.history_discipline_scores -> public.historical_titles_cutoff",
-        "public.junior_race_view -> public.junior_display_pool_view"
-      ]
+      "missing": 0
     },
     "sequences": {
       "expected": 134,
@@ -55,7 +62,12 @@
     },
     "triggers": {
       "expected": 40,
-      "missing": 40
+      "missing": 0,
+      "definition_drift": 0
+    },
+    "rls": {
+      "stricter_stage_tables_than_prod": 89,
+      "deliberately_locked_down": true
     },
     "edge_functions": {
       "deployed": 0
@@ -63,15 +75,71 @@
   },
   "fixture_world_guard": {
     "date": "2025-12-01",
-    "passed": false,
-    "active_adults": 2890,
+    "passed": true,
+    "active_adults": 27325,
     "required_active_adults": 24000,
     "active_staff": 8845,
     "junior_pipeline": 3725,
-    "active_players": 5375,
-    "near_calendar_duplicate_groups": 2,
-    "base_integrity_passed": false
+    "near_calendar_duplicate_groups": 0
   },
-  "next_gate": "Index/view/trigger parity, sanitized population generation and isolated authenticated Edge Function must pass before first full daily 2050 replay",
-  "note": "No production writes or customer saves copied. The replay controller was exercised only with fake adapters, not actual world simulation."
+  "test_results": {
+    "real_daily_2025_12_01_to_2025_12_10": {
+      "passed": true,
+      "days": 9,
+      "weekly_checkpoints": 1,
+      "commit_rows": 9,
+      "old_day_retry_idempotent": true,
+      "rolled_back": true
+    },
+    "real_weekly_world_2025_12_07": {
+      "passed": true,
+      "recovered_players": 1800,
+      "ATP_leader": "Carlos Alcaraz",
+      "ATP_leader_rank": 1,
+      "rolled_back": true
+    },
+    "rollover_2025_to_2026": {
+      "passed": true,
+      "new_year": 2026,
+      "new_players_in_trial": 1999,
+      "retired_players_in_trial": 202,
+      "junior_display": 2000,
+      "junior_doubles": 2000,
+      "first_processed_day": "2026-01-01",
+      "rolled_back": true
+    },
+    "atp_250_draws_2026_01_17": {
+      "passed": true,
+      "tournaments": 2,
+      "matches": 62,
+      "participants": 64,
+      "rolled_back": true
+    },
+    "challenger75_noumea_2026_01_11": {
+      "passed": true,
+      "qualifying_matches": 18,
+      "main_matches": 31,
+      "main_participants": 32,
+      "rolled_back": true
+    },
+    "fifteen_draws_january_2026": {
+      "passed": false,
+      "reason": "query gateway statement timeout during AI tournament entry checks; entire transaction rolled back",
+      "rolled_back": true
+    },
+    "itf_m25_single_draw": {
+      "passed": false,
+      "reason": "execution blocked by tool safety controls; no result claimed",
+      "not_executed": true
+    }
+  },
+  "restored_fixtures": {
+    "total_players": 31847,
+    "opening_ATP_estimated_carryover_entries": 2021,
+    "real_atp_reference_ranked": 2021,
+    "synthetic_adult_2025": 24435,
+    "corrected_legacy_attribute_rows": 5000
+  },
+  "next_gate": "Two deliberate staging-only routine deviations must be reviewed against production before certification. Multi-event January 2026 simulation exceeds SQL statement timeout; single Challenger and two ATP250 draws validated. Need restartable event batching and independent stage backup, real save/load/Match Center test and full 9,161-day replay.",
+  "note": "This dated snapshot documents verified isolated SQL runtime only, not production game deployment or full 2025-2050 replay. Original records preserved except explicitly audited duplicate tournament deactivations; production private saves untouched."
 }

@@ -1,20 +1,38 @@
-## 10 October 2026, current reconstruction (live isolated DB, read-only checks)
+## 10 October 2026, verified isolated reconstruction milestone
 
-The user authorized stage-only reconstruction. The production SQL catalogue was retrieved via read-only introspection, without needing a manual SQL export. Only definitions were stored in restricted staging tables, **no production rows, accounts, or saves**.
+**The true 2025–2050 game career is NOT certified.** Production and its private saves remain untouched. Only the existing **isolated** staging Supabase project was changed under user authorization; no paid project was created.
 
-In `cb_e2e_reconstruction_20261010.blueprint`, all **1,852** catalogued production objects are available for staging reconstruction. Actual installed objects are *not* all complete: **296/296 tables**, **3,831/3,831 columns**, **1,036/1,036 named constraints** (one FK action still drifted), **648/650 matching function definitions**, **134/134 sequences**, **301 expected indexes still missing**, **7 views missing**, and **40 triggers missing**. The two absent functions depend on the junior views. No production game Edge Function is deployed in stage.
+### Current isolated world
 
-All 85 original isolated fixture tables were repeatedly verified against the saved snapshot by projecting their original column sets: no original row values were changed. This internal checkpoint **is not** a physically independent backup.
+- **296/296 tables**, **3,831/3,831 columns**, **1,036/1,036 constraints** (including the NCAA cascade), **134/134 sequences**, **722/722 expected indexes**, **10/10 views**, **40/40 triggers**.
+- **650/650 routines exist. 648/650 source definitions match the captured production version; TWO sandbox-specific functions deliberately differ**: `cb_generated_player_name(text,integer)` adds deterministic compound-name fallback for future newgens; `rollover_season_daily_v22(integer)` includes 1 Jan day preservation and junior ranking refresh. Do not auto-overwrite these from the earlier production catalog or declare exact routine parity.
+- Staging keeps **89 additional RLS-enabled tables** relative to the captured production catalog, so its access policies are intentionally stricter. No game Edge Function is deployed in stage. Structural object presence is NOT complete API/runtime parity.
+- The original **85 fixture tables and 21,651 checkpointed rows** remain verified by `verify_original_fixture_rows_v3()`. The only approved original-row differences are tournament flags 132 and 133, intentionally inactive to remove duplicated events. The checkpoint remains **inside the same database** and is NOT an independently recoverable backup.
+- The 2025 world guard is **GREEN**, with **27,325 active adult players**, 8,845 staff profiles and zero active near-duplicate tournament groups. The isolated ATP opening carryover has 2,021 explicitly estimated aggregate ranking ledger rows, not fabricated tournament results.
+- 5,000 older player-attribute records were completed only in the three attributes added after the original checkpoint: `first_serve_quality`, `net_positioning` and `doubles_communication`. The original-column digest still passes.
 
-A genuine call to `public.world_integrity_guard_v18('2025-12-01')` returned **ok=false**: 2,890 active adults versus a required 24,000, 8,845 active staff, 3,725 junior-pipeline profiles and two near-calendar duplicate groups. A real 2050 daily replay is correctly blocked, not certified. Do not bypass this gate by inventing a successful result.
+### Actual production-engine SQL tests against isolated data (rolled back after each)
 
-The read-only SQL checker `qa/world-2050/stage-parity-gate.sql` and dated `reconstruction-status-2026-10-10.json` capture the actual incomplete state; the JSON is a snapshot, not a live source of truth. Restore missing objects with reviewed staging-only migrations, seed a complete authorized/synthetic world, validate source and derived rankings, provision an authenticated isolated Edge Function, then run a complete real-engine career replay with save/load and rollback probes. No new paid project was created.
+| Test | Result |
+| --- | --- |
+| `advance_career_day_v26`, 1→10 December 2025 | **PASS**: 9 sequential days, 1 Sunday checkpoint, 9 unique commits and idempotent replay of an earlier day |
+| Real 7 December world recovery/rankings | **PASS**: 1,800 recovered players; Carlos Alcaraz preserved as ATP #1 |
+| Daily-mode 2025→2026 rollover | **PASS**: 202 retirements, 1,999 additions during trial, 2,000-profile junior singles and doubles pools; Jan 1 consumed exactly once |
+| Adelaide + Auckland ATP250 completed draws | **PASS**: 62 match results, 64 entrants |
+| Nouméa Challenger 75 qualifying + main draw | **PASS**: 18 qualifying matches and 31 main-draw matches; all transaction effects rolled back |
+| Combined 15-event week, January 2026 | **BLOCKED** by SQL statement timeout in per-player AI entry planning; no world result was committed |
+| Standalone M25 ITF attempt | **NOT EXECUTED**: tool safety controls blocked the call |
+
+The 15-event timeout is not solved by having 301 indexes installed: `player_season_plans` already has a unique `(player_id, season)` index, while tournament candidate selection invokes AI eligibility/planning functions per candidate. Further profiling and a **restartable, time-bounded tournament batch mechanism** are required before a full-year trial.
+
+**Next hard gates:** real multi-event progressive tournament batching with no duplicate matches, independent encrypted and verified staging backup, user Match Center/save/reload/rollback integration, complete calendar/world renewal across 2025–2050, real mobile/API tests. The 9,161-day adapter-only test is not E2E certification. Detailed verified dated values are in `reconstruction-status-2026-10-10.json`.
+
 
 ---
 
-# Court Boss 2025–2050: reproducible world baseline gate
+# Court Boss 2025–2050: original reconstruction baseline (historical)
 
-Status on **10 October 2026: BLOCKED. This is not an end-to-end 2050 pass.**
+Historical first-inspection status. The initial parity table below records the **pre-reconstruction** database, not the latest verified state. Full 2050 E2E remains blocked.
 
 ## Verified isolated checkpoint (10 October 2026)
 

@@ -34,6 +34,7 @@ function makeWorld(startDate='2025-12-01'){
    // Live certification must reconstruct these numbers from actual DB match rows.
    return {
     ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
+    scope:'full_unified_world',
     world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
     matches_due:0,matches_committed:0,managed_matches_pending:0,duplicate_match_effects:0
    };
@@ -93,7 +94,8 @@ test('repeated checkpoint is a hard error, not an endless loop',async()=>{
  const {world}=makeWorld('2025-12-28');
  world.runWeeklyCheckpoint=async({checkpointDate})=>({
   ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-uncommitted-'+checkpointDate,
-  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  scope:'full_unified_world',
+    world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
   matches_due:0,matches_committed:0,managed_matches_pending:0,duplicate_match_effects:0
  });
  // This intentionally does NOT mark checkpointed in the mock world; the
@@ -194,7 +196,8 @@ test('weekly world results must reconcile every due AI and managed match',async(
  const {world}=makeWorld('2025-12-27');
  world.runWeeklyCheckpoint=async({checkpointDate})=>({
   ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
-  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  scope:'full_unified_world',
+    world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
   matches_due:9,matches_committed:5,managed_matches_pending:1,duplicate_match_effects:0
  });
  await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2025-12-29'}),
@@ -205,7 +208,8 @@ test('weekly checkpoint refuses duplicated match effects even when its own flag 
  const {world}=makeWorld('2025-12-27');
  world.runWeeklyCheckpoint=async({checkpointDate})=>({
   ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
-  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  scope:'full_unified_world',
+    world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
   matches_due:9,matches_committed:9,managed_matches_pending:0,duplicate_match_effects:1
  });
  await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2025-12-29'}),
@@ -285,4 +289,20 @@ test('offline multi-season replay requires a valid save/load receipt each quarte
  assert.equal(outcome.saveLoadProbes,stats().probes);
  assert.equal(outcome.lastCommittedDate,'2028-01-01');
  assert.notEqual(outcome.status,'REAL_GAME_2050_CERTIFIED');
+});
+
+test('persisted ATP singles week cannot falsely certify a full unified AI world',async()=>{
+ const {world}=makeWorld('2025-12-27');
+ const original=world.runWeeklyCheckpoint.bind(world);
+ world.runWeeklyCheckpoint=async(params)=>({
+  ...await original(params),
+  scope:'world_singles_only',
+  matches_due:461,matches_committed:461,
+  ranking_integrity_ok:true,
+  world_simulation_committed:true
+ });
+ await assert.rejects(
+  ()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2025-12-29'}),
+  /World week lacks verified simulation/
+ );
 });

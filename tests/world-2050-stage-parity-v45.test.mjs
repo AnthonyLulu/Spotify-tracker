@@ -15,11 +15,12 @@ test('reconstruction status never claims certification with missing core objects
  assert.equal(status.published_career_2050_certified,false);
 });
 
-test('a real world seed must clear official active-adult floor',()=>{
+test('isolated 2025 adult world clears guard but is not a 2050 replay certification',()=>{
  const w=status.fixture_world_guard;
- assert.ok(w.active_adults<w.required_active_adults);
- assert.equal(w.passed,false);
- assert.ok(w.near_calendar_duplicate_groups>0);
+ assert.ok(w.active_adults>=w.required_active_adults);
+ assert.equal(w.passed,true);
+ assert.equal(w.near_calendar_duplicate_groups,0);
+ assert.equal(status.published_career_2050_certified,false);
 });
 
 test('all original fixture tables have a confirmed independent row digest checkpoint',()=>{
@@ -55,4 +56,29 @@ test('only audited tournament 132/133 flags can differ from checkpoint',()=>{
  assert.match(preserved,/calendar_duplicate_adjustments/);
  assert.match(preserved,/j\.old_active IS TRUE AND j\.new_active IS FALSE/);
  assert.match(preserved,/REVOKE ALL ON FUNCTION/);
+});
+
+test('real SQL engine trials never imply a finished 2050 simulation',()=>{
+ const t=status.test_results;
+ assert.equal(t.real_daily_2025_12_01_to_2025_12_10.passed,true);
+ assert.equal(t.real_daily_2025_12_01_to_2025_12_10.old_day_retry_idempotent,true);
+ assert.equal(t.rollover_2025_to_2026.first_processed_day,'2026-01-01');
+ assert.equal(t.atp_250_draws_2026_01_17.matches,62);
+ assert.equal(t.challenger75_noumea_2026_01_11.main_matches,31);
+ assert.equal(t.fifteen_draws_january_2026.passed,false);
+ assert.equal(t.itf_m25_single_draw.passed,false);
+ for(const trial of Object.values(t))assert.equal(trial.rolled_back,true);
+ assert.equal(status.published_career_2050_certified,false);
+});
+test('SQL parity is complete but external snapshot and game Edge are not',()=>{
+ const s=status.stage_parity;
+ assert.equal(s.tables.missing,0);
+ assert.equal(s.columns.missing,0);
+ assert.equal(s.constraints.definition_drift,0);
+ assert.equal(s.functions.definition_identical,650);
+ assert.equal(s.indexes.missing,0);
+ assert.equal(s.triggers.missing,0);
+ assert.equal(s.views.missing,0);
+ assert.equal(s.edge_functions.deployed,0);
+ assert.equal(status.checkpoint.external_backup_verified,false);
 });

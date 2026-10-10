@@ -250,7 +250,10 @@ html.cb-match-layout-v2 .cb-layout-switch-v2{
   border-radius:8px;
   color:#bee6ff;
   background:#173751;
-  font:700 10px/1.25 inherit;
+  font-family:inherit;
+  font-weight:700;
+  font-size:10px;
+  line-height:1.25;
   cursor:pointer;
   white-space:nowrap;
 }

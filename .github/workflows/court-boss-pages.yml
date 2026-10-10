@@ -1,8 +1,8 @@
 name: Court Boss Smoke Test
 
+# Production API + Playwright checks consume real Supabase Disk IO.
+# Explicit manual trigger only while the production IO budget is constrained.
 on:
-  push:
-    branches: ["court-boss-live"]
   workflow_dispatch:
 
 permissions:

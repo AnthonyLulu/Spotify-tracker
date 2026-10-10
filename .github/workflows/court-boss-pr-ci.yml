@@ -1,7 +1,11 @@
 name: Court Boss P0 Pull Request Gates
 
+# Cheap offline syntax + regression suite on every push and pull request.
+# No live Supabase calls in this workflow.
 on:
   pull_request:
+    branches: [court-boss-live]
+  push:
     branches: [court-boss-live]
   workflow_dispatch:
 

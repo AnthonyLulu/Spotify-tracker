@@ -12,8 +12,11 @@ on:
       - "court-boss/match-center-arena-v4.js"
       - "court-boss/match-center-perspective-v5.js"
       - "court-boss/match-center-perspective-v5.css"
+      - "court-boss/match-center-experience-v6.js"
+      - "court-boss/match-center-experience-v6.css"
       - "tests/match-layout-browser.cjs"
       - "tests/tournament-skins-browser.cjs"
+      - "tests/match-experience-v6-browser.cjs"
       - ".github/workflows/court-boss-match-layout-smoke.yml"
   workflow_dispatch:
 
@@ -39,6 +42,8 @@ jobs:
           node --check court-boss/match-center-arena-v4.js
           node --check court-boss/match-center-perspective-v5.js
           node --check tests/tournament-skins-browser.cjs
+          node --check court-boss/match-center-experience-v6.js
+          node --check tests/match-experience-v6-browser.cjs
       - name: Install browser test runtime
         run: |
           npm install --no-save --no-package-lock playwright@1.55.0
@@ -47,6 +52,7 @@ jobs:
         run: |
           node tests/match-layout-browser.cjs
           node tests/tournament-skins-browser.cjs
+          node tests/match-experience-v6-browser.cjs
       - name: Save diagnostic screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,5 +63,6 @@ jobs:
             skin-*.png
             arena-*.png
             perspective-*.png
+            stadium-v6-*.png
           if-no-files-found: ignore
           retention-days: 3

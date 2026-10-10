@@ -1,0 +1,294 @@
+/* Court Boss Match Center V6 - premium venue / practical coaching.
+   CSS and visual DOM only. Original match mechanics and controls intact. */
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium]{
+  --cb-v6-crowd-glow:color-mix(in srgb,var(--cb-theme-accent,#78cfff) 24%,#102335);
+  background:
+    radial-gradient(ellipse at 50% 0%,rgba(151,202,236,.22),transparent 41%),
+    linear-gradient(180deg,#061421 0%,#132d42 21%,color-mix(in srgb,var(--cb-theme-board,#15364e) 50%,#0b253d) 46%,#0b2134 79%,#081421)!important;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-venue-graphics{
+  border-radius:inherit;
+}
+/* Procedural SVG crowd replaces the 4 basic seat strips, while retaining
+   the original event LED boards, umpire scene and official V14 identity. */
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-grandstand{display:none!important}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v6-stadium-svg{
+  position:absolute;inset:0;width:100%;height:100%;
+  z-index:1;pointer-events:none;overflow:hidden;
+  filter:drop-shadow(0 4px 9px rgba(1,9,19,.36));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v6-spectators{
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.25));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v6-bowls{
+  opacity:.94;filter:saturate(.89);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium][data-cb-venue-tier="challenger"] .cb-v6-bowls{opacity:.73}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium][data-cb-venue-tier="itf"] .cb-v6-bowls{opacity:.45}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-venue-graphics .cb-v4-led{
+  background:linear-gradient(180deg,#142b41 0%,#071423 100%);
+  border-color:color-mix(in srgb,var(--cb-theme-accent) 32%,#233e57);
+  box-shadow:0 0 0 2px rgba(1,12,22,.75),inset 0 1px rgba(255,255,255,.14),0 5px 15px rgba(0,0,0,.33);
+  text-shadow:0 2px 5px #000;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-led-north{
+  left:27%;right:27%;top:12.5%;height:4.5%;
+  border-radius:5px!important;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-led-south{
+  bottom:9.8%;left:34%;right:34%;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-led-west{left:11%}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-led-east{right:11%}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-venue-board-v14{
+  top:1px!important;
+  z-index:7!important;
+  min-width:23%;
+  border:1px solid rgba(196,220,235,.22);
+  background:linear-gradient(180deg,#092035,#071725)!important;
+  box-shadow:0 0 0 2px rgba(5,15,28,.65),0 6px 18px rgba(0,0,0,.3);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-arena-lights{
+  background:
+    radial-gradient(ellipse at 23% 8%,rgba(205,234,255,.19) 0%,transparent 25%),
+    radial-gradient(ellipse at 77% 8%,rgba(218,243,255,.17) 0%,transparent 25%),
+    linear-gradient(180deg,rgba(3,12,21,.07),transparent 65%,rgba(2,10,18,.12));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] > .cb-v5-playing-plane{
+  left:15%;right:15%;top:16%;bottom:11%;
+  transform:perspective(920px) rotateX(29deg) scale(1.01);
+  transform-origin:50% 54%;
+  filter:drop-shadow(0 15px 14px rgba(1,9,20,.48));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] > .cb-v5-playing-plane::before{
+  border:2px solid rgba(227,238,247,.38);
+  box-shadow:
+    inset 0 0 0 6px rgba(255,255,255,.018),
+    inset 0 8px 27px rgba(247,252,255,.08),
+    inset 0 -18px 43px rgba(4,17,30,.23),
+    0 9px 0 -5px rgba(9,22,37,.9),
+    0 23px 34px rgba(0,0,0,.32);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v5-playing-plane .fm-net{
+  background:
+    repeating-linear-gradient(90deg,rgba(241,250,255,.45) 0 1px,transparent 1px 5px),
+    repeating-linear-gradient(0deg,rgba(236,248,255,.38) 0 1px,transparent 1px 3px),
+    linear-gradient(180deg,#142f48,#061626);
+  border-top:3px solid rgba(252,255,255,.94)!important;
+  box-shadow:0 6px 11px rgba(0,0,0,.46);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v5-court-emblem{
+  opacity:.76;
+}
+/* Tactical direction: retain the real plan buttons, numerical sliders,
+   drop-down selects and their existing cbApplyMatchPlan/cbSetMatchTactic. */
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] > .cb-coach-panel{
+  border-radius:12px;
+  background:linear-gradient(155deg,#142941,#0a1829 62%,#0b1b30)!important;
+  box-shadow:inset 0 1px rgba(212,238,255,.035),0 7px 24px rgba(0,0,0,.15);
+  padding:12px!important;
+  color:#e7f2ff;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-panel > summary{
+  background:#0d2439;
+  border:1px solid rgba(157,195,227,.13);
+  margin:0 0 11px;
+  border-radius:8px;
+  padding:10px!important;
+  color:#d4eafe;
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  font-weight:900;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-panel > summary::before{color:var(--cb-theme-accent,#5cbdf9)}
+.cb-v6-coach-head{
+  display:flex;align-items:center;justify-content:space-between;gap:5px;
+  margin-bottom:9px;white-space:normal;
+}
+.cb-v6-coach-head strong{font-size:11px;font-weight:900;color:#ecf7ff}
+.cb-v6-coach-head span{
+  display:inline-block;
+  font-size:8px;line-height:1.3;color:#8aafc5;
+  text-align:right;max-width:111px;
+}
+html.cb-match-layout-v2 .cb-coach-panel .cb-plan-strip{
+  display:flex;flex-wrap:wrap;overflow:visible;
+  gap:5px;padding:0 0 12px;
+  border-bottom:1px solid rgba(146,193,227,.16);
+  margin:0 0 12px;
+}
+html.cb-match-layout-v2 .cb-coach-panel .cb-plan-btn{
+  padding:7px 10px;
+  flex:1 1 calc(50% - 5px);
+  min-width:88px;
+  white-space:normal;
+  border-radius:7px;
+  border:1px solid rgba(128,172,204,.19);
+  background:#182c43;
+  color:#c2d7e9;
+  font-size:10px;
+  line-height:1.2;
+  font-weight:800;
+  box-shadow:inset 0 1px rgba(255,255,255,.03);
+  transition:background .14s ease,transform .14s ease;
+}
+html.cb-match-layout-v2 .cb-coach-panel .cb-plan-btn.active{
+  background:linear-gradient(135deg,color-mix(in srgb,var(--cb-theme-accent,#65c7ff) 33%,#163453),#183552);
+  border-color:color-mix(in srgb,var(--cb-theme-accent,#65c7ff) 55%,#1c4257);
+  color:#fff;
+  box-shadow:inset 3px 0 var(--cb-theme-accent,#63c3fb),0 0 12px rgba(31,112,161,.12);
+}
+html.cb-match-layout-v2 .cb-coach-panel .cb-plan-btn:focus-visible,
+html.cb-match-layout-v2 .cb-v6-tactic-chip:focus-visible{
+  outline:2px solid #94ddff;outline-offset:2px;
+}
+.cb-v6-tactic-quick{
+  padding:0 0 12px;margin:0 0 10px;
+  border-bottom:1px solid rgba(146,193,227,.13);
+}
+.cb-v6-quick-label,.cb-v6-map-label{
+  font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:#8ebdd9;
+  font-weight:900;margin:0 0 8px;
+}
+.cb-v6-quick-actions{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:4px;
+}
+.cb-v6-tactic-chip{
+  border:1px solid rgba(141,188,221,.22);
+  padding:9px 5px;
+  border-radius:7px;
+  background:#142b43;
+  color:#d2e3f3;
+  font:750 9px/1.25 system-ui,sans-serif;
+  cursor:pointer;
+  min-width:0;
+}
+.cb-v6-tactic-chip.active{
+  border-color:color-mix(in srgb,var(--cb-theme-accent,#49b4ff) 64%,#b5dff7);
+  background:color-mix(in srgb,var(--cb-theme-accent,#49b4ff) 24%,#0b3456);
+  color:#f9fcff;
+  box-shadow:inset 0 -2px var(--cb-theme-accent,#49b4ff);
+}
+.cb-v6-coach-note{
+  margin:8px 0 0;color:#7898ad;
+  font-size:9px;line-height:1.4;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-panel .cb-coach-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+  margin:0;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-grid .cb-coach-slider{
+  grid-column:1/-1;
+  background:linear-gradient(180deg,#183149,#12283b);
+  border:1px solid rgba(134,176,201,.17);
+  border-radius:9px;
+  padding:9px 11px;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-slider>div{
+  font-size:11px;line-height:1.1;
+  color:#d6e6f3;font-weight:760;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-slider b{
+  color:var(--cb-theme-accent,#58c5ff);
+  font-size:11px;font-variant-numeric:tabular-nums;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-slider input{
+  width:100%;height:7px;margin-top:9px;
+  accent-color:var(--cb-theme-accent,#49bcfa);
+  cursor:pointer;
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-grid label{
+  display:flex;flex-direction:column;justify-content:space-between;
+  font-size:10px;line-height:1.3;gap:6px;
+  padding:8px;
+  color:#a7c8dc;
+  background:#142840;
+  border-radius:8px;
+  border:1px solid rgba(140,183,216,.15);
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-grid select{
+  width:100%;min-width:0;max-width:100%;
+  border-radius:6px;
+  padding:8px 5px;
+  background:#091929;
+  border:1px solid rgba(115,159,197,.33);
+  color:#f0f7ff;
+  font-size:10px;
+  cursor:pointer;
+}
+.cb-v6-court-map{
+  margin-top:11px;
+  padding:11px;
+  border:1px solid rgba(107,172,208,.18);
+  border-radius:10px;
+  background:linear-gradient(160deg,#0a2136,#112b43);
+}
+.cb-v6-mini-court{
+  position:relative;
+  width:min(100%,230px);
+  height:100px;margin:0 auto;
+  border:2px solid rgba(237,248,255,.8);
+  background:
+    linear-gradient(90deg,transparent calc(50% - 1px),rgba(247,252,255,.56) calc(50% - 1px),rgba(247,252,255,.56) calc(50% + 1px),transparent calc(50% + 1px)),
+    linear-gradient(0deg,transparent calc(50% - 1px),rgba(247,252,255,.8) calc(50% - 1px),rgba(247,252,255,.8) calc(50% + 1px),transparent calc(50% + 1px)),
+    linear-gradient(180deg,#245e8d,#153d68);
+  box-shadow:inset 0 0 0 9px rgba(21,54,82,.45);
+  border-radius:3px;overflow:hidden;
+}
+.cb-v6-mini-court .cb-v6-mini-target{
+  position:absolute;
+  width:23%;height:37%;
+  top:10%;
+  border-radius:50%;background:rgba(36,182,254,.23);
+  border:1px solid rgba(103,213,255,.7);
+  box-shadow:0 0 20px rgba(18,158,229,.25),inset 0 0 14px rgba(23,174,243,.2);
+  opacity:.24;transition:opacity .15s ease;
+}
+.cb-v6-mini-court .cb-v6-mini-target.left{left:17%}
+.cb-v6-mini-court .cb-v6-mini-target.right{right:17%}
+.cb-v6-court-map[data-target="backhand"] .cb-v6-mini-target.right{opacity:1}
+.cb-v6-court-map[data-target="forehand"] .cb-v6-mini-target.left{opacity:1}
+.cb-v6-court-map[data-target="mixed"] .cb-v6-mini-target{opacity:.92}
+.cb-v6-mini-net{
+  position:absolute;top:49%;left:0;right:0;height:3px;
+  background:#f0f8ff;box-shadow:0 1px 2px rgba(0,0,0,.4);
+}
+@media(min-width:1200px){
+  html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] > .cb-coach-panel{
+    max-height:620px;
+  }
+}
+@media(max-width:919px){
+  html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] > .cb-v5-playing-plane{
+    left:10%;right:10%;top:15%;bottom:12%;
+    transform:perspective(850px) rotateX(24deg) scale(1.01);
+  }
+  html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] .cb-coach-panel .cb-coach-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:550px){
+  html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] > .cb-v5-playing-plane{
+    left:8%;right:8%;top:17%;bottom:14%;
+    transform:perspective(800px) rotateX(19deg) scale(1.01);
+  }
+  html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v4-venue-graphics .cb-v4-led-north{
+    left:27%;right:27%;top:13%;font-size:6px!important;
+  }
+  html.cb-match-layout-v2 .cb-court[data-cb-v6-stadium] .cb-v6-stadium-svg{filter:none}
+  html.cb-match-layout-v2 .cb-live-card[data-cb-v6-live] > .cb-coach-panel{padding:9px!important}
+}
+/* No new display, layout or behaviour in classic view */
+html:not(.cb-match-layout-v2) .cb-v6-stadium-svg,
+html:not(.cb-match-layout-v2) .cb-v6-coach-head,
+html:not(.cb-match-layout-v2) .cb-v6-tactic-quick,
+html:not(.cb-match-layout-v2) .cb-v6-court-map{display:none!important}
+@media(prefers-reduced-motion:reduce){
+ html.cb-match-layout-v2 .cb-v6-tactic-chip,
+ html.cb-match-layout-v2 .cb-v6-mini-target{transition:none!important}
+}

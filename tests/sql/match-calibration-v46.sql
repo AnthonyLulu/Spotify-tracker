@@ -1,7 +1,8 @@
 -- Court Boss v46: read-only calibration of simulated singles and doubles.
 -- Run after actual matches have been played; never treats an empty database as a pass.
 -- The favorite's expected win probability is compared with observed outcomes.
--- A warning only activates above 200 samples in a given probability band.
+-- Each circuit independently needs 200+ outcomes. A probability-band warning
+-- only activates for 200+ matches in that band of that circuit.
 WITH completed AS (
  SELECT 'singles'::text AS circuit,
         m.player_a_win_probability::double precision AS p_a,
@@ -30,6 +31,14 @@ WITH completed AS (
         CASE WHEN p_a>=0.5 THEN a_won ELSE 1.0-a_won END AS favorite_won,
         POWER(a_won-p_a,2.0) AS squared_error
  FROM completed
+), circuit_counts AS (
+ SELECT circuit,COUNT(*)::integer AS matches
+ FROM measured GROUP BY circuit
+), readiness AS (
+ SELECT circuits.circuit,COALESCE(circuit_counts.matches,0) AS matches,
+        COALESCE(circuit_counts.matches,0)>=200 AS ready
+ FROM (VALUES ('singles'::text),('doubles'::text)) circuits(circuit)
+ LEFT JOIN circuit_counts ON circuit_counts.circuit=circuits.circuit
 ), grouped AS (
  SELECT circuit,favorite_band,COUNT(*)::integer AS samples,
         ROUND(AVG(expected_favorite)::numeric,4) AS expected_win_rate,
@@ -40,9 +49,15 @@ WITH completed AS (
 )
 SELECT jsonb_build_object(
  'model','CB-MATCH-CALIBRATION-v46',
- 'status',CASE WHEN (SELECT COUNT(*) FROM measured)>=200 THEN 'sampled' ELSE 'insufficient_data' END,
- 'matches', (SELECT COUNT(*) FROM measured),
- 'requires',200,
+ 'status',CASE WHEN (SELECT COUNT(*) FROM readiness WHERE ready)=2 THEN 'sampled'
+               WHEN (SELECT COUNT(*) FROM readiness WHERE ready)=1 THEN 'partial_sampled'
+               ELSE 'insufficient_data' END,
+ 'matches',(SELECT COUNT(*) FROM measured),
+ 'requires_per_circuit',200,
+ 'circuits',(SELECT jsonb_agg(jsonb_build_object(
+   'circuit',circuit,'matches',matches,'status',
+   CASE WHEN ready THEN 'sampled' ELSE 'insufficient_data' END
+ ) ORDER BY circuit) FROM readiness),
  'groups',COALESCE((
    SELECT jsonb_agg(jsonb_build_object(
      'circuit',circuit,'band',favorite_band,'samples',samples,

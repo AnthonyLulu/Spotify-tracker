@@ -15,7 +15,11 @@ test('calibration report is strictly read-only and covers both real match ledger
 });
 
 test('calibration detects an empty sample instead of declaring gameplay balanced',()=>{
-  assert.match(clean,/WHEN \(SELECT COUNT\(\*\) FROM measured\)>=200 THEN 'sampled' ELSE 'insufficient_data'/);
+  assert.ok(clean.includes("(SELECT COUNT(*) FROM readiness WHERE ready)=2 THEN 'sampled'"));
+  assert.ok(clean.includes("(SELECT COUNT(*) FROM readiness WHERE ready)=1 THEN 'partial_sampled'"));
+  assert.ok(clean.includes('LEFT JOIN circuit_counts ON circuit_counts.circuit=circuits.circuit'));
+  assert.ok(clean.includes("'requires_per_circuit',200"));
+  assert.ok(clean.includes("'circuits',(SELECT jsonb_agg"));
   assert.match(clean,/COALESCE\([\s\S]*'\[\]'::jsonb\)/);
   assert.match(clean,/samples>=200 AND calibration_error>0\.08/);
 });
@@ -34,4 +38,18 @@ test('toy model separates luck from meaningful calibration failures',()=>{
   assert.equal(make(50,.7,.5).flag,false);
   assert.equal(make(2000,.7,.7).flag,false);
   assert.equal(make(2000,.7,.5).flag,true);
+});
+
+test('readiness needs separate completed samples for singles and doubles',()=>{
+  const status=(singles,doubles)=>{
+    const sufficient=[singles,doubles].filter(n=>n>=200).length;
+    return sufficient===2?'sampled':sufficient===1?'partial_sampled':'insufficient_data';
+  };
+  assert.equal(status(0,0),'insufficient_data');
+  assert.equal(status(100,100),'insufficient_data','200 mixed matches must NOT count as calibrated');
+  assert.equal(status(250,0),'partial_sampled');
+  assert.equal(status(0,250),'partial_sampled');
+  assert.equal(status(200,200),'sampled');
+  assert.equal(status(400,200),'sampled');
+  assert.equal(status(0,1000),'partial_sampled');
 });

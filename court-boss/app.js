@@ -4239,7 +4239,12 @@ window.refreshCareerDiagnostics=async()=>{careerHub=null;await loadCareerHub(tru
 function render(){
  if(!boot)return;
  const views={home,rankings,calendar,competitions:competitionsPage,academy,more,players:playersPage,training,scouting,staff:staffPage,contracts:contractsPage,finance:financePage,medical:medicalPage,match:matchPage,tactics:tacticsPage,fantasy:fantasyPage,doubles:doublesPage,university:universityPage,davis:davisPage,board:boardPage,world:worldPage,history:historyPage,myplayer:myPlayerPage,fantasy:fantasyPage,inbox:inboxPage,saves:saveCenterPage,careerhub:careerHubPage,season:seasonPage,media:mediaPage,relationships:relationshipsPage,diagnostics:diagnosticsPage,launcher:launcherPage};
- shell((views[route]||more)());
+ const careerRoutes=['careerhub','season','media','relationships','diagnostics'];
+ const hubNotice=careerRoutes.includes(route)&&careerHub?.partial_data
+   ?'<div class="notice" role="status">Certaines données du bureau manager sont temporairement indisponibles ('+
+      (careerHub.unavailable_sections||[]).map(esc).join(', ')+'). Tu peux continuer ta carrière et réessayer plus tard.</div>'
+   :'';
+ shell(hubNotice+(views[route]||more)());
 }
 
 

@@ -770,7 +770,14 @@ window.nav=async r=>{
  route=r;
  window.scrollTo({top:0,behavior:'smooth'});
  try{
-  if(['academy','scouting','staff','finance','medical','davis','match','contracts'].includes(r)){
+  if(r==='staff'){
+   // Render owned staff immediately; secondary data can hydrate the view later.
+   if(boot?.secondary_loaded!==true){
+    void loadBootstrapSecondary()
+     .then(()=>{if(route==='staff')render()})
+     .catch(e=>console.warn('Staff details temporarily unavailable',e));
+   }
+  }else if(['academy','scouting','finance','medical','davis','match','contracts'].includes(r)){
    await loadBootstrapSecondary();
   }
   if(r==='rankings'&&(!rankRows.length||rankKind==='ncaa')){
@@ -797,9 +804,11 @@ window.nav=async r=>{
    loading('Chargement des compétitions…');
    await loadCompetitions();
   }
-  if(r==='staff'&&!staffWorldData){
-   loading('Chargement de la base mondiale du staff…');
-   await loadStaffWorld();
+  if(r==='staff'&&!staffWorldData&&!staffWorldLoading){
+   // Global staff search is not a prerequisite for viewing the managed team.
+   void loadStaffWorld()
+    .then(()=>{if(route==='staff')render()})
+    .catch(e=>console.warn('Staff catalog temporarily unavailable',e));
   }
   if(r==='training'&&!trainingPreview){
    // Show the local weekly plan immediately. Staff preview is an enhancement,
@@ -2835,6 +2844,7 @@ function staffPage(){
  const avgAffinity=rels.length?Math.round(rels.reduce((s,x)=>s+Number(x.affinity||0),0)/rels.length):75;
  const highConflicts=rels.filter(x=>Number(x.conflict_score||0)>=60);
  return `<div class="section-head"><div><div class="eyebrow">Équipe</div><h1>Staff</h1><div class="muted">Coachs, préparateurs, kinés, analystes et recruteurs avec attributs 1–20 façon FM.</div></div></div>
+ ${boot?.secondary_loaded===true?'':'<div class="card" role="status" style="margin-bottom:12px">Chargement des informations complémentaires de l’équipe…</div>'}
  <div class="grid g2" style="margin-bottom:12px">
   <div class="card"><div class="row between"><div><div class="eyebrow">Cohésion staff</div><h2>Vestiaire technique</h2></div><span class="badge ${avgConflict>=60?'bad':avgConflict>=35?'warn':'good'}">${100-avgConflict}/100</span></div><div class="kpi-strip" style="margin-top:8px"><div class="kpi"><span class="muted micro">Affinité moyenne</span><b>${avgAffinity}</b></div><div class="kpi"><span class="muted micro">Conflit moyen</span><b>${avgConflict}</b></div><div class="kpi"><span class="muted micro">Tensions fortes</span><b>${highConflicts.length}</b></div></div>${highConflicts.slice(0,4).map(x=>`<div class="list-item"><div class="row between"><span>${esc(x.staff_a?.name||'Staff')} ↔ ${esc(x.staff_b?.name||'Staff')}</span><span class="badge bad">${x.conflict_score}/100</span></div><div class="row between" style="margin-top:5px"><div class="muted micro">${esc(x.relation_type||'Tension')} · rivalité ${x.rivalry||0}</div><button class="soft-btn" onclick="mediateStaffConflict(${x.staff_a_id},${x.staff_b_id})">Médiation</button></div></div>`).join('')||'<div class="muted mini" style="margin-top:8px">Aucune tension majeure dans ton équipe.</div>'}</div>
   <div class="card"><div class="row between"><div><div class="eyebrow">Agent & réseau</div><h2>${esc(agent?.agent?.name||'Aucun agent actif')}</h2></div><span class="badge">${agent?'Confiance '+(agent.trust??'—')+'/100':'À recruter'}</span></div>${agent?`<div class="list-item row between"><span>Agence</span><b>${esc(agent.agency?.name||'—')}</b></div><div class="list-item row between"><span>Commission</span><b>${agent.commission_pct??'—'}%</b></div><div class="list-item row between"><span>Négociation</span><b>${agent.agent?.negotiation_rating??'—'}/20</b></div><button class="ghost" onclick="openStaffProfile(${agent.agent?.id})">Voir le dossier agent</button>`:'<div class="empty">Recrute un agent dans le marché du staff pour débloquer un vrai réseau de représentation.</div>'}</div>

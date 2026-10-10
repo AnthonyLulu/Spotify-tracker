@@ -797,9 +797,9 @@ window.nav=async r=>{
    loading('Chargement des compétitions…');
    await loadCompetitions();
   }
-  if(r==='staff'&&!staffWorldData){
-   loading('Chargement de la base mondiale du staff…');
-   await loadStaffWorld();
+  if(r==='staff'&&!staffWorldData&&!staffWorldLoading){
+   // The global catalog is optional: never block the managed team, contracts or navigation.
+   void loadStaffWorld().then(()=>{if(route==='staff')render()});
   }
   if(r==='training'&&!trainingPreview){
    // Show the local weekly plan immediately. Staff preview is an enhancement,

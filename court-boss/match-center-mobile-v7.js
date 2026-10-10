@@ -57,7 +57,8 @@
    panel.dataset.cbV7Expanded=expanded?'true':'false';
    const expand=shell.querySelector('.cb-v7-expand');
    if(expand){
-     expand.textContent=expanded?'Masquer les réglages avancés':'Réglages avancés';
+     const nextLabel=expanded?'Masquer les réglages avancés':'Réglages avancés';
+     if(expand.textContent!==nextLabel)expand.textContent=nextLabel;
      expand.setAttribute('aria-expanded',String(expanded));
    }
    const grid=panel.querySelector('.cb-coach-grid');

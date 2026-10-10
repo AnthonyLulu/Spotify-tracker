@@ -12,6 +12,7 @@ DECLARE
   original int;
   after_count int;
   won int;
+  scored int;
   unplayed int;
   invalid int;
   effects jsonb:='{}'::jsonb;
@@ -32,6 +33,9 @@ BEGIN
    SELECT count(*) INTO after_count FROM public.world_tournament_matches;
    SELECT count(*) INTO won FROM public.world_tournament_matches
      WHERE winner_id IS NOT NULL AND simulated_on BETWEEN p_from AND p_to;
+   SELECT count(*) INTO scored FROM public.world_tournament_matches
+     WHERE winner_id IS NOT NULL AND coalesce(length(trim(score)),0)>0
+       AND simulated_on BETWEEN p_from AND p_to;
    SELECT count(*) INTO unplayed FROM public.world_tournament_matches
      WHERE winner_id IS NULL AND simulated_on BETWEEN p_from AND p_to;
    SELECT count(*) INTO invalid FROM public.world_tournament_matches
@@ -42,9 +46,10 @@ BEGIN
          loser_id NOT IN (player_a_id,player_b_id));
    effects:=pg_catalog.jsonb_build_object(
      'inserted_matches',after_count-original,
-     'played_matches',won,'unplayed_matches',unplayed,'invalid_results',invalid);
+     'played_matches',won,'scored_matches',scored,'unplayed_matches',unplayed,'invalid_results',invalid);
    outcome:=pg_catalog.jsonb_build_object(
-     'ok',coalesce((circuit->>'ok')::boolean,false) AND invalid=0,
+     'ok',coalesce((circuit->>'ok')::boolean,false) AND invalid=0 AND won>0 AND scored=won,
+     'world_matches_evidence_ready',won>0 AND scored=won AND invalid=0,
      'rolled_back',true,
      'from',p_from,'to',p_to,'engine','run_unified_circuit_window',
      'world_matches',effects,

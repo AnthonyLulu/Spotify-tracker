@@ -1,0 +1,42 @@
+/* Wimbledon identity repair.
+   Local asset avoids proxy/hotlink failures; SVG scales cleanly on iPhone. */
+.cb-broadcast-brand .cb-broadcast-logo.logo-wim,
+.cb-broadcast-brand .tm-tour-logo-fallback.cb-broadcast-logo.logo-wim{
+  width:68px!important;height:68px!important;min-width:68px!important;
+  padding:4px!important;
+  border:2px solid rgba(225,218,241,.65)!important;
+  border-radius:50%!important;
+  background:#341c63!important;
+  box-shadow:0 5px 18px rgba(12,6,30,.32),0 0 0 3px rgba(255,255,255,.05);
+  overflow:hidden;
+}
+.cb-broadcast-brand .cb-broadcast-logo.logo-wim .tm-tour-logo{
+  width:100%;height:100%;max-width:100%;max-height:100%;
+  object-fit:contain;display:block;
+}
+.cb-broadcast-brand .tm-tour-logo-fallback.cb-broadcast-logo.logo-wim{
+  color:#fff;
+  font-weight:950;
+  font-size:12px;
+}
+.cb-v4-led-north .cb-wimbledon-court-logo{
+  flex:0 0 21px;
+  width:21px;height:21px;
+  border-radius:50%;
+  object-fit:contain;
+  background:#3d216c;
+  box-shadow:0 0 0 1px rgba(255,255,255,.22);
+}
+html.cb-match-layout-v2 .cb-live-card[data-cb-v3-theme="wimbledon"]>.cb-broadcast-head{
+  box-shadow:inset 4px 0 #623c9a,0 8px 26px rgba(0,0,0,.13)!important;
+}
+@media(max-width:700px){
+  .cb-broadcast-brand .cb-broadcast-logo.logo-wim,
+  .cb-broadcast-brand .tm-tour-logo-fallback.cb-broadcast-logo.logo-wim{
+    width:56px!important;height:56px!important;min-width:56px!important;
+    padding:3px!important;
+  }
+  .cb-v4-led-north .cb-wimbledon-court-logo{
+    flex-basis:15px;width:15px;height:15px;
+  }
+}

@@ -54,6 +54,13 @@
       for(let i=0;i<4;i++)grand.appendChild(make('i','cb-v4-seat-row'));
     }
     const boardN=newPiece(root,'led cb-v4-led-north');
+    if(theme==='wimbledon'||/wimbledon/i.test(name)){
+      const crest=make('img','cb-wimbledon-court-logo');
+      crest.src='wimbledon-crest.svg';
+      crest.alt='';
+      crest.setAttribute('aria-hidden','true');
+      boardN.append(crest);
+    }
     boardN.append(make('strong','',label),make('span','',name.toUpperCase()));
     newPiece(root,'led cb-v4-led-south',(city||location).toUpperCase());
     newPiece(root,'led cb-v4-led-west','COURT BOSS');

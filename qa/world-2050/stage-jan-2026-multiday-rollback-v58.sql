@@ -43,9 +43,11 @@ BEGIN
      25000,2025,p.id,p.career_focus
    FROM public.players p WHERE p.id=1000001;
    r:=public.rollover_season_daily_v22(2026);
-   IF coalesce((r->>'ok')::boolean,false) IS DISTINCT FROM true THEN
-     RAISE EXCEPTION 'Actual yearly rollover failed: %',left(r::text,500);
-   END IF;
+   -- The actual rollover returns new_year/newgens, not an 'ok' field.
+   IF (r->>'new_year')::integer<>2026
+       OR coalesce((r->'newgens'->'junior_display_pool'->>'final_count')::integer,0)<1000
+       OR coalesce((r->'newgens'->'junior_doubles_pool'->>'count')::integer,0)<1000
+   THEN RAISE EXCEPTION 'Actual yearly rollover incomplete: %',left(r::text,650); END IF;
    -- EXACT real daily API RPC, not a test stub. Last tick Jan 4, the
    -- first Sunday; the following Jan 4->5 attempt must stop for weekly.
    FOR d IN SELECT pg_catalog.generate_series(date '2025-12-31',date '2026-01-03','1 day'::interval)::date LOOP

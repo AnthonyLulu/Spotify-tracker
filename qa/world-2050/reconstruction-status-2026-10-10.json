@@ -33,9 +33,19 @@
     },
     "functions": {
       "expected": 650,
-      "definition_identical": 650,
+      "definition_identical": 648,
       "missing": 0,
-      "definition_drift": 0
+      "definition_drift": 2,
+      "reviewed_stage_only_overrides": [
+        {
+          "signature": "cb_generated_player_name(p_country text, p_seed integer)",
+          "reason": "sandbox-only deterministic compound-name fallbacks for exhausted country pools; not in captured production routine"
+        },
+        {
+          "signature": "rollover_season_daily_v22(p_new_year integer)",
+          "reason": "sandbox-specific junior refresh, 1 January preservation and ranking test handling; differs from captured production SQL"
+        }
+      ]
     },
     "indexes": {
       "expected": 722,
@@ -129,6 +139,6 @@
     "synthetic_adult_2025": 24435,
     "corrected_legacy_attribute_rows": 5000
   },
-  "next_gate": "Run multi-event world simulation in verified restartable small batches in a fully isolated authorized environment; test match-center save/load, weekly tick/rollover across many seasons; maintain a physically independent verified backup, deploy isolated Edge Function; do not claim E2E 2050 completion.",
+  "next_gate": "Two deliberate staging-only routine deviations must be reviewed against production before certification. Multi-event January 2026 simulation exceeds SQL statement timeout; single Challenger and two ATP250 draws validated. Need restartable event batching and independent stage backup, real save/load/Match Center test and full 9,161-day replay.",
   "note": "This dated snapshot documents verified isolated SQL runtime only, not production game deployment or full 2025-2050 replay. Original records preserved except explicitly audited duplicate tournament deactivations; production private saves untouched."
 }

@@ -203,11 +203,13 @@ test('weekly checkpoint refuses duplicated match effects even when its own flag 
 
 test('verified weekly receipts accumulate genuine world match counts without leap in dates',async()=>{
  const {world}=makeWorld('2025-12-27');
- world.runWeeklyCheckpoint=async({checkpointDate})=>({
-  ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-world-'+checkpointDate,
-  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
-  matches_due:12,matches_committed:12,managed_matches_pending:0,duplicate_match_effects:0
- });
+ const commitCheckpoint=world.runWeeklyCheckpoint.bind(world);
+ world.runWeeklyCheckpoint=async({checkpointDate,...args})=>{
+  // Preserve the mock's actual weekly state transition before adding a
+  // positive receipt: otherwise the next day legitimately detects a loop.
+  const committed=await commitCheckpoint({checkpointDate,...args});
+  return {...committed,matches_due:12,matches_committed:12};
+ };
  const result=await replayIsolatedWorld({adapter:world,startDate:'2025-12-27',endDate:'2026-01-03'});
  assert.equal(result.checkpoints,1);
  assert.equal(result.worldWeeksVerified,1);

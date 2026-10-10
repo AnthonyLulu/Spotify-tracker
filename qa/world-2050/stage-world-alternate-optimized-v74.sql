@@ -62,12 +62,11 @@ begin
     -- The managed entry is already explicitly committed; all other player
     -- decisions and direct calendar conflict rules stay byte-for-byte alike.
     if rec.player_id is distinct from v_managed then
-      if not public.ai_player_commits_to_tournament(rec.player_id,t.id) then
+      if public.ai_player_commits_to_tournament(rec.player_id,t.id) is distinct from true then
         continue;
       end if;
-      if coalesce((
-          public.player_tournament_calendar_conflict(rec.player_id,t.id,'direct')
-          ->>'conflict')::boolean,false) then
+      if (public.player_tournament_calendar_conflict(rec.player_id,t.id,'direct')
+          ->>'conflict')::boolean is distinct from false then
         continue;
       end if;
     end if;

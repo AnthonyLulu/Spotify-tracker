@@ -11,3 +11,6 @@ Thumbs.db
 apps/app_old/
 apps/app/.vscode/
 
+
+# Local-only database structure exports may contain privileged SQL function bodies.
+.private-artifacts/

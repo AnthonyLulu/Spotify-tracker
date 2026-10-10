@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-10",
+  "scope": [
+    "public",
+    "court_boss_private"
+  ],
+  "kind": "schema-object-inventory-only",
+  "dataExported": false,
+  "savesExported": false,
+  "production": {
+    "tables": 296,
+    "views": 10,
+    "functions": 650,
+    "indexes": 722,
+    "triggers": 40
+  },
+  "isolated": {
+    "tables": 85,
+    "views": 3,
+    "functions": 52,
+    "indexes": 145,
+    "triggers": 0
+  },
+  "missingFromIsolated": {
+    "tables": 211,
+    "views": 7,
+    "functions": 599,
+    "indexes": 585,
+    "triggers": 40
+  },
+  "isolatedOnly": {
+    "tables": 0,
+    "views": 0,
+    "functions": 1,
+    "indexes": 8,
+    "triggers": 0
+  },
+  "blockingExamples": [
+    "court_boss_private.load_recovery_v33",
+    "public.junior_display_pool_view",
+    "public.doubles_race_view",
+    "public.advance_career_day_v25(p_today_plan jsonb, p_difficulty text, p_expected_from_date date)"
+  ],
+  "note": "Only 33 of 51 shared function definitions have matching md5; simplified staging runtime cannot certify the production world. Schema names/hashes only, no source definitions, saves or secrets exported.",
+  "sharedFunctionSignatures": 51,
+  "identicalFunctionDefinitions": 33,
+  "differentFunctionDefinitions": 18
+}

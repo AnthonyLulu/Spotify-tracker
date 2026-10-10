@@ -8,10 +8,12 @@ const css=[
   "court-boss/app.css","court-boss/match-center-v1.css",
   "court-boss/match-center-v14.css","court-boss/match-center-layout-v2.css",
   "court-boss/match-center-tournament-v3.css",
-  "court-boss/match-center-arena-v4.css"
+  "court-boss/match-center-arena-v4.css",
+  "court-boss/match-center-perspective-v5.css"
 ].map(get).join("\n");
 const v3=get("court-boss/match-center-tournament-v3.js");
 const v4=get("court-boss/match-center-arena-v4.js");
+const v5=get("court-boss/match-center-perspective-v5.js");
 const fixtures=[
  {name:"Australian Open",category:"Grand Chelem",city:"Melbourne",surface:"Dur",id:"ao",a:"#2f86c9",b:"#1f5d95"},
  {name:"Roland-Garros",category:"Grand Chelem",city:"Paris",surface:"Terre battue",id:"rg",a:"#cf7948",b:"#a64f2f"},
@@ -52,12 +54,14 @@ const fixture=f=>{
     if(!seen.has("loaded")){
       await page.addScriptTag({content:v3});
       await page.addScriptTag({content:v4});
+      await page.addScriptTag({content:v5});
       seen.set("loaded",true);
     }else{
-      await page.evaluate(()=>{window.cbTournamentPresentationV3.enhance();window.cbMatchArenaV4.enhance();});
+      await page.evaluate(()=>{window.cbTournamentPresentationV3.enhance();window.cbMatchArenaV4.enhance();window.cbCourtPerspectiveV5.enhance();});
     }
     await page.locator(".cb-v3-court-brand").waitFor({state:"attached",timeout:6000});
     await page.locator(".cb-v4-venue-graphics").waitFor({timeout:6000});
+    await page.locator(".cb-v5-playing-plane").waitFor({state:"attached",timeout:6000});
     const result=await page.evaluate(()=>{
       const court=document.querySelector(".cb-court"),card=document.querySelector(".cb-live-card");
       return {name:card.querySelector(".cb-v3-court-brand b").textContent,
@@ -74,6 +78,14 @@ const fixture=f=>{
         preservedLines:court.querySelectorAll(".fm-court-line").length,
         netMesh:getComputedStyle(court.querySelector(".fm-net")).backgroundImage,
         markerPositions:[...court.querySelectorAll(".fm-player-dot")].map(x=>[x.style.left,x.style.top]),
+        planeCount:court.querySelectorAll(".cb-v5-playing-plane").length,
+        planeTransform:getComputedStyle(court.querySelector(".cb-v5-playing-plane")).transform,
+        projectedMarkers:[...court.querySelectorAll(".fm-player-dot")].every(el=>el.closest(".cb-v5-playing-plane")),
+        projectedBall:!!court.querySelector(".cb-v5-playing-plane .fm-ball"),
+        projectedNet:!!court.querySelector(".cb-v5-playing-plane .fm-net"),
+        projectedLines:court.querySelectorAll(".cb-v5-playing-plane .fm-court-line").length,
+        tramlines:court.querySelectorAll(".cb-v5-singles-sideline").length,
+        outlineHidden:getComputedStyle(court,"::before").display==="none",
         sw:document.documentElement.scrollWidth,iw:window.innerWidth};
     });
     assert.equal(result.name,f.name);
@@ -83,7 +95,14 @@ const fixture=f=>{
     assert.equal(result.markerCount,2);assert.equal(result.ballCount,1);
     assert.equal(result.watermark,1);
     assert.equal(result.arenaCount,1,"stadium missing/duplicated");
-    await page.evaluate(()=>window.cbMatchArenaV4.enhance());
+    assert.equal(result.planeCount,1,"perspective plane missing or duplicated");
+    assert.notEqual(result.planeTransform,"none","court is still flat: "+f.name);
+    assert.ok(result.projectedMarkers&&result.projectedBall&&result.projectedNet,"animated geometry not in projection: "+f.name);
+    assert.equal(result.projectedLines,6,"court markings not projected");
+    assert.equal(result.tramlines,2,"singles sidelines missing");
+    assert.ok(result.outlineHidden,"old flat court outline still visible");
+    await page.evaluate(()=>{window.cbMatchArenaV4.enhance();window.cbCourtPerspectiveV5.enhance();});
+    assert.equal(await page.locator(".cb-v5-playing-plane").count(),1,"perspective plane duplicated after refresh");
     assert.equal(await page.locator(".cb-v4-venue-graphics").count(),1,"stadium duplicated after refresh");
     assert.equal(result.standCount,4,"stadium stands missing");
     assert.ok(result.ledLabels.some(x=>x.includes(f.name.toUpperCase())),"event LED board missing "+f.name);
@@ -96,13 +115,13 @@ const fixture=f=>{
       assert.ok(result.bg.includes("gradient"),"court skin missing "+f.name);
     }
     if(["Australian Open","Roland-Garros","Wimbledon","US Open","Monte-Carlo Masters"].includes(f.name)){
-      await page.screenshot({path:"arena-"+size.label+"-"+f.id+".png",fullPage:false});
+      await page.screenshot({path:"perspective-"+size.label+"-"+f.id+".png",fullPage:false});
     }
     console.log("PASS",size.label,f.name,result.surf,result.theme);
    }
    assert.deepEqual(errors,[],"browser errors");
    await page.close();
   }
-  console.log("TOURNAMENT V4 ARENA AND V3 SKINS SMOKE PASS");
+  console.log("TOURNAMENT V5 PERSPECTIVE AND V4 STADIUM SMOKE PASS");
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

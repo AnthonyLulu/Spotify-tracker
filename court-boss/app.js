@@ -750,7 +750,13 @@ window.nav=async r=>{
    loading('Chargement de la base mondiale du staff…');
    await loadStaffWorld();
   }
-  if(r==='training'&&!trainingPreview)await loadTrainingPreview();
+  if(r==='training'&&!trainingPreview){
+   // Show the local weekly plan immediately. Staff preview is an enhancement,
+   // not a blocking authentication/network requirement for opening Training.
+   void loadTrainingPreview()
+    .then(()=>{if(route==='training')render()})
+    .catch(e=>console.warn('Training preview deferred render',e));
+  }
   if(r==='saves'||r==='launcher')await loadSaveSlots();
   if(['careerhub','season','media','relationships','diagnostics'].includes(r))await loadCareerHub();
   if(r==='medical')await loadActiveManagedContext(true,activeManagedId()||primaryManagedPlayerId()||0);
@@ -2320,6 +2326,7 @@ async function loadTrainingPreview(force=false){
  trainingPreviewLoading=true;
  try{
   trainingPreview=await get('/api/training-preview',{
+   authPrompt:false,
    method:'POST',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({training:local.training})

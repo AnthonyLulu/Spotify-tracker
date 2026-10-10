@@ -74,17 +74,16 @@ html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-cou
 html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.service.vertical{
   width:2px;height:auto;
 }
-/* The legacy line renderer has doubles' sidelines at x=10/90 and the
-   vertical service divider at center. Add inner singles tramlines via
-   pseudo elements on the two existing sidelines, without new position data. */
-html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.left::after,
-html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.right::after{
-  content:"";position:absolute;top:0;height:100%;width:2px;
-  background:rgba(246,250,255,.86);
-  box-shadow:0 1px 2px rgba(0,0,0,.2);
+/* Singles sidelines live on the exact same perspective plane and run
+   parallel to the doubles lines; no gameplay coordinate is changed. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-singles-sideline{
+  position:absolute;top:5%;bottom:5%;width:2px;
+  background:rgba(248,252,255,.88);
+  box-shadow:0 1px 2px rgba(0,0,0,.28);
+  z-index:3;pointer-events:none;
 }
-html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.left::after{left:calc(9vw / 2)}
-html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.right::after{right:calc(9vw / 2)}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-singles-sideline.left{left:17%}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-singles-sideline.right{right:17%}
 /* Thinner white capping band and mesh for the 2.5D net. */
 html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-net{
   height:11px;top:calc(50% - 5px);left:8%;right:8%;
@@ -183,6 +182,7 @@ html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-venue-graphics .cb-v4
 /* No layout or visual change in Vue classique. */
 html:not(.cb-match-layout-v2) .cb-v5-playing-plane{display:contents!important}
 html:not(.cb-match-layout-v2) .cb-v5-court-emblem{display:none!important}
+html:not(.cb-match-layout-v2) .cb-v5-singles-sideline{display:none!important}
 @media(prefers-reduced-motion:reduce){
  html.cb-match-layout-v2 .cb-v5-playing-plane{transition:none!important}
 }

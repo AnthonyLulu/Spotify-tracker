@@ -15,6 +15,7 @@ concurrency:
 jobs:
   mobile-ux:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,7 +91,12 @@ jobs:
                   try{if(g.open)g.close()}catch{}
                   g.remove();
                 });
-                await window.nav(r);
+                await Promise.race([
+                  Promise.resolve(window.nav(r)),
+                  new Promise((_,reject)=>setTimeout(
+                    ()=>reject(new Error('Mobile route navigation timed out: '+r)),25000
+                  ))
+                ]);
               },route);
 
               await page.locator('main.page').waitFor({state:'visible',timeout:25000});

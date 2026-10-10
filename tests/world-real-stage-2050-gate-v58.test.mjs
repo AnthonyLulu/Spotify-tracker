@@ -21,7 +21,7 @@ test('newgen pool arrays are cached per transaction, with legacy fallback and 20
  assert.match(cache,/cb_prime_newgen_name_pools_v1/);
  assert.match(cache,/pg_temp\.cb_name_pool_cache_v1/);
  assert.match(cache,/Backwards-compatible on cache miss/);
- assert.match(cache,/IF firsts is null or lasts is null/);
+ assert.match(cache,/if firsts is null or lasts is null/i);
  assert.match(cache,/public\.generate_newgens/);
  assert.match(original,/public\.cb_generated_player_name/);
  assert.match(original,/public\.generate_newgens/);

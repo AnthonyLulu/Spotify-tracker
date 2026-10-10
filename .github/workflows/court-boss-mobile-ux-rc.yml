@@ -89,19 +89,52 @@ jobs:
             await page.getByRole('heading',{name:'Centre de management'}).waitFor({timeout:25000});
 
             const report=[];
+            const pendingApi=new Map();
+            page.on('request',request=>{
+              if(request.url().includes('/api/'))pendingApi.set(request,request.url());
+            });
+            page.on('requestfinished',request=>pendingApi.delete(request));
+            page.on('requestfailed',request=>pendingApi.delete(request));
             for(const route of routes){
+              const routeStart=Date.now();
+              console.log('MOBILE_ROUTE_START '+route);
+              try{
               await page.evaluate(async r=>{
+                const probe=window.__cbMobileRouteProbe={name:r,started:performance.now(),resolved:false,rejected:false};
+                const navPromise=Promise.resolve(window.nav(r));
+                navPromise.then(
+                  ()=>{probe.resolved=true;probe.elapsedMs=performance.now()-probe.started},
+                  e=>{probe.rejected=true;probe.error=String(e)}
+                );
                 document.querySelectorAll('.cb-access-gate').forEach(g=>{
                   try{if(g.open)g.close()}catch{}
                   g.remove();
                 });
                 await Promise.race([
-                  Promise.resolve(window.nav(r)),
+                  navPromise,
                   new Promise((_,reject)=>setTimeout(
                     ()=>reject(new Error('Mobile route navigation timed out: '+r)),25000
                   ))
                 ]);
               },route);
+              }catch(err){
+                const diagnostic=await page.evaluate(()=>{
+                  const t=window.__cbMobileRouteProbe||{};
+                  const main=document.querySelector('main.page');
+                  return {name:t.name,resolved:t.resolved,rejected:t.rejected,
+                    elapsedMs:t.elapsedMs,error:t.error,
+                    screenTitle:(main?.querySelector('h1,h2')?.textContent||'').slice(0,90),
+                    screenSnippet:(main?.innerText||'').slice(0,180),
+                    longTasks:performance.getEntriesByType('longtask').slice(-3).map(x=>Math.round(x.duration))};
+                }).catch(e=>({diagnosticError:String(e)}));
+                console.error('MOBILE_ROUTE_FAIL '+JSON.stringify({
+                  route,elapsedMs:Date.now()-routeStart,
+                  pendingApi:[...pendingApi.values()].map(u=>new URL(u).pathname).slice(0,16),
+                  diagnostic
+                }));
+                throw err;
+              }
+              console.log('MOBILE_ROUTE_NAV_DONE '+route+' '+(Date.now()-routeStart)+'ms');
 
               await page.locator('main.page').waitFor({state:'visible',timeout:25000});
               await page.waitForTimeout(120);

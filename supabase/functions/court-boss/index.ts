@@ -7646,7 +7646,33 @@ Deno.serve(async(req:Request)=>{
     const nonCounting=all.filter((x:any)=>!x.counting);
     const weekly=defending.data??[];
     const nextWeek=weekly.find((x:any)=>Number(x.points_to_defend||0)>0)||null;
+    // Forecast the *net* drop from the SAME ATP best-results rules used for
+    // rankings. Never pretend gross expired points equal the player's loss.
+    // V43 migration may not yet be deployed: missing RPC must not break the
+    // existing season endpoint or leak a service-role key to the browser.
+    let netForecast:any=null;
+    let netForecastStatus="not_applicable";
+    if(nextWeek?.week_end){
+      const endMs=Date.parse(String(nextWeek.week_end).slice(0,10)+"T00:00:00.000Z");
+      const startMs=Date.parse(today+"T00:00:00.000Z");
+      const offsetDays=Math.round((endMs-startMs)/86400000)+1;
+      if(Number.isFinite(startMs)&&Number.isFinite(endMs)&&offsetDays>=1&&offsetDays<=62){
+        const throughDate=new Date(endMs+86400000).toISOString().slice(0,10);
+        const movement=await db.rpc("atp_points_movement_v1",{
+          p_player_id:playerId,p_from_date:today,p_to_date:throughDate
+        });
+        if(!movement.error&&movement.data?.ok===true){
+          netForecast=movement.data;
+          netForecastStatus="available";
+        }else{
+          netForecastStatus="unavailable";
+        }
+      }else{
+        netForecastStatus="outside_window";
+      }
+    }
     return h({
+      net_forecast:netForecast,net_forecast_status:netForecastStatus,
       date:today,player_id:playerId,player_name:player.data.name,rank:player.data.ranking,
       total:Number(sum?.total_points??player.data.points??0),
       ranking_source:player.data.ranking_source,ranking_snapshot_date:player.data.ranking_snapshot_date,

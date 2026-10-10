@@ -38,6 +38,15 @@ function seasonPageV2(){
   const weeks=Array.isArray(ledger.defending)?ledger.defending:[];
   const defendedWeeks=weeks.filter(w=>Number(w.points_to_defend||0)>0);
   const nextDefense=ledger.next_defense||defendedWeeks[0]||null;
+  // Server computes the *net* delta via the exact ATP counting algorithm.
+  // Never infer it from gross 52-week expirations in the browser.
+  const netForecast=ledger.net_forecast?.ok===true
+    && ledger.net_forecast.from_date===String(ledger.date||local.date||RANKING_SNAPSHOT).slice(0,10)
+    ?ledger.net_forecast:null;
+  const nextNetValue=netForecast?Number(netForecast.net_change_points):null;
+  const nextNetLabel=nextNetValue==null||!Number.isFinite(nextNetValue)
+    ?'Non calculée'
+    :(nextNetValue<0?'−':nextNetValue>0?'+':'')+fmt(Math.abs(nextNetValue))+' pts';
   const counting=Array.isArray(ledger.counting)?ledger.counting:(ledger.active||[]);
   const nonCounting=Array.isArray(ledger.non_counting)?ledger.non_counting:[];
   const catLabel=x=>({
@@ -71,6 +80,7 @@ function seasonPageV2(){
     <div class="kpi"><span class="muted mini">Points ATP</span><b>${fmt(ledger.total||cr.points||0)}</b></div>
     <div class="kpi"><span class="muted mini">Résultats comptables</span><b>${fmt(ledger.counting_events??counting.length)}</b></div>
     <div class="kpi"><span class="muted mini">Prochains points à défendre</span><b>${nextDefense?'−'+fmt(nextDefense.points_to_defend)+' pts':'0 pt'}</b><span class="muted mini">${nextDefense?'Brut · semaine du '+df(nextDefense.week_start):'Rien sur les prochaines semaines'}</span></div>
+    <div class="kpi"><span class="muted mini">Variation nette projetée</span><b>${nextNetLabel}</b><span class="muted mini">${netForecast?'Jusqu’au '+df(netForecast.to_date)+' · résultats connus uniquement':'Non disponible au-delà de 62 jours ou migration non active'}</span></div>
   </div>
 
   <div class="grid g2" style="margin-top:12px">
@@ -103,13 +113,16 @@ function seasonPageV2(){
   <div class="card">
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Semaine</th><th>Expiration brute</th><th>Résultats qui sortent</th></tr></thead>
+        <thead><tr><th>Semaine</th><th>Expiration brute</th><th>Variation nette projetée</th><th>Résultats qui sortent</th></tr></thead>
         <tbody>
           ${weeks.map((w,i)=>`<tr class="${Number(w.points_to_defend||0)>0?'defense-hot':''}">
             <td><b>${i===0?'Cette semaine':df(w.week_start)}</b><div class="muted mini">→ ${df(w.week_end)}</div></td>
             <td><span class="badge ${Number(w.points_to_defend||0)>=500?'bad':Number(w.points_to_defend||0)>0?'warn':''}">−${fmt(w.points_to_defend||0)} pts</span></td>
+            <td>${nextDefense&&w.week_start===nextDefense.week_start&&netForecast
+              ?'<b>'+nextNetLabel+'</b><div class="muted micro">Projection ATP réelle · résultats connus</div>'
+              :'<span class="muted">Non calculée</span>'}</td>
             <td>${weekEvents(w)}</td>
-          </tr>`).join('')||'<tr><td colspan="3" class="muted">Aucune échéance calculée.</td></tr>'}
+          </tr>`).join('')||'<tr><td colspan="4" class="muted">Aucune échéance calculée.</td></tr>'}
         </tbody>
       </table>
     </div>

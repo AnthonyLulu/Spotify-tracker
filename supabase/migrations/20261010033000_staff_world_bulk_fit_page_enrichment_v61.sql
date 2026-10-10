@@ -119,8 +119,7 @@ filtered as (
     sp.ambition,sp.loyalty,sp.discipline,sp.pressure_handling,
     sp.specialty,sp.market_status,sp.asking_weekly_cost,sp.max_clients,
     sp.verified,sp.world_generated,
-    fit.managed_fit as managed_fit,
-
+    fit.managed_fit as managed_fit
   from public.staff_profiles sp
   cross join params p
   left join public.staff_fit_scores_bulk_v61(p_managed_player_id) fit on fit.staff_id=sp.id

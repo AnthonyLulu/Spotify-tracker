@@ -41,6 +41,11 @@
     if(!emblem){emblem=make('span','cb-v5-court-emblem');plane.prepend(emblem)}
     const mark=shortMark(name,skin);
     if(emblem.textContent!==mark)emblem.textContent=mark;
+    // Extra singles alleys are rendering aids; they do not enter match physics.
+    for(const edge of ['left','right']){
+      const cls='.cb-v5-singles-sideline.'+edge;
+      if(!plane.querySelector(cls))plane.appendChild(make('i','cb-v5-singles-sideline '+edge));
+    }
     // Move only the tennis physics/visual primitives, not any coach buttons,
     // ambient weather, benches, court HUD, score, branding or stadium.
     for(const child of Array.from(court.children)){

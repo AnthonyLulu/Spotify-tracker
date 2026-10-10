@@ -25,11 +25,19 @@ export async function replayIsolatedWorld({
  isoDay(startDate); isoDay(endDate);
  if (startDate>=endDate) throw Error('Empty or reversed period');
  const required=['assertIsolatedEnvironment','assertSchemaParity','assertSeedReady',
+  'acquireExclusiveReplayLease','releaseExclusiveReplayLease',
   'readCareerDate','advanceDay','runWeeklyCheckpoint','rolloverSeason',
   'playManagedMatch','probeSaveReload','verifyWorldInvariants'];
  for (const fn of required) if(typeof adapter[fn]!=='function')throw Error('Missing required real-world adapter: '+fn);
  // All guards run BEFORE the first mutating daily call.
  await adapter.assertIsolatedEnvironment();
+ // Only a shared, durable lease enforced by the real DB adapter prevents
+ // concurrent 25-year world replays. No silent in-memory fallback allowed.
+ const lease=await adapter.acquireExclusiveReplayLease({startDate,endDate});
+ if(lease?.acquired!==true || typeof lease.leaseId!=='string' || !lease.leaseId.trim()){
+  throw Error('Exclusive isolated replay lease unavailable');
+ }
+ try{
  await adapter.assertSchemaParity();
  await adapter.assertSeedReady(startDate);
  const first=await adapter.readCareerDate();
@@ -102,4 +110,8 @@ export async function replayIsolatedWorld({
  await adapter.verifyWorldInvariants({date:endDate,days:report.days,final:true});
  if(await adapter.readCareerDate()!==endDate)throw Error('Final persisted career date mismatch');
  return {...report,status:'COMPLETED_WITH_ADAPTER_ASSERTIONS'};
+ }finally{
+  // Release even after a failed schema gate, interrupted match, or day drift.
+  await adapter.releaseExclusiveReplayLease({leaseId:lease.leaseId});
+ }
 }

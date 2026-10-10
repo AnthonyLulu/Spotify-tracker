@@ -67,7 +67,7 @@ function html(){
           brandNatural:a.naturalWidth,boardNatural:b.naturalWidth,
           brandWidth:box.width,brandHeight:box.height,
           left:box.left,right:box.right,viewport:window.innerWidth,
-          label:document.querySelector('.cb-broadcast-brand b').textContent,
+          label:document.querySelector('.cb-broadcast-brand > div:last-child > b').textContent,
           pageErrors:document.querySelectorAll('.cb-broadcast-logo-fallback').length,
           boardText:document.querySelector('.cb-v4-led-north')?.textContent
         };

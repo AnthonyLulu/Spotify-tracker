@@ -2,6 +2,21 @@
 
 Status on **10 October 2026: BLOCKED. This is not an end-to-end 2050 pass.**
 
+## Verified isolated checkpoint (10 October 2026)
+
+User authorized protecting and rebuilding **only** the existing isolated Supabase project.
+
+- Created private internal schema `cb_e2e_checkpoint_20261010` in the isolated project. 85 data tables, **21,651** rows; every table was checked by row count plus a deterministic aggregate content digest.
+- Stored 52 function definitions, 145 index definitions, 3 view definitions, columns, constraints, RLS policies, grants, extension versions and sequences as **in-database metadata**.
+- Independently re-created all 85 data tables as disposable PostgreSQL temporary tables from the checkpoint and verified their digests. This validates data recoverability for this checkpoint, not a whole-project disaster recovery.
+- Database occupied roughly 25 MB before and 33 MB after the checkpoint. No additional project or paid branch was created.
+- **Do not DROP, RESET or overwrite the isolated project:** checkpoint is in the same database. Obtain a physically separate, tested `pg_dump` / `pg_restore` backup before any destructive rebuild or project replacement.
+- Production remains untouched and has 119 private saves; stage has no private save slots and no deployed game Edge Function.
+
+### Real replay controller
+
+`replay-controller.mjs` implements a fail-closed state machine for 2025-12-01 to 2050-12-31. It requires the exact stage-only environment, structural parity, a sanitized seed, real server adapters for daily ticks, managed matches, weekly checkpoints, season rollover, save/reload probes, and quarterly world invariants. It cannot run until those components exist. Unit tests with *mocked* adapters confirm the controller's 9,161 transitions and error handling; these are **not** a 2050 gameplay certification.
+
 ## What is actually deployed
 
 The isolated free Supabase project `court-boss-e2e-2025-2050` already holds component-test fixtures and prior sandbox tests. It is **not empty** and must not be reset or overwritten just to produce a green run. Production is `court-boss`. Never copy actual saves, authentication data, private keys, browsers' access codes, player careers or user-financial records to a sandbox.

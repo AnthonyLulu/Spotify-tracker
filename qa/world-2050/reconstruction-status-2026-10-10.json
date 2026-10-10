@@ -1,0 +1,77 @@
+{
+  "captured_at": "2026-10-10",
+  "environment": "isolated-court-boss-e2e",
+  "published_career_2050_certified": false,
+  "checkpoint": {
+    "kind": "in-project-only",
+    "protected_schema": "cb_e2e_checkpoint_20261010",
+    "tables": 85,
+    "rows": 21651,
+    "verified_original_data_tables": 85,
+    "external_backup_verified": false
+  },
+  "stage_parity": {
+    "tables": {
+      "expected": 296,
+      "present": 296,
+      "missing": 0
+    },
+    "columns": {
+      "expected": 3831,
+      "missing": 0,
+      "type_drift": 0
+    },
+    "constraints": {
+      "expected": 1036,
+      "missing": 0,
+      "definition_drift": 1,
+      "exception": "public.ncaa_career_player_id_fkey missing ON DELETE CASCADE"
+    },
+    "functions": {
+      "expected": 650,
+      "definition_identical": 648,
+      "missing": 2,
+      "definition_drift": 0,
+      "missing_depend_on": [
+        "public.junior_doubles_race_view",
+        "public.junior_race_view"
+      ]
+    },
+    "indexes": {
+      "expected": 722,
+      "missing": 301
+    },
+    "views": {
+      "expected": 10,
+      "missing": 7,
+      "dependencies": [
+        "public.history_discipline_scores -> public.historical_titles_cutoff",
+        "public.junior_race_view -> public.junior_display_pool_view"
+      ]
+    },
+    "sequences": {
+      "expected": 134,
+      "missing": 0
+    },
+    "triggers": {
+      "expected": 40,
+      "missing": 40
+    },
+    "edge_functions": {
+      "deployed": 0
+    }
+  },
+  "fixture_world_guard": {
+    "date": "2025-12-01",
+    "passed": false,
+    "active_adults": 2890,
+    "required_active_adults": 24000,
+    "active_staff": 8845,
+    "junior_pipeline": 3725,
+    "active_players": 5375,
+    "near_calendar_duplicate_groups": 2,
+    "base_integrity_passed": false
+  },
+  "next_gate": "Index/view/trigger parity, sanitized population generation and isolated authenticated Edge Function must pass before first full daily 2050 replay",
+  "note": "No production writes or customer saves copied. The replay controller was exercised only with fake adapters, not actual world simulation."
+}

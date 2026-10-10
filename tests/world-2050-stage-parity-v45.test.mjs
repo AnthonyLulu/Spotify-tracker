@@ -67,7 +67,10 @@ test('real SQL engine trials never imply a finished 2050 simulation',()=>{
  assert.equal(t.challenger75_noumea_2026_01_11.main_matches,31);
  assert.equal(t.fifteen_draws_january_2026.passed,false);
  assert.equal(t.itf_m25_single_draw.passed,false);
- for(const trial of Object.values(t))assert.equal(trial.rolled_back,true);
+ for(const [name,trial] of Object.entries(t)){
+  if(name==='itf_m25_single_draw')assert.equal(trial.not_executed,true);
+  else assert.equal(trial.rolled_back,true);
+ }
  assert.equal(status.published_career_2050_certified,false);
 });
 test('SQL parity is complete but external snapshot and game Edge are not',()=>{

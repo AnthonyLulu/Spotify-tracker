@@ -13,7 +13,7 @@ test('daily season rollover does not consume January 1 before the daily tick',()
  const returning=source.lastIndexOf("return jsonb_build_object(");
  assert.ok(year!==-1&&rank>year&&junior>rank&&doubles>junior&&finalReset>doubles&&returning>finalReset,
    'ranking, juniors, year boundary repair must occur in this order before return');
- assert.match(source,/SET season_year=p_new_year,week=1,career_date=make_date\(p_new_year,1,1\)-1/);
+ assert.match(source,/set\s+season_year=p_new_year,week=1,career_date=make_date\(p_new_year,1,1\)-1/i);
  assert.match(source,/WHERE id='demo';/);
 });
 

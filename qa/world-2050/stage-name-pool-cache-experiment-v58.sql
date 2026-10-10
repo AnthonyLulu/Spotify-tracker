@@ -216,7 +216,7 @@ begin
 
   raise exception 'Unable to create unique generated name for % after base and compound fallback attempts',c;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.generate_newgens(p_year integer)
  RETURNS jsonb

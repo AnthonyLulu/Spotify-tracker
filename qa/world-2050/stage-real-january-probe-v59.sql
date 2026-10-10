@@ -111,6 +111,6 @@ BEGIN
    );
  END;
 END;
-$function$
+$function$;
 
 REVOKE ALL ON FUNCTION cb_e2e_reconstruction_20261010.probe_jan2026_multiday_v58() FROM PUBLIC,anon,authenticated;

@@ -17,8 +17,10 @@ test('stage 2025 seed fails closed before rank allocation if user data or archiv
 test('all ranks are unique, stable, and allocated behind archived ranks',()=>{
  assert.match(sql,/5375 \+ rank_offset AS assigned_rank/);
  assert.match(sql,/row_number\(\) over/);
- assert.match(sql,/assigned_rank\)<>5376/);
- assert.match(sql,/assigned_rank\)<>31831/);
+ assert.match(sql,/min\(assigned_rank\)/);
+ assert.match(sql,/<>5376/);
+ assert.match(sql,/max\(assigned_rank\)/);
+ assert.match(sql,/<>31831/);
  assert.match(sql,/UNIQUE\(assigned_rank\)/);
  assert.match(sql,/PRIMARY KEY\(player_id\)/);
  assert.match(sql,/source_ranking ASC NULLS LAST/);

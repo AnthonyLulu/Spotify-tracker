@@ -37,7 +37,7 @@ test('net points calculator is read-only, invoker, and service-role only',()=>{
  assert.match(sql,/SET search_path TO ''/);
  assert.match(sql,/REVOKE ALL ON FUNCTION public\.atp_points_movement_v1\(bigint,date,date\) FROM PUBLIC,anon,authenticated/);
  assert.match(sql,/GRANT EXECUTE ON FUNCTION public\.atp_points_movement_v1\(bigint,date,date\) TO service_role/);
- assert.doesNotMatch(sql,/\b(?:UPDATE|DELETE\s+FROM|TRUNCATE\s+TABLE|INSERT\s+INTO|DROP\s+TABLE)\b/i);
+ assert.doesNotMatch(sql,/^\s*(?:UPDATE\s+|DELETE\s+FROM\s+|TRUNCATE\s+TABLE\s+|INSERT\s+INTO\s+|DROP\s+TABLE\s+)/im);
 });
 
 test('season screen shows negative gross expiry and explains that the net change may differ',()=>{

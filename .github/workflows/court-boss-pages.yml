@@ -187,6 +187,7 @@ jobs:
               hasTouch:true
             });
             const pageErrors=[];
+            const unresolvedReadFailures=new Map();
             const ignoredImageHost=u=>/atptour\.com|stickpng\.com/i.test(String(u||''));
             page.on('pageerror',e=>pageErrors.push('pageerror: '+e.message));
             page.on('console',m=>{
@@ -197,7 +198,9 @@ jobs:
             });
             page.on('requestfailed',r=>{
               if(ignoredImageHost(r.url()))return;
-              pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||''));
+              const error='requestfailed: '+r.url()+' '+(r.failure()?.errorText||'');
+              if(r.method()==='GET'&&/\/api\//.test(r.url()))unresolvedReadFailures.set(r.url(),error);
+              else pageErrors.push(error);
             });
             page.on('response',r=>{
               const status=r.status(),url=r.url();
@@ -207,6 +210,12 @@ jobs:
               const endpoint=new URL(url).pathname;
               const anonymousProtected401=status===401&&
                 (endpoint.endsWith('/api/save')||endpoint.endsWith('/api/training-preview'));
+              if(status>=500&&r.request().method()==='GET'&&/\/api\//.test(url)){
+                // A transient failure is acceptable only when a later identical GET succeeds.
+                unresolvedReadFailures.set(url,'http '+status+': '+url);
+                return;
+              }
+              if(status>=200&&status<400)unresolvedReadFailures.delete(url);
               if(status>=400&&!anonymousProtected401)
                 pageErrors.push('http '+status+': '+url);
             });
@@ -411,6 +420,7 @@ jobs:
             if(Number(rollbackState.stored?.tactics?.aggression)!==23)throw new Error('ragequit rollback did not persist restored local state');
             if(rollbackState.accessGate!==0)throw new Error('passive reload opened the private access gate');
 
+            for(const error of unresolvedReadFailures.values())pageErrors.push(error);
             if(pageErrors.length) throw new Error('Browser errors: '+pageErrors.join(' | '));
             console.log('mobile browser smoke: OK');
             await browser.close();

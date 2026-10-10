@@ -10,6 +10,11 @@ test('rollover checks its ACTUAL new_year response and junior rankings',()=>{
  assert.match(sql, /2025-12-31/);
  assert.doesNotMatch(sql, /coalesce\(\(r->>'ok'\)::boolean,false\) IS DISTINCT FROM true THEN[\s\S]{0,100}Actual yearly rollover failed/);
 });
+test('SQL function declaration terminates before REVOKE',()=>{
+ assert.ok(sql.includes('$function$;\n'));
+ assert.match(sql,/REVOKE ALL ON FUNCTION/);
+});
+
 test('probe serializes with 36-day world probe and rolls back everything',()=>{
  assert.match(sql,/pg_try_advisory_xact_lock\(94832021\)/);
  assert.match(sql,/CB_REAL_MULTIDAY_ROLLBACK/);

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const sql=fs.readFileSync(new URL('../qa/world-2050/probe-real-unified-world-week-v71.sql',import.meta.url),'utf8');
 test('real QA invokes every game circuit in one actual unified window, not just weekly recovery',()=>{
  assert.match(sql,/public\.run_unified_circuit_window\(p_from,p_to\)/);
- assert.match(sql,/'world_tournaments',circuit->'world_tournaments'/);
+ assert.match(sql,/'atp_world',circuit->'world_tournaments'/);
  assert.match(sql,/'world_qualifying',circuit->'world_qualifying'/);
  assert.match(sql,/'junior_world',circuit->'junior_world'/);
  assert.match(sql,/'world_doubles',circuit->'world_doubles'/);

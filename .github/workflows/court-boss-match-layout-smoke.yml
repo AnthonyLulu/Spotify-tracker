@@ -14,6 +14,8 @@ on:
       - "court-boss/match-center-perspective-v5.css"
       - "court-boss/match-center-experience-v6.js"
       - "court-boss/match-center-experience-v6.css"
+      - "court-boss/match-center-mobile-v7.js"
+      - "court-boss/match-center-mobile-v7.css"
       - "tests/match-layout-browser.cjs"
       - "tests/tournament-skins-browser.cjs"
       - "tests/match-experience-v6-browser.cjs"
@@ -43,6 +45,7 @@ jobs:
           node --check court-boss/match-center-perspective-v5.js
           node --check tests/tournament-skins-browser.cjs
           node --check court-boss/match-center-experience-v6.js
+          node --check court-boss/match-center-mobile-v7.js
           node --check tests/match-experience-v6-browser.cjs
       - name: Install browser test runtime
         run: |
@@ -64,5 +67,6 @@ jobs:
             arena-*.png
             perspective-*.png
             stadium-v6-*.png
+            stadium-v7-*.png
           if-no-files-found: ignore
           retention-days: 3

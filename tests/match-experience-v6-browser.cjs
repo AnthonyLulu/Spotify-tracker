@@ -7,9 +7,9 @@ const root=path.resolve(__dirname,'..');
 const load=rel=>fs.readFileSync(path.join(root,rel),'utf8');
 const css=['app.css','match-center-v1.css','match-center-v14.css','match-center-layout-v2.css',
 'match-center-tournament-v3.css','match-center-arena-v4.css','match-center-perspective-v5.css',
-'match-center-experience-v6.css'].map(f=>load('court-boss/'+f)).join('\n');
+'match-center-experience-v6.css','match-center-mobile-v7.css'].map(f=>load('court-boss/'+f)).join('\n');
 const scripts=['match-center-tournament-v3.js','match-center-arena-v4.js',
-'match-center-perspective-v5.js','match-center-experience-v6.js'].map(f=>load('court-boss/'+f));
+'match-center-perspective-v5.js','match-center-experience-v6.js','match-center-mobile-v7.js'].map(f=>load('court-boss/'+f));
 const events=[
  {id:'ao',name:'Australian Open',city:'Melbourne',surface:'hard',tier:'slam',colorA:'#2f86c9',colorB:'#1f5d95'},
  {id:'rg',name:'Roland-Garros',city:'Paris',surface:'clay',tier:'slam',colorA:'#cf7948',colorB:'#a64f2f'},
@@ -25,9 +25,9 @@ const courtLines=['baseline top','baseline bottom','sideline left','sideline rig
 function fixture(f){
  const theme='--cb-theme-court-a:'+f.colorA+';--cb-theme-court-b:'+f.colorB+';--cb-theme-accent:#71caff;--cb-theme-board:#133654';
  return '<div class="app-shell"><div class="topbar">COURT BOSS</div><main class="page"><div id="app"><div class="cb-match-shell"><div class="card fm-live-match cb-live-card" style="'+theme+'">'
-  +'<div class="cb-broadcast-head"><div class="cb-broadcast-brand"><div class="cb-broadcast-logo-fallback">AO</div><div><small>'+f.tier+'</small><b>'+f.name+'</b><em>'+f.city+'</em></div></div></div>'
+  +'<div class="cb-broadcast-head"><div class="cb-broadcast-brand"><div class="cb-broadcast-logo-fallback">'+f.id.toUpperCase()+'</div><div><small>'+f.tier+'</small><b>'+f.name+'</b><em>'+f.city+'</em></div></div></div>'
   +'<div class="cb-tv-score" style="--cb-set-count:2"><div class="cb-tv-score-row cb-tv-score-head"><span>JOUEUR</span><span>S1</span><span>S2</span><span>JEU</span><span>PT</span></div><div class="cb-tv-score-row user"><div class="cb-tv-player">Arthur Fils</div><b>6</b><b>4</b><b>3</b><strong class="cb-tv-point">30</strong></div><div class="cb-tv-score-row opponent"><div class="cb-tv-player">Jannik Sinner</div><b>4</b><b>6</b><b>2</b><strong class="cb-tv-point">15</strong></div></div>'
-  +'<div class="cb-match-context"><span>Dur • Outdoor</span></div>'
+  +'<div class="cb-match-context"><span>'+({grass:'Gazon',clay:'Terre battue',hard:'Dur'}[f.surface])+' • Outdoor</span></div>'
   +'<div class="fm-court cb-court '+f.surface+'" data-cb-tournament-skin="'+f.id+'" data-cb-venue-tier="'+f.tier+'" style="'+theme+'"><div class="cb-venue-board-v14"><b>'+f.name+'</b></div>'+courtLines+'<i class="fm-net"></i><div class="fm-player-dot user" style="left:48%;top:76%">AF</div><div class="fm-player-dot opponent" style="left:52%;top:21%">JS</div><i class="fm-ball" style="left:48%;top:54%"></i></div>'
   +'<div class="cb-match-story"><div class="cb-event-feed"><div class="cb-event-line"><b>Coup droit gagnant</b></div><div class="cb-event-line"><b>Échange de 14 coups</b></div></div></div>'
   +'<div class="cb-live-controls">Pause • 1x • 2x • 3x</div>'
@@ -65,10 +65,30 @@ function fixture(f){
            window.cbMatchArenaV4.enhance();
            window.cbCourtPerspectiveV5.enhance();
            window.cbMatchExperienceV6.enhance();
+           window.cbMatchMobileV7.enhance();
          });
        }
        await page.locator('.cb-v6-stadium-svg').waitFor({state:'attached'});
        await page.locator('.cb-v6-tactic-chip').first().waitFor({state:'attached'});
+       await page.locator('.cb-v7-choice-row').first().waitFor({state:'attached'});
+       // Grand Slams may display five set columns. No horizontal scroll
+       // must be needed to see the current game's live point score on iPhone.
+       if(label==='phone' && f.id==='wimbledon'){
+         await page.evaluate(()=>{
+           const score=document.querySelector('.cb-tv-score');
+           score.style.setProperty('--cb-set-count','5');
+           const rows=[...score.querySelectorAll('.cb-tv-score-row')];
+           rows.forEach((row,idx)=>{
+             const game=row.children[row.children.length-2];
+             for(let n=3;n<=5;n++){
+               const extra=document.createElement(idx===0?'span':'b');
+               if(idx>0)extra.className='cb-tv-set';
+               extra.textContent=idx===0?'S'+n:'0';
+               row.insertBefore(extra,game);
+             }
+           });
+         });
+       }
        const state=await page.evaluate(()=>{
          const c=document.querySelector('.cb-court'),panel=document.querySelector('.cb-coach-panel');
          return {crowd:c.querySelectorAll('.cb-v6-spectators circle').length,
@@ -79,6 +99,7 @@ function fixture(f){
            tacticalButtons:panel.querySelectorAll('.cb-v6-tactic-chip').length,
            tacticsMaps:panel.querySelectorAll('.cb-v6-court-map').length,
            selects:panel.querySelectorAll('select').length,
+           v7TacticGroups:panel.querySelectorAll('.cb-v7-choice-row').length,
            bodyWidth:document.documentElement.scrollWidth,viewport:window.innerWidth};
        });
        assert.ok(state.crowd >= (f.tier==='itf'?30:100),'crowd missing for '+f.name);
@@ -88,26 +109,52 @@ function fixture(f){
        assert.equal(state.ball,true);
        assert.ok(state.boards.some(x=>x.toUpperCase().includes(f.name.toUpperCase())));
        assert.equal(state.tacticalButtons,3);
+       assert.equal(state.v7TacticGroups,3,'live grouped tactics missing');
        assert.equal(state.tacticsMaps,1);
        assert.equal(state.selects,1,'real manager controls removed');
        assert.ok(state.bodyWidth<=state.viewport+8,'unexpected horizontal overflow');
+       if(label==='phone'){
+         const positions=await page.evaluate(()=>{
+           const pos=sel=>document.querySelector(sel).getBoundingClientRect();
+           return {court:pos('.cb-court'),coach:pos('.cb-coach-panel'),controls:pos('.cb-live-controls'),
+             story:pos('.cb-match-story'),score:pos('.cb-tv-score'),
+             point:pos('.cb-tv-score-row.user .cb-tv-point'),
+             button:pos('.cb-v7-expand')};
+         });
+         assert.ok(positions.coach.top>=positions.court.bottom-4 &&
+           positions.coach.top<=positions.court.bottom+28,'manager tactics not immediately below court');
+         assert.ok(positions.controls.top>=positions.coach.bottom-5,'controls not below coaching');
+         assert.ok(positions.story.top>=positions.controls.bottom-4,'comments should follow playback');
+         assert.ok(positions.point.right<=positions.score.right+1,'current point obscured on iPhone');
+         assert.equal(await page.locator('.cb-coach-grid').isVisible(),false,'advanced inputs should start collapsed');
+         await page.locator('.cb-v7-expand').click();
+         assert.equal(await page.locator('.cb-coach-grid').isVisible(),true,'advanced inputs inaccessible');
+         await page.locator('.cb-v7-expand').click();
+       }
        if(['ao','rg','wimbledon','uso','monte-carlo'].includes(f.id))
-         await page.screenshot({path:'stadium-v6-'+label+'-'+f.id+'.png',fullPage:false});
+         await page.screenshot({path:'stadium-v7-'+label+'-'+f.id+'.png',fullPage:false});
        // Verify the action actually enters the game's tactic setter.
        await page.locator('.cb-v6-tactic-chip[data-cb-tactic-value="Revers"]').click();
        assert.equal(await page.evaluate(()=>local.tactics.targetWing),'Revers');
        await page.locator('.cb-v6-tactic-chip[data-cb-tactic-value="Mixte"]').click();
        assert.equal(await page.evaluate(()=>local.tactics.targetWing),'Mixte');
+       await page.locator('.cb-v7-choice-row[data-tactic="aggression"] .cb-v7-choice').last().click();
+       assert.equal(await page.evaluate(()=>local.tactics.aggression),78,'aggression shortcut not using match engine');
+       await page.locator('.cb-v7-choice-row[data-tactic="tempo"] .cb-v7-choice').last().click();
+       assert.equal(await page.evaluate(()=>local.tactics.tempo),'Rapide','tempo shortcut not using match engine');
+       await page.locator('.cb-v7-choice-row[data-tactic="effort"] .cb-v7-choice').first().click();
+       assert.equal(await page.evaluate(()=>local.tactics.effort),45,'effort shortcut not using match engine');
        await page.locator('.cb-plan-btn[data-plan="pressure"]').evaluate(el=>{window.cbApplyMatchPlan(el.dataset.plan)});
        assert.equal(await page.evaluate(()=>local.lastMatchPlan),'pressure');
-       await page.evaluate(()=>window.cbMatchExperienceV6.enhance());
+       await page.evaluate(()=>{window.cbMatchExperienceV6.enhance();window.cbMatchMobileV7.enhance()});
        assert.equal(await page.locator('.cb-v6-stadium-svg').count(),1);
        assert.equal(await page.locator('.cb-v6-tactic-quick').count(),1);
+       assert.equal(await page.locator('.cb-v7-mobile-tactics').count(),1,'V7 groups duplicated');
        assert.deepEqual(errors,[]);
        console.log('PASS',label,f.name,'spectators',state.crowd);
      }
      await page.close();
    }
-   console.log('V6 STADIUM AND REAL TACTIC BUTTONS: PASS');
+   console.log('V7 RESPONSIVE TACTICS, SCORE AND STADIUM: PASS');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

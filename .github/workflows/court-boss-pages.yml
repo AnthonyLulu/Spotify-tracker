@@ -204,8 +204,9 @@ jobs:
               // This test browser is intentionally anonymous. Protected save and
               // optional staff training previews must reject it with HTTP 401.
               // All other API errors, including 500 and unrelated 401, still fail.
+              const endpoint=new URL(url).pathname;
               const anonymousProtected401=status===401&&
-                /\\/api\\/(?:save|training-preview)(?:[?#]|$)/.test(url);
+                (endpoint.endsWith('/api/save')||endpoint.endsWith('/api/training-preview'));
               if(status>=400&&!anonymousProtected401)
                 pageErrors.push('http '+status+': '+url);
             });

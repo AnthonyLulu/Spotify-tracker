@@ -19,9 +19,9 @@ assert.ok(asset.includes('<svg')&&asset.includes('THE CHAMPIONSHIPS'),'recogniza
 const css=['app.css','match-center-v1.css','match-center-v14.css','match-center-layout-v2.css',
   'match-center-tournament-v3.css','match-center-arena-v4.css','match-center-perspective-v5.css',
   'match-center-experience-v6.css','match-center-mobile-v7.css','wimbledon-crest.css'].map(get).join('\n');
-const functions=\`function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;')}
+const functions=`function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;')}
 function cbMediaUrl(u){return String(u||'')}
-\`+catalog;
+`+catalog;
 const arena=get('match-center-arena-v4.js');
 function html(){
  return '<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>'+

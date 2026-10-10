@@ -196,10 +196,10 @@ async function rolloverSeasonV2(){
   const next=current+1;
   if(!confirm('Passer à la saison '+next+' ? Les joueurs vieilliront, les points expireront normalement et la saison '+current+' sera archivée.'))return;
   try{
-    const d=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:next})});
+    const d=await get('/api/rollover-season',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_year:next,daily_mode:true})});
     boot=await get('/api/bootstrap');
     if(boot.career)local.career={...(local.career||{}),...boot.career};
-    local.date=boot.career?.career_date||String(next)+'-01-05';
+    local.date=boot.career?.career_date||local.date; // Never invent or skip to Jan 5 on a daily-clock fallback.
     local.week=1;
     await Promise.all([loadSeasonSummary(),loadRankingLedger(),loadScheduleAdvice(),loadCbSeasonHistory(),loadManagement()]);
     persist();

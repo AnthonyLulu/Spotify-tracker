@@ -15,11 +15,11 @@ test('calibration report is strictly read-only and covers both real match ledger
 });
 
 test('calibration detects an empty sample instead of declaring gameplay balanced',()=>{
-  assert.match(clean,/COUNT\\(\\*\\) FROM readiness WHERE ready\\)=2 THEN 'sampled'/);
-  assert.match(clean,/COUNT\\(\\*\\) FROM readiness WHERE ready\\)=1 THEN 'partial_sampled'/);
-  assert.match(clean,/LEFT JOIN circuit_counts ON circuit_counts.circuit=circuits.circuit/);
-  assert.match(clean,/'requires_per_circuit',200/);
-  assert.match(clean,/'circuits',\\(SELECT jsonb_agg/);
+  assert.ok(clean.includes("(SELECT COUNT(*) FROM readiness WHERE ready)=2 THEN 'sampled'"));
+  assert.ok(clean.includes("(SELECT COUNT(*) FROM readiness WHERE ready)=1 THEN 'partial_sampled'"));
+  assert.ok(clean.includes('LEFT JOIN circuit_counts ON circuit_counts.circuit=circuits.circuit'));
+  assert.ok(clean.includes("'requires_per_circuit',200"));
+  assert.ok(clean.includes("'circuits',(SELECT jsonb_agg"));
   assert.match(clean,/COALESCE\([\s\S]*'\[\]'::jsonb\)/);
   assert.match(clean,/samples>=200 AND calibration_error>0\.08/);
 });

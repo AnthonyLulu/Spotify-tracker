@@ -15,7 +15,8 @@ test('one accessible write gate replaces the native prompt',()=>{
   assert.match(css,/\.cb-access-gate/);
 });
 test('reads do not proactively request a code',()=>{
-  assert.match(app,/const key=accessKey;const r=await fetch/);
+  assert.match(app,/const key=accessKey;/);
+  assert.match(app,/r=await fetch\(API\+path/);
   assert.doesNotMatch(app,/const key=courtBossAccessKey\(\)/);
 });
 test('save v8 covers records and Hall of Fame timeline',()=>{

@@ -66,6 +66,7 @@ jobs:
             });
 
             const fatal=[];
+            const unresolvedApi5xx=new Map();
             page.on('pageerror',e=>fatal.push('pageerror: '+e.message));
             page.on('console',m=>{
               if(m.type()!=='error')return;
@@ -74,7 +75,10 @@ jobs:
               fatal.push('console: '+t);
             });
             page.on('response',r=>{
-              if(r.status()>=500&&/\/api\//.test(r.url()))fatal.push('api '+r.status()+': '+r.url());
+              if(!/\/api\//.test(r.url()))return;
+              // A temporary 5xx is recoverable only if a retry of the SAME URL succeeds.
+              if(r.status()>=500)unresolvedApi5xx.set(r.url(),r.status());
+              else if(r.status()>=200&&r.status()<400)unresolvedApi5xx.delete(r.url());
             });
 
             await page.route('**/api/countries',route=>route.fulfill({
@@ -152,6 +156,7 @@ jobs:
               if(state.clippedControls.length)throw new Error(route+': controls clipped outside viewport '+JSON.stringify(state.clippedControls));
             }
 
+            for(const [url,status] of unresolvedApi5xx)fatal.push('api '+status+': '+url);
             if(fatal.length)throw new Error('browser/API errors: '+fatal.join(' | '));
             console.log('MOBILE_UX_RC '+JSON.stringify(report));
             console.log('Court Boss mobile route sweep: OK');

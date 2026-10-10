@@ -57,7 +57,8 @@ test('all empty successful endpoints are considered attempted and do not force r
  assert.equal(h.state().error,'');
  assert.equal(h.calls.length,3);
  assert.equal(h.renders,1);
- assert.match(app,/if\(!doublesHubAttempted&&!doublesHubLoading\)\{doublesHubAttempted=true;setTimeout\(loadDoublesHub,0\);\}/);
+ assert.match(app,/if\(r==='doubles'&&route==='doubles'&&!doublesHubAttempted&&!doublesHubLoading\)/);
+ assert.doesNotMatch(app,/setTimeout\(loadDoublesHub,0\)/);
  assert.doesNotMatch(app,/if\(!doublesHubRows\.length&&!doublesHubLoading\)setTimeout\(loadDoublesHub,0\)/);
 });
 

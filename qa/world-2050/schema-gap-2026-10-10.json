@@ -41,5 +41,8 @@
     "public.doubles_race_view",
     "public.advance_career_day_v25(p_today_plan jsonb, p_difficulty text, p_expected_from_date date)"
   ],
-  "note": "One shared signature does not prove matching SQL definitions. Counts include schema names only; complete baseline and dynamic world replay remain NOT VALIDATED."
+  "note": "Only 33 of 51 shared function definitions have matching md5; simplified staging runtime cannot certify the production world. Schema names/hashes only, no source definitions, saves or secrets exported.",
+  "sharedFunctionSignatures": 51,
+  "identicalFunctionDefinitions": 33,
+  "differentFunctionDefinitions": 18
 }

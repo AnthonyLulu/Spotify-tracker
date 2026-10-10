@@ -31,7 +31,7 @@ const fixture=f=>{
  +'<div class="cb-broadcast-head"><div class="cb-broadcast-brand"><div class="cb-broadcast-logo">LOGO</div><div><small>'+f.category+'</small><b>'+f.name+'</b><em>'+f.city+'</em></div></div><div class="cb-broadcast-status"><b>LIVE</b></div></div>'
  +'<div class="cb-tv-score" style="--cb-set-count:2"><div class="cb-tv-score-row cb-tv-score-head"><span>JOUEUR</span><span>S1</span><span>S2</span><span>JEU</span><span>PT</span></div><div class="cb-tv-score-row user"><div class="cb-tv-player"><i class="serving"></i><div><b>Arthur Fils 🇫🇷</b><em>Confiance 87 • Forme 92</em></div></div><b class="cb-tv-set won">6</b><b class="cb-tv-set live">4</b><b class="cb-tv-game">3</b><strong class="cb-tv-point">30</strong></div><div class="cb-tv-score-row opponent"><div class="cb-tv-player"><i></i><div><b>Jannik Sinner 🇮🇹</b><em>Confiance 85 • Forme 90</em></div></div><b class="cb-tv-set">4</b><b class="cb-tv-set live">4</b><b class="cb-tv-game">2</b><strong class="cb-tv-point">15</strong></div></div>'
  +'<div class="cb-match-context">Surface : '+f.surface+'</div>'
- +'<div class="fm-court '+s+' cb-court" data-cb-tournament-skin="'+f.id+'" style="--cb-theme-court-a:'+f.a+';--cb-theme-court-b:'+f.b+';--cb-theme-accent:#61cbe0;--cb-theme-board:#102f44;"><div class="cb-venue-board-v14"><b>'+f.name+'</b></div><i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-net"></i><div class="fm-player-dot user" style="left:50%;top:80%">AF</div><div class="fm-player-dot opponent" style="left:50%;top:20%">JS</div><i class="fm-ball" style="left:52%;top:60%"></i></div>'
+ +'<div class="fm-court '+s+' cb-court" data-cb-tournament-skin="'+f.id+'" style="--cb-theme-court-a:'+f.a+';--cb-theme-court-b:'+f.b+';--cb-theme-accent:#61cbe0;--cb-theme-board:#102f44;"><div class="cb-venue-board-v14"><b>'+f.name+'</b></div><i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-court-line service vertical"></i><i class="fm-net"></i><div class="fm-player-dot user" style="left:50%;top:80%">AF</div><div class="fm-player-dot opponent" style="left:50%;top:20%">JS</div><i class="fm-ball" style="left:52%;top:60%"></i></div>'
  +'<div class="cb-match-story"><div class="cb-event-feed">Coup droit gagnant</div></div><div class="cb-live-controls">Pause • 1x • 2x • 3x</div><details open class="cb-coach-panel"><summary>Tactiques</summary></details><div class="cb-stat-grid"><div>Points gagnés</div></div>'
  +'</div></div></main></div>';
 };
@@ -98,7 +98,7 @@ const fixture=f=>{
     assert.equal(result.planeCount,1,"perspective plane missing or duplicated");
     assert.notEqual(result.planeTransform,"none","court is still flat: "+f.name);
     assert.ok(result.projectedMarkers&&result.projectedBall&&result.projectedNet,"animated geometry not in projection: "+f.name);
-    assert.equal(result.projectedLines,6,"court markings not projected");
+    assert.equal(result.projectedLines,7,"court markings not projected");
     assert.equal(result.tramlines,2,"singles sidelines missing");
     assert.ok(result.outlineHidden,"old flat court outline still visible");
     await page.evaluate(()=>{window.cbMatchArenaV4.enhance();window.cbCourtPerspectiveV5.enhance();});
@@ -106,7 +106,7 @@ const fixture=f=>{
     assert.equal(await page.locator(".cb-v4-venue-graphics").count(),1,"stadium duplicated after refresh");
     assert.equal(result.standCount,4,"stadium stands missing");
     assert.ok(result.ledLabels.some(x=>x.includes(f.name.toUpperCase())),"event LED board missing "+f.name);
-    assert.equal(result.preservedLines,6,"tennis court lines changed");
+    assert.equal(result.preservedLines,7,"tennis court lines changed");
     assert.ok(result.netMesh.includes("gradient"),"net mesh missing");
     assert.deepEqual(result.markerPositions,[["50%","80%"],["50%","20%"]],"players were moved by renderer");
     assert.ok(result.bg.includes("gradient"),"court surface not themed");

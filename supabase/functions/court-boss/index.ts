@@ -7342,8 +7342,20 @@ Deno.serve(async(req:Request)=>{
       db.from("academies").select("*").eq("id","demo").maybeSingle(),
       db.from("player_medical_plans").select("*").eq("player_id",managedId).maybeSingle()
     ]);
-    const err=health.error||integrity.error||seasonPlan.error||media.error||sponsors.error||board.error||timeline.error||relationships.error||academy.error||medicalPlan.error;
-    if(err)return h({error:err.message},500);
+    // Only the career/player identity is mandatory. A transient error in a
+    // dashboard enrichment must never prevent opening the manager's workspace.
+    // Report unavailable sections explicitly instead of hiding the partial data.
+    const careerHubSections=[
+      ["health",health],["integrity",integrity],["season_plan",seasonPlan],
+      ["media",media],["sponsors",sponsors],["board",board],["timeline",timeline],
+      ["relationships",relationships],["academy",academy],["medical_plan",medicalPlan]
+    ] as const;
+    const unavailableSections=careerHubSections
+      .filter(([,result])=>Boolean(result.error))
+      .map(([name])=>name);
+    if(unavailableSections.length){
+      console.warn("Career Hub optional sections unavailable:",unavailableSections.join(","));
+    }
 
     const p:any=managedPlayer.data;
     const careerView:any={
@@ -7373,7 +7385,9 @@ Deno.serve(async(req:Request)=>{
     });
 
     return h({
-      model:"CB-CAREER-HUB-v3",
+      model:"CB-CAREER-HUB-v4",
+      partial_data:unavailableSections.length>0,
+      unavailable_sections:unavailableSections,
       player_id:managedId,
       primary_player_id:primaryId,
       health:health.data??null,

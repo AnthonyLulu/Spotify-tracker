@@ -34,3 +34,23 @@ champion and no timeout.
 
 No production saves, SQL migrations or live users are touched by
 this experiment. Stage data are rolled back by the probe.
+
+## Executed real-engine evidence (stage, rollback)
+
+The previously unverified 31-match ITF full-draw probe has now been
+**executed** using the staging-private copied engine and returned:
+
+- `ok=true`, `rolled_back=true`, tournament **M25 Chapel Hill, NC** (#199)
+- **24 qualifying matches**
+- **31/31 main-draw matches scored**
+- **0 invalid winner/loser/score rows**
+- Persisted-in-transaction champion **ID 2123961** equals final-match
+  winner **ID 2123961**; finalist ID **2206889**
+- The original published full-draw function was **not replaced** by
+  this experiment. No production SQL or user saves were modified.
+
+This is a meaningful P0 performance improvement, but initial
+historical ATP 2025 rankings are still wrong and rank-history
+superset parity for nonempty histories needs a separate fixture.
+A successful *single tournament* is not evidence of a complete
+multi-circuit week or a 2025–2050 career run.

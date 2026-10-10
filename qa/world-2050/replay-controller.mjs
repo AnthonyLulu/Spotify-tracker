@@ -22,6 +22,9 @@ const quarterly=date=>{
 // (mark_weekly_checkpoint_v22) is NOT proof that any AI match was played.
 export function assertVerifiedWorldWeek(receipt,checkpointDate){
  if(receipt?.ok!==true
+   // A passed ATP/Challenger/ITF singles job does NOT certify a full
+   // NCAA/Davis/juniors/doubles/managed multi-circuit 2050 career week.
+   || receipt.scope!=='full_unified_world'
    || receipt.world_simulation_committed!==true
    || receipt.checkpoint_persisted!==true
    || receipt.ranking_integrity_ok!==true

@@ -74,6 +74,11 @@ html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-cou
 html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.service.vertical{
   width:2px;height:auto;
 }
+/* Service lines end at the singles tramlines (17%-83%), not at the
+   outer doubles sidelines. This corrects the previous inaccurate markings. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.service.horizontal{
+  left:17%;right:17%;
+}
 /* Singles sidelines live on the exact same perspective plane and run
    parallel to the doubles lines; no gameplay coordinate is changed. */
 html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-singles-sideline{

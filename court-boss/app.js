@@ -960,6 +960,11 @@ async function loadStaffWorld(){
   if(f.former)p.set('former',f.former);
   if(f.status)p.set('status',f.status);
   staffWorldData=await get('/api/staff-world?'+p.toString());
+ }catch(e){
+  // The world staff market is optional browsing data, never a prerequisite
+  // for opening the manager's actual staff/contracts page.
+  staffWorldData={error:String(e?.message||e),rows:[],roles:[],countries:[],total:0};
+  console.warn('Staff world catalog unavailable',e);
  }finally{staffWorldLoading=false}
 }
 const rankPageSize=()=>rankKind==='ncaa'?150:100;
@@ -2717,6 +2722,7 @@ function staffWorldSection(){
  const d=staffWorldData||null;
  const rows=d?.rows||[],roles=d?.roles||[],countries=d?.countries||[];
  if(!d)return `<div class="card loader" style="margin-top:14px">Chargement de la base mondiale du staff…</div>`;
+ if(d.error)return `<div class="card" role="status" style="margin-top:14px"><h2>Catalogue staff momentanément indisponible</h2><p class="muted">Ton équipe et tes contrats restent consultables. La liste mondiale n'a pas pu être chargée.</p><button class="soft-btn" onclick="loadStaffWorld().then(render)">Réessayer le catalogue</button></div>`;
  return `<div class="section-head" style="margin-top:22px"><div><div class="eyebrow">Base mondiale</div><h2>Staff mondial</h2><div class="muted mini">Base complète paginée : coachs, kinés, préparateurs, recruteurs, agents et anciens joueurs reconvertis.</div></div><span class="pill">${fmt(d.total||0)} profils</span></div>
  <div class="card staff-world-filter"><div class="row" style="gap:8px;flex-wrap:wrap">
   <input id="staffWorldQ" value="${esc(staffWorldFilters.q||'')}" placeholder="Nom, spécialité, style…" style="flex:1;min-width:200px">

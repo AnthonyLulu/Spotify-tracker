@@ -48,7 +48,10 @@ function seasonPageV2(){
   }[String(x||'')]||String(x||'Autre'));
   const weekEvents=w=>{
     const e=Array.isArray(w?.events)?w.events:[];
-    return e.length?e.map(x=>esc(x.label)+' <b>−'+fmt(x.points)+'</b>').join('<br>'):'<span class="muted">Aucun point ne tombe</span>';
+    return e.length?e.map(x=>esc(x.label)
+      +' <b class="bad">−'+fmt(Math.max(0,Number(x.points)||0))+' pts</b>'
+      +(x.estimated?'<span class="muted mini"> · estimation</span>':'')
+    ).join('<br>'):'<span class="muted">Aucun point ne tombe</span>';
   };
   return `
   <div class="section-head">
@@ -67,7 +70,7 @@ function seasonPageV2(){
     <div class="kpi"><span class="muted mini">Classement ATP</span><b>#${fmt(ledger.rank||cr.singles_rank||0)}</b></div>
     <div class="kpi"><span class="muted mini">Points ATP</span><b>${fmt(ledger.total||cr.points||0)}</b></div>
     <div class="kpi"><span class="muted mini">Résultats comptables</span><b>${fmt(ledger.counting_events??counting.length)}</b></div>
-    <div class="kpi"><span class="muted mini">Prochaine défense</span><b>${nextDefense?fmt(nextDefense.points_to_defend)+' pts':'0 pt'}</b><span class="muted mini">${nextDefense?df(nextDefense.week_start):'Rien sur les prochaines semaines'}</span></div>
+    <div class="kpi"><span class="muted mini">Prochains points à défendre</span><b>${nextDefense?'−'+fmt(nextDefense.points_to_defend)+' pts':'0 pt'}</b><span class="muted mini">${nextDefense?'Brut · semaine du '+df(nextDefense.week_start):'Rien sur les prochaines semaines'}</span></div>
   </div>
 
   <div class="grid g2" style="margin-top:12px">
@@ -94,17 +97,17 @@ function seasonPageV2(){
     <div>
       <div class="eyebrow">Classement ATP</div>
       <h2>Points à défendre · semaine par semaine</h2>
-      <div class="muted">Les points ne fondent plus chaque jour. Ils tombent à leur date de sortie du classement.</div>
+      <div class="muted">52 semaines glissantes : les anciens résultats expirent, puis les meilleurs résultats encore éligibles sont recalculés. −330 points à défendre peut devenir −230 points nets si 100 points de réserve prennent leur place.</div>
     </div>
   </div>
   <div class="card">
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Semaine</th><th>À défendre</th><th>Résultats qui sortent</th></tr></thead>
+        <thead><tr><th>Semaine</th><th>Expiration brute</th><th>Résultats qui sortent</th></tr></thead>
         <tbody>
           ${weeks.map((w,i)=>`<tr class="${Number(w.points_to_defend||0)>0?'defense-hot':''}">
             <td><b>${i===0?'Cette semaine':df(w.week_start)}</b><div class="muted mini">→ ${df(w.week_end)}</div></td>
-            <td><span class="badge ${Number(w.points_to_defend||0)>=500?'bad':Number(w.points_to_defend||0)>0?'warn':''}">${fmt(w.points_to_defend||0)} pts</span></td>
+            <td><span class="badge ${Number(w.points_to_defend||0)>=500?'bad':Number(w.points_to_defend||0)>0?'warn':''}">−${fmt(w.points_to_defend||0)} pts</span></td>
             <td>${weekEvents(w)}</td>
           </tr>`).join('')||'<tr><td colspan="3" class="muted">Aucune échéance calculée.</td></tr>'}
         </tbody>

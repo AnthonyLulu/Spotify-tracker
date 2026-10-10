@@ -1,0 +1,278 @@
+/* V4 Tournament Stadium Art Direction - genuine CSS/DOM game renderer.
+   Does not alter coordinates, hit testing, animations, engine or data. */
+html.cb-match-layout-v2 .cb-live-card[data-cb-v4-arena]{
+  --cb-v4-sky:color-mix(in srgb,var(--cb-theme-board,#16354f) 79%,#0b1626);
+}
+.cb-live-card .cb-court[data-cb-v4-arena]{
+  position:relative;
+  isolation:isolate;
+  border:4px solid color-mix(in srgb,var(--cb-theme-board,#15243c) 74%,#142434)!important;
+  border-radius:12px!important;
+  outline:1px solid color-mix(in srgb,var(--cb-theme-accent,#a4d8fa) 30%,rgba(255,255,255,.3));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),
+    inset 0 22px 60px rgba(5,12,21,.30),
+    inset 0 -34px 65px rgba(7,13,20,.19),
+    0 0 0 4px rgba(6,15,27,.5),
+    0 24px 50px rgba(0,0,0,.34)!important;
+}
+/* The field remains 100% of the original match surface. Original positions
+   (serve zones, service lines, ball and players) are never transformed. */
+.cb-live-card .cb-court[data-cb-v4-arena][data-cb-v3-surface="hard"]{
+ background:
+  radial-gradient(ellipse at 45% 38%,rgba(238,249,255,.14),transparent 58%),
+  repeating-linear-gradient(92deg,transparent 0 19px,rgba(255,255,255,.014) 19px 20px,transparent 20px 38px),
+  linear-gradient(160deg,var(--cb-theme-court-a,#2f86c9),var(--cb-theme-court-b,#1f5d95))!important;
+}
+.cb-live-card .cb-court[data-cb-v4-arena][data-cb-v3-surface="clay"]{
+ background:
+  radial-gradient(ellipse at 47% 39%,rgba(249,198,141,.18),transparent 62%),
+  repeating-linear-gradient(17deg,transparent 0 7px,rgba(89,41,19,.046) 7px 8px),
+  linear-gradient(160deg,var(--cb-theme-court-a,#c67648),var(--cb-theme-court-b,#9d4c31))!important;
+}
+.cb-live-card .cb-court[data-cb-v4-arena][data-cb-v3-surface="grass"]{
+ background:
+  radial-gradient(ellipse at 45% 38%,rgba(255,255,210,.13),transparent 54%),
+  repeating-linear-gradient(90deg,rgba(255,255,255,.032) 0 12.5%,rgba(0,0,0,.055) 12.5% 25%),
+  linear-gradient(170deg,var(--cb-theme-court-a,#69934f),var(--cb-theme-court-b,#416d36))!important;
+}
+.cb-live-card .cb-court[data-cb-v4-arena] > .cb-v4-venue-graphics{
+  position:absolute;inset:0;pointer-events:none;overflow:hidden;
+  isolation:isolate;z-index:1!important;
+  --cb-v4-stands:color-mix(in srgb,var(--cb-theme-board,#162f45) 52%,#07131e);
+  --cb-v4-accent:var(--cb-theme-accent,#86dafc);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand{
+  position:absolute;display:flex;flex-direction:column;gap:1px;
+  pointer-events:none;
+  background-color:var(--cb-v4-stands);
+  border:1px solid rgba(255,255,255,.09);
+  box-shadow:inset 0 0 20px rgba(0,0,0,.45),0 3px 12px rgba(0,0,0,.18);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-back{
+  left:0;right:0;top:0;height:7.3%;
+  border-bottom:2px solid color-mix(in srgb,var(--cb-v4-accent) 36%,#061521);
+  background:linear-gradient(180deg,#06111b,var(--cb-v4-stands) 54%,#19344a);
+  box-shadow:0 3px 12px rgba(0,0,0,.36);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-front{
+  left:0;right:0;bottom:0;height:7.3%;
+  border-top:2px solid color-mix(in srgb,var(--cb-v4-accent) 28%,#061521);
+  background:linear-gradient(0deg,#06111b,var(--cb-v4-stands) 54%,#19344a);
+  box-shadow:0 -3px 12px rgba(0,0,0,.32);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-west,
+.cb-v4-venue-graphics .cb-v4-grandstand-east{
+  top:6%;bottom:6%;width:7%;justify-content:space-evenly;
+  opacity:.83;
+  background:linear-gradient(90deg,#081421,var(--cb-v4-stands) 75%);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-west{
+ left:0;transform-origin:left;box-shadow:3px 0 10px rgba(0,0,0,.18);
+ border-right:3px solid color-mix(in srgb,var(--cb-theme-accent) 22%,#142638);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-east{
+ right:0;background:linear-gradient(270deg,#081421,var(--cb-v4-stands) 75%);
+ border-left:3px solid color-mix(in srgb,var(--cb-theme-accent) 22%,#142638);
+ box-shadow:-3px 0 10px rgba(0,0,0,.18);
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-west .cb-v4-seat-row,
+.cb-v4-venue-graphics .cb-v4-grandstand-east .cb-v4-seat-row{
+ height:21%;width:100%;
+ background:
+  radial-gradient(ellipse at 20% 45%,rgba(235,232,221,.88) 0 1.2px,transparent 1.9px),
+  radial-gradient(ellipse at 68% 33%,rgba(101,161,196,.8) 0 1.3px,transparent 2px),
+  radial-gradient(ellipse at 44% 88%,rgba(187,209,218,.6) 0 1px,transparent 1.8px),
+  repeating-linear-gradient(0deg,rgba(0,0,0,.17) 0 1px,transparent 1px 9px);
+ background-size:21px 18px,19px 16px,23px 23px,auto;
+}
+.cb-v4-venue-graphics .cb-v4-grandstand-back .cb-v4-seat-row,
+.cb-v4-venue-graphics .cb-v4-grandstand-front .cb-v4-seat-row{
+ display:block;width:100%;height:25%;flex:1;min-height:0;
+ background:
+ radial-gradient(ellipse at 8px 7px,rgba(230,229,217,.78) 0 2px,transparent 2.6px),
+ radial-gradient(ellipse at 17px 5px,rgba(125,162,192,.66) 0 1.8px,transparent 2.5px),
+ radial-gradient(ellipse at 4px 11px,rgba(179,104,99,.55) 0 1.6px,transparent 2.4px),
+ repeating-linear-gradient(90deg,rgba(7,19,31,.3) 0 1px,transparent 1px 19px);
+ background-size:23px 17px,31px 13px,27px 15px,auto;
+ border-bottom:1px solid rgba(178,205,229,.075);
+}
+.cb-v4-venue-graphics .cb-v4-led{
+ display:flex;align-items:center;justify-content:center;gap:8px;
+ position:absolute;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+ color:#edf7ff;font-size:clamp(7px,.72vw,12px);font-weight:900;
+ letter-spacing:.075em;text-shadow:0 1px 3px rgba(0,0,0,.7);
+ background:linear-gradient(180deg,#14283a,#091522);
+ border:1px solid rgba(181,219,248,.28);
+ box-shadow:inset 0 1px rgba(255,255,255,.14),0 4px 12px rgba(0,0,0,.25);
+}
+.cb-v4-venue-graphics .cb-v4-led-north{
+ top:5%;left:28%;right:28%;height:4.3%;z-index:2;
+ border-radius:0 0 7px 7px;
+}
+.cb-v4-venue-graphics .cb-v4-led-north strong{
+ font-size:1.2em;font-weight:1000;color:var(--cb-v4-accent);
+}
+.cb-v4-venue-graphics .cb-v4-led-south{
+ bottom:4.9%;left:32%;right:32%;height:3.2%;z-index:2;
+ border-radius:6px 6px 0 0;opacity:.87;font-size:clamp(6px,.62vw,10px);
+}
+.cb-v4-venue-graphics .cb-v4-led-west,
+.cb-v4-venue-graphics .cb-v4-led-east{
+ top:35%;bottom:35%;width:3%;overflow:visible;
+ padding:2px 0;writing-mode:vertical-rl;
+ font-size:clamp(7px,.66vw,11px);letter-spacing:.13em;opacity:.86;
+}
+.cb-v4-venue-graphics .cb-v4-led-west{left:5.4%;transform:rotate(180deg)}
+.cb-v4-venue-graphics .cb-v4-led-east{right:5.4%}
+.cb-v4-venue-graphics .cb-v4-floor-mark{
+ position:absolute;top:49%;width:9%;height:5%;
+ display:grid;place-items:center;
+ font-size:clamp(8px,1.3vw,19px);font-weight:1000;
+ color:rgba(248,251,255,.72);
+ letter-spacing:-.04em;
+ opacity:.7;text-shadow:0 1px rgba(0,0,0,.12);
+}
+.cb-v4-venue-graphics .cb-v4-floor-mark-left{left:11%}
+.cb-v4-venue-graphics .cb-v4-floor-mark-right{right:11%}
+.cb-v4-venue-graphics .cb-v4-floor-location{
+ position:absolute;bottom:8.8%;left:23%;right:23%;
+ font-size:clamp(8px,1.45vw,21px);font-weight:1000;
+ letter-spacing:.14em;text-transform:uppercase;text-align:center;
+ color:rgba(245,251,255,.36);text-shadow:0 1px 4px rgba(0,0,0,.2);
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cb-v4-venue-graphics .cb-v4-umpire-scene{
+ position:absolute;right:5.8%;top:46.5%;width:7%;height:9%;
+ filter:drop-shadow(2px 3px 2px rgba(0,0,0,.3));
+}
+.cb-v4-venue-graphics .cb-v4-umpire-scene:before{
+ content:"";position:absolute;right:15%;top:5%;width:48%;height:57%;
+ background:linear-gradient(90deg,#143149,#1e4662,#0a1d32);
+ border:1px solid #9fc1d8;border-radius:3px;
+ box-shadow:inset 2px 0 rgba(255,255,255,.12);
+}
+.cb-v4-venue-graphics .cb-v4-umpire-scene:after{
+ content:"";position:absolute;right:23%;top:-5%;width:26%;height:24%;
+ border-radius:50%;background:#edc49f;border:1px solid #182b37;
+ box-shadow:0 9px 0 1px #28567b;
+}
+.cb-v4-venue-graphics .cb-v4-broadcast-camera{
+ position:absolute;top:11%;height:18px;width:21px;
+ border:1px solid #8aabc4;border-radius:3px;
+ background:linear-gradient(125deg,#39566e,#102032 72%);
+ box-shadow:0 5px 8px rgba(0,0,0,.22);
+ opacity:.65;
+}
+.cb-v4-venue-graphics .cb-v4-broadcast-camera:after{
+ content:"";position:absolute;left:6px;top:4px;height:6px;width:6px;
+ border:2px solid #101b2a;border-radius:50%;background:#5da4c8;
+}
+.cb-v4-venue-graphics .cb-v4-camera-left{left:5%}
+.cb-v4-venue-graphics .cb-v4-camera-right{right:5%}
+.cb-v4-venue-graphics .cb-v4-arena-lights{
+ position:absolute;inset:0;pointer-events:none;
+ background:
+  radial-gradient(ellipse at 16% 0%,rgba(255,255,240,.15),transparent 22%),
+  radial-gradient(ellipse at 82% 0%,rgba(242,250,255,.12),transparent 22%),
+  linear-gradient(180deg,rgba(5,16,30,.14),transparent 16%,transparent 79%,rgba(5,15,30,.16));
+ mix-blend-mode:screen;opacity:.85;
+}
+/* Larger scoreboard and full width atmosphere, while using the official logo
+   markup and source data already provided by the game. */
+html.cb-match-layout-v2 .cb-live-card[data-cb-v4-arena]>.cb-broadcast-head{
+ background:
+ radial-gradient(ellipse at 78% 0,color-mix(in srgb,var(--cb-theme-accent) 13%,transparent),transparent 66%),
+ linear-gradient(120deg,var(--cb-theme-board,#11253d),#091828 84%)!important;
+ padding:13px 16px!important;
+ border-bottom:2px solid color-mix(in srgb,var(--cb-theme-accent) 52%,#2b435b)!important;
+}
+.cb-live-card[data-cb-v4-arena] .cb-broadcast-logo,
+.cb-live-card[data-cb-v4-arena] .cb-broadcast-logo.tm-tour-logo-shell{
+ background:#eef7ff;
+ box-shadow:0 2px 12px rgba(1,8,19,.34),0 0 0 2px rgba(255,255,255,.14);
+}
+.cb-live-card[data-cb-v4-arena] .cb-broadcast-brand b{
+ font-size:clamp(17px,1.6vw,26px)!important;font-weight:1000;
+}
+.cb-live-card[data-cb-v4-arena] .cb-tv-score{
+ border-radius:10px;background:#071727!important;
+ box-shadow:0 8px 22px rgba(0,0,0,.13);
+}
+.cb-live-card[data-cb-v4-arena] .cb-tv-score .cb-tv-point{
+ font-size:clamp(17px,1.5vw,23px)!important;
+ color:var(--cb-theme-accent);
+ background:color-mix(in srgb,var(--cb-theme-accent) 13%,#071525);
+}
+.cb-live-card[data-cb-v4-arena] .cb-v3-match-identity{
+ background:color-mix(in srgb,var(--cb-theme-accent) 6%,#10243b);
+ padding:7px 11px;border-radius:8px;
+ border:1px solid color-mix(in srgb,var(--cb-theme-accent) 17%,#233a51);
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-net{
+ height:8px;top:calc(50% - 4px);z-index:5;
+ background:
+ repeating-linear-gradient(90deg,rgba(250,253,255,.24) 0 1px,transparent 1px 5px),
+ repeating-linear-gradient(0deg,rgba(240,247,251,.28) 0 1px,transparent 1px 3px),
+ linear-gradient(180deg,#172b3c,#071522 35%,#243747 85%,#172a3e);
+ border-top:2px solid rgba(245,250,255,.65);
+ border-bottom:1px solid rgba(13,20,30,.6);
+ box-shadow:0 4px 7px rgba(0,0,0,.28);
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-net:before,
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-net:after{
+ content:"";position:absolute;top:-7px;bottom:-5px;width:5px;
+ background:linear-gradient(90deg,#f4fbff,#7890a3);
+ box-shadow:0 3px 5px rgba(0,0,0,.36);
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-net:before{left:0}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-net:after{right:0}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-court-line{
+ background:#f5f9ff!important;
+ box-shadow:0 1px 3px rgba(0,0,0,.33),0 0 2px rgba(255,255,255,.28)!important;
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-player-dot{
+ filter:drop-shadow(0 3px 3px rgba(0,0,0,.35));
+ border:2px solid rgba(255,255,255,.93)!important;
+ outline:2px solid rgba(0,0,0,.45)!important;
+ outline-offset:2px;
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .fm-ball{
+ width:12px;height:12px;
+ background:#e8fa44;box-shadow:0 0 0 3px rgba(224,255,71,.13),0 0 17px #dcff3a!important;
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-v3-court-brand{display:none!important} /* Avoid duplicate low-contrast wordmark over the rally */
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-v3-venue-footer{display:none}
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-venue-board-v14{
+ background:linear-gradient(180deg,rgba(7,22,37,.95),rgba(14,39,57,.89));
+ border-color:color-mix(in srgb,var(--cb-theme-accent) 43%,rgba(255,255,255,.15));
+ color:#fff;padding:6px 11px;
+}
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-venue-board-v14 b{font-size:clamp(9px,.8vw,14px)}
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-stands-v14,
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-crowd-wave-v14{
+ display:none!important;
+}
+/* Keep lightweight venues genuinely smaller than Grand Slam show courts. */
+.cb-live-card .cb-court[data-cb-v4-arena][data-cb-venue-tier="challenger"] .cb-v4-grandstand-west,
+.cb-live-card .cb-court[data-cb-v4-arena][data-cb-venue-tier="challenger"] .cb-v4-grandstand-east{opacity:.35}
+.cb-live-card .cb-court[data-cb-v4-arena][data-cb-venue-tier="itf"] .cb-v4-grandstand{
+ opacity:.16;filter:grayscale(.35);
+}
+@media (max-width:700px){
+ .cb-v4-venue-graphics .cb-v4-floor-location{font-size:9px;bottom:8.4%}
+ .cb-v4-venue-graphics .cb-v4-led{font-size:6px;letter-spacing:0}
+ .cb-v4-venue-graphics .cb-v4-led-north{left:24%;right:24%;height:5%;gap:4px}
+ .cb-v4-venue-graphics .cb-v4-led-north strong{font-size:8px}
+ .cb-v4-venue-graphics .cb-v4-led-north span{max-width:95px;overflow:hidden;text-overflow:ellipsis}
+ .cb-v4-venue-graphics .cb-v4-led-south{left:24%;right:24%;height:3.9%}
+ .cb-v4-venue-graphics .cb-v4-led-west,
+ .cb-v4-venue-graphics .cb-v4-led-east{font-size:6px}
+ .cb-v4-venue-graphics .cb-v4-umpire-scene,
+ .cb-v4-venue-graphics .cb-v4-broadcast-camera{opacity:.48}
+ html.cb-match-layout-v2 .cb-live-card[data-cb-v4-arena]>.cb-broadcast-head{padding:8px!important}
+ .cb-live-card[data-cb-v4-arena] .cb-broadcast-brand b{font-size:15px!important}
+ .cb-live-card[data-cb-v4-arena] .cb-v3-match-identity{padding:6px 8px}
+}
+@media (prefers-reduced-motion:reduce){
+ .cb-live-card[data-cb-v4-arena] .cb-v4-venue-graphics *{animation:none!important;transition:none!important}
+}

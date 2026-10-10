@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import {replayIsolatedWorld,nextDay,isoDay} from '../qa/world-2050/replay-controller.mjs';
 
 function makeWorld(startDate='2025-12-01'){
- let date=startDate, calls=0, checkpoints=0, matches=0, rolled=0, invariants=0, probes=0;
+ let date=startDate, calls=0, checkpoints=0, matches=0, rolled=0, invariants=0, probes=0, leaseAcquires=0, leaseReleases=0;
  const checkpointed=new Set(), matchDone=new Set(), years=new Set();
  const world={
   async assertIsolatedEnvironment(){},
+  async acquireExclusiveReplayLease(){leaseAcquires++;return {acquired:true,leaseId:'isolated-mock-exclusive'}},
+  async releaseExclusiveReplayLease({leaseId}){assert.equal(leaseId,'isolated-mock-exclusive');leaseReleases++},
   async assertSchemaParity(){},
   async assertSeedReady(){},
   async readCareerDate(){return date},
@@ -32,7 +34,7 @@ function makeWorld(startDate='2025-12-01'){
   async probeSaveReload(){probes++},
   async verifyWorldInvariants(){invariants++}
  };
- return {world,stats:()=>({date,calls,checkpoints,matches,rolled,invariants,probes})};
+ return {world,stats:()=>({date,calls,checkpoints,matches,rolled,invariants,probes,leaseAcquires,leaseReleases})};
 }
 
 test('ISO day utility rejects illegal dates, advances across leap years',()=>{
@@ -92,5 +94,65 @@ test('simplified 2025-2050 adapter can test controller length but NEVER certify 
  assert.equal(stats().date,'2050-12-31');
  assert.ok(r.quarterlyChecks>=100);
  assert.equal(r.status,'COMPLETED_WITH_ADAPTER_ASSERTIONS');
+ assert.notEqual(r.status,'REAL_GAME_2050_CERTIFIED');
+});
+
+test('no exclusive shared lease means zero real-game day writes',async()=>{
+ const {world,stats}=makeWorld();
+ world.acquireExclusiveReplayLease=async()=>({acquired:false});
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),/Exclusive isolated replay lease unavailable/);
+ assert.equal(stats().calls,0);
+ assert.equal(stats().leaseReleases,0);
+});
+
+test('lease is always released if a 2025-2050 preflight fails after acquisition',async()=>{
+ const {world,stats}=makeWorld();
+ world.assertSchemaParity=async()=>{throw Error('Stage function parity drift')};
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),/Stage function parity drift/);
+ assert.equal(stats().calls,0);
+ assert.equal(stats().leaseAcquires,1);
+ assert.equal(stats().leaseReleases,1);
+});
+
+test('lease is released after a real-game day rejects or jumps ahead',async()=>{
+ const {world,stats}=makeWorld();
+ world.advanceDay=async()=>{throw Error('Database statement_timeout after long world match')};
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),/statement_timeout/);
+ assert.equal(stats().leaseAcquires,1);
+ assert.equal(stats().leaseReleases,1);
+});
+
+test('exclusive lease refuses concurrent runs against the same world adapter',async()=>{
+ let held=false,acquired=0,released=0;
+ const world={...makeWorld().world};
+ world.acquireExclusiveReplayLease=async()=>{
+   if(held)return {acquired:false};
+   held=true;acquired++;return {acquired:true,leaseId:'same-db-stage-world'};
+ };
+ world.releaseExclusiveReplayLease=async({leaseId})=>{
+   assert.equal(leaseId,'same-db-stage-world');
+   held=false;released++;
+ };
+ const results=await Promise.allSettled([
+   replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),
+   replayIsolatedWorld({adapter:world,endDate:'2025-12-04'})
+ ]);
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+ assert.equal(results.filter(r=>r.status==='rejected').length,1);
+ assert.match(results.find(r=>r.status==='rejected').reason.message,/Exclusive isolated replay lease unavailable/);
+ assert.equal(acquired,1);
+ assert.equal(released,1);
+ assert.equal(held,false);
+});
+
+test('25-year controller smoke includes all rollovers and a released lease, not game certification',async()=>{
+ const {world,stats}=makeWorld('2025-12-01');
+ const r=await replayIsolatedWorld({adapter:world,startDate:'2025-12-01',endDate:'2050-12-31'});
+ assert.equal(r.days,9161);
+ assert.equal(r.rollovers,25);
+ assert.ok(r.checkpoints>=1300);
+ assert.ok(r.saveLoadProbes>=100);
+ assert.equal(stats().leaseAcquires,1);
+ assert.equal(stats().leaseReleases,1);
  assert.notEqual(r.status,'REAL_GAME_2050_CERTIFIED');
 });

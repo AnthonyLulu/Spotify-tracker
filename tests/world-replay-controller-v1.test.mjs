@@ -80,7 +80,13 @@ test('weekly checkpoint is committed once and season rollover is applied before 
 
 test('repeated checkpoint is a hard error, not an endless loop',async()=>{
  const {world}=makeWorld('2025-12-28');
- world.runWeeklyCheckpoint=async()=>{};
+ world.runWeeklyCheckpoint=async({checkpointDate})=>({
+  ok:true,checkpoint_date:checkpointDate,world_run_id:'mock-uncommitted-'+checkpointDate,
+  world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+  matches_due:0,matches_committed:0,managed_matches_pending:0,duplicate_match_effects:0
+ });
+ // This intentionally does NOT mark checkpointed in the mock world; the
+ // next attempt must reject the unresolved repeated weekly condition.
  await assert.rejects(()=>replayIsolatedWorld({adapter:world,startDate:'2025-12-28',endDate:'2025-12-29'}),/Unresolved repeat/);
 });
 

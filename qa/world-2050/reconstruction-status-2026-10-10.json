@@ -129,7 +129,8 @@
     },
     "itf_m25_single_draw": {
       "passed": false,
-      "reason": "execution blocked by tool safety controls; no result claimed"
+      "reason": "execution blocked by tool safety controls; no result claimed",
+      "not_executed": true
     }
   },
   "restored_fixtures": {

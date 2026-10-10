@@ -1,0 +1,188 @@
+/* Court Boss Match Center V5
+   2.5D broadcast perspective. The entire actual playing plane, including
+   the live animated players, ball and shot traces, is transformed together.
+   No 3D asset downloads, no hardcoded tournament logos, no engine edits. */
+
+html.cb-match-layout-v2 .cb-live-card .cb-court[data-cb-v5-court="perspective"]{
+  --cb-v5-clay:#b56c45;
+  --cb-v5-ink:#e7f7ff;
+  background:
+    radial-gradient(ellipse at 48% 25%,color-mix(in srgb,var(--cb-theme-accent,#81ceff) 16%,transparent) 0,transparent 51%),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 38px),
+    linear-gradient(180deg,color-mix(in srgb,var(--cb-theme-board,#143249) 74%,#152f42),
+      color-mix(in srgb,var(--cb-theme-court-b,#18547c) 62%,#081724) 50%,
+      color-mix(in srgb,var(--cb-theme-board,#17374e) 73%,#070e16))!important;
+  overflow:hidden;
+  isolation:isolate;
+}
+/* The old full-rectangle singles outline sat *outside* the transformed
+   playing surface. Hide only that outdated outline in FM mode. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court]::before{
+  display:none!important;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] > .cb-v5-playing-plane{
+  position:absolute;
+  left:12.5%;right:12.5%;top:7%;bottom:5%;
+  overflow:visible;
+  isolation:isolate;
+  transform:perspective(890px) rotateX(31deg) scale(1.02);
+  transform-origin:50% 52%;
+  filter:drop-shadow(0 18px 11px rgba(1,9,21,.38));
+  z-index:3!important;
+  pointer-events:none;
+}
+/* Court material and stadium surround are distinct painted surfaces.
+   Avoid painting a giant plain rectangle across the entire stadium. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] > .cb-v5-playing-plane::before{
+  content:"";position:absolute;inset:0;
+  border:2px solid color-mix(in srgb,var(--cb-theme-court-a,#317cb5) 32%,rgba(255,255,255,.4));
+  border-radius:3px;
+  background:
+    radial-gradient(ellipse at 44% 12%,rgba(255,255,255,.19) 0%,rgba(255,255,255,.035) 38%,transparent 73%),
+    repeating-linear-gradient(6deg,rgba(255,255,255,.012) 0 1px,transparent 1px 21px),
+    linear-gradient(175deg,var(--cb-theme-court-a,#2f86c9),var(--cb-theme-court-b,#1f5d95));
+  box-shadow:
+    inset 0 0 0 4px rgba(255,255,255,.025),
+    inset 0 23px 39px rgba(255,255,255,.09),
+    inset 0 -22px 37px rgba(2,13,32,.17),
+    0 10px 0 -6px color-mix(in srgb,var(--cb-theme-board,#113a56) 83%,#020a14),
+    0 20px 38px rgba(0,0,0,.34);
+  z-index:0;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court][data-cb-v3-surface="clay"] > .cb-v5-playing-plane::before{
+  background:
+    radial-gradient(ellipse at 42% 19%,rgba(255,226,174,.20),transparent 72%),
+    repeating-linear-gradient(13deg,rgba(99,48,28,.09) 0 1px,transparent 1px 14px),
+    repeating-linear-gradient(102deg,rgba(255,220,161,.022) 0 2px,transparent 2px 13px),
+    linear-gradient(176deg,var(--cb-theme-court-a,#cf7948),var(--cb-theme-court-b,#a64f2f));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court][data-cb-v3-surface="grass"] > .cb-v5-playing-plane::before{
+  background:
+    radial-gradient(ellipse at 43% 18%,rgba(239,255,199,.15),transparent 74%),
+    repeating-linear-gradient(90deg,rgba(233,255,210,.06) 0 12.5%,rgba(10,42,21,.075) 12.5% 25%),
+    linear-gradient(173deg,var(--cb-theme-court-a,#69934f),var(--cb-theme-court-b,#416d36));
+}
+/* The actual court lines have always used percentage coordinates.
+   Moving them *together* into this plane keeps every line consistent. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line{
+  background:#f5fbff!important;
+  height:2px;
+  box-shadow:0 1px 3px rgba(0,0,0,.23),0 0 1px #fff;
+  z-index:3;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline,
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.service.vertical{
+  width:2px;height:auto;
+}
+/* The legacy line renderer has doubles' sidelines at x=10/90 and the
+   vertical service divider at center. Add inner singles tramlines via
+   pseudo elements on the two existing sidelines, without new position data. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.left::after,
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.right::after{
+  content:"";position:absolute;top:0;height:100%;width:2px;
+  background:rgba(246,250,255,.86);
+  box-shadow:0 1px 2px rgba(0,0,0,.2);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.left::after{left:calc(9vw / 2)}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-court-line.sideline.right::after{right:calc(9vw / 2)}
+/* Thinner white capping band and mesh for the 2.5D net. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-net{
+  height:11px;top:calc(50% - 5px);left:8%;right:8%;
+  border-top:3px solid #f5f7fa!important;
+  border-bottom:2px solid rgba(1,14,30,.72);
+  background:
+    repeating-linear-gradient(90deg,rgba(249,252,255,.41) 0 1px,transparent 1px 6px),
+    repeating-linear-gradient(0deg,rgba(246,251,255,.35) 0 1px,transparent 1px 4px),
+    linear-gradient(180deg,#132e45,#071724);
+  box-shadow:0 4px 7px rgba(0,0,0,.4);
+  z-index:6;
+}
+/* Because the entire game geometry is projected, moving players and ball
+   remain on the surface rather than floating outside the court. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-player-dot{
+  z-index:9;
+  border:2px solid rgba(255,255,255,.94)!important;
+  box-shadow:0 4px 13px rgba(2,14,28,.48),0 0 0 2px rgba(12,35,49,.55);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-ball{
+  z-index:12;width:12px;height:12px;
+  border:1px solid #f2ffc3;
+  background:#f2ff3e;
+  box-shadow:0 0 0 3px rgba(235,255,65,.16),0 0 12px rgba(241,255,56,.85);
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .cb-rally-trace{
+  z-index:5;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .cb-v5-court-emblem{
+  position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);
+  font:1000 clamp(32px,6.4vw,83px)/1 system-ui,sans-serif;
+  letter-spacing:-.085em;
+  color:rgba(246,251,255,.10);
+  text-shadow:0 2px 4px rgba(0,0,0,.07);
+  z-index:1;
+  pointer-events:none;
+}
+/* The old 2D billboard marks overlap a perspective playing surface.
+   The title remains clear in the proper tournament header above. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-floor-mark,
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-floor-location,
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v3-court-brand{
+  display:none!important;
+}
+/* Broadcast depth: environment, crowd and side panels remain outside the
+   transformed court and therefore read as a surrounding stadium. */
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-grandstand-west,
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-grandstand-east{
+  width:10%;opacity:.98;
+  background:
+    repeating-linear-gradient(0deg,transparent 0 10px,rgba(255,255,255,.045) 11px 12px),
+    linear-gradient(90deg,#061322,color-mix(in srgb,var(--cb-theme-board,#21384d) 82%,#0a1d31));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-grandstand-east{
+  background:
+    repeating-linear-gradient(0deg,transparent 0 10px,rgba(255,255,255,.045) 11px 12px),
+    linear-gradient(270deg,#061322,color-mix(in srgb,var(--cb-theme-board,#21384d) 82%,#0a1d31));
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-led-west{left:7.6%}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-led-east{right:7.6%}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-venue-graphics .cb-v4-led-north{
+  top:4%;left:24%;right:24%;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-venue-graphics .cb-v4-led-south{
+  left:28%;right:28%;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-venue-board-v14{
+  z-index:5;top:1%;padding:4px 9px;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-venue-graphics .cb-v4-umpire-scene{
+  top:43%;right:8%;
+}
+html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-venue-graphics .cb-v4-arena-lights{
+  background:
+    radial-gradient(ellipse at 18% 0%,rgba(245,252,255,.19),transparent 24%),
+    radial-gradient(ellipse at 84% 0%,rgba(250,248,224,.17),transparent 26%),
+    radial-gradient(ellipse at 49% 34%,rgba(255,255,255,.035),transparent 59%);
+}
+/* On iPhone the enlarged plane keeps the small match visuals legible.
+   The projected stage is still part of the same responsive Match Center. */
+@media(max-width:919px){
+  html.cb-match-layout-v2 .cb-court[data-cb-v5-court] > .cb-v5-playing-plane{
+    left:8%;right:8%;top:8%;bottom:5%;
+    transform:perspective(800px) rotateX(23deg) scale(1.01);
+  }
+}
+@media(max-width:520px){
+  html.cb-match-layout-v2 .cb-court[data-cb-v5-court] > .cb-v5-playing-plane{
+    left:5%;right:5%;top:9%;bottom:6%;
+    transform:perspective(800px) rotateX(20deg) scale(1.01);
+  }
+  html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .fm-net{height:7px;top:calc(50% - 3px)}
+  html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v5-playing-plane .cb-v5-court-emblem{font-size:37px}
+  html.cb-match-layout-v2 .cb-court[data-cb-v5-court] .cb-v4-led-north{font-size:6px!important}
+}
+/* No layout or visual change in Vue classique. */
+html:not(.cb-match-layout-v2) .cb-v5-playing-plane{display:contents!important}
+html:not(.cb-match-layout-v2) .cb-v5-court-emblem{display:none!important}
+@media(prefers-reduced-motion:reduce){
+ html.cb-match-layout-v2 .cb-v5-playing-plane{transition:none!important}
+}

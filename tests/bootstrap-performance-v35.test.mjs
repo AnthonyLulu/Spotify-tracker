@@ -35,7 +35,9 @@ test('secondary bootstrap is shared and awaited only by dependent routes',()=>{
   assert.match(app,/let bootstrapSecondaryPromise=null/);
   assert.match(app,/if\(bootstrapSecondaryPromise&&!force\)return bootstrapSecondaryPromise/);
   assert.match(app,/get\('\/api\/bootstrap-secondary'\)/);
-  assert.match(app,/\['academy','scouting','staff','finance','medical','davis','match','players','contracts'\]\.includes\(r\)/);
+  assert.match(app,/\['academy','scouting','staff','finance','medical','davis','match','contracts'\]\.includes\(r\)/);
+  // Players browse is read-only and can paint before optional secondary hydration.
+  assert.doesNotMatch(app,/\['academy','scouting','staff','finance','medical','davis','match','players','contracts'\]\.includes\(r\)/);
   assert.match(app,/await loadBootstrapSecondary\(\)/);
 });
 

@@ -1,0 +1,44 @@
+name: Court Boss Match Center Visual Smoke
+
+on:
+  pull_request:
+    branches: [court-boss-live]
+    paths:
+      - "court-boss/match-center-layout-v2.css"
+      - "court-boss/match-center-layout-v2.js"
+      - "tests/match-layout-browser.cjs"
+      - ".github/workflows/court-boss-match-layout-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-browser-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate scripts
+        run: |
+          node --check court-boss/match-center-layout-v2.js
+          node --check tests/match-layout-browser.cjs
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Test desktop, tablet, mobile and rollback offline
+        run: node tests/match-layout-browser.cjs
+      - name: Save diagnostic screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm-match-layout-smoke-screens
+          path: match-layout-*.png
+          if-no-files-found: ignore
+          retention-days: 3

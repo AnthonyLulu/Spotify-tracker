@@ -1,0 +1,379 @@
+/*
+ * Court Boss / Manager Universe - Match Center FM Layout V2
+ * Presentation-only layer. No scoring, physics or save state changes.
+ * Disable via the in-match "Vue classique" button, or ?match-ui=classic.
+ * Loaded after all historical match styles for non-destructive overrides.
+ */
+html.cb-match-layout-v2 {
+  --cb-fm-panel:#111e2e;
+  --cb-fm-panel-2:#142337;
+  --cb-fm-edge:rgba(143,177,205,.18);
+  --cb-fm-blue:#49aefa;
+  --cb-fm-text:#e9f2fb;
+}
+html.cb-match-layout-v2 .app-shell:has(.cb-match-shell){
+  --accent:#4eafff;
+  --accent2:#39c5bd;
+  --panel:#101c2b;
+  --panel2:#132235;
+  --panel3:#1c3047;
+  --line:#29405a;
+  --line2:#375876;
+  --muted:#9cb1c6;
+}
+html.cb-match-layout-v2 .app-shell:has(.cb-match-shell) .topbar {
+  background:rgba(9,19,34,.96);
+  border-bottom-color:rgba(130,169,208,.17);
+}
+html.cb-match-layout-v2 .app-shell:has(.cb-match-shell) .bottom-nav{
+  background:rgba(11,23,40,.96);
+  border-color:rgba(132,175,215,.2);
+}
+html.cb-match-layout-v2 .app-shell:has(.cb-match-shell) .bottom-nav button.active{
+  background:#174477;color:#d1ecff;
+}
+html.cb-match-layout-v2 .page:has(.cb-match-shell){
+  width:100%;
+  max-width:1820px;
+  padding:12px clamp(10px,1.3vw,22px) 105px;
+}
+html.cb-match-layout-v2 .cb-match-shell {
+  gap:11px;
+  color:var(--cb-fm-text);
+}
+html.cb-match-layout-v2 .cb-match-shell .card{
+  border-color:var(--cb-fm-edge);
+  background-color:#101d2b;
+}
+html.cb-match-layout-v2 .cb-live-card {
+  display:grid;
+  grid-template-columns:minmax(216px,.88fr) minmax(410px,2.35fr) minmax(232px,1fr);
+  column-gap:11px;
+  row-gap:11px;
+  padding:12px;
+  overflow:visible;
+  border:1px solid var(--cb-fm-edge);
+  border-radius:13px;
+  background:linear-gradient(160deg,#0b1829,#0c1725 58%,#0a1320);
+  box-shadow:0 18px 48px rgba(0,0,0,.23);
+}
+html.cb-match-layout-v2 .cb-live-card > *{
+  min-width:0;
+}
+html.cb-match-layout-v2 .cb-live-card > :not(.cb-broadcast-head):not(.cb-tv-score):not(.cb-match-context):not(.cb-court):not(.cb-match-story):not(.cb-coach-panel):not(.cb-stat-grid){
+  grid-column:1 / -1;
+}
+html.cb-match-layout-v2 .cb-live-card > .cb-broadcast-head{
+  grid-column:1/-1;
+  grid-row:1;
+  margin:0;
+  padding:8px 13px;
+  border-radius:10px;
+  background:#112238;
+}
+html.cb-match-layout-v2 .cb-broadcast-brand b{font-size:clamp(12px,1.1vw,18px)}
+html.cb-match-layout-v2 .cb-broadcast-brand em{color:#9bb4cb}
+html.cb-match-layout-v2 .cb-live-card > .cb-tv-score{
+  grid-column:1/-1;
+  grid-row:2;
+  margin:0;
+  border-radius:10px;
+  background:#0a1423;
+}
+html.cb-match-layout-v2 .cb-tv-score-row.user{background:rgba(46,147,235,.045)}
+html.cb-match-layout-v2 .cb-tv-player em{color:#a3b9c9}
+html.cb-match-layout-v2 .cb-live-card > .cb-match-context{
+  grid-column:1/-1;
+  grid-row:3;
+  margin:0;
+}
+html.cb-match-layout-v2 .cb-match-context > span{
+  background:#172a40;
+  border:1px solid rgba(143,177,205,.12);
+  color:#d5e5f4;
+  opacity:1;
+  font-size:10px;
+}
+html.cb-match-layout-v2 .cb-live-card > .cb-court{
+  grid-column:2;
+  grid-row:4;
+  width:100%;
+  height:clamp(400px,34vw,580px);
+  min-height:400px;
+  margin:0;
+  border-radius:11px;
+  outline:1px solid rgba(222,236,251,.15);
+}
+html.cb-match-layout-v2 .cb-live-card > .cb-match-story{
+  grid-column:1;
+  grid-row:4;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin:0;
+  padding:11px;
+  min-height:400px;
+  max-height:580px;
+  overflow:hidden;
+  border:1px solid var(--cb-fm-edge);
+  border-radius:11px;
+  background:linear-gradient(180deg,#132235,#0e1b2c);
+}
+html.cb-match-layout-v2 .cb-live-card > .cb-match-story:before{
+  content:"COMMENTAIRES EN DIRECT";
+  display:block;
+  flex:0 0 auto;
+  padding:0 0 9px;
+  font-size:11px;
+  letter-spacing:.075em;
+  font-weight:900;
+  color:#b2dafa;
+  border-bottom:1px solid var(--cb-fm-edge);
+}
+html.cb-match-layout-v2 .cb-match-story .cb-point-story{
+  flex:0 0 auto;
+  border-radius:8px;
+  background:#1a3048;
+}
+html.cb-match-layout-v2 .cb-point-story b{font-size:11px}
+html.cb-match-layout-v2 .cb-point-story small{white-space:normal;line-height:1.45}
+html.cb-match-layout-v2 .cb-match-story .cb-event-feed{
+  flex:1 1 auto;
+  max-height:none;
+  min-height:90px;
+  overflow:auto;
+  border:0;
+  background:transparent;
+}
+html.cb-match-layout-v2 .cb-event-line{
+  grid-template-columns:minmax(42px,auto) minmax(0,1fr);
+  gap:5px 7px;
+  align-items:start;
+  padding:9px 4px;
+}
+html.cb-match-layout-v2 .cb-event-line > span{
+  color:#79b9eb;
+  font-size:9px;
+}
+html.cb-match-layout-v2 .cb-event-line > b{
+  white-space:normal;
+  font-size:10px;
+  line-height:1.4;
+}
+html.cb-match-layout-v2 .cb-event-line > small{
+  grid-column:2;
+  font-size:9px;
+}
+html.cb-match-layout-v2 .cb-live-card > .cb-coach-panel{
+  grid-column:3;
+  grid-row:4;
+  align-self:stretch;
+  margin:0;
+  padding:12px;
+  min-height:400px;
+  max-height:580px;
+  overflow:auto;
+  border:1px solid var(--cb-fm-edge);
+  border-radius:11px;
+  background:linear-gradient(180deg,#14243a,#0e1b2c);
+  scrollbar-width:thin;
+}
+html.cb-match-layout-v2 .cb-coach-panel > summary{
+  list-style:none;
+  padding:0 0 11px;
+  border-bottom:1px solid var(--cb-fm-edge);
+  color:#a9d9fc;
+  font-size:11px;
+  letter-spacing:.035em;
+}
+html.cb-match-layout-v2 .cb-coach-panel > summary::before{
+  content:"◈  ";
+  color:#49aeff;
+}
+html.cb-match-layout-v2 .cb-coach-panel .cb-coach-grid{
+  grid-template-columns:1fr;
+  gap:6px;
+}
+html.cb-match-layout-v2 .cb-coach-grid label,
+html.cb-match-layout-v2 .cb-coach-slider{
+  padding:8px;
+  background:#1a2b40;
+  border:1px solid rgba(157,189,213,.1);
+  border-radius:8px;
+}
+html.cb-match-layout-v2 .cb-coach-grid select{
+  background:#0c1b2d;
+  border-color:rgba(155,188,212,.23);
+}
+html.cb-match-layout-v2 .cb-live-card > .cb-stat-grid{
+  grid-column:1/-1;
+  grid-row:6;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  margin:0;
+  gap:7px;
+}
+html.cb-match-layout-v2 .cb-stat-grid > div{
+  padding:12px 11px;
+  border:1px solid var(--cb-fm-edge);
+  border-radius:10px;
+  background:linear-gradient(180deg,#16283d,#101f31);
+}
+html.cb-match-layout-v2 .cb-stat-grid span{font-size:10px;color:#9ab4c9;opacity:1}
+html.cb-match-layout-v2 .cb-stat-grid b{font-size:14px;color:#e8f2fd}
+html.cb-match-layout-v2 .cb-live-controls{
+  grid-column:1/-1;
+  grid-row:5;
+  position:static;
+  margin:0;
+  padding:9px 12px;
+  border:1px solid var(--cb-fm-edge);
+  border-radius:10px;
+  background:#13243a;
+  box-shadow:none;
+}
+html.cb-match-layout-v2 .cb-live-controls .soft-btn.active{
+  background:#24619c;
+  border-color:#57b0ef;
+  color:#fff;
+}
+html.cb-match-layout-v2 .cb-live-card .cb-resolution-card,
+html.cb-match-layout-v2 .cb-live-card .cb-physics-card,
+html.cb-match-layout-v2 .cb-live-card .cb-ai-read-v12,
+html.cb-match-layout-v2 .cb-live-card .cb-tactical-lab-v13,
+html.cb-match-layout-v2 .cb-live-card .cb-cinema-v14{
+  border-color:var(--cb-fm-edge);
+  border-radius:10px;
+}
+html.cb-match-layout-v2 .cb-layout-switch-v2{
+  flex:0 0 auto;
+  margin-left:auto;
+  padding:7px 10px;
+  border:1px solid rgba(113,190,248,.32);
+  border-radius:8px;
+  color:#bee6ff;
+  background:#173751;
+  font-family:inherit;
+  font-weight:700;
+  font-size:10px;
+  line-height:1.25;
+  cursor:pointer;
+  white-space:nowrap;
+}
+html.cb-match-layout-v2 .cb-layout-switch-v2:focus-visible{
+  outline:2px solid #70c9ff;
+  outline-offset:2px;
+}
+/* The switch stays visible in classic layout too, so users can revert. */
+.cb-layout-switch-v2{
+  margin-left:auto;
+  padding:7px 10px;
+  border:1px solid #42607a;
+  border-radius:8px;
+  background:#172a39;
+  color:#d5e9fb;
+  font-size:10px;
+  font-weight:750;
+  cursor:pointer;
+  white-space:nowrap;
+}
+@media (min-width:1480px){
+  html.cb-match-layout-v2 .app-shell:has(.cb-match-shell) .bottom-nav{
+    position:fixed;
+    top:67px;
+    bottom:0;
+    left:0;
+    transform:none;
+    width:178px;
+    height:calc(100dvh - 67px);
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-start;
+    gap:3px;
+    padding:13px 8px;
+    overflow:auto;
+    border-radius:0;
+    border-right:1px solid var(--cb-fm-edge);
+    box-shadow:12px 0 35px rgba(0,0,0,.12);
+  }
+  html.cb-match-layout-v2 .app-shell:has(.cb-match-shell) .bottom-nav button{
+    flex:0 0 auto;
+    width:100%;
+    min-width:0;
+    min-height:40px;
+    text-align:left;
+    white-space:normal;
+    padding:10px 8px;
+    border-radius:7px;
+  }
+  html.cb-match-layout-v2 .page:has(.cb-match-shell){
+    max-width:none;
+    padding-left:190px;
+    padding-right:16px;
+  }
+}
+@media (min-width:920px) and (max-width:1199px){
+  html.cb-match-layout-v2 .cb-live-card{
+    grid-template-columns:minmax(210px,.8fr) minmax(0,2fr);
+  }
+  html.cb-match-layout-v2 .cb-live-card > .cb-coach-panel{
+    grid-column:1/-1;
+    grid-row:6;
+    min-height:0;
+    max-height:none;
+  }
+  html.cb-match-layout-v2 .cb-coach-panel .cb-coach-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  html.cb-match-layout-v2 .cb-live-card > .cb-stat-grid{grid-row:7;grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:919px){
+  html.cb-match-layout-v2 .cb-live-card{
+    grid-template-columns:minmax(0,1fr);
+    padding:10px;
+  }
+  html.cb-match-layout-v2 .cb-live-card > .cb-broadcast-head{grid-row:1;flex-wrap:wrap}
+  html.cb-match-layout-v2 .cb-live-card > .cb-tv-score{grid-row:2}
+  html.cb-match-layout-v2 .cb-live-card > .cb-match-context{grid-row:3}
+  html.cb-match-layout-v2 .cb-live-card > .cb-court{
+    grid-column:1;
+    grid-row:4;
+    height:clamp(330px,57vw,480px);
+    min-height:330px;
+  }
+  html.cb-match-layout-v2 .cb-live-card > .cb-match-story{
+    grid-column:1;
+    grid-row:6;
+    min-height:0;
+    max-height:none;
+  }
+  html.cb-match-layout-v2 .cb-event-feed{max-height:235px!important}
+  html.cb-match-layout-v2 .cb-live-card > .cb-coach-panel{
+    grid-column:1;
+    grid-row:7;
+    min-height:0;
+    max-height:none;
+  }
+  html.cb-match-layout-v2 .cb-live-card > .cb-stat-grid{
+    grid-column:1;
+    grid-row:8;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media (max-width:600px){
+  html.cb-match-layout-v2 .page:has(.cb-match-shell){padding-left:8px;padding-right:8px}
+  html.cb-match-layout-v2 .cb-live-card{padding:8px;gap:8px}
+  html.cb-match-layout-v2 .cb-live-card > .cb-broadcast-head{padding:8px}
+  html.cb-match-layout-v2 .cb-live-card > .cb-court{
+    height:340px;
+    min-height:340px;
+  }
+  html.cb-match-layout-v2 .cb-live-card > .cb-stat-grid{gap:5px}
+  html.cb-match-layout-v2 .cb-stat-grid > div{padding:8px}
+  html.cb-match-layout-v2 .cb-stat-grid b{font-size:12px}
+  html.cb-match-layout-v2 .cb-live-card > .cb-coach-panel{padding:10px}
+  html.cb-match-layout-v2 .cb-coach-panel .cb-coach-grid{grid-template-columns:1fr}
+  html.cb-match-layout-v2 .cb-layout-switch-v2{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  html.cb-match-layout-v2 .cb-live-card *{scroll-behavior:auto}
+}

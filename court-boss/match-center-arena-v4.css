@@ -240,7 +240,7 @@ html.cb-match-layout-v2 .cb-live-card[data-cb-v4-arena]>.cb-broadcast-head{
  width:12px;height:12px;
  background:#e8fa44;box-shadow:0 0 0 3px rgba(224,255,71,.13),0 0 17px #dcff3a!important;
 }
-.cb-live-card[data-cb-v4-arena] .cb-court .cb-v3-court-brand{opacity:.1;filter:grayscale(1) brightness(1.8)}
+.cb-live-card[data-cb-v4-arena] .cb-court .cb-v3-court-brand{display:none!important} /* Avoid duplicate low-contrast wordmark over the rally */
 .cb-live-card[data-cb-v4-arena] .cb-court .cb-v3-venue-footer{display:none}
 .cb-live-card[data-cb-v4-arena] .cb-court .cb-venue-board-v14{
  background:linear-gradient(180deg,rgba(7,22,37,.95),rgba(14,39,57,.89));

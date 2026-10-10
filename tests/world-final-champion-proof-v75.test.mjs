@@ -25,7 +25,7 @@ test('completed bracket only passes with all scored matches and valid identities
 test('QA remains stage-only, date-bound and rolls every game mutation back',()=>{
  assert.match(sql,/p_id not in \(65,199,906\)/);
  assert.match(sql,/world_tournament_simulations\)<>0/);
- assert.match(sql,/RAISE EXCEPTION 'EXPECTED_DRAW_TEST_ROLLBACK'/);
- assert.match(sql,/IF failure='EXPECTED_DRAW_TEST_ROLLBACK' THEN RETURN out/);
+ assert.match(sql,/raise exception 'EXPECTED_DRAW_TEST_ROLLBACK'/i);
+ assert.match(sql,/if failure='EXPECTED_DRAW_TEST_ROLLBACK' then return out/i);
  assert.match(sql,/REVOKE ALL ON FUNCTION .* FROM PUBLIC,anon,authenticated/);
 });

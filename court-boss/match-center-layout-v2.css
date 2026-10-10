@@ -223,9 +223,7 @@ html.cb-match-layout-v2 .cb-stat-grid b{font-size:14px;color:#e8f2fd}
 html.cb-match-layout-v2 .cb-live-controls{
   grid-column:1/-1;
   grid-row:5;
-  position:sticky;
-  bottom:8px;
-  z-index:31;
+  position:static;
   margin:0;
   padding:9px 12px;
   border:1px solid var(--cb-fm-edge);

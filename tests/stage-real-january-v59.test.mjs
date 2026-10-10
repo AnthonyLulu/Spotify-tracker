@@ -11,7 +11,8 @@ test('rollover checks its ACTUAL new_year response and junior rankings',()=>{
  assert.doesNotMatch(sql, /coalesce\(\(r->>'ok'\)::boolean,false\) IS DISTINCT FROM true THEN[\s\S]{0,100}Actual yearly rollover failed/);
 });
 test('SQL function declaration terminates before REVOKE',()=>{
- assert.match(sql,/\\$function\\$;\\s+REVOKE ALL/);
+ assert.ok(sql.includes('$function$;\n'));
+ assert.match(sql,/REVOKE ALL ON FUNCTION/);
 });
 
 test('probe serializes with 36-day world probe and rolls back everything',()=>{

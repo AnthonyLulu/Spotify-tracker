@@ -16,6 +16,10 @@ on:
       - "court-boss/match-center-experience-v6.css"
       - "court-boss/match-center-mobile-v7.js"
       - "court-boss/match-center-mobile-v7.css"
+      - "court-boss/app.js"
+      - "court-boss/wimbledon-crest.svg"
+      - "court-boss/wimbledon-crest.css"
+      - "tests/wimbledon-crest-browser.cjs"
       - "tests/match-layout-browser.cjs"
       - "tests/tournament-skins-browser.cjs"
       - "tests/match-experience-v6-browser.cjs"
@@ -47,6 +51,7 @@ jobs:
           node --check court-boss/match-center-experience-v6.js
           node --check court-boss/match-center-mobile-v7.js
           node --check tests/match-experience-v6-browser.cjs
+          node --check tests/wimbledon-crest-browser.cjs
       - name: Install browser test runtime
         run: |
           npm install --no-save --no-package-lock playwright@1.55.0
@@ -56,6 +61,7 @@ jobs:
           node tests/match-layout-browser.cjs
           node tests/tournament-skins-browser.cjs
           node tests/match-experience-v6-browser.cjs
+          node tests/wimbledon-crest-browser.cjs
       - name: Save diagnostic screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,5 +74,6 @@ jobs:
             perspective-*.png
             stadium-v6-*.png
             stadium-v7-*.png
+            wimbledon-crest-*.png
           if-no-files-found: ignore
           retention-days: 3

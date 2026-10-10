@@ -40,7 +40,18 @@ function makeWorld(startDate='2025-12-01'){
   },
   async rolloverSeason({newYear}){rolled++;years.add(newYear)},
   async playManagedMatch({expectedFromDate}){matches++;matchDone.add(expectedFromDate)},
-  async probeSaveReload(){probes++},
+  async probeSaveReload(){
+   probes++;
+   // MOCK ONLY. Real stage adapter MUST verify a saved, independently
+   // reloaded, full-state snapshot and exercise failed-load rollback.
+   return {
+    ok:true,date,slot_persisted:true,session_reopened:true,load_committed:true,
+    failed_load_rollback_verified:true,snapshot_scope:'full_career',slot_id:'mock-slot-1',
+    before_sha256:'a'.repeat(64),after_sha256:'a'.repeat(64),
+    duplicate_daily_commits:0,duplicate_match_effects:0,duplicate_recovery_effects:0,
+    date_skips:0,ranking_mismatches:0,career_state_mismatches:0
+   };
+  },
   async verifyWorldInvariants(){invariants++}
  };
  return {world,stats:()=>({date,calls,checkpoints,matches,rolled,invariants,probes,leaseAcquires,leaseReleases})};
@@ -216,4 +227,62 @@ test('verified weekly receipts accumulate genuine world match counts without lea
  assert.equal(result.worldMatchesCommitted,12);
  assert.equal(result.lastCommittedDate,'2026-01-03');
  assert.notEqual(result.status,'REAL_GAME_2050_CERTIFIED');
+});
+
+test('save/load cannot pass with bare or missing response',async()=>{
+ const {world}=makeWorld();
+ world.probeSaveReload=async()=>undefined;
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),
+  /Save\/reload lacks persisted full-state/);
+});
+
+test('persisted save/load demands identical SHA256 of entire career before and after',async()=>{
+ const {world,stats}=makeWorld();
+ const original=world.probeSaveReload;
+ world.probeSaveReload=async()=>({...await original(),after_sha256:'b'.repeat(64)});
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),
+  /Save\/reload lacks persisted full-state/);
+ assert.equal(stats().leaseReleases,1);
+});
+
+test('failed-load rollback is mandatory, not an optional success badge',async()=>{
+ const {world}=makeWorld();
+ const original=world.probeSaveReload;
+ world.probeSaveReload=async()=>({...await original(),failed_load_rollback_verified:false});
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),
+  /Save\/reload lacks persisted full-state/);
+});
+
+test('save/load detects duplicate match, fatigue, daily and ranking effects',async()=>{
+ for(const key of ['duplicate_daily_commits','duplicate_match_effects','duplicate_recovery_effects','date_skips','ranking_mismatches','career_state_mismatches']){
+  const {world}=makeWorld();
+  const original=world.probeSaveReload;
+  world.probeSaveReload=async()=>({...await original(),[key]:1});
+  await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),
+   /Save\/reload changed or duplicated career state/);
+ }
+});
+
+test('a reloaded date that moves must fail even when checksum receipt is forged',async()=>{
+ const {world}=makeWorld();
+ const original=world.probeSaveReload;
+ let fakeDate='2025-12-01';
+ world.probeSaveReload=async()=>{
+  const receipt=await original();
+  fakeDate='2025-12-05';
+  return receipt;
+ };
+ const actualReader=world.readCareerDate;
+ world.readCareerDate=async()=>fakeDate==='2025-12-05'?fakeDate:actualReader();
+ await assert.rejects(()=>replayIsolatedWorld({adapter:world,endDate:'2025-12-04'}),
+  /Save\/reload changed the active career date/);
+});
+
+test('offline multi-season replay requires a valid save/load receipt each quarter',async()=>{
+ const {world,stats}=makeWorld();
+ const outcome=await replayIsolatedWorld({adapter:world,endDate:'2028-01-01'});
+ assert.ok(outcome.saveLoadProbes>=8);
+ assert.equal(outcome.saveLoadProbes,stats().probes);
+ assert.equal(outcome.lastCommittedDate,'2028-01-01');
+ assert.notEqual(outcome.status,'REAL_GAME_2050_CERTIFIED');
 });

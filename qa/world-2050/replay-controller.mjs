@@ -43,6 +43,29 @@ export function assertVerifiedWorldWeek(receipt,checkpointDate){
  return receipt;
 }
 
+// The adapter must perform a genuine persistent save-slot write, end its game
+// session, re-read/load the saved state, compare canonical full-state digests,
+// and inject a failed-load rollback before returning this receipt. Offline
+// mock receipts are only protocol tests, NEVER proof of mobile/API save/load.
+export function assertVerifiedCareerSaveReload(receipt,date){
+ const sha=x=>typeof x==='string' && /^[0-9a-f]{64}$/i.test(x);
+ if(receipt?.ok!==true || receipt?.date!==date
+   || receipt.slot_persisted!==true || receipt.session_reopened!==true
+   || receipt.load_committed!==true || receipt.failed_load_rollback_verified!==true
+   || receipt.snapshot_scope!=='full_career'
+   || typeof receipt.slot_id!=='string' || !receipt.slot_id.trim()
+   || !sha(receipt.before_sha256) || !sha(receipt.after_sha256)
+   || receipt.before_sha256!==receipt.after_sha256){
+  throw Error('Save/reload lacks persisted full-state roundtrip + rollback proof on '+date);
+ }
+ const fields=['duplicate_daily_commits','duplicate_match_effects','duplicate_recovery_effects',
+ 'date_skips','ranking_mismatches','career_state_mismatches'];
+ if(fields.some(key=>!Number.isSafeInteger(receipt[key])||receipt[key]!==0)){
+  throw Error('Save/reload changed or duplicated career state on '+date);
+ }
+ return receipt;
+}
+
 export async function replayIsolatedWorld({
   adapter, startDate='2025-12-01',endDate='2050-12-31',
   onProgress=()=>{},maxTransitions=15000
@@ -131,7 +154,11 @@ export async function replayIsolatedWorld({
   if(quarterly(date)||date===endDate){
    await adapter.verifyWorldInvariants({date,days:report.days});
    report.quarterlyChecks++;
-   await adapter.probeSaveReload({date,days:report.days});
+   const saveReceipt=await adapter.probeSaveReload({date,days:report.days});
+   assertVerifiedCareerSaveReload(saveReceipt,date);
+   if(await adapter.readCareerDate()!==date){
+    throw Error('Save/reload changed the active career date on '+date);
+   }
    report.saveLoadProbes++;
    onProgress({...report});
   }

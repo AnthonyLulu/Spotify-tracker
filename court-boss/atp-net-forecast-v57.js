@@ -3,7 +3,7 @@
 // Implements the same counting/replacement ordering as atp_player_breakdown SQL.
 // Pure calculations, no API requests, no mutation of the live ledger or game save.
 function cbAtpDayAfter(date){
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(date||'')))return null;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||'')))return null;
   const d=new Date(String(date)+'T12:00:00Z');
   if(!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==date)return null;
   d.setUTCDate(d.getUTCDate()+1);
@@ -37,8 +37,8 @@ function cbAtpNetCountAt(pool,atDate){
 }
 function cbAtpNetForecast(ledger,cutoffDate){
   if(!ledger||!Array.isArray(ledger.counting)||!Array.isArray(ledger.non_counting)||
-     !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(ledger.date||''))||
-     !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(cutoffDate||''))||
+     !/^\d{4}-\d{2}-\d{2}$/.test(String(ledger.date||''))||
+     !/^\d{4}-\d{2}-\d{2}$/.test(String(cutoffDate||''))||
      cutoffDate<=ledger.date)return {ok:false,reason:'insufficient_data'};
   const all=[...ledger.counting,...ledger.non_counting];
   const keys=new Set();
@@ -46,8 +46,8 @@ function cbAtpNetForecast(ledger,cutoffDate){
   for(const e of all){
     const key=String(e.event_key||''),points=Number(e.points);
     const earned=String(e.earned_date||''),drop=String(e.drop_date||e.expiry_date||'');
-    if(!key||keys.has(key)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(earned)||
-       !/^\\d{4}-\\d{2}-\\d{2}$/.test(drop)||!Number.isFinite(points))
+    if(!key||keys.has(key)||!/^\d{4}-\d{2}-\d{2}$/.test(earned)||
+       !/^\d{4}-\d{2}-\d{2}$/.test(drop)||!Number.isFinite(points))
       return {ok:false,reason:'incomplete_or_duplicate_event'};
     keys.add(key);
     pool.push({...e,event_key:key,points,earned_date:earned,drop_date:drop});

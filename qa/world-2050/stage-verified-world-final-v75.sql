@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION cb_e2e_reconstruction_20261010.probe_world_draw_verif
  SET search_path TO ''
 AS $function$
 declare r jsonb:='{}'::jsonb; qualifiers jsonb:='{}'::jsonb; out jsonb:='{}'::jsonb;
-failure text; row_t public.tournaments%rowtype; rows_before int;
+failure text; failure_context text; failure_detail text; row_t public.tournaments%rowtype; rows_before int;
 v_total int:=0;v_scored int:=0;v_invalid int:=0;v_final_matches int:=0;
 v_stored_champion bigint;v_stored_finalist bigint;v_final_winner bigint;
 begin
@@ -52,10 +52,12 @@ begin
    'rolled_back',true);
   raise exception 'EXPECTED_DRAW_TEST_ROLLBACK';
  exception when others then
-  get stacked diagnostics failure=message_text;
+  get stacked diagnostics failure=message_text, failure_context=pg_exception_context, failure_detail=pg_exception_detail;
   if failure='EXPECTED_DRAW_TEST_ROLLBACK' then return out;end if;
   return jsonb_build_object('ok',false,'rolled_back',true,'tournament_id',p_id,
-    'circuit',row_t.circuit,'error',left(failure,800));
+    'circuit',row_t.circuit,'error',left(failure,800),
+    'context',left(coalesce(failure_context,''),2100),
+    'detail',left(coalesce(failure_detail,''),750));
  end;
 end $function$
 ;

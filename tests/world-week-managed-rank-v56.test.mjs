@@ -10,7 +10,7 @@ test('world week rank update never writes NULL into required career rank',()=>{
  assert.match(migration,/public\.refresh_world_rankings\(p_date date/);
  assert.match(migration,/singles_rank=coalesce\(p\.ranking,c\.singles_rank\)/);
  assert.doesNotMatch(migration,/singles_rank=p\.ranking,career_date/);
- assert.match(migration,/p\.ranking=null/);
+ assert.match(migration,/ranking=null,/);
  assert.match(migration,/career_state\.singles_rank is NOT NULL/);
 });
 test('season button cannot accidentally invoke 2026 Jan-05 weekly path',()=>{

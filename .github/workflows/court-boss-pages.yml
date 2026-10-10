@@ -211,6 +211,25 @@ jobs:
               });
             });
 
+            // In this disposable, read-only browser smoke, auth prompts can be
+            // recreated after any route fetch, not just on first page load.
+            // Watch them only inside Playwright; never weaken production auth.
+            await page.addInitScript(()=>{
+              const dismiss=()=>document.querySelectorAll('.cb-access-gate').forEach(g=>{
+                try{if(g.open)g.close()}catch{}
+                g.remove();
+              });
+              const watch=()=>{
+                new MutationObserver(dismiss).observe(document.documentElement,{
+                  childList:true,subtree:true
+                });
+                dismiss();
+              };
+              if(document.readyState==='loading')
+                document.addEventListener('DOMContentLoaded',watch,{once:true});
+              else watch();
+            });
+
             await page.route('**/api/countries',route=>route.fulfill({
               status:200,contentType:'application/json',
               body:JSON.stringify({rows:[]})

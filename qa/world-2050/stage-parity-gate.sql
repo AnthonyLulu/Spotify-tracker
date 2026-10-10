@@ -53,5 +53,10 @@ SELECT jsonb_build_object(
       AND NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname=b.source_schema AND c.relname||'.'||t.tgname=b.object_name AND NOT t.tgisinternal)),
   'checkpoint_tables',(SELECT COUNT(*) FROM cb_e2e_checkpoint_20261010.snapshot_manifest WHERE item_kind='table'),
-  'fixture_audit_v3',cb_e2e_reconstruction_20261010.verify_original_fixture_rows_v3()
+  'fixture_audit_v3',cb_e2e_reconstruction_20261010.verify_original_fixture_rows_v3(),
+  'world_seed_guard',public.world_integrity_guard_v18(date '2025-12-01'),
+  'stage_rls_stricter_than_snapshot',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.blueprint b
+    JOIN pg_namespace ns ON ns.nspname=b.source_schema
+    JOIN pg_class c ON c.relnamespace=ns.oid AND c.relname=b.object_name AND c.relkind IN ('r','p')
+    WHERE b.object_type='table' AND c.relrowsecurity<>coalesce((b.definition->>'rls')::boolean,false))
 ) AS stage_gate;

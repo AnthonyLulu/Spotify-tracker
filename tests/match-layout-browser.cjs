@@ -64,6 +64,8 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     assert.equal(state.layout,true,name+": V2 layout not enabled");
     assert.ok(state.court.height>=300,name+": court too small");
     assert.ok(state.bodyWidth<=state.viewport+8,name+": horizontal overflow "+JSON.stringify(state));
+    assert.ok(state.controls.top>=state.court.bottom-5 && state.controls.top<=state.court.bottom+32,
+      name+": pause and speed controls not directly below court "+JSON.stringify(state));
     if(width>=1200){
       assert.ok(state.story.right<=state.court.left+5,name+": commentary not left");
       assert.ok(state.court.right<=state.coach.left+5,name+": tactics not right");
@@ -91,7 +93,8 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   }
   // Explicit safety rollback using ?match-ui=classic.
   const page=await browser.newPage();
-  await page.goto("about:blank?match-ui=classic");
+  await page.route("https://match-layout.local/**",route=>route.fulfill({status:200,contentType:"text/html",body:"<!doctype html><html><body>test</body></html>"}));
+  await page.goto("https://match-layout.local/?match-ui=classic");
   await page.setContent('<html><body>'+fixture()+'</body></html>');
   await page.addScriptTag({content:script});
   assert.equal(await page.evaluate(()=>document.documentElement.classList.contains("cb-match-layout-v2")),false,"query rollback failed");

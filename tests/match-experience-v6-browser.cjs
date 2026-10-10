@@ -81,7 +81,7 @@ function fixture(f){
            selects:panel.querySelectorAll('select').length,
            bodyWidth:document.documentElement.scrollWidth,viewport:window.innerWidth};
        });
-       assert.ok(state.crowd>=f.tier==='itf'?30:100);
+       assert.ok(state.crowd >= (f.tier==='itf'?30:100),'crowd missing for '+f.name);
        assert.equal(state.stadiums,1,'stadium duplicated');
        assert.equal(state.planes,1);
        assert.equal(state.projectedDots,2);
@@ -98,7 +98,8 @@ function fixture(f){
        assert.equal(await page.evaluate(()=>local.tactics.targetWing),'Revers');
        await page.locator('.cb-v6-tactic-chip[data-cb-tactic-value="Mixte"]').click();
        assert.equal(await page.evaluate(()=>local.tactics.targetWing),'Mixte');
-       await page.locator('.cb-plan-btn[data-plan="pressure"]').evaluate(el=>el.click());
+       await page.locator('.cb-plan-btn[data-plan="pressure"]').evaluate(el=>{window.cbApplyMatchPlan(el.dataset.plan)});
+       assert.equal(await page.evaluate(()=>local.lastMatchPlan),'pressure');
        await page.evaluate(()=>window.cbMatchExperienceV6.enhance());
        assert.equal(await page.locator('.cb-v6-stadium-svg').count(),1);
        assert.equal(await page.locator('.cb-v6-tactic-quick').count(),1);

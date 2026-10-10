@@ -1145,7 +1145,22 @@ async function loadDoublesHub(){
     ['/api/rankings?kind=junior_doubles&offset=0&limit=200','Junior Double'],
     ['/api/doubles-race','Race Double']
   ];
-  const responses=await Promise.allSettled(endpoints.map(([url])=>get(url)));
+  // Double rankings are optional read-only data. A hung request must not
+  // delay partial results indefinitely; keep successful slices and manual retry.
+  const readBounded=(url)=>{
+   const controller=new AbortController();
+   let timer;
+   return Promise.race([
+    get(url,{signal:controller.signal}),
+    new Promise((_,reject)=>{
+     timer=setTimeout(()=>{
+      controller.abort();
+      reject(new Error('Lecture Double trop longue (10 s)'));
+     },10000);
+    })
+   ]).finally(()=>clearTimeout(timer));
+  };
+  const responses=await Promise.allSettled(endpoints.map(([url])=>readBounded(url)));
   const failures=[];
   for(let i=0;i<responses.length;i++){
    const result=responses[i];

@@ -14,10 +14,10 @@ assert.ok(previewStart>=0&&previewEnd>previewStart);
 const livePreview=app.slice(previewStart,previewEnd);
 
 test('training staff preview never forces the private access gate on page open',()=>{
-  assert.match(livePreview,/get\\('\/api\/training-preview',\\{/);
-  assert.match(livePreview,/authPrompt:false/);
-  assert.match(liveNav,/void loadTrainingPreview\\(\\)/);
-  assert.doesNotMatch(liveNav,/if\\(r==='training'&&![^\\n]*\\)await loadTrainingPreview/);
+  assert.ok(livePreview.includes("get('/api/training-preview',{"));
+  assert.ok(livePreview.includes('authPrompt:false'));
+  assert.ok(liveNav.includes('void loadTrainingPreview()'));
+  assert.ok(!liveNav.includes("if(r==='training'&&!trainingPreview)await loadTrainingPreview();"));
 });
 
 test('actual nav(training) renders immediately while staff preview has not responded',async()=>{

@@ -6,7 +6,10 @@ on:
     paths:
       - "court-boss/match-center-layout-v2.css"
       - "court-boss/match-center-layout-v2.js"
+      - "court-boss/match-center-tournament-v3.css"
+      - "court-boss/match-center-tournament-v3.js"
       - "tests/match-layout-browser.cjs"
+      - "tests/tournament-skins-browser.cjs"
       - ".github/workflows/court-boss-match-layout-smoke.yml"
   workflow_dispatch:
 
@@ -28,17 +31,23 @@ jobs:
         run: |
           node --check court-boss/match-center-layout-v2.js
           node --check tests/match-layout-browser.cjs
+          node --check court-boss/match-center-tournament-v3.js
+          node --check tests/tournament-skins-browser.cjs
       - name: Install browser test runtime
         run: |
           npm install --no-save --no-package-lock playwright@1.55.0
           npx playwright install --with-deps chromium
       - name: Test desktop, tablet, mobile and rollback offline
-        run: node tests/match-layout-browser.cjs
+        run: |
+          node tests/match-layout-browser.cjs
+          node tests/tournament-skins-browser.cjs
       - name: Save diagnostic screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fm-match-layout-smoke-screens
-          path: match-layout-*.png
+          path: |
+            match-layout-*.png
+            skin-*.png
           if-no-files-found: ignore
           retention-days: 3

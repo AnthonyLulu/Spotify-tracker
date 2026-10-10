@@ -7,7 +7,7 @@ const app=fs.readFileSync(new URL('../court-boss/app.js',import.meta.url),'utf8'
 const from=app.indexOf('async function loadStaffWorld(){');
 const to=app.indexOf('const rankPageSize=',from);
 const sectionStart=app.indexOf('function staffWorldSection(){');
-const sectionEnd=app.indexOf('\n\nfunction ',sectionStart+5);
+const sectionEnd=app.indexOf('function staffPage(){',sectionStart+5);
 assert.ok(from>=0&&to>from&&sectionStart>=0&&sectionEnd>sectionStart);
 
 const make=()=>{

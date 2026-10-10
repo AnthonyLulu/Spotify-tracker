@@ -75,7 +75,12 @@ test('SQL parity is complete but external snapshot and game Edge are not',()=>{
  assert.equal(s.tables.missing,0);
  assert.equal(s.columns.missing,0);
  assert.equal(s.constraints.definition_drift,0);
- assert.equal(s.functions.definition_identical,650);
+ assert.equal(s.functions.definition_identical,648);
+ assert.equal(s.functions.definition_drift,2);
+ assert.deepEqual(s.functions.reviewed_stage_only_overrides.map(x=>x.signature).sort(),[
+  'cb_generated_player_name(p_country text, p_seed integer)',
+  'rollover_season_daily_v22(p_new_year integer)'
+ ]);
  assert.equal(s.indexes.missing,0);
  assert.equal(s.triggers.missing,0);
  assert.equal(s.views.missing,0);

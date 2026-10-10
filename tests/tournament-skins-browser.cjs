@@ -8,10 +8,12 @@ const css=[
   "court-boss/app.css","court-boss/match-center-v1.css",
   "court-boss/match-center-v14.css","court-boss/match-center-layout-v2.css",
   "court-boss/match-center-tournament-v3.css",
-  "court-boss/match-center-arena-v4.css"
+  "court-boss/match-center-arena-v4.css",
+  "court-boss/match-center-perspective-v5.css"
 ].map(get).join("\n");
 const v3=get("court-boss/match-center-tournament-v3.js");
 const v4=get("court-boss/match-center-arena-v4.js");
+const v5=get("court-boss/match-center-perspective-v5.js");
 const fixtures=[
  {name:"Australian Open",category:"Grand Chelem",city:"Melbourne",surface:"Dur",id:"ao",a:"#2f86c9",b:"#1f5d95"},
  {name:"Roland-Garros",category:"Grand Chelem",city:"Paris",surface:"Terre battue",id:"rg",a:"#cf7948",b:"#a64f2f"},
@@ -29,7 +31,7 @@ const fixture=f=>{
  +'<div class="cb-broadcast-head"><div class="cb-broadcast-brand"><div class="cb-broadcast-logo">LOGO</div><div><small>'+f.category+'</small><b>'+f.name+'</b><em>'+f.city+'</em></div></div><div class="cb-broadcast-status"><b>LIVE</b></div></div>'
  +'<div class="cb-tv-score" style="--cb-set-count:2"><div class="cb-tv-score-row cb-tv-score-head"><span>JOUEUR</span><span>S1</span><span>S2</span><span>JEU</span><span>PT</span></div><div class="cb-tv-score-row user"><div class="cb-tv-player"><i class="serving"></i><div><b>Arthur Fils 🇫🇷</b><em>Confiance 87 • Forme 92</em></div></div><b class="cb-tv-set won">6</b><b class="cb-tv-set live">4</b><b class="cb-tv-game">3</b><strong class="cb-tv-point">30</strong></div><div class="cb-tv-score-row opponent"><div class="cb-tv-player"><i></i><div><b>Jannik Sinner 🇮🇹</b><em>Confiance 85 • Forme 90</em></div></div><b class="cb-tv-set">4</b><b class="cb-tv-set live">4</b><b class="cb-tv-game">2</b><strong class="cb-tv-point">15</strong></div></div>'
  +'<div class="cb-match-context">Surface : '+f.surface+'</div>'
- +'<div class="fm-court '+s+' cb-court" data-cb-tournament-skin="'+f.id+'" style="--cb-theme-court-a:'+f.a+';--cb-theme-court-b:'+f.b+';--cb-theme-accent:#61cbe0;--cb-theme-board:#102f44;"><div class="cb-venue-board-v14"><b>'+f.name+'</b></div><i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-net"></i><div class="fm-player-dot user" style="left:50%;top:80%">AF</div><div class="fm-player-dot opponent" style="left:50%;top:20%">JS</div><i class="fm-ball" style="left:52%;top:60%"></i></div>'
+ +'<div class="fm-court '+s+' cb-court" data-cb-tournament-skin="'+f.id+'" style="--cb-theme-court-a:'+f.a+';--cb-theme-court-b:'+f.b+';--cb-theme-accent:#61cbe0;--cb-theme-board:#102f44;"><div class="cb-venue-board-v14"><b>'+f.name+'</b></div><i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-court-line service vertical"></i><i class="fm-net"></i><div class="fm-player-dot user" style="left:50%;top:80%">AF</div><div class="fm-player-dot opponent" style="left:50%;top:20%">JS</div><i class="fm-ball" style="left:52%;top:60%"></i></div>'
  +'<div class="cb-match-story"><div class="cb-event-feed">Coup droit gagnant</div></div><div class="cb-live-controls">Pause • 1x • 2x • 3x</div><details open class="cb-coach-panel"><summary>Tactiques</summary></details><div class="cb-stat-grid"><div>Points gagnés</div></div>'
  +'</div></div></main></div>';
 };
@@ -52,12 +54,14 @@ const fixture=f=>{
     if(!seen.has("loaded")){
       await page.addScriptTag({content:v3});
       await page.addScriptTag({content:v4});
+      await page.addScriptTag({content:v5});
       seen.set("loaded",true);
     }else{
-      await page.evaluate(()=>{window.cbTournamentPresentationV3.enhance();window.cbMatchArenaV4.enhance();});
+      await page.evaluate(()=>{window.cbTournamentPresentationV3.enhance();window.cbMatchArenaV4.enhance();window.cbCourtPerspectiveV5.enhance();});
     }
     await page.locator(".cb-v3-court-brand").waitFor({state:"attached",timeout:6000});
     await page.locator(".cb-v4-venue-graphics").waitFor({timeout:6000});
+    await page.locator(".cb-v5-playing-plane").waitFor({state:"attached",timeout:6000});
     const result=await page.evaluate(()=>{
       const court=document.querySelector(".cb-court"),card=document.querySelector(".cb-live-card");
       return {name:card.querySelector(".cb-v3-court-brand b").textContent,
@@ -74,6 +78,14 @@ const fixture=f=>{
         preservedLines:court.querySelectorAll(".fm-court-line").length,
         netMesh:getComputedStyle(court.querySelector(".fm-net")).backgroundImage,
         markerPositions:[...court.querySelectorAll(".fm-player-dot")].map(x=>[x.style.left,x.style.top]),
+        planeCount:court.querySelectorAll(".cb-v5-playing-plane").length,
+        planeTransform:getComputedStyle(court.querySelector(".cb-v5-playing-plane")).transform,
+        projectedMarkers:[...court.querySelectorAll(".fm-player-dot")].every(el=>el.closest(".cb-v5-playing-plane")),
+        projectedBall:!!court.querySelector(".cb-v5-playing-plane .fm-ball"),
+        projectedNet:!!court.querySelector(".cb-v5-playing-plane .fm-net"),
+        projectedLines:court.querySelectorAll(".cb-v5-playing-plane .fm-court-line").length,
+        tramlines:court.querySelectorAll(".cb-v5-singles-sideline").length,
+        outlineHidden:getComputedStyle(court,"::before").display==="none",
         sw:document.documentElement.scrollWidth,iw:window.innerWidth};
     });
     assert.equal(result.name,f.name);
@@ -83,26 +95,56 @@ const fixture=f=>{
     assert.equal(result.markerCount,2);assert.equal(result.ballCount,1);
     assert.equal(result.watermark,1);
     assert.equal(result.arenaCount,1,"stadium missing/duplicated");
-    await page.evaluate(()=>window.cbMatchArenaV4.enhance());
+    assert.equal(result.planeCount,1,"perspective plane missing or duplicated");
+    assert.notEqual(result.planeTransform,"none","court is still flat: "+f.name);
+    assert.ok(result.projectedMarkers&&result.projectedBall&&result.projectedNet,"animated geometry not in projection: "+f.name);
+    assert.equal(result.projectedLines,7,"court markings not projected");
+    assert.equal(result.tramlines,2,"singles sidelines missing");
+    assert.ok(result.outlineHidden,"old flat court outline still visible");
+    await page.evaluate(()=>{window.cbMatchArenaV4.enhance();window.cbCourtPerspectiveV5.enhance();});
+    assert.equal(await page.locator(".cb-v5-playing-plane").count(),1,"perspective plane duplicated after refresh");
     assert.equal(await page.locator(".cb-v4-venue-graphics").count(),1,"stadium duplicated after refresh");
     assert.equal(result.standCount,4,"stadium stands missing");
     assert.ok(result.ledLabels.some(x=>x.includes(f.name.toUpperCase())),"event LED board missing "+f.name);
-    assert.equal(result.preservedLines,6,"tennis court lines changed");
+    assert.equal(result.preservedLines,7,"tennis court lines changed");
     assert.ok(result.netMesh.includes("gradient"),"net mesh missing");
     assert.deepEqual(result.markerPositions,[["50%","80%"],["50%","20%"]],"players were moved by renderer");
+    // Emulate an engine-supplied visual point update; projections must never
+    // rewrite the same numeric shot positions or detach the markers.
+    const newPosition=await page.evaluate(()=>{
+      const marker=document.querySelector(".cb-court .fm-player-dot.user");
+      marker.style.left="64%";
+      window.cbCourtPerspectiveV5.enhance();
+      const result={x:marker.style.left,inside:!!marker.closest(".cb-v5-playing-plane")};
+      marker.style.left="50%";
+      return result;
+    });
+    assert.deepEqual(newPosition,{x:"64%",inside:true},"live movement coordinates were corrupted");
+    if(f.name==="Australian Open"){
+      const classic=await page.evaluate(()=>{
+        document.documentElement.classList.remove("cb-match-layout-v2");
+        const plane=document.querySelector(".cb-v5-playing-plane");
+        const display=getComputedStyle(plane).display;
+        document.documentElement.classList.add("cb-match-layout-v2");
+        return {display,projected:getComputedStyle(plane).transform!=="none"};
+      });
+      assert.equal(classic.display,"contents","Vue classique must not preserve perspective geometry");
+      assert.ok(classic.projected,"returning to FM must restore court perspective");
+    }
+
     assert.ok(result.bg.includes("gradient"),"court surface not themed");
     assert.ok(result.sw<=result.iw+8,"mobile horizontal overflow: "+f.name+" "+result.sw);
     if(["Australian Open","Roland-Garros","Wimbledon","US Open","Monte-Carlo Masters"].includes(f.name)){
       assert.ok(result.bg.includes("gradient"),"court skin missing "+f.name);
     }
     if(["Australian Open","Roland-Garros","Wimbledon","US Open","Monte-Carlo Masters"].includes(f.name)){
-      await page.screenshot({path:"arena-"+size.label+"-"+f.id+".png",fullPage:false});
+      await page.screenshot({path:"perspective-"+size.label+"-"+f.id+".png",fullPage:false});
     }
     console.log("PASS",size.label,f.name,result.surf,result.theme);
    }
    assert.deepEqual(errors,[],"browser errors");
    await page.close();
   }
-  console.log("TOURNAMENT V4 ARENA AND V3 SKINS SMOKE PASS");
+  console.log("TOURNAMENT V5 PERSPECTIVE AND V4 STADIUM SMOKE PASS");
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

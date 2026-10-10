@@ -40,6 +40,12 @@ function seasonPageV2(){
   const nextDefense=ledger.next_defense||defendedWeeks[0]||null;
   const counting=Array.isArray(ledger.counting)?ledger.counting:(ledger.active||[]);
   const nonCounting=Array.isArray(ledger.non_counting)?ledger.non_counting:[];
+  const nextProjection=(nextDefense && typeof cbAtpNetForecast==='function' && typeof cbAtpDayAfter==='function')
+    ?cbAtpNetForecast(ledger,cbAtpDayAfter(nextDefense.week_end)):null;
+  const fmtAtpDelta=value=>{
+    const n=Number(value||0);
+    return (n<0?'−':n>0?'+':'')+fmt(Math.abs(n));
+  };
   const catLabel=x=>({
     'Grand Slam':'Grand Chelem','M1000':'Masters 1000','Finals':'ATP Finals',
     'ATP500':'ATP 500','ATP250':'ATP 250','United Cup':'United Cup',
@@ -72,6 +78,27 @@ function seasonPageV2(){
     <div class="kpi"><span class="muted mini">Résultats comptables</span><b>${fmt(ledger.counting_events??counting.length)}</b></div>
     <div class="kpi"><span class="muted mini">Prochains points à défendre</span><b>${nextDefense?'−'+fmt(nextDefense.points_to_defend)+' pts':'0 pt'}</b><span class="muted mini">${nextDefense?'Brut · semaine du '+df(nextDefense.week_start):'Rien sur les prochaines semaines'}</span></div>
   </div>
+  ${nextProjection?.ok===true?`
+    <div class="card" style="margin-top:12px">
+      <div class="row between">
+        <div><div class="eyebrow">Projection ATP à résultats constants</div>
+          <h2>Impact net à la fin de la semaine du ${df(nextDefense.week_start)}</h2></div>
+        <b class="badge ${nextProjection.net_change_points<0?'bad':nextProjection.net_change_points>0?'good':''}">${fmtAtpDelta(nextProjection.net_change_points)} pts</b>
+      </div>
+      <div class="muted mini" style="margin-top:7px">
+        Points qui expirent : −${fmt(nextProjection.expired_counted_points)} pts ·
+        Effet de recomptage : ${fmtAtpDelta(nextProjection.other_effects_points)} pts ·
+        Total projeté : ${fmt(nextProjection.points_after)} pts
+      </div>
+      <div class="muted micro" style="margin-top:5px">
+        Hypothèse : aucun nouveau résultat avant le ${df(nextProjection.cutoff_date)}.
+        ${nextProjection.estimated?'Une partie de l’historique est estimée, cette projection est indicative.':''}
+      </div>
+    </div>`
+  :nextProjection?.reason==='not_calibrated'?`
+    <div class="info mini" style="margin-top:12px">
+      Projection nette momentanément indisponible : le portefeuille affiché diffère du calcul de base. Les expirations brutes restent visibles.
+    </div>`:''}
 
   <div class="grid g2" style="margin-top:12px">
     <div class="card">

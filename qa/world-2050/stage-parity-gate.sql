@@ -1,4 +1,6 @@
 -- Stage-only, read-only reconstruction parity gate.
+-- V3 verifies every archived original record while allowing additive synthetic players.
+-- Exactly two audited isolated calendar flags may differ; any other change fails closed.
 -- Never invoke against production. Exports counts and hashes, not table rows.
 -- Run under a role permitted to read cb_e2e_reconstruction_20261010.
 WITH actual_functions AS (
@@ -51,5 +53,5 @@ SELECT jsonb_build_object(
       AND NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname=b.source_schema AND c.relname||'.'||t.tgname=b.object_name AND NOT t.tgisinternal)),
   'checkpoint_tables',(SELECT COUNT(*) FROM cb_e2e_checkpoint_20261010.snapshot_manifest WHERE item_kind='table'),
-  'original_rows_preserved',cb_e2e_reconstruction_20261010.verify_original_fixture_columns()
+  'fixture_audit_v3',cb_e2e_reconstruction_20261010.verify_original_fixture_rows_v3()
 ) AS stage_gate;

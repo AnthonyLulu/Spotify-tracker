@@ -199,7 +199,16 @@ jobs:
               if(ignoredImageHost(r.url()))return;
               pageErrors.push('requestfailed: '+r.url()+' '+(r.failure()?.errorText||''));
             });
-            page.on('response',r=>{ if(r.status()>=400) pageErrors.push('http '+r.status()+': '+r.url()); });
+            page.on('response',r=>{
+              const status=r.status(),url=r.url();
+              // This test browser is intentionally anonymous. Protected save and
+              // optional staff training previews must reject it with HTTP 401.
+              // All other API errors, including 500 and unrelated 401, still fail.
+              const anonymousProtected401=status===401&&
+                /\\/api\\/(?:save|training-preview)(?:[?#]|$)/.test(url);
+              if(status>=400&&!anonymousProtected401)
+                pageErrors.push('http '+status+': '+url);
+            });
             page.on('dialog',async d=>{ await d.dismiss(); });
             // This browser test checks read-only navigation, not protected actions.
             // Do not modify the game's real access gate, only dismiss its visual

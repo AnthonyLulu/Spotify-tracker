@@ -56,7 +56,7 @@ const fixture=f=>{
     }else{
       await page.evaluate(()=>{window.cbTournamentPresentationV3.enhance();window.cbMatchArenaV4.enhance();});
     }
-    await page.locator(".cb-v3-court-brand").waitFor({timeout:6000});
+    await page.locator(".cb-v3-court-brand").waitFor({state:"attached",timeout:6000});
     await page.locator(".cb-v4-venue-graphics").waitFor({timeout:6000});
     const result=await page.evaluate(()=>{
       const court=document.querySelector(".cb-court"),card=document.querySelector(".cb-live-card");

@@ -1,0 +1,25 @@
+{
+  "snapshot": "2025-12-01",
+  "source": "court-boss/data/atp-singles-2025-12-01.json",
+  "aliases": [
+    {
+      "reference_name": "Yunchaokete Bu",
+      "stored_name": "Bu Yunchaokete",
+      "rank": 122,
+      "points": 509,
+      "stage_player_id": 2207352,
+      "country": "CHN",
+      "data_source": "ISOLATED-ATP-2025-12-01-CC-BY-NC-SA-4.0"
+    },
+    {
+      "reference_name": "Daniel Merida",
+      "stored_name": "Daniel Merida Aguilar",
+      "rank": 165,
+      "points": 353,
+      "stage_player_id": 2210017,
+      "country": "ESP",
+      "data_source": "ISOLATED-ATP-2025-12-01-CC-BY-NC-SA-4.0"
+    }
+  ],
+  "policy": "Only the exact stored ATP source identity, ID, country, rank and points can be matched. Never promote generated or NCAA name-only profiles."
+}

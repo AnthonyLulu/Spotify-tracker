@@ -101,7 +101,8 @@ jobs:
               try{
               await page.evaluate(async r=>{
                 const probe=window.__cbMobileRouteProbe={name:r,started:performance.now(),resolved:false,rejected:false};
-                Promise.resolve(window.nav(r)).then(
+                const navPromise=Promise.resolve(window.nav(r));
+                navPromise.then(
                   ()=>{probe.resolved=true;probe.elapsedMs=performance.now()-probe.started},
                   e=>{probe.rejected=true;probe.error=String(e)}
                 );
@@ -110,7 +111,7 @@ jobs:
                   g.remove();
                 });
                 await Promise.race([
-                  Promise.resolve(window.nav(r)),
+                  navPromise,
                   new Promise((_,reject)=>setTimeout(
                     ()=>reject(new Error('Mobile route navigation timed out: '+r)),25000
                   ))

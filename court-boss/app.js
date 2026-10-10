@@ -272,7 +272,7 @@ const calendarMobile=()=>Boolean(
 const calendarPageSize=()=>calendarMobile()?32:72;
 let tourLoadSeq=0;
 let competitionRows=[],competitionCount=0,competitionOffset=0,competitionLoading=false,competitionFilters={q:'',circuit:'Tous',category:'Toutes',surface:'Toutes',country:'',source:'Tous',prestige:'Tous',history:'Tous',holder:'Tous'};
-let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false;
+let doublesHubRows=[],juniorDoublesHubRows=[],doublesRaceRows=[],doublesHubLoading=false,doublesHubAttempted=false,doublesHubError='';
 let tmCalFilters={week:'Toutes',country:'Tous',status:'Tous',eligibility:'Tous',environment:'Tous',entry:'Tous',holder:'Tous'};
 let ncaaView='singles',ncaaDoublesRows=[],ncaaDoublesMeta={},ncaaUniversities=[],ncaaUniversitiesMeta={},ncaaUniversityDetail=null,ncaaUniversityQuery='',ncaaUniversityConference='',ncaaUniversityFilter='all',ncaaUniversitySort='ita',ncaaUniversityLoading=false;
 let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
@@ -355,7 +355,7 @@ function invalidateCareerCaches(){
  tourRows=[];tourTbc=[];tourCount=0;tourOffset=0;
  management=null;rankingLedger=null;seasonSummary=null;scheduleAdvice=null;trainingPreview=null;careerHub=null;
  historyData=null;competitionRows=[];competitionCount=0;competitionOffset=0;
- doublesHubRows=[];juniorDoublesHubRows=[];doublesRaceRows=[];doublesHubLoading=false;
+ doublesHubRows=[];juniorDoublesHubRows=[];doublesRaceRows=[];doublesHubLoading=false;doublesHubAttempted=false;doublesHubError='';
  ncaaDoublesRows=[];ncaaDoublesMeta={};ncaaUniversities=[];ncaaUniversitiesMeta={};ncaaUniversityDetail=null;ncaaUniversityLoading=false;
  dbRows=[];dbCount=0;dbOffset=0;dbLoaded=false;dbLoading=false;
  staffWorldData=null;staffWorldOffset=0;worldStats=null;
@@ -1080,24 +1080,43 @@ async function loadSeasonSummary(){try{seasonSummary=await get('/api/season-summ
 async function loadScheduleAdvice(){try{scheduleAdvice=await get('/api/schedule-advice?player_id='+encodeURIComponent(activeManagedId()||primaryManagedPlayerId()||0))}catch(e){scheduleAdvice={recommended:[],player_id:activeManagedId()}}}
 async function loadDoublesHub(){
  if(doublesHubLoading)return;
+ doublesHubAttempted=true;
  doublesHubLoading=true;
+ doublesHubError='';
  try{
-  const [r,j,t]=await Promise.all([
-    get('/api/rankings?kind=doubles&offset=0&limit=200'),
-    get('/api/rankings?kind=junior_doubles&offset=0&limit=200'),
-    get('/api/doubles-race')
-  ]);
-  doublesHubRows=r.rows||[];
-  juniorDoublesHubRows=j.rows||[];
-  doublesRaceRows=(t.rows||[]).map(x=>({
+  // One failed/empty service must not trigger a runaway render -> fetch -> render loop.
+  // Keep successful panels visible while the user can explicitly retry failed panels.
+  const endpoints=[
+    ['/api/rankings?kind=doubles&offset=0&limit=200','Classement Double'],
+    ['/api/rankings?kind=junior_doubles&offset=0&limit=200','Junior Double'],
+    ['/api/doubles-race','Race Double']
+  ];
+  const responses=await Promise.allSettled(endpoints.map(([url])=>get(url)));
+  const failures=[];
+  for(let i=0;i<responses.length;i++){
+   const result=responses[i];
+   if(result.status!=='fulfilled'){
+    failures.push(endpoints[i][1]);
+    console.warn('Double hub service temporarily unavailable',endpoints[i][1],result.reason);
+    continue;
+   }
+   const rows=Array.isArray(result.value?.rows)?result.value.rows:[];
+   if(i===0)doublesHubRows=rows;
+   if(i===1)juniorDoublesHubRows=rows;
+   if(i===2)doublesRaceRows=rows.map(x=>({
     ...x,
     rank:x.doubles_race_ranking??x.rank,
     points:x.doubles_race_points??x.points,
     snapshot_date:x.doubles_race_snapshot_date??x.snapshot_date
-  }));
- }catch(e){console.warn('Double hub',e)}
- finally{doublesHubLoading=false;if(route==='doubles')render()}
+   }));
+  }
+  if(failures.length)doublesHubError='Données temporairement indisponibles : '+failures.join(', ')+'.';
+ }finally{
+  doublesHubLoading=false;
+  if(route==='doubles')render();
+ }
 }
+window.retryDoublesHub=()=>{if(!doublesHubLoading)void loadDoublesHub()};
 
 function career(){
  const c={...(boot?.career||{}),...(local.career||{})};
@@ -3364,7 +3383,7 @@ window.clearLiveMatch=()=>{
 }
 function doublesPage(){
  const c=activePlayerCareerView(),activeId=activeManagedId(),primaryId=primaryManagedPlayerId(),singlesOnly=String(c.career_focus||'mixed')==='singles_only';
- if(!doublesHubRows.length&&!doublesHubLoading)setTimeout(loadDoublesHub,0);
+ if(!doublesHubAttempted&&!doublesHubLoading){doublesHubAttempted=true;setTimeout(loadDoublesHub,0);}
  const pool=doublesHubRows;
  const juniorPool=juniorDoublesHubRows;
  const serverPartner=activeDoublesPartner();
@@ -3380,6 +3399,7 @@ function doublesPage(){
  const candidates=pool.filter(p=>p.name!==c.player_name).slice(0,30);
  const exact=pool.filter(p=>p.doubles_source).length;
  return `<div class="section-head"><div><div class="eyebrow">Circuit Double</div><h1>Double & partenariats</h1><div class="muted">Classement individuel officiel jusqu’au Top 1000, index scouting double profond, Race par équipes et gestion du partenaire. La base double étendue contient ${fmt(worldStats?.indexedDoubles||rankCount||0)} profils.</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:7px"><span class="badge ${String(c.career_focus||'mixed')==='doubles_only'?'good':''}">Orientation · ${careerFocusLabel(c.career_focus||'mixed')}</span>${String(c.career_focus||'mixed')==='doubles_only'?'<span class="badge good">Circuit principal</span>':''}</div></div><span class="pill">${fmt(worldStats?.sourcedDoubles||exact)} officiels · ${fmt(worldStats?.indexedDoubles||0)} indexés</span></div>
+ ${doublesHubError?`<div class="notice" role="status">${esc(doublesHubError)} <button class="ghost" onclick="retryDoublesHub()" ${doublesHubLoading?'disabled':''}>Réessayer</button></div>`:''}
  ${singlesOnly?'<div class="notice"><b>Simple exclusivement</b> · consultation du circuit double uniquement. Les paires, propositions et inscriptions double sont verrouillées.</div>':''}
  <div class="tabs rank-tabs"><button class="active">Partenariat</button><button onclick="setRankKind('doubles');nav('rankings')">Classement Double</button><button onclick="setRankKind('doubles_race');nav('rankings')">Race Double</button><button onclick="setRankKind('junior_doubles');nav('rankings')">Junior Double</button><button onclick="setRankKind('junior_doubles_race');nav('rankings')">Race Junior Double</button><button onclick="dbCircuit='Double';dbOffset=0;dbQuery='';loadPlayerDatabase().then(()=>nav('players'))">Base double complète</button><button onclick="document.getElementById('dblRace').scrollIntoView({behavior:'smooth'})">Race équipes</button></div>
  <div class="grid g2" style="margin-top:10px">

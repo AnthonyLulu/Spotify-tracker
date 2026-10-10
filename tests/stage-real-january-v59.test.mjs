@@ -15,6 +15,6 @@ test('probe serializes with 36-day world probe and rolls back everything',()=>{
  assert.match(sql,/CB_REAL_MULTIDAY_ROLLBACK/);
  assert.match(sql,/rolled_back/);
  assert.match(sql,/REVOKE ALL ON FUNCTION/);
- assert.match(sql,/from public.career_state/);
- assert.match(sql,/from public.game_saves/);
+ assert.match(sql,/from public\.career_state/i);
+ assert.match(sql,/from public\.game_saves/i);
 });

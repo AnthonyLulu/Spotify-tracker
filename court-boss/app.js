@@ -327,7 +327,7 @@ let liveAutoTimer=null,liveAutoBusy=false,liveAutoSpeed=1;
 // Matchs live = état temporaire de la session courante. Ils permettent de switcher
 // entre plusieurs joueurs sans devenir une sauvegarde implicite après un ragequit.
 let liveMatchSessionsByPlayer=new Map(),liveMatchOpponentsByPlayer=new Map();
-let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false;
+let dbRows=[],dbCount=0,dbOffset=0,dbQuery='',dbCountry='',dbCircuit='Tous réels',dbLoaded=false,dbLoading=false,dbAttempted=false,dbError='';
 let staffWorldData=null,staffWorldLoading=false,staffWorldOffset=0,staffWorldFilters={q:'',role:'',country:'',former:'Tous',status:'Tous'};
 let trainingPreview=null,trainingPreviewLoading=false;
 let saveSlots=[],saveSlotsLoading=false,saveSlotBusy=false,saveSlotQueue=Promise.resolve(),saveSlotQueueDepth=0;
@@ -405,7 +405,7 @@ function invalidateCareerCaches(){
  historyData=null;competitionRows=[];competitionCount=0;competitionOffset=0;
  doublesHubRows=[];juniorDoublesHubRows=[];doublesRaceRows=[];doublesHubLoading=false;doublesHubAttempted=false;doublesHubError='';
  ncaaDoublesRows=[];ncaaDoublesMeta={};ncaaUniversities=[];ncaaUniversitiesMeta={};ncaaUniversityDetail=null;ncaaUniversityLoading=false;
- dbRows=[];dbCount=0;dbOffset=0;dbLoaded=false;dbLoading=false;
+ dbRows=[];dbCount=0;dbOffset=0;dbLoaded=false;dbLoading=false;dbAttempted=false;dbError='';
  staffWorldData=null;staffWorldOffset=0;worldStats=null;
 }
 function snapshotLocalForSave(){
@@ -770,7 +770,7 @@ window.nav=async r=>{
  route=r;
  window.scrollTo({top:0,behavior:'smooth'});
  try{
-  if(['academy','scouting','staff','finance','medical','davis','match','players','contracts'].includes(r)){
+  if(['academy','scouting','staff','finance','medical','davis','match','contracts'].includes(r)){
    await loadBootstrapSecondary();
   }
   if(r==='rankings'&&(!rankRows.length||rankKind==='ncaa')){
@@ -785,7 +785,10 @@ window.nav=async r=>{
    loading('Chargement du monde tennis…');
    worldStats=await get('/api/world');
   }
-  if(r==='players'&&!countryRows.length)await loadCountries();
+  if(r==='players'&&!countryRows.length){
+   // Optional country filters must not block the Players route.
+   void loadCountries().then(()=>{if(route==='players')render()});
+  }
   if(r==='history'&&!historyData){
    loading('Chargement de l’histoire du tennis…');
    await loadHistory();
@@ -1040,13 +1043,16 @@ async function loadCountries(){
 }
 async function loadPlayerDatabase(){
  if(dbLoading)return;
- dbLoading=true;
+ dbLoading=true;dbAttempted=true;dbError='';
  try{
   const p=new URLSearchParams({offset:String(dbOffset),limit:'100',circuit:dbCircuit||'Tous'});
   if(dbQuery)p.set('q',dbQuery);
   if(dbCountry)p.set('country',dbCountry);
   const d=await get('/api/search-players?'+p.toString());
   dbRows=d.rows||[];dbCount=d.count||0;dbLoaded=true;
+ }catch(e){
+  // A failed request must never masquerade as an empty player database.
+  dbRows=[];dbCount=0;dbLoaded=false;dbError=String(e?.message||e||'Erreur de connexion');
  }finally{dbLoading=false}
 }
 
@@ -2721,7 +2727,10 @@ function more(){
  return `<div class="section-head"><div><div class="eyebrow">Centre manager</div><h1>Tous les modules</h1></div></div><div class="grid g2">${items.map(x=>`<div class="card click" onclick="nav('${x[0]}')"><div class="eyebrow">${x[1]}</div><h2>${x[2]}</h2></div>`).join('')}</div>`
 }
 function playersPage(){
- if(!dbLoaded&&!dbLoading)setTimeout(()=>loadPlayerDatabase().then(()=>{if(route==='players')render()}).catch(()=>{}),0);
+ if(!dbAttempted&&!dbLoading){
+  dbAttempted=true;
+  setTimeout(()=>void loadPlayerDatabase().then(()=>{if(route==='players')render()}),0);
+ }
  const circuits=['Tous','Tous réels','ATP classés','ATP profond','ITF','Junior','Junior Double','NCAA','Double','Race','Next Gen'];
  const start=dbCount?dbOffset+1:0,end=Math.min(dbOffset+dbRows.length,dbCount);
  return `<div class="fm-dashboard">
@@ -2737,12 +2746,14 @@ function playersPage(){
   </div>
   <div class="card fm-panel" style="margin-top:12px">
    <div class="row between"><div><div class="eyebrow">Résultats scouting</div><h2>${dbQuery?'Recherche : '+esc(dbQuery):dbCountry?'Nationalité '+esc(dbCountry):dbCircuit!=='Tous'?esc(dbCircuit):'Base complète'}</h2></div><span class="pill">${fmt(dbCount)} profils</span></div>
-   ${dbLoading?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge 01/12/25</th><th>Pays</th><th>ATP</th><th>Double</th><th>Junior Dbl</th><th>ITF</th><th>Revers</th><th>NCAA</th><th>Niveau</th><th>Potentiel</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${displayAge(p)==null?'<span class="muted">N/V</span>':`<span title="${esc(p.age_source||'')}">${esc(ageLabel(p,false))}</span>`}</td><td>${flags[p.country]||'🌐'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'—'}</td><td>${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td><span class="badge ${p.backhand_verified?'good':''}">${esc(p.backhand||'2 mains')}${p.backhand_verified?'':' · estimé'}</span></td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+esc(ncaaRankPresentation(p).compact)+'</span>':p.ncaa_verified?'<span class="badge">'+(p.ncaa_status==='Alumni'?'NCAA Alumni':'NCAA historique')+'</span>':'—'}</td><td>${(()=>{const own=Number(p.id)===Number(career().managed_player_id||0),r=(boot.scoutingReports||[]).find(x=>Number(x.player_id)===Number(p.id));return own?starRatingHtml(abilityStarValue(p.current_ability),'Niveau connu')+`<div class="muted micro">Connu</div>`:r?starRatingHtml(Number(r.estimated_current_stars||publicLevelStars(p)),'Rapport scout')+`<div class="muted micro">${r.estimated_ca_min}–${r.estimated_ca_max} · ${r.confidence}%</div>`:starRatingHtml(publicLevelStars(p),'Estimation publique')+`<div class="muted micro">Public</div>`})()}</td><td>${(()=>{const own=Number(p.id)===Number(career().managed_player_id||0),r=(boot.scoutingReports||[]).find(x=>Number(x.player_id)===Number(p.id));return own?starRatingHtml(abilityStarValue(p.potential),'Potentiel connu')+`<div class="muted micro">Dynamique</div>`:r?starRatingHtml(Number(r.estimated_potential_stars||0),'Potentiel scout')+`<div class="muted micro">${r.estimated_potential_star_min??'?'}–${r.estimated_potential_star_max??'?'} ★</div>`:'<span class="muted">À scout­er</span>'})()}</td></tr>`).join('')}</tbody></table></div>`}
-   ${!dbLoading&&!dbRows.length?'<div class="empty">Aucun joueur trouvé avec ces filtres.</div>':''}
+   ${dbLoading||(!dbLoaded&&!dbError)?'<div class="loader">Recherche dans la base…</div>':`<div class="table-wrap"><table class="table fm-db-table"><thead><tr><th>Joueur</th><th>Âge 01/12/25</th><th>Pays</th><th>ATP</th><th>Double</th><th>Junior Dbl</th><th>ITF</th><th>Revers</th><th>NCAA</th><th>Niveau</th><th>Potentiel</th></tr></thead><tbody>${dbRows.map(p=>`<tr class="click" onclick="openPlayer(${p.id})"><td><b>${esc(p.name)}</b><div class="muted micro">${p.is_real?'Réel':'Newgen'}${p.style?' · '+esc(p.style):''}</div></td><td>${displayAge(p)==null?'<span class="muted">N/V</span>':`<span title="${esc(p.age_source||'')}">${esc(ageLabel(p,false))}</span>`}</td><td>${flags[p.country]||'🌐'} ${esc(p.country||'—')}</td><td>${p.ranking?'#'+fmt(p.ranking)+(p.ranking>2000?' <span class="muted micro">ATP profond</span>':''):'—'}</td><td>${p.doubles_ranking?'#'+fmt(p.doubles_ranking):'—'}</td><td>${p.junior_doubles_ranking?'#'+fmt(p.junior_doubles_ranking):'—'}</td><td>${p.itf_ranking?'#'+fmt(p.itf_ranking):'—'}</td><td><span class="badge ${p.backhand_verified?'good':''}">${esc(p.backhand||'2 mains')}${p.backhand_verified?'':' · estimé'}</span></td><td>${p.ncaa_current?'<span class="badge tag-ncaa">'+esc(ncaaRankPresentation(p).compact)+'</span>':p.ncaa_verified?'<span class="badge">'+(p.ncaa_status==='Alumni'?'NCAA Alumni':'NCAA historique')+'</span>':'—'}</td><td>${(()=>{const own=Number(p.id)===Number(career().managed_player_id||0),r=(boot.scoutingReports||[]).find(x=>Number(x.player_id)===Number(p.id));return own?starRatingHtml(abilityStarValue(p.current_ability),'Niveau connu')+`<div class="muted micro">Connu</div>`:r?starRatingHtml(Number(r.estimated_current_stars||publicLevelStars(p)),'Rapport scout')+`<div class="muted micro">${r.estimated_ca_min}–${r.estimated_ca_max} · ${r.confidence}%</div>`:starRatingHtml(publicLevelStars(p),'Estimation publique')+`<div class="muted micro">Public</div>`})()}</td><td>${(()=>{const own=Number(p.id)===Number(career().managed_player_id||0),r=(boot.scoutingReports||[]).find(x=>Number(x.player_id)===Number(p.id));return own?starRatingHtml(abilityStarValue(p.potential),'Potentiel connu')+`<div class="muted micro">Dynamique</div>`:r?starRatingHtml(Number(r.estimated_potential_stars||0),'Potentiel scout')+`<div class="muted micro">${r.estimated_potential_star_min??'?'}–${r.estimated_potential_star_max??'?'} ★</div>`:'<span class="muted">À scout­er</span>'})()}</td></tr>`).join('')}</tbody></table></div>`}
+   ${dbError?`<div class="notice bad" role="alert"><b>Base joueurs temporairement indisponible</b><p class="muted mini">${esc(dbError)}</p><button class="primary" onclick="retryPlayerDatabase()">Réessayer</button></div>`:''}
+    ${dbLoaded&&!dbLoading&&!dbRows.length?'<div class="empty">Aucun joueur trouvé avec ces filtres.</div>':''}
    <div class="pagination"><button ${dbOffset===0?'disabled':''} onclick="dbPage(-1)">←</button><span class="muted mini">${fmt(start)}–${fmt(end)} / ${fmt(dbCount)}</span><button ${dbOffset+100>=dbCount?'disabled':''} onclick="dbPage(1)">→</button></div>
   </div>
  </div>`
 }
+window.retryPlayerDatabase=async()=>{dbAttempted=true;await loadPlayerDatabase();if(route==='players')render()}
 window.searchPlayerDatabase=async q=>{dbQuery=String(q||'').trim();dbOffset=0;await loadPlayerDatabase();render()}
 window.setDbCountry=async c=>{dbCountry=String(c||'').toUpperCase();dbOffset=0;await loadPlayerDatabase();render()}
 window.setDbCircuit=async c=>{dbCircuit=String(c||'Tous');dbOffset=0;await loadPlayerDatabase();render()}

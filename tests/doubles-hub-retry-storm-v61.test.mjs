@@ -9,12 +9,15 @@ const end=app.indexOf('\nfunction career(){',start);
 assert.ok(start>=0&&end>start,'real Double hub implementation present');
 const liveCode=app.slice(start,end);
 
-function harness(respond){
+function harness(respond,timers={}){
  const hits=[];
  let renderCount=0;
  const context=vm.createContext({
   window:{},
   Promise,
+  AbortController,
+  setTimeout:timers.setTimeout||setTimeout,
+  clearTimeout:timers.clearTimeout||clearTimeout,
   console:{warn:()=>{}},
   route:'doubles',
   render:()=>{renderCount++},
@@ -75,4 +78,28 @@ test('a user-requested retry can recover independently failed Double APIs',async
  assert.equal(typeof h.retry,'function');
  assert.match(app,/onclick="retryDoublesHub\(\)"/);
  assert.match(app,/doublesHubAttempted=false;doublesHubError=''/);
+});
+
+test('one permanently hanging Double endpoint times out without hiding other results',async()=>{
+ let aborted=false;
+ const clock={
+  setTimeout:fn=>{setImmediate(fn);return 42},
+  clearTimeout:()=>{}
+ };
+ const h=harness(path=>{
+  if(path.includes('junior_doubles'))return new Promise(()=>{});
+  return {rows:[{id:44,name:'Visible ranking'}]};
+ },clock);
+ await h.run();
+ assert.equal(h.calls.length,3);
+ assert.equal(h.renders,1);
+ assert.deepEqual([h.state().rows,h.state().juniors,h.state().race],[1,0,1]);
+ assert.match(h.state().error,/Junior Double/);
+ assert.equal(h.state().loading,false);
+});
+test('bounded reads only access read-only rankings and never mutate the career',()=>{
+ assert.match(liveCode,/get\(url,\{signal:controller.signal\}\)/);
+ assert.match(liveCode,/setTimeout\(\(\)=>\{/);
+ assert.match(liveCode,/},10000\)/);
+ assert.doesNotMatch(liveCode,/method:\s*['"]POST['"]/);
 });

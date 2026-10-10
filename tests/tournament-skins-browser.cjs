@@ -109,6 +109,29 @@ const fixture=f=>{
     assert.equal(result.preservedLines,7,"tennis court lines changed");
     assert.ok(result.netMesh.includes("gradient"),"net mesh missing");
     assert.deepEqual(result.markerPositions,[["50%","80%"],["50%","20%"]],"players were moved by renderer");
+    // Emulate an engine-supplied visual point update; projections must never
+    // rewrite the same numeric shot positions or detach the markers.
+    const newPosition=await page.evaluate(()=>{
+      const marker=document.querySelector(".cb-court .fm-player-dot.user");
+      marker.style.left="64%";
+      window.cbCourtPerspectiveV5.enhance();
+      const result={x:marker.style.left,inside:!!marker.closest(".cb-v5-playing-plane")};
+      marker.style.left="50%";
+      return result;
+    });
+    assert.deepEqual(newPosition,{x:"64%",inside:true},"live movement coordinates were corrupted");
+    if(f.name==="Australian Open"){
+      const classic=await page.evaluate(()=>{
+        document.documentElement.classList.remove("cb-match-layout-v2");
+        const plane=document.querySelector(".cb-v5-playing-plane");
+        const display=getComputedStyle(plane).display;
+        document.documentElement.classList.add("cb-match-layout-v2");
+        return {display,projected:getComputedStyle(plane).transform!=="none"};
+      });
+      assert.equal(classic.display,"contents","Vue classique must not preserve perspective geometry");
+      assert.ok(classic.projected,"returning to FM must restore court perspective");
+    }
+
     assert.ok(result.bg.includes("gradient"),"court surface not themed");
     assert.ok(result.sw<=result.iw+8,"mobile horizontal overflow: "+f.name+" "+result.sw);
     if(["Australian Open","Roland-Garros","Wimbledon","US Open","Monte-Carlo Masters"].includes(f.name)){

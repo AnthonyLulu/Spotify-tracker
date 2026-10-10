@@ -32,8 +32,27 @@ test('all original fixture tables have a confirmed independent row digest checkp
 test('live preflight reads catalog metadata and detects function/constraint definition drift',()=>{
  assert.match(sql,/pg_get_functiondef/);
  assert.match(sql,/pg_get_constraintdef/);
- assert.match(sql,/verify_original_fixture_columns/);
+ assert.match(sql,/verify_original_fixture_rows_v3/);
  assert.match(sql,/unrestored_triggers/);
  assert.match(sql,/is_2050_certified',false/);
  assert.doesNotMatch(sql,/\b(?:DELETE\s+FROM|TRUNCATE\s+TABLE|DROP\s+TABLE|UPDATE\s+public\.|INSERT\s+INTO\s+public\.)/i);
+});
+
+const preserved=fs.readFileSync(new URL('../qa/world-2050/verify-original-fixture-rows-v3.sql',import.meta.url),'utf8');
+test('the isolated fixture V3 guard detects lost originals despite additive synthetic rows',()=>{
+ assert.match(preserved,/EXCEPT ALL/);
+ assert.match(preserved,/checkpoint_digest/);
+ assert.match(preserved,/content_md5/);
+ assert.match(preserved,/SECURITY INVOKER/i);
+ assert.match(preserved,/\bchecked<>85\b/);
+ assert.match(preserved,/\bmissing_rows<>0\b/);
+ assert.doesNotMatch(preserved,/\b(?:DROP\s+TABLE|TRUNCATE\s+TABLE|DELETE\s+FROM|UPDATE\s+public\.|INSERT\s+INTO\s+public\.)/i);
+});
+test('only audited tournament 132/133 flags can differ from checkpoint',()=>{
+ assert.match(preserved,/s\.id IN \(132,133\)/);
+ assert.match(preserved,/p\.id IN \(132,133\)/);
+ assert.match(preserved,/approved<>2/);
+ assert.match(preserved,/calendar_duplicate_adjustments/);
+ assert.match(preserved,/j\.old_active IS TRUE AND j\.new_active IS FALSE/);
+ assert.match(preserved,/REVOKE ALL ON FUNCTION/);
 });

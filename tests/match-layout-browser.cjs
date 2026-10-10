@@ -21,7 +21,7 @@ const marker=id=>'<div data-test="'+id+'"></div>';
 function liveCard(){
  const eventRows=Array.from({length:6},(_,i)=>'<div class="cb-event-line"><span>POINT</span><b>Coup gagnant ('+(i+1)+')</b><small>7 coups</small></div>').join("");
  const stats=Array.from({length:10},(_,i)=>'<div><span>Stat '+i+'</span><b>64% - 59%</b></div>').join("");
- return \`<div class="cb-match-shell">
+ return `<div class="cb-match-shell">
   <div class="card cb-live-card">
    <div class="cb-broadcast-head"><div class="cb-broadcast-brand"><div><small>ATP MASTERS 1000</small><b>Monte-Carlo</b><em>Quart de finale</em></div></div><div class="cb-broadcast-status"><b>LIVE</b></div></div>
    <div class="cb-tv-score"><div class="cb-tv-score-row cb-tv-score-head"><span>JOUEUR</span><span>S1</span><span>S2</span><span>S3</span><span>JEU</span><span>PT</span></div><div class="cb-tv-score-row user"><div class="cb-tv-player">Arthur Fils</div><b>6</b><b>4</b><b>2</b><b>3</b><b>30</b></div></div>
@@ -29,12 +29,12 @@ function liveCard(){
    <div class="fm-court clay cb-court"><i class="fm-court-line baseline top"></i><i class="fm-court-line baseline bottom"></i><i class="fm-court-line sideline left"></i><i class="fm-court-line sideline right"></i><i class="fm-court-line service horizontal top"></i><i class="fm-court-line service horizontal bottom"></i><i class="fm-net"></i><div class="fm-player-dot opponent cb-dot" style="left:52%;top:21%"><span>CA</span></div><div class="fm-player-dot user cb-dot" style="left:48%;top:76%"><span>AF</span></div><i class="fm-ball" style="left:50%;top:54%"></i></div>
    <div class="cb-ai-read-v12 card">Lecture de l'IA adverse</div>
    <div class="cb-tactical-lab-v13 card">Laboratoire tactique</div>
-   <div class="cb-match-story"><div class="cb-point-story"><div><b>Dernier point</b><small>Revers gagnant</small></div></div><div class="cb-event-feed">\${eventRows}</div></div>
+   <div class="cb-match-story"><div class="cb-point-story"><div><b>Dernier point</b><small>Revers gagnant</small></div></div><div class="cb-event-feed">${eventRows}</div></div>
    <div class="fm-momentum">Momentum du match</div>
-   <div class="cb-stat-grid">\${stats}</div>
+   <div class="cb-stat-grid">${stats}</div>
    <div class="cb-live-controls"><div class="cb-speed-row"><button id="pause" type="button">Pause</button><button>1x</button><button>2x</button><button>3x</button></div></div>
    <details class="cb-coach-panel" open><summary>Consignes manager</summary><div class="cb-coach-grid"><label>Risque<select><option>Équilibré</option></select></label><label>Agressivité<input type="range"></label><label>Cibler le revers<input type="checkbox" checked></label></div></details>
-  </div></div>\`;
+  </div></div>`;
 }
 function fixture(){
  return '<div class="app-shell"><header class="topbar"><b class="logo">Court Boss</b><span>MANAGER UNIVERSE</span></header><div class="bottom-nav"><button>Accueil</button><button class="active">Match</button><button>Tournois</button><button>Classements</button></div><main class="page" id="main"><div id="app">'+liveCard()+'</div></main></div>';

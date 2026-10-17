@@ -1,4 +1,5 @@
 name: Court Boss Match Center Visual Smoke
+# QA-only PR rerun on 2026-10-17; no production deployment or database writes.
 
 on:
   pull_request:

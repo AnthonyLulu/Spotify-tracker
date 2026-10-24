@@ -91,10 +91,14 @@ test('busy and user saves stop without retries or writes',async()=>{
  await assert.rejects(()=>operateStageSinglesWeek({adapter:saved.adapter,options:opts}),/preflight failed/i);
  assert.equal(saved.state.calls,0);
 });
-test('ambiguous server failures abort rather than blindly replay',async()=>{
+test('ambiguous server failures stop after a checkpoint read, never blindly replay',async()=>{
  const f=fakeStage();
  f.adapter.stepWeek=async()=>{f.state.calls++;throw Error('network outcome ambiguous')};
- await assert.rejects(()=>operateStageSinglesWeek({adapter:f.adapter,options:opts}),/outcome ambiguous/);
+ const result=await operateStageSinglesWeek({adapter:f.adapter,options:opts});
+ assert.equal(result.status,'BLOCKED_AMBIGUOUS_NOT_CERTIFIED');
+ assert.equal(result.lastObservedCompletedItems,1);
+ assert.equal(result.ambiguousRequest,true);
  assert.equal(f.state.calls,1);
  assert.equal(f.state.completed,1);
+ assert.equal(f.state.begin,0);
 });

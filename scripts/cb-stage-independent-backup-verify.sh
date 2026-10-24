@@ -51,7 +51,7 @@ chmod 700 "$tmp"
 schemas="public,court_boss_private,cb_e2e_checkpoint_20261010,cb_e2e_reconstruction_20261010"
 # Supabase CLI skips platform-owned schemas such as auth and storage.
 # Detect mutations across separate role/schema/data dump connections. Hash all
-# rows of 12 critical tables, order-independent and deterministic on Postgres 17.
+# rows of 26 critical tables, order-independent and deterministic on Postgres 17.
 # This is deliberately more expensive than row counts and is NOT a full DB digest.
 fingerprint_sql="$(cat <<'FINGERPRINT_SQL'
 WITH key_checks AS (
@@ -102,6 +102,62 @@ WITH key_checks AS (
  SELECT 'historical_atp_bridge' AS check_key,
  (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
   FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.atp_2025_ledger_bridge_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'court_boss_match_stat_lines' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.court_boss_match_stat_lines v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'player_titles' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.player_titles v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'ranking_history' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.ranking_history v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'world_tournament_simulations' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.world_tournament_simulations v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'world_tournament_qualifying_entries' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.world_tournament_qualifying_entries v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'world_qualifying_acceptance_entries' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.world_qualifying_acceptance_entries v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'player_training_load_profiles' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.player_training_load_profiles v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'injuries' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.injuries v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'record_occurrences' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.record_occurrences v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'court_boss_world_story_log' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.court_boss_world_story_log v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'news_items' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.news_items v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'finance_transactions' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.finance_transactions v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'player_tournament_history' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.player_tournament_history v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'world_qualifying_states' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+ FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.world_qualifying_states v) hashed) AS fingerprint
 )
 SELECT jsonb_object_agg(check_key,fingerprint ORDER BY check_key)::text FROM key_checks;
 FINGERPRINT_SQL
@@ -134,13 +190,27 @@ counts="SELECT json_build_object(
  'frozen_synthetic_attributes',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.synthetic_adult_attributes_v1),
  'initial_rank_assignments',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.world_rank_seed_plan_v1),
  'historical_atp_reference',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.atp_20251201_reference_v1),
- 'historical_atp_bridge',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.atp_2025_ledger_bridge_v1)
+ 'historical_atp_bridge',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.atp_2025_ledger_bridge_v1),
+ 'court_boss_match_stat_lines',(SELECT count(*) FROM public.court_boss_match_stat_lines),
+ 'player_titles',(SELECT count(*) FROM public.player_titles),
+ 'ranking_history',(SELECT count(*) FROM public.ranking_history),
+ 'world_tournament_simulations',(SELECT count(*) FROM public.world_tournament_simulations),
+ 'world_tournament_qualifying_entries',(SELECT count(*) FROM public.world_tournament_qualifying_entries),
+ 'world_qualifying_acceptance_entries',(SELECT count(*) FROM public.world_qualifying_acceptance_entries),
+ 'player_training_load_profiles',(SELECT count(*) FROM public.player_training_load_profiles),
+ 'injuries',(SELECT count(*) FROM public.injuries),
+ 'record_occurrences',(SELECT count(*) FROM public.record_occurrences),
+ 'court_boss_world_story_log',(SELECT count(*) FROM public.court_boss_world_story_log),
+ 'news_items',(SELECT count(*) FROM public.news_items),
+ 'finance_transactions',(SELECT count(*) FROM public.finance_transactions),
+ 'player_tournament_history',(SELECT count(*) FROM public.player_tournament_history),
+ 'world_qualifying_states',(SELECT count(*) FROM public.world_qualifying_states)
 )::text;"
 before="$(psql "$CB_E2E_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$counts")" || die 'Stage validation read failed'
 after="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$counts")" || die 'Restore validation read failed'
 [[ "$before" == "$after" ]] || die 'Critical game table counts differ after local restore'
 restored_fingerprint="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql")" || die 'Cannot fingerprint independently restored local database'
-[[ "$before_fingerprint" == "$restored_fingerprint" ]] || die 'Critical player/seed/match/checkpoint contents mismatch after local restore'
+[[ "$before_fingerprint" == "$restored_fingerprint" ]] || die 'Critical seed, event, physiology, record or checkpoint contents mismatch after local restore'
 printf '%s\n' "$restored_fingerprint" > "$tmp/RESTORED_DIGESTS.json"
 printf '%s\n' "$after" > "$tmp/RESTORED_COUNTS.json"
 printf '%s\n' 'Twelve critical game/seed/checkpoint table counts match; NOT a full cross-table digest or gameplay certificate.' > "$tmp/VALIDATION.txt"

@@ -65,7 +65,7 @@ BEGIN
  FROM cb_e2e_reconstruction_20261010.world_week_jobs_v1 WHERE job_key=v_key;
  RETURN pg_catalog.jsonb_build_object('ok',true,'job_key',v_key,'expected',v_count,'completed',v_completed,'existing',coalesce(v_existing,false));
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION cb_e2e_reconstruction_20261010.step_world_week_v2(p_key text)
  RETURNS jsonb
@@ -143,7 +143,7 @@ begin
  set completed_items=n,status='running',updated_at=now() where job_key=p_key;
  return pg_catalog.jsonb_build_object('ok',true,'tournament_id',item.tournament_id,'matches',m,'point_rows',pt,'completed',n,'total',j.expected_items,'done',n=j.expected_items);
 end
-$function$
+$function$;
 
 COMMIT;
 -- Minimal proof: do NOT process further contaminated events.

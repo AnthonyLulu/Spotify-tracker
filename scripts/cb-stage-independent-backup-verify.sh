@@ -66,13 +66,18 @@ counts="SELECT json_build_object(
  'points',(SELECT count(*) FROM public.world_ranking_points),
  'week_jobs',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.world_week_jobs_v1),
  'week_items',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.world_week_items_v1),
- 'checkpoint_players',(SELECT count(*) FROM cb_e2e_checkpoint_20261010.players)
+ 'checkpoint_players',(SELECT count(*) FROM cb_e2e_checkpoint_20261010.players),
+ 'frozen_synthetic_players',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.synthetic_adult_seed_v1),
+ 'frozen_synthetic_attributes',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.synthetic_adult_attributes_v1),
+ 'initial_rank_assignments',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.world_rank_seed_plan_v1),
+ 'historical_atp_reference',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.atp_20251201_reference_v1),
+ 'historical_atp_bridge',(SELECT count(*) FROM cb_e2e_reconstruction_20261010.atp_2025_ledger_bridge_v1)
 )::text;"
 before="$(psql "$CB_E2E_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$counts")" || die 'Stage validation read failed'
 after="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$counts")" || die 'Restore validation read failed'
 [[ "$before" == "$after" ]] || die 'Critical game table counts differ after local restore'
 printf '%s\n' "$after" > "$tmp/RESTORED_COUNTS.json"
-printf '%s\n' 'Critical-table counts match; this is NOT an E2E or full cross-table digest certificate.' > "$tmp/VALIDATION.txt"
+printf '%s\n' 'Twelve critical game/seed/checkpoint table counts match; NOT a full cross-table digest or gameplay certificate.' > "$tmp/VALIDATION.txt"
 out="$CB_E2E_BACKUP_DIR/court-boss-e2e-$(date -u +%Y%m%dT%H%M%SZ).tar.age"
 tar -C "$tmp" -cf - roles.sql schema.sql data.sql SHA256SUMS RESTORED_COUNTS.json VALIDATION.txt |
  age -r "$CB_BACKUP_AGE_RECIPIENT" -o "$out"

@@ -7,10 +7,12 @@ die(){ printf 'BACKUP NOT VERIFIED: %s\n' "$1" >&2; exit 2; }
 for cmd in supabase psql age tar sha256sum node mktemp; do
  command -v "$cmd" >/dev/null 2>&1 || die "Missing local command: $cmd"
 done
-for var in CB_E2E_DB_URL CB_E2E_RESTORE_TEST_DB_URL CB_BACKUP_AGE_RECIPIENT CB_BACKUP_AGE_IDENTITY_FILE CB_E2E_BACKUP_DIR; do
+for var in CB_E2E_DB_URL CB_E2E_RESTORE_TEST_DB_URL CB_BACKUP_AGE_RECIPIENT CB_E2E_BACKUP_DIR; do
  [[ -n "$(printenv "$var" || true)" ]] || die "Set $var in a private local shell environment"
 done
-[[ -f "$CB_BACKUP_AGE_IDENTITY_FILE" ]] || die "Age private-key file unavailable"
+if [[ -n "${CB_BACKUP_AGE_IDENTITY_FILE:-}" ]]; then
+ [[ -f "$CB_BACKUP_AGE_IDENTITY_FILE" ]] || die "Age private-key file unavailable"
+fi
 # URLs remain in operator-only process arguments, never printed or committed.
 node <<'NODE' || die 'Unsafe source or target connection URL'
 const a=new URL(process.env.CB_E2E_DB_URL);
@@ -231,13 +233,19 @@ restored_fingerprint="$(stage_or_restored_fingerprints "$CB_E2E_RESTORE_TEST_DB_
 [[ "$before_fingerprint" == "$restored_fingerprint" ]] || die 'Critical seed, event, physiology, record or checkpoint contents mismatch after local restore'
 printf '%s\n' "$restored_fingerprint" > "$tmp/RESTORED_DIGESTS.json"
 printf '%s\n' "$after" > "$tmp/RESTORED_COUNTS.json"
-printf '%s\n' 'Twelve critical game/seed/checkpoint table counts match; NOT a full cross-table digest or gameplay certificate.' > "$tmp/VALIDATION.txt"
+printf '%s\n' 'Twenty-six critical table counts and content hashes match across source and local restore; NOT a complete DB-wide validation.' > "$tmp/VALIDATION.txt"
 out="$CB_E2E_BACKUP_DIR/court-boss-e2e-$(date -u +%Y%m%dT%H%M%SZ).tar.age"
 tar -C "$tmp" -cf - roles.sql schema.sql data.sql SHA256SUMS RESTORED_COUNTS.json RESTORED_DIGESTS.json VALIDATION.txt |
  age -r "$CB_BACKUP_AGE_RECIPIENT" -o "$out"
 [[ -s "$out" ]] || die 'Encrypted backup missing'
-age -d -i "$CB_BACKUP_AGE_IDENTITY_FILE" "$out" | tar -tf - | grep -Fx 'SHA256SUMS' >/dev/null || die 'Archive decrypt check failed'
+if [[ -n "${CB_BACKUP_AGE_IDENTITY_FILE:-}" ]]; then
+ age -d -i "$CB_BACKUP_AGE_IDENTITY_FILE" "$out" | tar -tf - | grep -Fx 'SHA256SUMS' >/dev/null || die 'Archive decrypt check failed'
+else
+ # Public-recipient-only CI mode. Offline owner retains the private age key.
+ # Successful copy/restore and checksums DO NOT verify encrypted decryption.
+ printf 'OFFLINE PRIVATE-KEY CHECK STILL REQUIRED: %s\n' "$out" >&2
+fi
 sha256sum "$out" > "$out.sha256"
 chmod 600 "$out" "$out.sha256"
-printf 'BACKUP VERIFIED: %s\n' "$out"
-printf 'Keep archive and private decryption key separately. No staging reset authorized.\n'
+printf 'ENCRYPTED STAGE ARCHIVE WITH LOCAL RESTORE HASH PARITY: %s\n' "$out"
+printf 'Keep archive and private key separate; final offline age decryption still needs checking. No staging reset authorized.\n'

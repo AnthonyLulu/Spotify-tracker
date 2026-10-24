@@ -31,6 +31,16 @@ BEGIN
    RETURN pg_catalog.jsonb_build_object('ok',false,'reason','invalid_QA_window');
  END IF;
  IF p_from>date '2026-01-04' AND NOT EXISTS(SELECT 1 FROM cb_e2e_reconstruction_20261010.world_week_jobs_v1 prior WHERE prior.to_date=p_from AND prior.status='completed') THEN RETURN pg_catalog.jsonb_build_object('ok',false,'reason','previous_week_not_complete'); END IF;
+ -- A historically "completed" week is not eligible as a successor if it included cancelled matches.
+ IF p_from>date '2026-01-04' AND EXISTS (
+   SELECT 1 FROM cb_e2e_reconstruction_20261010.world_week_jobs_v1 prior
+   JOIN cb_e2e_reconstruction_20261010.world_week_items_v1 i ON i.job_key=prior.job_key
+   JOIN public.tournaments t ON t.id=i.tournament_id
+   WHERE prior.to_date=p_from
+     AND (coalesce(t.is_active,false)=false
+          OR t.name ~* '(cancelled|canceled|postponed|abandoned|annul[ée])')
+ ) THEN RETURN pg_catalog.jsonb_build_object(
+   'ok',false,'reason','previous_week_calendar_invalid'); END IF;
  IF EXISTS(SELECT 1 FROM public.career_state)
    OR EXISTS(SELECT 1 FROM public.game_saves)
    OR EXISTS(SELECT 1 FROM public.game_save_slots)

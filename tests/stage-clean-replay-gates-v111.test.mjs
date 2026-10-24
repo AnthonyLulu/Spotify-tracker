@@ -34,7 +34,7 @@ test('external backup double checks twenty-six tables in three bounded hash grou
  assert.match(backup,/after_dump_fingerprint=/);
  assert.match(backup,/restored_fingerprint=/);
  assert.match(backup,/Stage changed during multi-session export/);
- assert.match(backup,/Critical player\/seed\/match\/checkpoint contents mismatch/);
+ assert.match(backup,/Critical seed, event, physiology, record or checkpoint contents mismatch/);
  assert.match(backup,/RESTORED_DIGESTS\.json/);
  assert.match(backup,/md5\(to_jsonb\(v\)::text\)/);
  assert.match(backup,/string_agg\(row_md5,'' ORDER BY row_md5\)/);

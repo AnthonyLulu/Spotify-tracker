@@ -32,6 +32,7 @@ function makeAdapter({afterCommit=true,onFinalize=false,readFailure=false}={}) {
    return {ok:true,scope:'world_singles_only',certifies_full_unified_week:false,
     world_run_id:key,checkpoint_date:throughDate,status:job.status,
     world_simulation_committed:true,checkpoint_persisted:true,ranking_integrity_ok:true,
+    calendar_semantics_ok:true,cancelled_event_rows:0,
     nested_guard_ok:true,outer_guard_ok:true,tournaments_expected:3,tournaments_completed:3,
     matches_due:93,matches_committed:93,point_awards_expected:48,point_awards_recorded:48,
     invalid_event_rows:0,duplicate_match_effects:0,ranking_duplicates:0,managed_matches_pending:0};

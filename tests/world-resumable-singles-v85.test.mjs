@@ -25,6 +25,7 @@ function makeStage({start='2026-01-25',events=16,completed=4,busyOnce=false,inva
    return {ok:!invalidReceipt,scope:'world_singles_only',certifies_full_unified_week:false,
     world_run_id:key,checkpoint_date:date,status:w.status,
     world_simulation_committed:true,checkpoint_persisted:true,
+    calendar_semantics_ok:true,cancelled_event_rows:0,
     ranking_integrity_ok:true,nested_guard_ok:true,outer_guard_ok:true,
     tournaments_expected:n,tournaments_completed:n,
     matches_due:n*31,matches_committed:n*31,
@@ -97,4 +98,20 @@ test('preflight rejects windows outside certified 2026 Sundays',async()=>{
  await assert.rejects(()=>advanceIsolatedSinglesWeeks({adapter:a,fromDate:'2026-01-26',throughDate:'2026-02-01'}),/Sunday-to-Sunday/);
  await assert.rejects(()=>advanceIsolatedSinglesWeeks({adapter:a,fromDate:'2026-12-27',throughDate:'2050-12-31'}),/Sunday-to-Sunday/);
  assert.equal(a.stats().calls,0);
+});
+
+
+test('cancelled or postponed events make a technically green week fail certification', async()=>{
+ const a=makeStage({completed:16});
+ const getter=a.getWeekStatus.bind(a);
+ a.getWeekStatus=async params=>({...await getter(params),status:'completed'});
+ const base=a.readWeekReceipt.bind(a);
+ a.readWeekReceipt=async params=>({...await base(params),calendar_semantics_ok:false,cancelled_event_rows:1});
+ await assert.rejects(()=>advanceIsolatedSinglesWeeks({adapter:a,...period}),/Unverified singles world-week/);
+ const b=makeStage({completed:16});
+ const getterB=b.getWeekStatus.bind(b);
+ b.getWeekStatus=async params=>({...await getterB(params),status:'completed'});
+ const baseB=b.readWeekReceipt.bind(b);
+ b.readWeekReceipt=async params=>{const r=await baseB(params);delete r.calendar_semantics_ok;return r;};
+ await assert.rejects(()=>advanceIsolatedSinglesWeeks({adapter:b,...period}),/Unverified singles world-week/);
 });

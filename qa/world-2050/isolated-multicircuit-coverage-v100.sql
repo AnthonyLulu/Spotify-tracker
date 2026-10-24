@@ -23,11 +23,11 @@ WITH bounds AS MATERIALIZED (
  JOIN calendar c ON c.id=w.tournament_id
 ), coverage AS (
  SELECT
- count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.singles)::int AS mens_singles_planned,
- count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.singles
+ count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.category NOT IN ('United Cup','Laver Cup','Davis Cup','Junior Davis Cup') AND c.singles)::int AS mens_singles_planned,
+ count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.category NOT IN ('United Cup','Laver Cup','Davis Cup','Junior Davis Cup') AND c.singles
                   AND sr.tournament_id IS NOT NULL)::int AS mens_singles_persisted,
- count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.doubles)::int AS mens_doubles_planned,
- count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.doubles
+ count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.category NOT IN ('United Cup','Laver Cup','Davis Cup','Junior Davis Cup') AND c.doubles)::int AS mens_doubles_planned,
+ count(*) FILTER (WHERE c.circuit IN ('ATP','Challenger','ITF') AND c.category NOT IN ('United Cup','Laver Cup','Davis Cup','Junior Davis Cup') AND c.doubles
                   AND dr.tournament_id IS NOT NULL)::int AS mens_doubles_persisted,
  count(*) FILTER (WHERE c.circuit='Junior' AND c.singles)::int AS junior_singles_planned,
  count(*) FILTER (WHERE c.circuit='Junior' AND c.singles
@@ -45,6 +45,7 @@ SELECT jsonb_build_object(
  'mens_doubles_planned',c.mens_doubles_planned,
  'mens_doubles_persisted',c.mens_doubles_persisted,
  'junior_singles_planned',c.junior_singles_planned,
+ 'team_competition_events_planned',(SELECT count(*) FROM calendar WHERE category IN ('United Cup','Laver Cup','Davis Cup','Junior Davis Cup')),
  'junior_singles_world_simulations',c.junior_singles_world_simulations,
  'davis_ties',(
    SELECT count(*) FROM public.davis_ties d

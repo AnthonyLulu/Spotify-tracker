@@ -12,6 +12,7 @@ test('deny production, other hosts, blank or non-SSL database URLs',()=>{
   for(const url of ['postgresql://user:pass@db.qrsvliliezbiedmaewml.supabase.co/postgres',
     'postgresql://user:pass@evil.test/postgres',
     'postgresql://user:pass@db.sozrygjxjotozrsenred.supabase.co/postgres?sslmode=disable',
+    'postgresql://user:pass@db.sozrygjxjotozrsenred.supabase.co/postgres?sslmode=prefer',
     'postgresql://db.sozrygjxjotozrsenred.supabase.co/postgres',
     '']){
     assert.throws(()=>assertDirectStageUrl(url));

@@ -233,7 +233,7 @@ restored_fingerprint="$(stage_or_restored_fingerprints "$CB_E2E_RESTORE_TEST_DB_
 [[ "$before_fingerprint" == "$restored_fingerprint" ]] || die 'Critical seed, event, physiology, record or checkpoint contents mismatch after local restore'
 printf '%s\n' "$restored_fingerprint" > "$tmp/RESTORED_DIGESTS.json"
 printf '%s\n' "$after" > "$tmp/RESTORED_COUNTS.json"
-printf '%s\n' 'Twelve critical game/seed/checkpoint table counts match; NOT a full cross-table digest or gameplay certificate.' > "$tmp/VALIDATION.txt"
+printf '%s\n' 'Twenty-six critical table counts and content hashes match across source and local restore; NOT a complete DB-wide validation.' > "$tmp/VALIDATION.txt"
 out="$CB_E2E_BACKUP_DIR/court-boss-e2e-$(date -u +%Y%m%dT%H%M%SZ).tar.age"
 tar -C "$tmp" -cf - roles.sql schema.sql data.sql SHA256SUMS RESTORED_COUNTS.json RESTORED_DIGESTS.json VALIDATION.txt |
  age -r "$CB_BACKUP_AGE_RECIPIENT" -o "$out"
@@ -243,9 +243,9 @@ if [[ -n "${CB_BACKUP_AGE_IDENTITY_FILE:-}" ]]; then
 else
  # Public-recipient-only CI mode. Offline owner retains the private age key.
  # Successful copy/restore and checksums DO NOT verify encrypted decryption.
- printf 'OFFLINE PRIVATE-KEY CHECK STILL REQUIRED: %s\\n' "$out" >&2
+ printf 'OFFLINE PRIVATE-KEY CHECK STILL REQUIRED: %s\n' "$out" >&2
 fi
 sha256sum "$out" > "$out.sha256"
 chmod 600 "$out" "$out.sha256"
-printf 'BACKUP VERIFIED: %s\n' "$out"
-printf 'Keep archive and private decryption key separately. No staging reset authorized.\n'
+printf 'ENCRYPTED STAGE ARCHIVE WITH LOCAL RESTORE HASH PARITY: %s\n' "$out"
+printf 'Keep archive and private key separate; final offline age decryption still needs checking. No staging reset authorized.\n'

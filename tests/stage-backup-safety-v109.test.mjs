@@ -21,3 +21,10 @@ test('backup requires encrypted artifact and verifies restoration, without stage
  assert.doesNotMatch(sh,/supabase\s+db\s+(?:reset|push)/);
  assert.doesNotMatch(sh,/\b(?:DROP DATABASE|DELETE FROM public\.|TRUNCATE public\.)\b/i);
 });
+
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+test('backup shell script parses under Bash before any owner credentials are supplied',()=>{
+ const r=spawnSync('bash',['-n',fileURLToPath(p)],{encoding:'utf8'});
+ assert.equal(r.status,0,r.stderr);
+});

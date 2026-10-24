@@ -177,7 +177,7 @@ stage_or_restored_fingerprints(){
  f1="$(psql "$dest" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql_1")" || return 1
  f2="$(psql "$dest" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql_2")" || return 1
  f3="$(psql "$dest" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql_3")" || return 1
- node -e 'const p=process.argv.slice(1).map(JSON.parse);const all=Object.assign({},...p);if(Object.keys(all).length!==26||Object.values(all).some(x=>typeof x!=="string"||!\/^[0-9a-f]{32}$\/.test(x)))process.exit(3);process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(all).sort(([a],[b])=>a.localeCompare(b)))))' "$f1" "$f2" "$f3"
+ node -e 'const p=process.argv.slice(1).map(JSON.parse);const all=Object.assign({},...p);if(Object.keys(all).length!==26||Object.values(all).some(x=>typeof x!=="string"||!/^[0-9a-f]{32}$/.test(x)))process.exit(3);process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(all).sort(([a],[b])=>a.localeCompare(b)))))' "$f1" "$f2" "$f3"
 }
 
 before_fingerprint="$(stage_or_restored_fingerprints "$CB_E2E_DB_URL")" || die 'Cannot fingerprint isolated stage before dump'

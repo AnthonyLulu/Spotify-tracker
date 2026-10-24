@@ -15,8 +15,9 @@ export function assertDirectStageUrl(value){
     ||!url.username||!url.password){
     throw Error('Refusing non-isolated or unauthenticated database URL');
   }
-  if(url.searchParams.get('sslmode')==='disable'){
-    throw Error('Staging PostgreSQL connection must use SSL');
+  const ssl=url.searchParams.get('sslmode');
+  if(ssl!==null&&!['require','verify-full','verify-ca'].includes(ssl)){
+    throw Error('Staging PostgreSQL connection must use TLS');
   }
   return value;
 }
@@ -42,7 +43,7 @@ export function queryWithPsql({dsn,sql,timeoutMs=90000}){
   const result=spawnSync('psql',
     ['-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-c',sql],
     {encoding:'utf8',timeout:timeoutMs,maxBuffer:1024*1024,
-     env:{...process.env,PGDATABASE:dsn,PGCONNECT_TIMEOUT:'8',
+     env:{...process.env,PGDATABASE:dsn,PGCONNECT_TIMEOUT:'8',PGSSLMODE:'require',
           PGOPTIONS:'-c statement_timeout=75000'}});
   if(result.error||result.status!==0){
     throw Error('Staging query failed or timed out; inspect persisted week state before any retry');

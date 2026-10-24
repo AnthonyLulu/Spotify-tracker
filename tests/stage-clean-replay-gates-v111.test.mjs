@@ -25,13 +25,16 @@ test('checkpoint drift explicitly distinguishes changed physiology/rank from mis
  assert.match(drift,/'safe_to_restore_individual_rows',false/);
  assert.match(drift,/'world_2050_certified',false/);
 });
-test('external backup double checks same 12 tables by content, not counts only',()=>{
- assert.match(backup,/fingerprint_sql=/);
+test('external backup double checks twenty-six tables in three bounded hash groups',()=>{
+ assert.match(backup,/fingerprint_sql_1=/);
+ assert.match(backup,/fingerprint_sql_2=/);
+ assert.match(backup,/fingerprint_sql_3=/);
+ assert.match(backup,/stage_or_restored_fingerprints/);
  assert.match(backup,/before_fingerprint=/);
  assert.match(backup,/after_dump_fingerprint=/);
  assert.match(backup,/restored_fingerprint=/);
  assert.match(backup,/Stage changed during multi-session export/);
- assert.match(backup,/Critical player\/seed\/match\/checkpoint contents mismatch/);
+ assert.match(backup,/Critical seed, event, physiology, record or checkpoint contents mismatch/);
  assert.match(backup,/RESTORED_DIGESTS\.json/);
  assert.match(backup,/md5\(to_jsonb\(v\)::text\)/);
  assert.match(backup,/string_agg\(row_md5,'' ORDER BY row_md5\)/);

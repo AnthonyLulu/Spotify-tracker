@@ -50,12 +50,72 @@ trap 'rm -rf "$tmp"' EXIT
 chmod 700 "$tmp"
 schemas="public,court_boss_private,cb_e2e_checkpoint_20261010,cb_e2e_reconstruction_20261010"
 # Supabase CLI skips platform-owned schemas such as auth and storage.
+# Detect mutations across separate role/schema/data dump connections. Hash all
+# rows of 12 critical tables, order-independent and deterministic on Postgres 17.
+# This is deliberately more expensive than row counts and is NOT a full DB digest.
+fingerprint_sql="$(cat <<'FINGERPRINT_SQL'
+WITH key_checks AS (
+ SELECT 'players' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.players v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'tournaments' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.tournaments v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'matches' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.world_tournament_matches v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'points' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM public.world_ranking_points v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'week_jobs' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.world_week_jobs_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'week_items' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.world_week_items_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'checkpoint_players' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_checkpoint_20261010.players v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'frozen_synthetic_players' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.synthetic_adult_seed_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'frozen_synthetic_attributes' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.synthetic_adult_attributes_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'initial_rank_assignments' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.world_rank_seed_plan_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'historical_atp_reference' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.atp_20251201_reference_v1 v) hashed) AS fingerprint
+ UNION ALL
+ SELECT 'historical_atp_bridge' AS check_key,
+ (SELECT md5(coalesce(string_agg(row_md5,'' ORDER BY row_md5),''))
+  FROM (SELECT md5(to_jsonb(v)::text) AS row_md5 FROM cb_e2e_reconstruction_20261010.atp_2025_ledger_bridge_v1 v) hashed) AS fingerprint
+)
+SELECT jsonb_object_agg(check_key,fingerprint ORDER BY check_key)::text FROM key_checks;
+FINGERPRINT_SQL
+)"
+before_fingerprint="$(psql "$CB_E2E_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql")" || die 'Cannot fingerprint isolated stage before dump'
+[[ -n "$before_fingerprint" ]] || die 'Empty initial stage fingerprint'
 supabase db dump --db-url "$CB_E2E_DB_URL" --role-only --file "$tmp/roles.sql" >/dev/null
 supabase db dump --db-url "$CB_E2E_DB_URL" --schema "$schemas" --file "$tmp/schema.sql" >/dev/null
 supabase db dump --db-url "$CB_E2E_DB_URL" --schema "$schemas" --data-only --use-copy --file "$tmp/data.sql" >/dev/null
 for file in roles.sql schema.sql data.sql; do
  [[ -s "$tmp/$file" ]] || die "Empty stage dump: $file"
 done
+after_dump_fingerprint="$(psql "$CB_E2E_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql")" || die 'Cannot fingerprint isolated stage after dump'
+[[ "$before_fingerprint" == "$after_dump_fingerprint" ]] || die 'Stage changed during multi-session export; do NOT trust or restore this dump'
 (cd "$tmp" && sha256sum roles.sql schema.sql data.sql > SHA256SUMS)
 # Run on a fresh LOCAL Supabase/Postgres 17 scratch DB with needed extensions.
 # Retain roles for archival, but do not import global roles into test DB.
@@ -79,10 +139,13 @@ counts="SELECT json_build_object(
 before="$(psql "$CB_E2E_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$counts")" || die 'Stage validation read failed'
 after="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$counts")" || die 'Restore validation read failed'
 [[ "$before" == "$after" ]] || die 'Critical game table counts differ after local restore'
+restored_fingerprint="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$fingerprint_sql")" || die 'Cannot fingerprint independently restored local database'
+[[ "$before_fingerprint" == "$restored_fingerprint" ]] || die 'Critical player/seed/match/checkpoint contents mismatch after local restore'
+printf '%s\n' "$restored_fingerprint" > "$tmp/RESTORED_DIGESTS.json"
 printf '%s\n' "$after" > "$tmp/RESTORED_COUNTS.json"
 printf '%s\n' 'Twelve critical game/seed/checkpoint table counts match; NOT a full cross-table digest or gameplay certificate.' > "$tmp/VALIDATION.txt"
 out="$CB_E2E_BACKUP_DIR/court-boss-e2e-$(date -u +%Y%m%dT%H%M%SZ).tar.age"
-tar -C "$tmp" -cf - roles.sql schema.sql data.sql SHA256SUMS RESTORED_COUNTS.json VALIDATION.txt |
+tar -C "$tmp" -cf - roles.sql schema.sql data.sql SHA256SUMS RESTORED_COUNTS.json RESTORED_DIGESTS.json VALIDATION.txt |
  age -r "$CB_BACKUP_AGE_RECIPIENT" -o "$out"
 [[ -s "$out" ]] || die 'Encrypted backup missing'
 age -d -i "$CB_BACKUP_AGE_IDENTITY_FILE" "$out" | tar -tf - | grep -Fx 'SHA256SUMS' >/dev/null || die 'Archive decrypt check failed'

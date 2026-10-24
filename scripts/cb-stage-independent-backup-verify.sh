@@ -77,7 +77,7 @@ out="$CB_E2E_BACKUP_DIR/court-boss-e2e-$(date -u +%Y%m%dT%H%M%SZ).tar.age"
 tar -C "$tmp" -cf - roles.sql schema.sql data.sql SHA256SUMS RESTORED_COUNTS.json VALIDATION.txt |
  age -r "$CB_BACKUP_AGE_RECIPIENT" -o "$out"
 [[ -s "$out" ]] || die 'Encrypted backup missing'
-age -d -i "$CB_BACKUP_AGE_IDENTITY_FILE" "$out" | tar -tf - | grep -Fxq 'SHA256SUMS' || die 'Archive decrypt check failed'
+age -d -i "$CB_BACKUP_AGE_IDENTITY_FILE" "$out" | tar -tf - | grep -Fx 'SHA256SUMS' >/dev/null || die 'Archive decrypt check failed'
 sha256sum "$out" > "$out.sha256"
 chmod 600 "$out" "$out.sha256"
 printf 'BACKUP VERIFIED: %s\n' "$out"

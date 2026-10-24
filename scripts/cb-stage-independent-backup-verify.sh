@@ -31,6 +31,9 @@ source_guard="SELECT CASE WHEN
  AND (SELECT count(*) FROM public.game_saves)=0
  AND (SELECT count(*) FROM public.game_save_slots)=0
  AND (SELECT count(*) FROM public.career_state)=0
+ AND (SELECT count(*) FROM cb_e2e_reconstruction_20261010.synthetic_adult_seed_v1)=24435
+ AND (SELECT count(*) FROM cb_e2e_reconstruction_20261010.synthetic_adult_attributes_v1)=24435
+ AND (SELECT count(*) FROM cb_e2e_reconstruction_20261010.world_rank_seed_plan_v1)=26456
  THEN 'OK' ELSE 'UNSAFE' END;"
 guard="$(psql "$CB_E2E_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$source_guard")" || die 'Cannot inspect stage'
 [[ "$guard" == OK ]] || die 'Isolated checkpoint / zero-save guard failed'

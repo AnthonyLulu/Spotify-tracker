@@ -2,7 +2,7 @@
 // This is an *adapter-only* deterministic controller: no Supabase secrets,
 // HTTP client, local saves, database connections or scheduler are bundled.
 // A real adapter must call the existing isolated stage begin_world_week_v2,
-// step_world_week_v2, verify_persisted_singles_week_v80 and READ job status.
+// step_world_week_v2, verify_persisted_singles_week_v96 (calendar semantics) and READ job status.
 // This verifies ATP/Challenger/ITF singles ONLY, never full 2050 eligibility.
 import {isoDay,nextDay} from './replay-controller.mjs';
 
@@ -17,6 +17,7 @@ function nonNegativeInt(x){return Number.isSafeInteger(x)&&x>=0;}
 export function assertStageSinglesWeekReceipt(r,{key,toDate,expectedItems}){
  if(r?.ok!==true || r.scope!=='world_singles_only'
    || r.certifies_full_unified_week!==false
+   || r.calendar_semantics_ok!==true || r.cancelled_event_rows!==0
    || r.world_run_id!==key || r.checkpoint_date!==toDate
    || r.status!=='completed'
    || r.world_simulation_committed!==true

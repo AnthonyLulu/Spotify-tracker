@@ -29,7 +29,7 @@ The invalid events involved **188 distinct players**, of which **four** occur am
 2. Post-dump staging fingerprint, abort if changed during Supabase CLI's separate export sessions.
 3. Post-restore local fingerprint, abort if it differs from the staging pre-dump state.
 
-It also retains numeric row count checks, encrypted age archive and SHA256. Digest parity is stronger than count-only and prevents claiming success after same-row-count data changes. **It is not a complete database-wide content parity test, nor a full 2025 world/2050 certification.** SQL dump+restore still requires user-authorized PostgreSQL credentials, offline encryption identity, and local Postgres 17 setup. The available connector cannot furnish such an independent backup, so none has been executed in this chat.
+It also retains numeric row count checks, encrypted age archive and SHA256. Digest parity is stronger than count-only and prevents claiming success after same-row-count data changes. **It is not a complete database-wide content parity test, nor a full 2025 world/2050 certification.** The twelve-table fingerprint SQL was actually executed in a read-only stage transaction and returned twelve valid 32-character MD5 digests. This validates the hashing SQL on the source, not the export/restore procedure. SQL dump+restore still requires user-authorized PostgreSQL credentials, offline encryption identity, and local Postgres 17 setup. The available connector cannot furnish such an independent backup, so none has been executed in this chat.
 
 ## Strict continuation rule
 

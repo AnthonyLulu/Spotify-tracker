@@ -108,7 +108,27 @@ export async function advanceIsolatedSinglesWeeks({
      result.pendingItems=state.expected_items-state.completed_items;
      return result;
     }
-    const step=await adapter.stepWeek({key});
+    let step;
+    try {
+     step=await adapter.stepWeek({key});
+    } catch (error) {
+     // A lost response is NOT proof that the transaction was rolled back.
+     // Read the durable checkpoint once; never retry a mutating call here.
+     // This read may also fail: propagate that failure rather than inventing a state.
+     const observed=checkWeekState(await adapter.getWeekStatus({key}),key);
+     if(!observed || observed.expected_items!==state.expected_items
+       || observed.completed_items<state.completed_items
+       || observed.completed_items>state.completed_items+1){
+      throw Error('Unverifiable world step after lost response: '+key);
+     }
+     result.status='BLOCKED_AMBIGUOUS_NOT_CERTIFIED';
+     result.firstUnfinishedWeek=key;
+     result.pendingItems=observed.expected_items-observed.completed_items;
+     result.lastObservedCompletedItems=observed.completed_items;
+     result.ambiguousRequest=true;
+     // Even if finalization committed, re-enter through an independent receipt check.
+     return result;
+    }
     if(step?.ok!==true){
      if(step?.retryable===true&&step.reason==='busy'){
       result.status='BLOCKED_BUSY_NOT_CERTIFIED';

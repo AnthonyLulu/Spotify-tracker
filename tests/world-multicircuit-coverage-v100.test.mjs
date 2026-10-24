@@ -6,6 +6,8 @@ test('unified world audit uses last completed week, not an active partial week',
  assert.match(sql,/max\(to_date\) AS through_date/);
  assert.match(sql,/status='completed' AND completed_items=expected_items/);
  assert.match(sql,/mens_doubles_planned/);
+ assert.match(sql,/category NOT IN \('United Cup','Laver Cup','Davis Cup','Junior Davis Cup'\)/);
+ assert.match(sql,/team_competition_events_planned/);
  assert.match(sql,/mens_doubles_persisted/);
  assert.match(sql,/davis_scored_rubbers/);
  assert.match(sql,/junior_doubles_scored_matches/);

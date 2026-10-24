@@ -14,7 +14,7 @@ test('backup fails closed unless source is isolated stage and target is local sc
  assert.match(sh,/career_state/);
 });
 test('backup requires encrypted artifact and verifies restoration, without stage mutations',()=>{
- for(const token of ['--role-only','--schema "$schemas"','--data-only','--use-copy','--single-transaction','AGE_IDENTITY_FILE','age -r','age -d','sha256sum','RESTORED_COUNTS.json','checkpoint_players']) {
+ for(const token of ['--role-only','--schema "$schemas"','--data-only','--use-copy','--single-transaction','AGE_IDENTITY_FILE','age -r','age -d','sha256sum','RESTORED_COUNTS.json','checkpoint_players','frozen_synthetic_players','frozen_synthetic_attributes','initial_rank_assignments','historical_atp_reference','historical_atp_bridge']) {
   assert.ok(sh.includes(token), 'Missing '+token);
  }
  assert.doesNotMatch(sh,/psql\s+"\$CB_E2E_DB_URL"[^\n]*\s-f\s+"\$tmp\//);

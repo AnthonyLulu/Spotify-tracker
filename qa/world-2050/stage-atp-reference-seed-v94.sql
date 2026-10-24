@@ -53,7 +53,7 @@ BEGIN
   RAISE EXCEPTION 'Refuse ATP v94 seed: count or identity drift, input %, matched %, ranks %, players %, existing %',
     n_input,n_found,n_distinct_rank,n_distinct_player,n_existing;
  END IF;
- IF EXISTS(
+ IF n_existing=191 AND EXISTS(
   SELECT 1 FROM public.atp_ranking_baseline_2025_12_01 b
   FULL JOIN cb_atp_2025_map_v94 m ON m.source_player_id=b.source_player_id
   WHERE b.source_player_id IS NULL OR m.source_player_id IS NULL

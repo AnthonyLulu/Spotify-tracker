@@ -268,7 +268,20 @@ const get=async(path,opts={},retried=false,transientAttempt=0)=>{
   if(method==='GET'&&transientAttempt<2)return retryTransient();
   throw e;
  }
- const body=await r.json().catch(()=>({error:'Réponse serveur illisible'}));
+ let body;
+ try{body=await r.json()}
+ catch{
+  if(r.ok){
+   const e=new Error('Réponse serveur illisible. Impossible de confirmer le résultat de l’action.');
+   e.status=r.status;e.code='INVALID_API_RESPONSE';throw e;
+  }
+  body={error:'Réponse serveur illisible'};
+ }
+ if(r.ok&&(!body||typeof body!=='object'||Array.isArray(body))){
+  const e=new Error('Réponse serveur invalide. Impossible de confirmer le résultat de l’action.');
+  e.status=r.status;e.code='INVALID_API_RESPONSE';throw e;
+ }
+ if(!body||typeof body!=='object'||Array.isArray(body))body={error:'Réponse serveur illisible'};
  if(r.status===401&&!retried){
   if(!authPrompt){
    const e=new Error(body.error||'Action privée verrouillée.');
@@ -439,6 +452,7 @@ async function rollbackUnsavedLiveBatchOnStartup(){
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({slot_no:Number(marker.slot_no??0)})
   });
+  requireSaveSlotResponse(d,marker.slot_no??0,true);
   local=cleanCareerLocalState(d.local_payload||{});
   liveMatchSessionsByPlayer.clear();
   liveMatchOpponentsByPlayer.clear();
@@ -474,6 +488,16 @@ function enqueueSaveSlotWrite(task,markBusy=true){
  saveSlotQueue=run.catch(()=>{});
  return run;
 }
+function requireSaveSlotResponse(data,slotNo,loading=false){
+ const validSlot=data?.ok===true&&Number.isInteger(data.slot?.slot_no)
+  &&data.slot.slot_no===Number(slotNo);
+ const validLoad=!loading||(data?.local_payload&&typeof data.local_payload==='object'
+  &&!Array.isArray(data.local_payload)&&Array.isArray(data.live_match_sessions));
+ if(!validSlot||!validLoad){
+  throw new Error('Confirmation de '+(loading?'chargement':'sauvegarde')+' invalide. Recharge le jeu pour synchroniser la carrière.');
+ }
+ return data;
+}
 async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}){
  const criticalAutosave=slotType==='autosave'&&silent;
  const preMatchCheckpoint=options?.preMatchCheckpoint===true;
@@ -488,6 +512,7 @@ async function saveCareerSlot(slotNo=1,slotType='manual',silent=false,options={}
  return enqueueSaveSlotWrite(async()=>{
   try{
    const d=await get('/api/save-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo),slot_type:slotType,slot_name:slotName,local_payload:localPayload,pre_match_checkpoint:preMatchCheckpoint})});
+   requireSaveSlotResponse(d,slotNo);
    local.lastSaveState={status:'ok',slot_no:Number(slotNo),slot_type:slotType,career_date:d.slot?.career_date||localPayload.date||local.date,week:d.slot?.week||localPayload.week||local.week,updated_at:d.slot?.updated_at||new Date().toISOString()};
    localStorage.setItem('cbLocal',JSON.stringify(snapshotLocalForSave()));
    if(!preMatchCheckpoint){
@@ -523,6 +548,7 @@ async function loadCareerSlot(slotNo){
  return enqueueSaveSlotWrite(async()=>{
  try{
   const d=await get('/api/load-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
+  requireSaveSlotResponse(d,slotNo,true);
   local=cleanCareerLocalState(d.local_payload||{});
   liveMatchSessionsByPlayer.clear();
   liveMatchOpponentsByPlayer.clear();
@@ -564,8 +590,19 @@ async function deleteCareerSlot(slotNo){
  if(simulating){alert('La semaine est en cours de simulation. Attends la validation de l’autosave avant de supprimer un slot.');return;}
  if(saveSlotBusy)return;
  const slot=saveSlots.find(x=>Number(x.slot_no)===Number(slotNo));if(!slot)return;
+ const checkpoint=pendingLiveRollback();
+ if(checkpoint&&Number(checkpoint.slot_no??0)===Number(slotNo)){
+  alert('Cette sauvegarde est le point de reprise du match. Enregistre d’abord la carrière dans une autre sauvegarde avant de la supprimer.');return;
+ }
  if(!confirm('Supprimer « '+slot.slot_name+' » ?'))return;
- try{await get('/api/delete-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});await loadSaveSlots();render()}catch(e){alert(e.message)}
+ return enqueueSaveSlotWrite(async()=>{
+  try{
+   const d=await get('/api/delete-slot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot_no:Number(slotNo)})});
+   if(d?.ok!==true||d.slot_no!==Number(slotNo))throw new Error('Suppression non confirmée par le serveur.');
+   await loadSaveSlots();render();
+   return d;
+  }catch(e){alert(e.message);return {ok:false,error:String(e?.message||e)}}
+ });
 }
 
 function surfaceClass(s){const v=String(s||'');return v==='Terre'?'surface-clay':v==='Gazon'?'surface-grass':/intérieur/i.test(v)?'surface-indoor':'surface-hard'}
@@ -3094,15 +3131,17 @@ function liveMatchPanel(){
   <div class="muted micro" style="margin-top:7px">Mode TM · direct automatique point par point. Mets en pause pour intervenir tactiquement, puis reprends en 1x, 2x ou 3x.</div>`}
  </div>`;
 }
+function managedMatchHistory(){
+ const activeId=activeManagedId()||primaryManagedPlayerId()||0;
+ const primaryId=primaryManagedPlayerId();
+ const belongsToActive=m=>m.managed_player_id
+  ?Number(m.managed_player_id)===Number(activeId)
+  :Number(activeId)===Number(primaryId);
+ return [...(local.practiceMatches||[]),...(boot?.matches||[])].filter(belongsToActive);
+}
 function matchPage(){
  const t=local.tactics||{aggression:58,risk:52,net:28,returnPos:'Neutre'};
- const activeId=activeManagedId()||primaryManagedPlayerId()||0;
- const localMatches=(local.practiceMatches||[]).filter(m=>!m.managed_player_id||Number(m.managed_player_id)===activeId);
- const serverMatches=(boot.matches||[]).filter(m=>{
-  const mid=Number(m.managed_player_id||0);
-  return mid?mid===activeId:activeId===primaryManagedPlayerId();
- });
- const all=[...localMatches,...serverMatches],doublesOnly=String(activePlayerCareerView().career_focus||'mixed')==='doubles_only';
+ const all=managedMatchHistory(),doublesOnly=String(activePlayerCareerView().career_focus||'mixed')==='doubles_only';
  return `<div class="section-head"><div><div class="eyebrow">Analyse & coaching</div><h1>Match Center</h1><div class="muted">Prépare le plan de jeu, coache point par point et analyse les tendances.</div></div><button class="ghost" ${doublesOnly?'disabled':''} onclick="simulatePracticeMatch()">Simulation rapide</button></div>
  <div class="notice"><b>Mode manager</b> · changer de joueur fige son score. Une sauvegarde manuelle/quicksave fige aussi les matchs live. Fermer ou recharger sans sauvegarder revient au dernier checkpoint : avant-match, ou au score exact de ta dernière sauvegarde.</div>
  ${doublesOnly?'<div class="notice good"><b>Carrière Double exclusivement</b> · les matchs simples sont coupés. Utilise le hub Double et les fiches tournoi pour jouer.</div>':liveMatchPanel()}
@@ -5839,7 +5878,7 @@ window.simulatePracticeMatch=async()=>{
  }catch(e){alert('Simulation rapide impossible : '+e.message)}
 }
 window.openMatch=idx=>{
-  const all=[...(local.practiceMatches||[]),...(boot.matches||[])],m=all[idx];if(!m)return;
+  const m=managedMatchHistory()[idx];if(!m)return;
   const d=m.match_data||{};
   const firstServe=d.first_serve_pct??d.premieres_balles??'—';
   const winners=d.winners??'—';
@@ -5855,7 +5894,7 @@ window.openMatch=idx=>{
     ['Contexte',mc.context_skill],['Grands matchs',mc.big_match],['Best of 5',mc.best_of_five],
     ['Confiance',mc.confidence],['H2H',mc.h2h],['Forme',mc.form_delta],['Tes consignes',mc.user_tactics]
   ].filter(x=>Number.isFinite(Number(x[1]))&&Math.abs(Number(x[1]))>.0005);
-  const result=m.winner===(career().player_name||'Anthony')||m.winner===(activePlayerCareerView().player_name||'Joueur');
+  const result=m.winner===(activePlayerCareerView().player_name||'Joueur');
   const efficiency=(()=>{
     const w=Number(winners)||0,e=Number(errors)||0,n=Number(net)||50,r=Number(rally)||5;
     return clamp(Math.round(50+(w-e)*1.2+(n-50)*.25-(r>8?3:0)),20,95);

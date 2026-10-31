@@ -13,4 +13,6 @@ Validation:
 - `npm test`: **469 passed, 0 failed** (baseline: 452).
 - `node --check court-boss/app.js` and `git diff --check`: passed.
 
+The initial GitHub visual job stopped during browser installation: `ubuntu-latest` now selected Ubuntu 26.04, which pinned Playwright 1.55.0 does not support. The visual job now explicitly uses Ubuntu 24.04, listed in that Playwright version's native dependency manifest. This keeps the existing browser checks enabled.
+
 No production/staging data, private saves, migrations, or server code were changed. No live browser/mobile or production save/load session was exercised. The independent staging backup and full 2050 career certification remain outstanding.

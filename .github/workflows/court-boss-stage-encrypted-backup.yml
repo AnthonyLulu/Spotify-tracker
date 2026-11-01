@@ -24,12 +24,14 @@ jobs:
         shell: bash
         env:
           CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
+          CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
           CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
         run: |
           set -Eeuo pipefail
-          [[ -n "$CB_E2E_DB_URL" ]] || { echo 'Missing isolated CB_E2E_DB_URL secret'; exit 2; }
+          [[ -n "$CB_E2E_DB_URL" || -n "$CB_E2E_DB_PASSWORD" ]] || { echo 'Missing isolated CB_E2E_DB_URL or CB_E2E_DB_PASSWORD secret'; exit 2; }
           [[ "$CB_BACKUP_AGE_RECIPIENT" == age1* ]] || { echo 'Missing or invalid owner age public recipient'; exit 2; }
           node <<'NODE'
+          if (!process.env.CB_E2E_DB_URL) process.exit(0);
           const u=new URL(process.env.CB_E2E_DB_URL);
           if(!/^postgres(ql)?:$/.test(u.protocol)) process.exit(2);
           if(!/(^|\.)sozrygjxjotozrsenred\.supabase\.co$/.test(u.hostname) &&
@@ -66,6 +68,7 @@ jobs:
         shell: bash
         env:
           CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
+          CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
           CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
           CB_E2E_RESTORE_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/cb_e2e_restore_ci
           CB_E2E_BACKUP_DIR: ${{ runner.temp }}/cb-encrypted-archives

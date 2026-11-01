@@ -98,7 +98,9 @@ jobs:
           PY
           supabase db start
           # Quiesce only this disposable LOCAL Supabase template while cloning it.
-          cb_local_admin_url='postgresql://postgres:postgres@127.0.0.1:54322/template1'
+          cb_local_admin_url='postgresql://supabase_admin:postgres@127.0.0.1:54322/template1'
+          psql "$cb_local_admin_url" -XAtq -v ON_ERROR_STOP=1 \
+            -c "SELECT current_setting('is_superuser')" | grep -Fx on
           restore_local_connections() {
             psql "$cb_local_admin_url" -X -v ON_ERROR_STOP=1 \
               -c 'ALTER DATABASE postgres ALLOW_CONNECTIONS true' >/dev/null
@@ -114,7 +116,7 @@ jobs:
       - name: Make encrypted backup, verify restored full critical state
         shell: bash
         env:
-          CB_E2E_RESTORE_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/cb_e2e_restore_ci
+          CB_E2E_RESTORE_TEST_DB_URL: postgresql://supabase_admin:postgres@127.0.0.1:54322/cb_e2e_restore_ci
           CB_E2E_BACKUP_DIR: ${{ runner.temp }}/cb-encrypted-archives
         run: |
           set -Eeuo pipefail

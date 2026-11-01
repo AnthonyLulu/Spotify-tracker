@@ -12,18 +12,8 @@ done
 # authenticated IPv4 Session pooler URL using its exact, nonsecret host.
 # NEVER auto-guess a pooler hostname or accept a URL/password in workflow inputs.
 if [[ -z "${CB_E2E_DB_URL:-}" && -n "${CB_E2E_DB_PASSWORD:-}" ]]; then
- CB_E2E_DB_URL="$(node <<'STAGE_URL_NODE'
-const host = process.env.CB_E2E_POOLER_HOST || '';
-if (!/^aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(host)) {
-  console.error('Missing or invalid STAGE Session pooler host; copy only the host from Supabase Connect');
-  process.exit(2);
-}
-const u = new URL('postgresql://postgres.sozrygjxjotozrsenred@' + host + ':5432/postgres');
-u.password = process.env.CB_E2E_DB_PASSWORD;
-u.searchParams.set('sslmode', 'require');
-process.stdout.write(u.toString());
-STAGE_URL_NODE
-)" || die 'Cannot build stage-only IPv4 Session pooler URL'
+ backup_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ CB_E2E_DB_URL="$(node "$backup_script_dir/cb-stage-session-pooler-url.mjs")" || die 'Cannot build stage-only IPv4 Session pooler URL'
  export CB_E2E_DB_URL
 fi
 for var in CB_E2E_DB_URL CB_E2E_RESTORE_TEST_DB_URL CB_BACKUP_AGE_RECIPIENT CB_E2E_BACKUP_DIR; do

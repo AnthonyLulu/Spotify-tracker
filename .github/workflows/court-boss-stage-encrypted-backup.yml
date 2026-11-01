@@ -61,7 +61,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/cb-configure-local-pg17.py" supabase/config.toml
           supabase db start
           psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -X -v ON_ERROR_STOP=1 \
-            -c 'CREATE DATABASE cb_e2e_restore_ci TEMPLATE postgres'
+            -c 'CREATE DATABASE cb_e2e_restore_ci TEMPLATE template0'
 
       - name: Make encrypted backup, verify restored full critical state
         shell: bash

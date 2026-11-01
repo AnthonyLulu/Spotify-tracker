@@ -101,6 +101,22 @@ jobs:
           cb_local_admin_url='postgresql://supabase_admin:postgres@127.0.0.1:54322/template1'
           psql "$cb_local_admin_url" -XAtq -v ON_ERROR_STOP=1 \
             -c "SELECT current_setting('is_superuser')" | grep -Fx on
+          # Source extension names/schemas inspected read-only on 2026-11-01.
+          # Install them in the LOCAL template so the selected-schema dump's
+          # external index and function dependencies exist in the restore DB.
+          psql 'postgresql://supabase_admin:postgres@127.0.0.1:54322/postgres' -X -v ON_ERROR_STOP=1 \
+            -c 'CREATE SCHEMA IF NOT EXISTS extensions' \
+            -c 'CREATE SCHEMA IF NOT EXISTS vault' \
+            -c 'CREATE EXTENSION IF NOT EXISTS http WITH SCHEMA extensions' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions' \
+            -c 'CREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog' \
+            -c 'CREATE EXTENSION IF NOT EXISTS supabase_vault WITH SCHEMA vault' \
+            -c 'CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions' \
+            -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions'
           restore_local_connections() {
             psql "$cb_local_admin_url" -X -v ON_ERROR_STOP=1 \
               -c 'ALTER DATABASE postgres ALLOW_CONNECTIONS true' >/dev/null

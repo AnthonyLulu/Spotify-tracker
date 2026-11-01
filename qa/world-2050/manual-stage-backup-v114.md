@@ -29,3 +29,16 @@ Until an independent encrypted file has actually been downloaded, decrypted and 
 - If `CB_E2E_DB_URL` is unavailable, the workflow also accepts `CB_E2E_DB_PASSWORD` and constructs the direct isolated-stage PostgreSQL 17 URL safely (with URL-encoded password); direct connectivity may require IPv6. Prefer a stage session-pooler `CB_E2E_DB_URL` on IPv4-only runners.
 - The GitHub Actions manual trigger is visible only when the workflow also exists on repository default branch `master`. The actual job refuses to run unless the user specifically selects `court-boss-live`. Do not enable scheduled or push triggers.
 - This change has not by itself executed an independent restore or created a downloadable encrypted archive. Do not claim backup validation until an actual run passes the row/fingerprint parity checks and the owner decrypts the `.tar.age` file offline.
+
+### 1 November 2026: GitHub runner has no direct Supabase IPv6 path
+
+The direct isolated stage host `db.sozrygjxjotozrsenred.supabase.co` resolved to IPv6 on a real GitHub Actions run and failed with `Network is unreachable` before any source export. This is a **connectivity** failure, not proof of bad credentials. The local PG17 scratch database was already started successfully.
+
+**Next manual run (no secret in chat):**
+1. Open the isolated project's Supabase Dashboard > **Connect** > **Session pooler** (NOT Direct, NOT Transaction pooler).
+2. Copy just its hostname, such as the pattern `aws-0-REGION.pooler.supabase.com`. Use the exact host Supabase displays; do not guess the shard or paste passwords.
+3. In GitHub Actions, select branch `court-boss-live`. In the new **stage_pooler_host** text input paste only that hostname. Run the workflow.
+4. The existing GitHub repository secret `CB_E2E_DB_PASSWORD` supplies the password privately. The script creates the exact stage-user URL `postgres.sozrygjxjotozrsenred` on port **5432** with SSL. Alternatively an existing `CB_E2E_DB_URL` secret must be the exact stage **Session pooler** URL, never the direct IPv6 or transaction-pooler URL.
+5. The job fails closed before starting Docker if the host, stage identity or password is missing/invalid; it does not print the connection string. The workflow remains manual-only and protects the production project.
+
+This change does **not** prove that pooler connection, logical dump, local restore, age archive or all 26 table fingerprints are successful. Verify them in a new full run. Keep the age private identity offline.

@@ -1,0 +1,91 @@
+name: Court Boss E2E isolated-stage encrypted backup (manual only)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cb-isolated-stage-external-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    if: github.ref == 'refs/heads/court-boss-live'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout audited game branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Fail closed if isolated stage connection or owner public key is absent
+        shell: bash
+        env:
+          CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
+          CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
+          CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$CB_E2E_DB_URL" || -n "$CB_E2E_DB_PASSWORD" ]] || { echo 'Missing isolated CB_E2E_DB_URL or CB_E2E_DB_PASSWORD secret'; exit 2; }
+          [[ "$CB_BACKUP_AGE_RECIPIENT" == age1* ]] || { echo 'Missing or invalid owner age public recipient'; exit 2; }
+          node <<'NODE'
+          if (!process.env.CB_E2E_DB_URL) process.exit(0);
+          const u=new URL(process.env.CB_E2E_DB_URL);
+          if(!/^postgres(ql)?:$/.test(u.protocol)) process.exit(2);
+          if(!/(^|\.)sozrygjxjotozrsenred\.supabase\.co$/.test(u.hostname) &&
+             !(u.hostname.endsWith('.pooler.supabase.com') &&
+               u.username.includes('sozrygjxjotozrsenred'))) process.exit(2);
+          NODE
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+
+      - name: Install local PostgreSQL client and age
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client age
+
+      - name: Start ephemeral local Supabase database with PostgreSQL 17
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/cb-restore-local"
+          cd "$RUNNER_TEMP/cb-restore-local"
+          supabase init
+          sed -i 's/^major_version = "15"/major_version = "17"/' supabase/config.toml
+          grep -F 'major_version = "17"' supabase/config.toml
+          supabase db start
+          psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -X -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE cb_e2e_restore_ci TEMPLATE postgres'
+
+      - name: Make encrypted backup, verify restored full critical state
+        shell: bash
+        env:
+          CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
+          CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
+          CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
+          CB_E2E_RESTORE_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/cb_e2e_restore_ci
+          CB_E2E_BACKUP_DIR: ${{ runner.temp }}/cb-encrypted-archives
+        run: |
+          set -Eeuo pipefail
+          bash scripts/cb-stage-independent-backup-verify.sh
+          find "$CB_E2E_BACKUP_DIR" -maxdepth 1 -name '*.tar.age' -size +0c | grep -q .
+          find "$CB_E2E_BACKUP_DIR" -maxdepth 1 -name '*.sha256' | grep -q .
+
+      - name: Upload encrypted backup only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: court-boss-isolated-stage-encrypted-backup
+          path: |
+            ${{ runner.temp }}/cb-encrypted-archives/*.tar.age
+            ${{ runner.temp }}/cb-encrypted-archives/*.tar.age.sha256
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

@@ -13,6 +13,6 @@ if (!password) {
   process.exit(2);
 }
 const u = new URL('postgresql://postgres.' + project + '@' + host + ':5432/postgres');
-u.password = password; // URL-encode safely, including symbols such as @, # and /.
+u.password = encodeURIComponent(password); // Encode '%' and all reserved characters, including @, # and /.
 u.searchParams.set('sslmode', 'require');
 process.stdout.write(u.toString());

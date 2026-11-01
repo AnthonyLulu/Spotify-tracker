@@ -7,16 +7,23 @@ die(){ printf 'BACKUP NOT VERIFIED: %s\n' "$1" >&2; exit 2; }
 for cmd in supabase psql age tar sha256sum node mktemp; do
  command -v "$cmd" >/dev/null 2>&1 || die "Missing local command: $cmd"
 done
-# Optional stage-only direct-host fallback when only the DB password secret exists.
-# Prefer CB_E2E_DB_URL with a session-pooler host on IPv4-only machines.
+# GitHub-hosted runners cannot reach Supabase's IPv6-only direct DB endpoint.
+# When the owner has already stored only the stage DB password, build an
+# authenticated IPv4 Session pooler URL using its exact, nonsecret host.
+# NEVER auto-guess a pooler hostname or accept a URL/password in workflow inputs.
 if [[ -z "${CB_E2E_DB_URL:-}" && -n "${CB_E2E_DB_PASSWORD:-}" ]]; then
  CB_E2E_DB_URL="$(node <<'STAGE_URL_NODE'
-const u = new URL('postgresql://postgres@db.sozrygjxjotozrsenred.supabase.co:5432/postgres');
+const host = process.env.CB_E2E_POOLER_HOST || '';
+if (!/^aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(host)) {
+  console.error('Missing or invalid STAGE Session pooler host; copy only the host from Supabase Connect');
+  process.exit(2);
+}
+const u = new URL('postgresql://postgres.sozrygjxjotozrsenred@' + host + ':5432/postgres');
 u.password = process.env.CB_E2E_DB_PASSWORD;
 u.searchParams.set('sslmode', 'require');
 process.stdout.write(u.toString());
 STAGE_URL_NODE
-)"
+)" || die 'Cannot build stage-only IPv4 Session pooler URL'
  export CB_E2E_DB_URL
 fi
 for var in CB_E2E_DB_URL CB_E2E_RESTORE_TEST_DB_URL CB_BACKUP_AGE_RECIPIENT CB_E2E_BACKUP_DIR; do
@@ -31,6 +38,11 @@ const a=new URL(process.env.CB_E2E_DB_URL);
 const b=new URL(process.env.CB_E2E_RESTORE_TEST_DB_URL);
 if (!/^postgres(ql)?:$/.test(a.protocol)||!/^postgres(ql)?:$/.test(b.protocol))
  throw Error('PostgreSQL URLs required');
+if (process.env.GITHUB_ACTIONS === 'true' &&
+    (!/^aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(a.hostname) ||
+      a.username !== 'postgres.sozrygjxjotozrsenred' ||
+      a.port !== '5432' || a.pathname !== '/postgres'))
+ throw Error('GitHub backup must use the isolated STAGE IPv4 Session pooler on port 5432');
 if (!/(^|\.)sozrygjxjotozrsenred\.supabase\.co$/.test(a.hostname) &&
     !(a.hostname.endsWith('.pooler.supabase.com') && a.username.includes('sozrygjxjotozrsenred')))
  throw Error('Only isolated staging is permitted');

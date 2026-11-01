@@ -8,7 +8,7 @@ const backupPath=new URL('../scripts/cb-stage-independent-backup-verify.sh',impo
 const backup=readFileSync(backupPath,'utf8');
 
 test('manual backup never automatically runs on push or PR and cannot run off the game branch',()=>{
- assert.match(workflow,/^on:\s*\n\s*workflow_dispatch:\s*$/m);
+ assert.match(workflow,/^on:\\s*\\n\\s*workflow_dispatch:\\s*\\n\\s*inputs:/m);
  assert.doesNotMatch(workflow,/^\s*(push|pull_request|schedule):/m);
  assert.match(workflow,/github\.ref == 'refs\/heads\/court-boss-live'/);
  assert.match(workflow,/permissions:\s*\n\s*contents: read/);

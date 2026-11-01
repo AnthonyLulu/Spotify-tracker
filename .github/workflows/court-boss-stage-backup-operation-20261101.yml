@@ -24,21 +24,44 @@ jobs:
           persist-credentials: false
           ref: d4c7cf4e8364dc072c5957f5b59efb02d8474570
 
-      - name: Fail closed if isolated stage connection or owner public key is absent
+      - name: Prepare isolated stage connection and require owner public key
         shell: bash
         env:
           CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
+          CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
           CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
         run: |
           set -Eeuo pipefail
-          [[ -n "$CB_E2E_DB_URL" ]] || { echo 'Missing isolated CB_E2E_DB_URL secret'; exit 2; }
-          [[ "$CB_BACKUP_AGE_RECIPIENT" == age1* ]] || { echo 'Missing or invalid owner age public recipient'; exit 2; }
           node <<'NODE'
-          const u=new URL(process.env.CB_E2E_DB_URL);
-          if(!/^postgres(ql)?:$/.test(u.protocol)) process.exit(2);
-          if(!/(^|\.)sozrygjxjotozrsenred\.supabase\.co$/.test(u.hostname) &&
-             !(u.hostname.endsWith('.pooler.supabase.com') &&
-               u.username.includes('sozrygjxjotozrsenred'))) process.exit(2);
+          const fs = require('node:fs');
+          const fail = message => { console.error(message); process.exit(2); };
+          const rawUrl = process.env.CB_E2E_DB_URL;
+          const password = process.env.CB_E2E_DB_PASSWORD;
+          if (!rawUrl && !password) fail('Missing isolated CB_E2E_DB_PASSWORD or CB_E2E_DB_URL secret');
+          let u;
+          try {
+            // The owner can paste the password alone; URI escaping is automatic.
+            u = new URL(rawUrl || 'postgresql://postgres.sozrygjxjotozrsenred:' +
+              encodeURIComponent(password) + '@aws-1-eu-west-3.pooler.supabase.com:5432/postgres');
+          } catch {
+            fail('Invalid isolated stage connection');
+          }
+          if (!/^postgres(ql)?:$/.test(u.protocol) || !u.password || u.pathname !== '/postgres')
+            fail('Invalid isolated stage connection');
+          const stageDirect = u.hostname === 'db.sozrygjxjotozrsenred.supabase.co' && u.username === 'postgres';
+          const stagePooler = u.hostname === 'aws-1-eu-west-3.pooler.supabase.com' &&
+            u.username === 'postgres.sozrygjxjotozrsenred' && u.port === '5432';
+          if (!stageDirect && !stagePooler) fail('Refusing any source other than isolated stage');
+          const recipient = (process.env.CB_BACKUP_AGE_RECIPIENT || '').trim();
+          if (!/^age1[023456789acdefghjklmnpqrstuvwxyz]{58}$/.test(recipient))
+            fail('Missing or invalid owner age public recipient');
+          u.searchParams.set('sslmode', 'require');
+          const connection = u.href;
+          // Mask the derived URL too: its encoded password differs from the raw secret.
+          console.log('::add-mask::' + connection);
+          fs.appendFileSync(process.env.GITHUB_ENV,
+            'CB_E2E_DB_URL=' + connection + '\nCB_BACKUP_AGE_RECIPIENT=' + recipient + '\n');
+          console.log('Isolated stage connection configured; owner public key present.');
           NODE
 
       - name: Install Supabase CLI
@@ -69,8 +92,6 @@ jobs:
       - name: Make encrypted backup, verify restored full critical state
         shell: bash
         env:
-          CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
-          CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
           CB_E2E_RESTORE_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/cb_e2e_restore_ci
           CB_E2E_BACKUP_DIR: ${{ runner.temp }}/cb-encrypted-archives
         run: |

@@ -23,7 +23,11 @@ test('workflow requires owner GitHub secrets, never exposes a private age key',(
  assert.match(workflow,/sozrygjxjotozrsenred/);
  assert.doesNotMatch(workflow,/qrsvliliezbiedmaewml/);
  assert.doesNotMatch(workflow,/\b(?:supabase db reset|DROP DATABASE|DELETE FROM public\.game_saves)\b/);
- assert.match(workflow,/cb_e2e_restore_ci TEMPLATE postgres/);
+ assert.match(workflow,/cb_e2e_restore_ci TEMPLATE template0/);
+ assert.doesNotMatch(workflow,/cb_e2e_restore_ci TEMPLATE postgres/);
+ // Using the busy postgres database as a template fails as soon as
+ // Supabase's own services connect to it.
+ assert.doesNotMatch(workflow,/pg_terminate_backend|DROP DATABASE|supabase db reset/);
  assert.match(workflow,/supabase db start/);
  assert.match(workflow,/CB_E2E_BACKUP_DIR/);
  assert.match(workflow,/actions\/upload-artifact@v4/);

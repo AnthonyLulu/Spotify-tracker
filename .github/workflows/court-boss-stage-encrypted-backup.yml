@@ -1,6 +1,11 @@
 name: Court Boss E2E isolated-stage encrypted backup (manual only)
 on:
   workflow_dispatch:
+    inputs:
+      stage_pooler_host:
+        description: 'Exact session pooler HOST from Supabase Connect (not a password or URL)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -25,18 +30,30 @@ jobs:
         env:
           CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
           CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
+          CB_E2E_POOLER_HOST: ${{ inputs.stage_pooler_host }}
           CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
         run: |
           set -Eeuo pipefail
-          [[ -n "$CB_E2E_DB_URL" || -n "$CB_E2E_DB_PASSWORD" ]] || { echo 'Missing isolated CB_E2E_DB_URL or CB_E2E_DB_PASSWORD secret'; exit 2; }
           [[ "$CB_BACKUP_AGE_RECIPIENT" == age1* ]] || { echo 'Missing or invalid owner age public recipient'; exit 2; }
           node <<'NODE'
-          if (!process.env.CB_E2E_DB_URL) process.exit(0);
-          const u=new URL(process.env.CB_E2E_DB_URL);
-          if(!/^postgres(ql)?:$/.test(u.protocol)) process.exit(2);
-          if(!/(^|\.)sozrygjxjotozrsenred\.supabase\.co$/.test(u.hostname) &&
-             !(u.hostname.endsWith('.pooler.supabase.com') &&
-               u.username.includes('sozrygjxjotozrsenred'))) process.exit(2);
+          const stage = 'sozrygjxjotozrsenred';
+          const safeHost = h => /^aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(h);
+          const suppliedUrl = process.env.CB_E2E_DB_URL;
+          if (suppliedUrl) {
+            const u = new URL(suppliedUrl);
+            if (!/^postgres(ql)?:$/.test(u.protocol) ||
+                !safeHost(u.hostname) ||
+                u.username !== 'postgres.' + stage ||
+                u.port !== '5432' || u.pathname !== '/postgres' || !u.password) {
+              console.error('CB_E2E_DB_URL must be the STAGE Session pooler URL (port 5432), not the IPv6 direct URL');
+              process.exit(2);
+            }
+          } else {
+            if (!process.env.CB_E2E_DB_PASSWORD || !safeHost(process.env.CB_E2E_POOLER_HOST || '')) {
+              console.error('Select the exact STAGE Session pooler host in Run workflow and keep CB_E2E_DB_PASSWORD secret configured');
+              process.exit(2);
+            }
+          }
           NODE
 
       - name: Install Supabase CLI
@@ -68,6 +85,7 @@ jobs:
         env:
           CB_E2E_DB_URL: ${{ secrets.CB_E2E_DB_URL }}
           CB_E2E_DB_PASSWORD: ${{ secrets.CB_E2E_DB_PASSWORD }}
+          CB_E2E_POOLER_HOST: ${{ inputs.stage_pooler_host }}
           CB_BACKUP_AGE_RECIPIENT: ${{ secrets.CB_BACKUP_AGE_RECIPIENT }}
           CB_E2E_RESTORE_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/cb_e2e_restore_ci
           CB_E2E_BACKUP_DIR: ${{ runner.temp }}/cb-encrypted-archives

@@ -22,3 +22,10 @@ Automatic: source stage ID and zero private saves; full schema/data/roles SQL du
 **NOT automatic:** final age ciphertext decryption by the owner, 100% of Supabase platform schemas (auth/storage are omitted by the CLI), and all noncritical game-table digest parity. The existing local restore script may need adjustments for extension/schema compatibility. This workflow has not been dispatched end-to-end during development: its first run may fail; troubleshoot failures before claiming a verified backup.
 
 Until an independent encrypted file has actually been downloaded, decrypted and restored successfully, do **not** reset original stage, delete cancelled events, replay the 22 Feb 2026-to-29 Mar 2026 span, or certify 2050. Production stays untouched.
+
+### Recovery note (1 November 2026)
+
+- Read-only inspection of the actual isolated stage confirmed `pg_trgm`, `pgcrypto`, `unaccent` and `uuid-ossp` installed in schema `extensions`. Player-search indexes use `gin_trgm_ops`; the local scratch now installs and verifies those extensions before replaying exported schema and data.
+- If `CB_E2E_DB_URL` is unavailable, the workflow also accepts `CB_E2E_DB_PASSWORD` and constructs the direct isolated-stage PostgreSQL 17 URL safely (with URL-encoded password); direct connectivity may require IPv6. Prefer a stage session-pooler `CB_E2E_DB_URL` on IPv4-only runners.
+- The GitHub Actions manual trigger is visible only when the workflow also exists on repository default branch `master`. The actual job refuses to run unless the user specifically selects `court-boss-live`. Do not enable scheduled or push triggers.
+- This change has not by itself executed an independent restore or created a downloadable encrypted archive. Do not claim backup validation until an actual run passes the row/fingerprint parity checks and the owner decrypts the `.tar.age` file offline.

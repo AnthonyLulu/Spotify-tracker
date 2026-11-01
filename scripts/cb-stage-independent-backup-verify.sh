@@ -7,6 +7,18 @@ die(){ printf 'BACKUP NOT VERIFIED: %s\n' "$1" >&2; exit 2; }
 for cmd in supabase psql age tar sha256sum node mktemp; do
  command -v "$cmd" >/dev/null 2>&1 || die "Missing local command: $cmd"
 done
+# Optional stage-only direct-host fallback when only the DB password secret exists.
+# Prefer CB_E2E_DB_URL with a session-pooler host on IPv4-only machines.
+if [[ -z "${CB_E2E_DB_URL:-}" && -n "${CB_E2E_DB_PASSWORD:-}" ]]; then
+ CB_E2E_DB_URL="$(node <<'STAGE_URL_NODE'
+const u = new URL('postgresql://postgres@db.sozrygjxjotozrsenred.supabase.co:5432/postgres');
+u.password = process.env.CB_E2E_DB_PASSWORD;
+u.searchParams.set('sslmode', 'require');
+process.stdout.write(u.toString());
+STAGE_URL_NODE
+)"
+ export CB_E2E_DB_URL
+fi
 for var in CB_E2E_DB_URL CB_E2E_RESTORE_TEST_DB_URL CB_BACKUP_AGE_RECIPIENT CB_E2E_BACKUP_DIR; do
  [[ -n "$(printenv "$var" || true)" ]] || die "Set $var in a private local shell environment"
 done
@@ -45,6 +57,27 @@ target_guard="SELECT CASE WHEN
  THEN 'EMPTY' ELSE 'NOT_EMPTY' END;"
 target="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "$target_guard")" || die 'Cannot inspect scratch DB'
 [[ "$target" == EMPTY ]] || die 'Refuse to overwrite non-empty scratch database'
+# Supabase CLI dump excludes extension-owned SQL; the source uses GIN pg_trgm.
+# Install matching extensions in the disposable LOCAL scratch database ONLY.
+psql "$CB_E2E_RESTORE_TEST_DB_URL" -X -v ON_ERROR_STOP=1 -q <<'RESTORE_EXTENSIONS_SQL' >/dev/null || die 'Local scratch extension setup failed'
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+RESTORE_EXTENSIONS_SQL
+restore_extension_guard="$(psql "$CB_E2E_RESTORE_TEST_DB_URL" -XAtq -v ON_ERROR_STOP=1 -c "
+ SELECT CASE WHEN
+ (SELECT COUNT(*) FROM pg_extension e
+  JOIN pg_namespace n ON n.oid=e.extnamespace
+  WHERE e.extname IN ('pg_trgm','pgcrypto','unaccent','uuid-ossp')
+    AND n.nspname='extensions')=4
+ AND EXISTS (SELECT 1 FROM pg_opclass c
+  JOIN pg_namespace n ON n.oid=c.opcnamespace
+  JOIN pg_am a ON a.oid=c.opcmethod
+  WHERE c.opcname='gin_trgm_ops' AND n.nspname='extensions' AND a.amname='gin')
+ THEN 'OK' ELSE 'MISSING' END;")" || die 'Cannot inspect local scratch extensions'
+[[ "$restore_extension_guard" == OK ]] || die 'Scratch lacks required extension schemas or GIN trigram opclass'
 mkdir -p "$CB_E2E_BACKUP_DIR"
 chmod 700 "$CB_E2E_BACKUP_DIR"
 tmp="$(mktemp -d)"
